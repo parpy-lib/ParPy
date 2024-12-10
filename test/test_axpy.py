@@ -17,7 +17,7 @@ def axpy_wrap(a, x, y, parallelize=None):
 
 def test_axpy():
     N = 100
-    a = torch.randn(1, dtype=torch.float32)
+    a = float(torch.randn(1, dtype=torch.float32)[0])
     x = torch.randn(N, dtype=torch.float32)
     y = torch.randn(N, dtype=torch.float32)
     expected = axpy_wrap(a, x, y)

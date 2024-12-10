@@ -40,7 +40,8 @@ pub enum FloatSize {
 
 #[derive(Clone, Debug)]
 pub enum Type {
-    Bool(),
+    Unknown,
+    Bool,
     Int(IntSize),
     Float(FloatSize),
     Array(Box<Type>)
@@ -55,7 +56,7 @@ pub struct TypedParam {
 ///////////////////////
 // BINARY OPERATIONS //
 ///////////////////////
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum BinOp {
     Add, Mul
 }
@@ -63,19 +64,31 @@ pub enum BinOp {
 /////////////////
 // EXPRESSIONS //
 /////////////////
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Expr {
-    Var {id : String},
+    Var {id : String, ty : Type},
     LiteralInt {value : i64, ty : Type},
     LiteralFloat {value : f64, ty : Type},
-    BinOp {lhs : Box<Expr>, op : BinOp, rhs : Box<Expr>},
-    ArrayAccess {target : Box<Expr>, idx : Box<Expr>}
+    BinOp {lhs : Box<Expr>, op : BinOp, rhs : Box<Expr>, ty : Type},
+    ArrayAccess {target : Box<Expr>, idx : Box<Expr>, ty : Type}
+}
+
+impl Expr {
+    pub fn get_type(&self) -> &Type {
+        match self {
+            Expr::Var {ty, ..} => ty,
+            Expr::LiteralInt {ty, ..} => ty,
+            Expr::LiteralFloat {ty, ..} => ty,
+            Expr::BinOp {ty, ..} => ty,
+            Expr::ArrayAccess {ty, ..} => ty
+        }
+    }
 }
 
 ////////////////
 // STATEMENTS //
 ////////////////
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Stmt {
     Assign {dst : Expr, e : Expr},
     For {var : String, lo : Expr, hi : Expr, body : Vec<Stmt>}
@@ -84,7 +97,7 @@ pub enum Stmt {
 ///////////////////////////
 // TOP-LEVEL DEFINITIONS //
 ///////////////////////////
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Def {
     ParFun {id : String, params : Vec<TypedParam>, body : Vec<Stmt>},
     FunInst {id : String, par : Vec<ParSpec>}

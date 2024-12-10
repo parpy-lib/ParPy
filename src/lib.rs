@@ -12,7 +12,7 @@ fn compile_python_ast<'py>(
 ) -> PyResult<String> {
     let ir_ast = python::to_ir(py_ast, args, par, ast_module);
     // TODO: translate the IR AST to a CUDA AST.
-    Ok(format!("{ir_ast:?}"))
+    ir_ast.map(|ast| format!("{ast:?}"))
 }
 
 /// A Python module implemented in Rust.
