@@ -28,12 +28,12 @@ impl ParSpec {
 ///////////
 // TYPES //
 ///////////
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum IntSize {
     I8, I16, I32, I64, Any
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FloatSize {
     F16, F32, F64, Any
 }
@@ -41,7 +41,6 @@ pub enum FloatSize {
 #[derive(Clone, Debug)]
 pub enum Type {
     Unknown,
-    Bool,
     Int(IntSize),
     Float(FloatSize),
     Array(Box<Type>)
@@ -56,7 +55,7 @@ pub struct TypedParam {
 ///////////////////////
 // BINARY OPERATIONS //
 ///////////////////////
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum BinOp {
     Add, Mul
 }
@@ -81,6 +80,16 @@ impl Expr {
             Expr::LiteralFloat {ty, ..} => ty,
             Expr::BinOp {ty, ..} => ty,
             Expr::ArrayAccess {ty, ..} => ty
+        }
+    }
+
+    pub fn with_type(self, ty : Type) -> Self {
+        match self {
+            Expr::Var {id, ..} => Expr::Var {id, ty},
+            Expr::LiteralInt {value, ..} => Expr::LiteralInt {value, ty},
+            Expr::LiteralFloat {value, ..} => Expr::LiteralFloat {value, ty},
+            Expr::BinOp {lhs, op, rhs, ..} => Expr::BinOp {lhs, op, rhs, ty},
+            Expr::ArrayAccess {target, idx, ..} => Expr::ArrayAccess {target, idx, ty}
         }
     }
 }
