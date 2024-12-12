@@ -1,5 +1,8 @@
+mod codegen;
 mod ir;
 mod par;
+
+use codegen::ast;
 
 use std::collections::HashMap;
 use std::ffi::CString;
@@ -24,12 +27,18 @@ fn compile_ir<'py>(
     ir_ast_cap : Bound<'py, PyCapsule>,
     args : Vec<Bound<'py, PyAny>>,
     par : HashMap<String, Vec<par::ParKind>>
-) -> PyResult<String> {
+) -> PyResult<(String, String)> {
     let untyped_ir_ast : &ir::ast::Ast = unsafe {
         ir_ast_cap.reference()
     };
-    let ir_ast = ir::from_py::to_typed_ir(untyped_ir_ast, args, par);
-    Ok(format!("{ir_ast:?}"))
+    let ir_ast = ir::from_py::to_typed_ir(untyped_ir_ast, args, par)?;
+    let ast::Ast {
+        host_entry, host_stage, kernels
+    } = codegen::from_ir::ir_to_code(ir_ast)?;
+    let cpp = ast::pprint_vec(&host_entry, &mut ast::PrintConfig::default());
+    let cu_dev = ast::pprint_vec(&kernels, &mut &mut ast::PrintConfig::default());
+    let cu_host = ast::pprint_vec(&host_stage, &mut ast::PrintConfig::default());
+    Ok((cpp, cu_dev + &cu_host))
 }
 
 #[pymodule]

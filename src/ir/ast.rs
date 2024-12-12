@@ -2,12 +2,12 @@ use crate::par;
 
 use std::collections::HashMap;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum IntSize {
     I8, I16, I32, I64, Any
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum FloatSize {
     F16, F32, F64, Any
 }
@@ -16,13 +16,14 @@ pub enum FloatSize {
 pub enum Type {
     Int(IntSize),
     Float(FloatSize),
-    Tensor(Box<Type>),
+    IntTensor(IntSize),
+    FloatTensor(FloatSize),
     Unknown
 }
 
 #[derive(Clone, Debug)]
 pub enum BinOp {
-    Add, Mul, Lt
+    Add, Mul
 }
 
 #[derive(Clone, Debug)]
@@ -59,14 +60,7 @@ impl Expr {
 #[derive(Clone, Debug)]
 pub enum Stmt {
     Assign {dst : Expr, e : Expr},
-    For {
-        var_ty : Type,
-        var : String,
-        init : Expr,
-        cond : Expr,
-        incr : Expr,
-        body : Vec<Stmt>
-    }
+    For {var : String, lo : Expr, hi : Expr, body : Vec<Stmt>}
 }
 
 #[derive(Clone, Debug)]

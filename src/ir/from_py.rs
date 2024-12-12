@@ -72,7 +72,8 @@ fn convert_expr<'py>(
         }?;
         let idx = convert_expr(expr.getattr("slice")?, env)?;
         let ty = match target.get_type() {
-            Type::Tensor(ty) => *ty.clone(),
+            Type::IntTensor(sz) => Type::Int(*sz),
+            Type::FloatTensor(sz) => Type::Float(*sz),
             _ => Type::Unknown
         };
         Ok(Expr::Subscript {target : Box::new(target), idx : Box::new(idx), ty})
@@ -127,12 +128,8 @@ fn convert_stmt<'py>(stmt : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>) -> Py
         let body = convert_stmts(stmt.getattr("body")?, env)?;
 
         if stmt.getattr("orelse")?.len()? == 0 {
-            let var_ty = Type::Int(IntSize::I64);
-            let init = lo.clone();
-            let cond = hi.clone();
-            let incr = Expr::Int {v : 1, ty : var_ty.clone()};
             Ok(Stmt::For {
-                var_ty, var, init, cond, incr, body
+                var, lo, hi, body
             })
         } else {
             runtime_error(format!("For-loop with an else-clause are not supported"))
@@ -223,7 +220,11 @@ fn ir_type<'py>(
         Ok(Type::Float(FloatSize::Any))
     } else if e.is_instance(&torch.getattr("Tensor")?)? {
         let elem_ty = ir_elem_type(e.getattr("dtype")?, id)?;
-        Ok(Type::Tensor(Box::new(elem_ty)))
+        Ok(match elem_ty {
+            Type::Int(sz) => Type::IntTensor(sz),
+            Type::Float(sz) => Type::FloatTensor(sz),
+            _ => panic!("Reached impossible case in 'ir_type'")
+        })
     } else {
         let ty = e.get_type();
         runtime_error(format!("Argument {id} has unsupported type {ty:?}"))
@@ -316,13 +317,14 @@ fn typed_expr(
             let target = typed_expr(&env, *target)?;
             let idx = typed_expr(&env, *idx)?;
             let ty = match target.get_type() {
-                Type::Tensor(ty) => Ok(ty),
+                Type::IntTensor(sz) => Ok(Type::Int(*sz)),
+                Type::FloatTensor(sz) => Ok(Type::Float(*sz)),
                 _ => type_error(format!("Invalid type of subscript operation"))
             }?.clone();
             Ok(Expr::Subscript {
                 target : Box::new(target),
                 idx : Box::new(idx),
-                ty : *ty
+                ty
             })
         }
     }
@@ -343,13 +345,12 @@ fn typed_stmt(
             let dst = typed_expr(&env, dst)?;
             Ok((env, Stmt::Assign {dst, e}))
         },
-        Stmt::For {var_ty, var, init, cond, incr, body} => {
-            let init = typed_expr(&env, init)?;
-            let cond = typed_expr(&env, cond)?;
-            let incr = typed_expr(&env, incr)?;
-            env.vars.insert(var.clone(), var_ty.clone());
+        Stmt::For {var, lo, hi, body} => {
+            let lo = typed_expr(&env, lo)?;
+            let hi = typed_expr(&env, hi)?;
+            env.vars.insert(var.clone(), Type::Int(IntSize::I64));
             let (env, body) = typed_stmts(env, body)?;
-            Ok((env, Stmt::For {var_ty, var, init, cond, incr, body}))
+            Ok((env, Stmt::For {var, lo, hi, body}))
         },
     }
 }
