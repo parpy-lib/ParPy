@@ -1,5 +1,5 @@
 import parir
-from parir.parir import ParKind, ParSpec
+from parir.parir import ParKind
 import torch
 
 torch.manual_seed(1234)
@@ -26,10 +26,9 @@ def test_sum_outer_parallel():
     expected = sum_wrap(x)
 
     # Only parallelize over the outer loop
-    #par = {
-    #    "i" : parir.ConfigType.GpuGrid,
-    #}
-    par = None
+    par = {
+        "i" : [ParKind.GpuGrid()],
+    }
     actual = sum_wrap(x, parallelize=par)
     assert torch.allclose(expected, actual, atol=1e-5)
 
@@ -41,9 +40,9 @@ def test_sum_inner_and_outer_parallel():
 
     # Run both the outer and the inner loops in parallel, by performing a
     # parallel reduction within each thread block.
-    par = [
-        ParSpec("i", ParKind.GpuGrid()),
-        ParSpec("j", ParKind.GpuThreads(512)),
-    ]
+    par = {
+        "i": [ParKind.GpuGrid()],
+        "j": [ParKind.GpuThreads(512)]
+    }
     actual = sum_wrap(x, parallelize=par)
     assert torch.allclose(expected, actual, atol=1e-5)

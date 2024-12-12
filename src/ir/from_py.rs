@@ -1,31 +1,35 @@
-use crate::ir;
+
+use crate::par;
+use crate::ir::ast::*;
 
 use std::collections::HashMap;
-use std::ffi::CString;
 
-use pyo3::prelude::*;
 use pyo3::PyTypeInfo;
-use pyo3::exceptions;
+use pyo3::prelude::*;
 use pyo3::types;
-use pyo3::types::PyCapsule;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError};
+
+fn runtime_error<T>(msg : String) -> PyResult<T> {
+    Err(PyRuntimeError::new_err(msg))
+}
+
+fn type_error<T>(msg : String) -> PyResult<T> {
+    Err(PyTypeError::new_err(msg))
+}
+
+//////////////////
+// PYTHON TO IR //
+//////////////////
 
 struct ConvertEnv<'py> {
     ast : Bound<'py, PyModule>,
 }
 
-fn runtime_error<T>(msg : String) -> PyResult<T> {
-    Err(exceptions::PyRuntimeError::new_err(msg))
-}
-
-fn type_error<T>(msg : String) -> PyResult<T> {
-    Err(exceptions::PyTypeError::new_err(msg))
-}
-
-fn convert_bin_op<'py>(binop : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>) -> PyResult<ir::BinOp> {
+fn convert_bin_op<'py>(binop : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>) -> PyResult<BinOp> {
     if binop.is_instance(&env.ast.getattr("Add")?)? {
-        Ok(ir::BinOp::Add)
+        Ok(BinOp::Add)
     } else if binop.is_instance(&env.ast.getattr("Mult")?)? {
-        Ok(ir::BinOp::Mul)
+        Ok(BinOp::Mul)
     } else {
         runtime_error(format!("Unsupported binary operation: {binop:?}"))
     }
@@ -33,21 +37,21 @@ fn convert_bin_op<'py>(binop : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>) ->
 
 fn convert_expr<'py>(
     expr : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>
-) -> PyResult<ir::Expr> {
+) -> PyResult<Expr> {
     if expr.is_instance(&env.ast.getattr("Name")?)? {
         let id = expr.getattr("id")?.extract::<String>()?;
-        let ty = ir::Type::Unknown;
-        Ok(ir::Expr::Var {id, ty})
+        let ty = Type::Unknown;
+        Ok(Expr::Var {id, ty})
     } else if expr.is_instance(&env.ast.getattr("Constant")?)? {
         let val = expr.getattr("value")?;
         if val.is_instance(&types::PyInt::type_object(val.py()))? {
-            let value = val.extract::<i64>()?;
-            let ty = ir::Type::Int(ir::IntSize::Any);
-            Ok(ir::Expr::LiteralInt {value, ty})
+            let v = val.extract::<i64>()?;
+            let ty = Type::Int(IntSize::Any);
+            Ok(Expr::Int {v, ty})
         } else if val.is_instance(&types::PyFloat::type_object(val.py()))? {
-            let value = val.extract::<f64>()?;
-            let ty = ir::Type::Float(ir::FloatSize::Any);
-            Ok(ir::Expr::LiteralFloat {value, ty})
+            let v = val.extract::<f64>()?;
+            let ty = Type::Float(FloatSize::Any);
+            Ok(Expr::Float {v, ty})
         } else {
             let ty = expr.get_type();
             runtime_error(format!("Unsupported constant {val:?} of type {ty:?}"))
@@ -56,33 +60,33 @@ fn convert_expr<'py>(
         let lhs = convert_expr(expr.getattr("left")?, env)?;
         let op = convert_bin_op(expr.getattr("op")?, env)?;
         let rhs = convert_expr(expr.getattr("right")?, env)?;
-        let ty = ir::Type::Unknown;
-        Ok(ir::Expr::BinOp {lhs : Box::new(lhs), op, rhs : Box::new(rhs), ty})
+        let ty = Type::Unknown;
+        Ok(Expr::BinOp {lhs : Box::new(lhs), op, rhs : Box::new(rhs), ty})
     } else if expr.is_instance(&env.ast.getattr("Subscript")?)? {
         let target = if expr.getattr("value")?.is_instance(&env.ast.getattr("Name")?)? {
             let id = expr.getattr("value")?.getattr("id")?.extract::<String>()?;
-            let ty = ir::Type::Unknown;
-            Ok(ir::Expr::Var {id, ty})
+            let ty = Type::Unknown;
+            Ok(Expr::Var {id, ty})
         } else {
             runtime_error(format!("Subscript target must be a literal value"))
         }?;
         let idx = convert_expr(expr.getattr("slice")?, env)?;
         let ty = match target.get_type() {
-            ir::Type::Array(ty) => *ty.clone(),
-            _ => ir::Type::Unknown
+            Type::Tensor(ty) => *ty.clone(),
+            _ => Type::Unknown
         };
-        Ok(ir::Expr::ArrayAccess {target : Box::new(target), idx : Box::new(idx), ty})
+        Ok(Expr::Subscript {target : Box::new(target), idx : Box::new(idx), ty})
     } else {
         runtime_error(format!("not implemented yet"))
     }
 }
 
-fn convert_stmt<'py>(stmt : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>) -> PyResult<ir::Stmt> {
+fn convert_stmt<'py>(stmt : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>) -> PyResult<Stmt> {
     if stmt.is_instance(&env.ast.getattr("For")?)? {
         // Ensure that the for-loop only assigns to a single variable
         let target = stmt.getattr("target")?;
         let var = if target.is_instance(&env.ast.getattr("Name")?)? {
-            Ok(target.getattr("id")?.extract()?)
+            Ok(target.getattr("id")?.extract::<String>()?)
         } else {
             runtime_error(format!("For-loops must assign to a single variable"))
         }?;
@@ -108,7 +112,7 @@ fn convert_stmt<'py>(stmt : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>) -> Py
         let range_args = range_fn.getattr("args")?;
         let (lo, hi) = match range_args.len()? {
             1 => {
-                let lo = ir::Expr::LiteralInt {value : 0, ty : ir::Type::Int(ir::IntSize::Any)};
+                let lo = Expr::Int {v : 0, ty : Type::Int(IntSize::I64)};
                 let hi = convert_expr(range_args.get_item(0)?, env)?;
                 Ok((lo, hi))
             },
@@ -123,7 +127,13 @@ fn convert_stmt<'py>(stmt : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>) -> Py
         let body = convert_stmts(stmt.getattr("body")?, env)?;
 
         if stmt.getattr("orelse")?.len()? == 0 {
-            Ok(ir::Stmt::For {var, lo, hi, body})
+            let var_ty = Type::Int(IntSize::I64);
+            let init = lo.clone();
+            let cond = hi.clone();
+            let incr = Expr::Int {v : 1, ty : var_ty.clone()};
+            Ok(Stmt::For {
+                var_ty, var, init, cond, incr, body
+            })
         } else {
             runtime_error(format!("For-loop with an else-clause are not supported"))
         }
@@ -134,7 +144,7 @@ fn convert_stmt<'py>(stmt : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>) -> Py
         } else {
             let dst = convert_expr(targets.get_item(0)?, env)?;
             let e = convert_expr(stmt.getattr("value")?, env)?;
-            Ok(ir::Stmt::Assign { dst, e })
+            Ok(Stmt::Assign { dst, e })
         }
     } else {
         runtime_error(format!("Unsupported statement: {stmt}"))
@@ -143,15 +153,15 @@ fn convert_stmt<'py>(stmt : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>) -> Py
 
 fn convert_stmts<'py>(
     body : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>
-) -> PyResult<Vec<ir::Stmt>> {
+) -> PyResult<Vec<Stmt>> {
     body.try_iter()?
         .map(|stmt| stmt.and_then(|s| convert_stmt(s, &env)))
-        .collect::<PyResult<Vec<ir::Stmt>>>()
+        .collect::<PyResult<Vec<Stmt>>>()
 }
 
 pub fn to_untyped_ir<'py>(
     ast : Bound<'py, PyAny>
-) -> PyResult<Bound<'py, types::PyCapsule>> {
+) -> PyResult<Ast> {
     let env = ConvertEnv {
         ast : ast.py().import("ast")?
     };
@@ -160,73 +170,70 @@ pub fn to_untyped_ir<'py>(
     let untyped_args = body.getattr("args")?.getattr("args")?.try_iter()?
         .map(|arg| {
             let id = arg?.getattr("arg")?.extract::<String>()?;
-            let ty = ir::Type::Unknown;
-            Ok(ir::TypedParam {id, ty})
+            let ty = Type::Unknown;
+            Ok(TypedParam {id, ty})
         })
-        .collect::<PyResult<Vec<ir::TypedParam>>>()?;
+        .collect::<PyResult<Vec<TypedParam>>>()?;
     let id = body.getattr("name")?.extract::<String>()?;
     let ir_body = convert_stmts(body.getattr("body")?, &env)?;
-    let par_fun = ir::Def::ParFun {id, params: untyped_args, body: ir_body};
-
-    // Build a capsule object using which we can pass along the IR AST to Python without having to
-    // convert it first.
-    let name = CString::new("IR AST")?;
-    Ok(PyCapsule::new::<ir::Program>(ast.py(), vec![par_fun], Some(name))?)
+    Ok(vec![Def::FunDef {id, params: untyped_args, body: ir_body}])
 }
 
 //////////////////////
 // TYPE PROPAGATION //
 //////////////////////
 
+#[derive(Debug)]
+struct TypeEnv {
+    vars : HashMap<String, Type>
+}
+
 fn ir_elem_type<'py>(
-    dtype : Bound<'py, PyAny>, id : &str
-) -> PyResult<ir::Type> {
+    dtype : Bound<'py, PyAny>,
+    id : &str
+) -> PyResult<Type> {
     let torch = dtype.py().import("torch")?;
     if dtype.eq(torch.getattr("int8")?)? {
-        Ok(ir::Type::Int(ir::IntSize::I8))
+        Ok(Type::Int(IntSize::I8))
     } else if dtype.eq(torch.getattr("int16")?)? {
-        Ok(ir::Type::Int(ir::IntSize::I16))
+        Ok(Type::Int(IntSize::I16))
     } else if dtype.eq(torch.getattr("int32")?)? {
-        Ok(ir::Type::Int(ir::IntSize::I32))
+        Ok(Type::Int(IntSize::I32))
     } else if dtype.eq(torch.getattr("int64")?)? {
-        Ok(ir::Type::Int(ir::IntSize::I64))
+        Ok(Type::Int(IntSize::I64))
     } else if dtype.eq(torch.getattr("float16")?)? {
-        Ok(ir::Type::Float(ir::FloatSize::F16))
+        Ok(Type::Float(FloatSize::F16))
     } else if dtype.eq(torch.getattr("float32")?)? {
-        Ok(ir::Type::Float(ir::FloatSize::F32))
+        Ok(Type::Float(FloatSize::F32))
     } else if dtype.eq(torch.getattr("float64")?)? {
-        Ok(ir::Type::Float(ir::FloatSize::F64))
+        Ok(Type::Float(FloatSize::F64))
     } else {
         runtime_error(format!("Argument {id} has unsupported tensor type containing {dtype:?}"))
     }
 }
 
 fn ir_type<'py>(
-    e : &Bound<'py, PyAny>, id : &str
-) -> PyResult<ir::Type> {
+    e : &Bound<'py, PyAny>,
+    id : &str
+) -> PyResult<Type> {
     let torch = e.py().import("torch")?;
     if e.is_instance(&types::PyInt::type_object(e.py()))? {
-        Ok(ir::Type::Int(ir::IntSize::Any))
+        Ok(Type::Int(IntSize::Any))
     } else if e.is_instance(&types::PyFloat::type_object(e.py()))? {
-        Ok(ir::Type::Float(ir::FloatSize::Any))
+        Ok(Type::Float(FloatSize::Any))
     } else if e.is_instance(&torch.getattr("Tensor")?)? {
         let elem_ty = ir_elem_type(e.getattr("dtype")?, id)?;
-        Ok(ir::Type::Array(Box::new(elem_ty)))
+        Ok(Type::Tensor(Box::new(elem_ty)))
     } else {
         let ty = e.get_type();
         runtime_error(format!("Argument {id} has unsupported type {ty:?}"))
     }
 }
 
-#[derive(Debug)]
-struct TypeEnv {
-    vars : HashMap<String, ir::Type>
-}
-
 fn lookup_type(
     env : &TypeEnv,
     id : &str
-) -> PyResult<ir::Type> {
+) -> PyResult<Type> {
     match env.vars.get(id) {
         Some(ty) => Ok(ty.clone()),
         None => runtime_error(format!("Unknown type of variable {id} (env={env:?})"))
@@ -234,50 +241,50 @@ fn lookup_type(
 }
 
 fn unify_int_sizes(
-    lsz : &ir::IntSize,
-    rsz : &ir::IntSize
-) -> PyResult<ir::IntSize> {
+    lsz : &IntSize,
+    rsz : &IntSize
+) -> PyResult<IntSize> {
     match (lsz, rsz) {
-        (ir::IntSize::Any, _) => Ok(rsz.clone()),
-        (_, ir::IntSize::Any) => Ok(lsz.clone()),
-        (ir::IntSize::I8, ir::IntSize::I8) => Ok(ir::IntSize::I8),
-        (ir::IntSize::I16, ir::IntSize::I16) => Ok(ir::IntSize::I16),
-        (ir::IntSize::I32, ir::IntSize::I32) => Ok(ir::IntSize::I32),
-        (ir::IntSize::I64, ir::IntSize::I64) => Ok(ir::IntSize::I64),
+        (IntSize::Any, _) => Ok(rsz.clone()),
+        (_, IntSize::Any) => Ok(lsz.clone()),
+        (IntSize::I8, IntSize::I8) => Ok(IntSize::I8),
+        (IntSize::I16, IntSize::I16) => Ok(IntSize::I16),
+        (IntSize::I32, IntSize::I32) => Ok(IntSize::I32),
+        (IntSize::I64, IntSize::I64) => Ok(IntSize::I64),
         _ => type_error(format!("Integer type size mismatch: {lsz:?} != {rsz:?}"))
     }
 }
 
 fn unify_float_sizes(
-    lsz : &ir::FloatSize,
-    rsz : &ir::FloatSize
-) -> PyResult<ir::FloatSize> {
+    lsz : &FloatSize,
+    rsz : &FloatSize
+) -> PyResult<FloatSize> {
     match (lsz, rsz) {
-        (ir::FloatSize::Any, _) => Ok(rsz.clone()),
-        (_, ir::FloatSize::Any) => Ok(lsz.clone()),
-        (ir::FloatSize::F16, ir::FloatSize::F16) => Ok(ir::FloatSize::F16),
-        (ir::FloatSize::F32, ir::FloatSize::F32) => Ok(ir::FloatSize::F32),
-        (ir::FloatSize::F64, ir::FloatSize::F64) => Ok(ir::FloatSize::F64),
+        (FloatSize::Any, _) => Ok(rsz.clone()),
+        (_, FloatSize::Any) => Ok(lsz.clone()),
+        (FloatSize::F16, FloatSize::F16) => Ok(FloatSize::F16),
+        (FloatSize::F32, FloatSize::F32) => Ok(FloatSize::F32),
+        (FloatSize::F64, FloatSize::F64) => Ok(FloatSize::F64),
         _ => type_error(format!("Float type size mismatch: {lsz:?} != {rsz:?}"))
     }
 }
 
 fn typed_binop(
-    op : &ir::BinOp,
-    lhs : &ir::Expr,
-    rhs : &ir::Expr
-) -> PyResult<ir::Type> {
+    op : &BinOp,
+    lhs : &Expr,
+    rhs : &Expr
+) -> PyResult<Type> {
     let lty = lhs.get_type();
     let rty = rhs.get_type();
     // Assumes the operator is an arithmetic operator on either integers or floats.
     match (lty, rty) {
-        (ir::Type::Int(lsz), ir::Type::Int(rsz)) => {
+        (Type::Int(lsz), Type::Int(rsz)) => {
             let sz = unify_int_sizes(lsz, rsz)?;
-            Ok(ir::Type::Int(sz))
+            Ok(Type::Int(sz))
         },
-        (ir::Type::Float(lsz), ir::Type::Float(rsz)) => {
+        (Type::Float(lsz), Type::Float(rsz)) => {
             let sz = unify_float_sizes(lsz, rsz)?;
-            Ok(ir::Type::Float(sz))
+            Ok(Type::Float(sz))
         },
         _ => type_error(format!("Invalid types of arguments used with binary operator {op:?}: {lhs:?} and {rhs:?}"))
     }
@@ -285,34 +292,34 @@ fn typed_binop(
 
 fn typed_expr(
     env : &TypeEnv,
-    e : ir::Expr
-) -> PyResult<ir::Expr> {
+    e : Expr
+) -> PyResult<Expr> {
     match e {
-        ir::Expr::Var {id, ..} => {
+        Expr::Var {id, ..} => {
             let ty = lookup_type(env, &id)?;
-            Ok(ir::Expr::Var {id, ty})
+            Ok(Expr::Var {id, ty})
         },
-        ir::Expr::LiteralInt {..} => Ok(e),
-        ir::Expr::LiteralFloat {value, ..} => {
-            let ty = ir::Type::Float(ir::FloatSize::Any);
-            Ok(ir::Expr::LiteralFloat {value, ty})
+        Expr::Int {..} => Ok(e),
+        Expr::Float {v, ..} => {
+            let ty = Type::Float(FloatSize::Any);
+            Ok(Expr::Float {v, ty})
         },
-        ir::Expr::BinOp {lhs, op, rhs, ..} => {
+        Expr::BinOp {lhs, op, rhs, ..} => {
             let lhs = typed_expr(&env, *lhs)?;
             let rhs = typed_expr(&env, *rhs)?;
             let ty = typed_binop(&op, &lhs, &rhs)?;
             let lhs = Box::new(lhs.with_type(ty.clone()));
             let rhs = Box::new(rhs.with_type(ty.clone()));
-            Ok(ir::Expr::BinOp {lhs, op, rhs, ty})
+            Ok(Expr::BinOp {lhs, op, rhs, ty})
         },
-        ir::Expr::ArrayAccess {target, idx, ..} => {
+        Expr::Subscript {target, idx, ..} => {
             let target = typed_expr(&env, *target)?;
             let idx = typed_expr(&env, *idx)?;
             let ty = match target.get_type() {
-                ir::Type::Array(ty) => Ok(ty),
+                Type::Tensor(ty) => Ok(ty),
                 _ => type_error(format!("Invalid type of subscript operation"))
             }?.clone();
-            Ok(ir::Expr::ArrayAccess {
+            Ok(Expr::Subscript {
                 target : Box::new(target),
                 idx : Box::new(idx),
                 ty : *ty
@@ -323,33 +330,34 @@ fn typed_expr(
 
 fn typed_stmt(
     mut env : TypeEnv,
-    stmt : ir::Stmt
-) -> PyResult<(TypeEnv, ir::Stmt)> {
+    stmt : Stmt
+) -> PyResult<(TypeEnv, Stmt)> {
     match stmt {
-        ir::Stmt::Assign {dst, e} => {
+        Stmt::Assign {dst, e} => {
             let e = typed_expr(&env, e)?;
-            if let ir::Expr::Var {ref id, ..} = dst {
+            if let Expr::Var {ref id, ..} = dst {
                 env.vars.insert(id.clone(), e.get_type().clone())
             } else {
                 None
             };
             let dst = typed_expr(&env, dst)?;
-            Ok((env, ir::Stmt::Assign {dst, e}))
+            Ok((env, Stmt::Assign {dst, e}))
         },
-        ir::Stmt::For {var, lo, hi, body} => {
-            let lo = typed_expr(&env, lo)?;
-            let hi = typed_expr(&env, hi)?;
-            env.vars.insert(var.clone(), lo.get_type().clone());
+        Stmt::For {var_ty, var, init, cond, incr, body} => {
+            let init = typed_expr(&env, init)?;
+            let cond = typed_expr(&env, cond)?;
+            let incr = typed_expr(&env, incr)?;
+            env.vars.insert(var.clone(), var_ty.clone());
             let (env, body) = typed_stmts(env, body)?;
-            Ok((env, ir::Stmt::For {var, lo, hi, body}))
-        }
+            Ok((env, Stmt::For {var_ty, var, init, cond, incr, body}))
+        },
     }
 }
 
 fn typed_stmts(
     env : TypeEnv,
-    body : Vec<ir::Stmt>
-) -> PyResult<(TypeEnv, Vec<ir::Stmt>)> {
+    body : Vec<Stmt>
+) -> PyResult<(TypeEnv, Vec<Stmt>)> {
     body.into_iter()
         .fold(Ok((env, vec![])), |acc, s| {
             let (env, mut stmts) = acc?;
@@ -360,42 +368,41 @@ fn typed_stmts(
 }
 
 pub fn to_typed_ir<'py>(
-    ast : ir::Program,
+    ast : &Ast,
     args : Vec<Bound<'py, PyAny>>,
-    par : Vec<ir::ParSpec>
-) -> PyResult<ir::Program> {
-    let (id, params, body) = if ast.len() == 1 {
-        match ast.into_iter().nth(0) {
-            Some(ir::Def::ParFun {id, params, body}) => Ok((id, params, body)),
-            _ => runtime_error(format!("Compiler expected IR AST to consist of one function definition"))
+    par : HashMap<String, Vec<par::ParKind>>
+) -> PyResult<Ast> {
+    let (id, params, body) = match &ast[..] {
+        [Def::FunDef {id, params, body}] => {
+            Ok((id, params, body))
+        },
+        _ => {
+            runtime_error("Compiler expected Python IR AST to consist of one function definition".to_string())
         }
-    } else {
-        runtime_error(format!("Compiler expected IR AST to consist of one function definition"))
     }?;
     let typed_params = if args.len() == params.len() {
         args.into_iter()
             .zip(params.into_iter())
-            .map(|(a, ir::TypedParam {id, ..})| {
+            .map(|(a, TypedParam {id, ..})| {
                 let ty = ir_type(&a, &id)?;
-                Ok(ir::TypedParam {id: id.clone(), ty})
+                Ok(TypedParam {id : id.clone(), ty})
             })
-            .collect::<PyResult<Vec<ir::TypedParam>>>()
+            .collect::<PyResult<Vec<TypedParam>>>()
     } else {
         let l1 = params.len();
         let l2 = args.len();
-        runtime_error(format!("Function {id} expects {l1} arguments, but received {l2} arguments"))
+        runtime_error(format!("Function {id} expected {l1} arguments but received {l2}"))
     }?;
-
-    let tyenv = TypeEnv {
-        vars : typed_params.clone()
-            .into_iter()
-            .map(|ir::TypedParam {id, ty}| (id, ty))
-            .collect::<HashMap<String, ir::Type>>()
+    let tyvars = typed_params.iter()
+        .map(|TypedParam {id, ty}| (id.clone(), ty.clone()))
+        .collect::<HashMap<String, Type>>();
+    let env = TypeEnv {
+        vars : tyvars
     };
-    let (_, body) = typed_stmts(tyenv, body)?;
+    let (_, body) = typed_stmts(env, body.clone())?;
 
     Ok(vec![
-        ir::Def::ParFun {id: id.clone(), params: typed_params, body},
-        ir::Def::FunInst {id, par}
+        Def::FunDef {id : id.clone(), params : typed_params, body},
+        Def::ParFunInst {id : id.clone(), par}
     ])
 }

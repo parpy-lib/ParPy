@@ -4,7 +4,6 @@ import inspect
 import torch
 
 from . import key, ir, parir
-from .parir import ParKind, ParSpec
 
 compiled_cache = {}
 
@@ -14,12 +13,12 @@ def compile_function(ir_ast, args, kwargs, fn):
     if "parallelize" in kwargs:
         par = kwargs["parallelize"]
         if par is None:
-            par = []
+            par = {}
         del kwargs["parallelize"]
     else:
-        par = []
-    if not isinstance(par, list):
-        raise RuntimeError("The parallelization argument must be a list")
+        par = {}
+    if not isinstance(par, dict):
+        raise RuntimeError("The parallelization argument must be a dictionary")
     if len(kwargs) > 0:
         raise RuntimeError(f"Received unknown keyword arguments: {kwargs}")
 
