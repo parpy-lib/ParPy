@@ -26,9 +26,7 @@ def test_sum_outer_parallel():
     expected = sum_wrap(x)
 
     # Only parallelize over the outer loop
-    par = {
-        "i" : [ParKind.GpuBlocks(N)],
-    }
+    par = { "i" : [ParKind.GpuBlocks(N)], }
     actual = sum_wrap(x, parallelize=par)
     assert torch.allclose(expected, actual, atol=1e-5)
 
@@ -40,9 +38,6 @@ def test_sum_inner_and_outer_parallel():
 
     # Run both the outer and the inner loops in parallel, by performing a
     # parallel reduction within each thread block.
-    par = {
-        "i": [ParKind.GpuBlocks(N)],
-        "j": [ParKind.GpuThreads(128)]
-    }
+    par = { "i": [ParKind.GpuBlocks(N)], "j": [ParKind.GpuThreads(128)] }
     actual = sum_wrap(x, parallelize=par)
     assert torch.allclose(expected, actual, atol=1e-5)

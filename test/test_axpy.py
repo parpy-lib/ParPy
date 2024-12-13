@@ -23,8 +23,6 @@ def test_axpy():
     expected = axpy_wrap(a, x, y)
 
     # Run each iteration of the 'i' loop on a separate GPU thread.
-    par = {
-        "i": [ParKind.GpuThreads(128)]
-    }
+    par = { "i": [ParKind.GpuThreads(128)] }
     actual = axpy_wrap(a, x, y, par)
     assert torch.allclose(expected, actual, atol=1e-5)

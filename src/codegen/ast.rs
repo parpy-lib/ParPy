@@ -18,7 +18,7 @@ pub enum Type {
 
 #[derive(Clone, Copy, Debug)]
 pub enum BinOp {
-    Add, Mul
+    Add, Mul, Proj
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -32,9 +32,9 @@ pub enum Expr {
     Int {v : i64, ty : Type},
     Float {v : f64, ty : Type},
     Str {v : String},
-    BinOp {lhs : Box<Expr>, op : BinOp, rhs : Box<Expr>, ty : Type},
-    Subscript {target : Box<Expr>, idx : Box<Expr>, ty : Type},
-    Call {fun : String, args : Vec<Expr>},
+    BinOp {lhs : Box<Expr>, op : BinOp, rhs : Box<Expr>},
+    Subscript {target : Box<Expr>, idx : Box<Expr>},
+    Call {target : Box<Expr>, ty_args : Vec<Type>, args : Vec<Expr>},
     ThreadIdx(Dim),
     BlockIdx(Dim)
 }
@@ -160,8 +160,9 @@ impl PrettyPrint for Type {
 impl PrettyPrint for BinOp {
     fn pprint(&self, _ : &mut PrintConfig) -> String {
         match self {
-            BinOp::Add => "+".to_string(),
-            BinOp::Mul => "*".to_string()
+            BinOp::Add => " + ".to_string(),
+            BinOp::Mul => " * ".to_string(),
+            BinOp::Proj => ".".to_string()
         }
     }
 }
@@ -180,23 +181,31 @@ impl PrettyPrint for Expr {
     fn pprint(&self, cfg : &mut PrintConfig) -> String {
         match self {
             Expr::Var {id, ..} => format!("{id}"),
+            Expr::Int {v, ty : Type::Int(IntSize::I64)} => format!("{v}LL"),
             Expr::Int {v, ..} => format!("{v}"),
+            Expr::Float {v, ty : Type::Float(FloatSize::F32)} => format!("{v}f"),
             Expr::Float {v, ..} => format!("{v}"),
             Expr::Str {v} => format!("{v}"),
-            Expr::BinOp {lhs, op, rhs, ..} => {
+            Expr::BinOp {lhs, op, rhs} => {
                 let lhs = lhs.pprint(cfg);
                 let op = op.pprint(cfg);
                 let rhs = rhs.pprint(cfg);
-                format!("({lhs} {op} {rhs})")
+                format!("{lhs}{op}{rhs}")
             }
             Expr::Subscript {target, idx, ..} => {
                 let target = target.pprint(cfg);
                 let idx = idx.pprint(cfg);
                 format!("{target}[{idx}]")
             },
-            Expr::Call {fun, args} => {
+            Expr::Call {target, ty_args, args} => {
+                let target = target.pprint(cfg);
+                let ty_args = pprint_vec(ty_args, ", ", cfg);
                 let args = pprint_vec(args, ", ", cfg);
-                format!("{fun}({args})")
+                if ty_args.is_empty() {
+                    format!("{target}({args})")
+                } else {
+                    format!("{target}<{ty_args}>({args})")
+                }
             }
             Expr::ThreadIdx(dim) => {
                 let dim = dim.pprint(cfg);
@@ -281,7 +290,9 @@ impl PrettyPrint for DeviceTop {
             DeviceTop::KernelFunDef {id, params, body} => {
                 cfg.print_pointers = true;
                 let params = pprint_vec(params, ", ", cfg);
+                cfg.indent = cfg.indent + cfg.indent_sz;
                 let body = pprint_vec(body, "\n", cfg);
+                cfg.indent = cfg.indent - cfg.indent_sz;
                 format!("__global__ void {id}({params}) {{\n{body}\n}}")
             }
         }
@@ -291,7 +302,7 @@ impl PrettyPrint for DeviceTop {
 const MACROS : &'static str = "
 #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x \" must be a CUDA tensor\")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x \" must be contiguous\")
-#define CHECK_INPUT(x) CHECK_CONTIGUOUS(x)
+#define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 ";
 
 fn declare_torch_modules(host_entry : &Vec<HostTop>) -> String {
@@ -299,8 +310,9 @@ fn declare_torch_modules(host_entry : &Vec<HostTop>) -> String {
     let post = "}";
     let mid = host_entry.iter()
         .flat_map(|entry| match entry {
-            HostTop::FunDef {id, ..} => {
-                vec![format!("  m.def(\"{0}\", &{0}, \"Parir {0}\")", id)]
+            HostTop::FunDef {id : entry_id, ..} => {
+                let fun_id = &entry_id[0..entry_id.len() - 6];
+                vec![format!("  m.def(\"{0}\", &{1}, \"Parir {0}\")", fun_id, entry_id)]
             },
             _ => vec![]
         })

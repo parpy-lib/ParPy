@@ -133,7 +133,25 @@ fn codegen_kernel<'a>(
     let kernel_id = gen_kernel_id(&ast, &def.id);
     let kernel_args = def.params.clone()
         .into_iter()
-        .map(|TypedParam {id, ty}| Expr::Var {id, ty})
+        .map(|TypedParam {id, ty}| match ty {
+            Type::IntTensor(_) | Type::FloatTensor(_) => {
+                let elem_ty = match ty {
+                    Type::IntTensor(sz) => Type::Int(sz),
+                    Type::FloatTensor(sz) => Type::Float(sz),
+                    _ => panic!("Impossible case")
+                };
+                Expr::Call {
+                    target : Box::new(Expr::BinOp {
+                        lhs : Box::new(Expr::Var {id, ty}),
+                        op : BinOp::Proj,
+                        rhs : Box::new(Expr::Str {v : "data_ptr".to_string()})
+                    }),
+                    ty_args : vec![elem_ty],
+                    args : vec![]
+                }
+            },
+            _ => Expr::Var {id, ty}
+        })
         .collect::<Vec<Expr>>();
     let inner_threads = find_inner_parallelism_stmts(&body, &def.par)?.unwrap_or(1);
     let (tpb, xblocks, yblocks) = match par_kind {
@@ -170,8 +188,7 @@ fn codegen_kernel<'a>(
             let dev_init = Expr::BinOp {
                 lhs : Box::new(init.clone()),
                 op : BinOp::Add,
-                rhs : Box::new(Expr::BlockIdx(Dim::Y)),
-                ty : Type::Int(IntSize::I64)
+                rhs : Box::new(Expr::BlockIdx(Dim::Y))
             };
             let dev_incr = Expr::Int {v : *nblocks, ty : Type::Int(IntSize::I64)};
             (dev_init, dev_incr)
@@ -184,19 +201,16 @@ fn codegen_kernel<'a>(
                     lhs : Box::new(Expr::BinOp {
                         lhs : Box::new(Expr::BlockIdx(Dim::X)),
                         op : BinOp::Mul,
-                        rhs : Box::new(Expr::Int {v : xblocks, ty : Type::Int(IntSize::I64)}),
-                        ty : Type::Int(IntSize::I64)
+                        rhs : Box::new(Expr::Int {v : xblocks, ty : Type::Int(IntSize::I64)})
                     }),
                     op : BinOp::Add,
-                    rhs : Box::new(Expr::ThreadIdx(Dim::X)),
-                    ty : Type::Int(IntSize::I64)
+                    rhs : Box::new(Expr::ThreadIdx(Dim::X))
                 }
             };
             let dev_init = Expr::BinOp {
                 lhs : Box::new(init.clone()),
                 op : BinOp::Add,
-                rhs : Box::new(rhs),
-                ty : Type::Int(IntSize::I64)
+                rhs : Box::new(rhs)
             };
             let incr = tpb * xblocks;
             let dev_incr = Expr::Int {v : incr, ty : Type::Int(IntSize::I64)};
@@ -250,12 +264,10 @@ fn codegen_stmt<'a>(
                                 lhs : Box::new(Expr::BinOp {
                                     lhs : Box::new(Expr::Int {v : nblocks, ty : Type::Int(IntSize::I64)}),
                                     op : BinOp::Mul,
-                                    rhs : Box::new(Expr::BlockIdx(Dim::X)),
-                                    ty : Type::Int(IntSize::I64)
+                                    rhs : Box::new(Expr::BlockIdx(Dim::X))
                                 }),
                                 op : BinOp::Add,
-                                rhs : Box::new(Expr::ThreadIdx(Dim::X)),
-                                ty : Type::Int(IntSize::I64)
+                                rhs : Box::new(Expr::ThreadIdx(Dim::X))
                             }
                         } else {
                             Expr::ThreadIdx(Dim::X)
@@ -263,8 +275,7 @@ fn codegen_stmt<'a>(
                         let init_expr = Expr::BinOp {
                             lhs : Box::new(init.clone()),
                             op : BinOp::Add,
-                            rhs : Box::new(rhs),
-                            ty : Type::Int(IntSize::I64)
+                            rhs : Box::new(rhs)
                         };
                         let (ast, stmts) = codegen_stmts(ast, body.clone(), def, true)?;
                         let stmt = Stmt::For {
@@ -307,7 +318,6 @@ fn codegen_stmts(
 
 fn add_host_entry_functions(
     mut host_entry : Vec<HostTop>,
-    body : &Vec<Stmt>,
     def : &ParFunDef
 ) -> Vec<HostTop> {
     let fun_decl = HostTop::FunDecl {
@@ -315,22 +325,31 @@ fn add_host_entry_functions(
         params : def.params.clone()
     };
     host_entry.push(fun_decl);
-    let check_inputs = def.params.iter()
+    let mut body = def.params.iter()
         .filter_map(|TypedParam {id, ty}| match ty {
-            Type::IntTensor(_) | Type::FloatTensor(_) =>
-                Some(Stmt::Expr {
-                    e : Expr::Call {
-                        fun : "CHECK_INPUT".to_string(),
-                        args : vec![Expr::Str {v : id.clone()}]
-                    }
-                }),
+            Type::IntTensor(_) | Type::FloatTensor(_) => Some(Stmt::Expr {
+                e : Expr::Call {
+                    target : Box::new(Expr::Str {v : "CHECK_INPUT".to_string() }),
+                    ty_args : vec![],
+                    args : vec![Expr::Str {v : id.clone()}]
+                }
+            }),
             _ => None
         })
         .collect::<Vec<Stmt>>();
+    let args = def.params.clone()
+        .into_iter()
+        .map(|TypedParam {id, ty}| Expr::Var {id, ty})
+        .collect::<Vec<Expr>>();
+    body.push(Stmt::Expr {e : Expr::Call {
+        target : Box::new(Expr::Str {v : def.id.clone()}),
+        ty_args : vec![],
+        args
+    }});
     let entry_def = HostTop::FunDef {
         id : format!("{0}_entry", def.id),
         params : def.params.clone(),
-        body : check_inputs
+        body : body
     };
     host_entry.push(entry_def);
     host_entry
@@ -356,7 +375,7 @@ fn instantiate_parallel_function(
     def : ParFunDef,
 ) -> CodegenResult<Ast> {
     let (mut ast, body) = codegen_stmts(ast, body, &def, false)?;
-    ast.host_entry = add_host_entry_functions(ast.host_entry, &body, &def);
+    ast.host_entry = add_host_entry_functions(ast.host_entry, &def);
     ast.host_stage = add_host_stage_function(ast.host_stage, body, def);
     Ok(ast)
 }
@@ -435,18 +454,16 @@ fn compile_ir_expr(
             let ty = compile_ir_type(ty)?;
             Ok(Expr::Float {v, ty})
         },
-        ir_ast::Expr::BinOp {lhs, op, rhs, ty} => {
+        ir_ast::Expr::BinOp {lhs, op, rhs, ..} => {
             let lhs = Box::new(compile_ir_expr(*lhs)?);
             let op = compile_ir_binop(op);
             let rhs = Box::new(compile_ir_expr(*rhs)?);
-            let ty = compile_ir_type(ty)?;
-            Ok(Expr::BinOp {lhs, op, rhs, ty})
+            Ok(Expr::BinOp {lhs, op, rhs})
         },
-        ir_ast::Expr::Subscript {target, idx, ty} => {
+        ir_ast::Expr::Subscript {target, idx, ..} => {
             let target = Box::new(compile_ir_expr(*target)?);
             let idx = Box::new(compile_ir_expr(*idx)?);
-            let ty = compile_ir_type(ty)?;
-            Ok(Expr::Subscript {target, idx, ty})
+            Ok(Expr::Subscript {target, idx})
         }
     }
 }

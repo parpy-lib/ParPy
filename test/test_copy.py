@@ -18,8 +18,6 @@ def copy_wrap(x, parallelize=None):
 def test_copy():
     x = torch.randn(10, dtype=torch.float32)
     y1 = copy_wrap(x)
-    p = {
-        "i" : [ParKind.GpuThreads(1024)]
-    }
+    p = { "i" : [ParKind.GpuThreads(1024)] }
     y2 = copy_wrap(x, parallelize=p)
     assert torch.allclose(y1, y2, atol=1e-5)
