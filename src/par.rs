@@ -3,6 +3,6 @@ use pyo3::prelude::*;
 #[pyclass]
 #[derive(Clone, Debug)]
 pub enum ParKind {
-    GpuGrid(),
-    GpuThreads(isize)
+    GpuBlocks(i64),
+    GpuThreads(i64)
 }

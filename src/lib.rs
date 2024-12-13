@@ -32,13 +32,8 @@ fn compile_ir<'py>(
         ir_ast_cap.reference()
     };
     let ir_ast = ir::from_py::to_typed_ir(untyped_ir_ast, args, par)?;
-    let ast::Ast {
-        host_entry, host_stage, kernels
-    } = codegen::from_ir::ir_to_code(ir_ast)?;
-    let cpp = ast::pprint_vec(&host_entry, &mut ast::PrintConfig::default());
-    let cu_dev = ast::pprint_vec(&kernels, &mut &mut ast::PrintConfig::default());
-    let cu_host = ast::pprint_vec(&host_stage, &mut ast::PrintConfig::default());
-    Ok((cpp, cu_dev + &cu_host))
+    let ast = codegen::from_ir::ir_to_code(ir_ast)?;
+    Ok(ast::pprint_ast(&ast))
 }
 
 #[pymodule]

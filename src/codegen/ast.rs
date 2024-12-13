@@ -16,9 +16,14 @@ pub enum Type {
     FloatTensor(FloatSize)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum BinOp {
     Add, Mul
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Dim {
+    X, Y, Z
 }
 
 #[derive(Clone, Debug)]
@@ -26,18 +31,23 @@ pub enum Expr {
     Var {id : String, ty : Type},
     Int {v : i64, ty : Type},
     Float {v : f64, ty : Type},
+    Str {v : String},
     BinOp {lhs : Box<Expr>, op : BinOp, rhs : Box<Expr>, ty : Type},
-    Subscript {target : Box<Expr>, idx : Box<Expr>, ty : Type}
+    Subscript {target : Box<Expr>, idx : Box<Expr>, ty : Type},
+    Call {fun : String, args : Vec<Expr>},
+    ThreadIdx(Dim),
+    BlockIdx(Dim)
 }
 
 #[derive(Clone, Debug)]
 pub enum Stmt {
+    Expr {e : Expr},
     Defn {ty : Type, id : String, e : Expr},
     Assign {dst : Expr, e : Expr},
     For {var_ty : Type, var : String, init : Expr, cond : Expr, incr : Expr, body : Vec<Stmt>},
     KernelLaunch {
-        tpb : i64,
-        blocks : Expr,
+        threads : (i64, i64, i64),
+        blocks : (i64, i64, i64),
         id : String,
         args : Vec<Expr>
     }
@@ -82,6 +92,7 @@ impl Ast {
 // PRETTY PRINTING //
 /////////////////////
 
+#[derive(Clone)]
 pub struct PrintConfig {
     indent : isize,
     indent_sz : isize,
@@ -106,8 +117,12 @@ pub trait PrettyPrint {
     fn pprint(&self, cfg : &mut PrintConfig) -> String;
 }
 
-pub fn pprint_vec<T : PrettyPrint>(v : &Vec<T>, cfg : &mut PrintConfig) -> String {
-    v.iter().map(|x| x.pprint(cfg)).collect::<Vec<String>>().join(", ")
+pub fn pprint_vec<T : PrettyPrint>(
+    v : &Vec<T>,
+    separator : &str,
+    cfg : &mut PrintConfig
+) -> String {
+    v.iter().map(|x| x.pprint(cfg)).collect::<Vec<String>>().join(separator)
 }
 
 impl PrettyPrint for Type {
@@ -151,12 +166,23 @@ impl PrettyPrint for BinOp {
     }
 }
 
+impl PrettyPrint for Dim {
+    fn pprint(&self, _ : &mut PrintConfig) -> String {
+        match self {
+            Dim::X => "x".to_string(),
+            Dim::Y => "y".to_string(),
+            Dim::Z => "z".to_string(),
+        }
+    }
+}
+
 impl PrettyPrint for Expr {
     fn pprint(&self, cfg : &mut PrintConfig) -> String {
         match self {
             Expr::Var {id, ..} => format!("{id}"),
             Expr::Int {v, ..} => format!("{v}"),
             Expr::Float {v, ..} => format!("{v}"),
+            Expr::Str {v} => format!("{v}"),
             Expr::BinOp {lhs, op, rhs, ..} => {
                 let lhs = lhs.pprint(cfg);
                 let op = op.pprint(cfg);
@@ -167,6 +193,18 @@ impl PrettyPrint for Expr {
                 let target = target.pprint(cfg);
                 let idx = idx.pprint(cfg);
                 format!("{target}[{idx}]")
+            },
+            Expr::Call {fun, args} => {
+                let args = pprint_vec(args, ", ", cfg);
+                format!("{fun}({args})")
+            }
+            Expr::ThreadIdx(dim) => {
+                let dim = dim.pprint(cfg);
+                format!("threadIdx.{dim}")
+            },
+            Expr::BlockIdx(dim) => {
+                let dim = dim.pprint(cfg);
+                format!("blockIdx.{dim}")
             }
         }
     }
@@ -174,16 +212,20 @@ impl PrettyPrint for Expr {
 
 impl PrettyPrint for Stmt {
     fn pprint(&self, cfg : &mut PrintConfig) -> String {
+        let ii = pprint_indent(cfg.indent);
         match self {
+            Stmt::Expr {e} => {
+                format!("{ii}{0};", e.pprint(cfg))
+            },
             Stmt::Defn {ty, id, e} => {
                 let ty = ty.pprint(cfg);
                 let e = e.pprint(cfg);
-                format!("{ty} {id} = {e};")
+                format!("{ii}{ty} {id} = {e};")
             },
             Stmt::Assign {dst, e} => {
                 let dst = dst.pprint(cfg);
                 let e = e.pprint(cfg);
-                format!("{dst} = {e};")
+                format!("{ii}{dst} = {e};")
             },
             Stmt::For {var_ty, var, init, cond, incr, body} => {
                 let var_ty = var_ty.pprint(cfg);
@@ -191,15 +233,15 @@ impl PrettyPrint for Stmt {
                 let cond = cond.pprint(cfg);
                 let incr = incr.pprint(cfg);
                 cfg.indent = cfg.indent + cfg.indent_sz;
-                let body = body.iter().map(|stmt| stmt.pprint(cfg)).collect::<Vec<String>>().join(", ");
+                let body = pprint_vec(body, "\n", cfg);
                 cfg.indent = cfg.indent - cfg.indent_sz;
-                let ii = pprint_indent(cfg.indent);
                 format!("{ii}for ({var_ty} {var} = {init}; {var} < {cond}; {var} += {incr}) {{\n{body}\n{ii}}}")
             },
-            Stmt::KernelLaunch {tpb, blocks, id, args} => {
-                let blocks = blocks.pprint(cfg);
-                let args = args.iter().map(|arg| arg.pprint(cfg)).collect::<Vec<String>>().join(", ");
-                format!("{id}<<<{blocks}, {tpb}>>>({args});")
+            Stmt::KernelLaunch {threads, blocks, id, args} => {
+                let args = pprint_vec(args, ", ", cfg);
+                let threads = format!("({0}, {1}, {2})", threads.0, threads.1, threads.2);
+                let blocks = format!("({0}, {1}, {2})", blocks.0, blocks.1, blocks.2);
+                format!("{ii}{id}<<<{blocks}, {threads}>>>({args});")
             },
         }
     }
@@ -218,14 +260,14 @@ impl PrettyPrint for HostTop {
         match self {
             HostTop::FunDecl {id, params} => {
                 cfg.print_pointers = false;
-                let params = pprint_vec(params, cfg);
+                let params = pprint_vec(params, ", ", cfg);
                 format!("void {id}({params});")
             },
             HostTop::FunDef {id, params, body} => {
                 cfg.print_pointers = false;
-                let params = pprint_vec(params, cfg);
+                let params = pprint_vec(params, ", ", cfg);
                 cfg.indent = cfg.indent + cfg.indent_sz;
-                let body = pprint_vec(body, cfg);
+                let body = pprint_vec(body, "\n", cfg);
                 cfg.indent = cfg.indent - cfg.indent_sz;
                 format!("void {id}({params}) {{\n{body}\n}}")
             }
@@ -238,10 +280,41 @@ impl PrettyPrint for DeviceTop {
         match self {
             DeviceTop::KernelFunDef {id, params, body} => {
                 cfg.print_pointers = true;
-                let params = pprint_vec(params, cfg);
-                let body = pprint_vec(body, cfg);
+                let params = pprint_vec(params, ", ", cfg);
+                let body = pprint_vec(body, "\n", cfg);
                 format!("__global__ void {id}({params}) {{\n{body}\n}}")
             }
         }
     }
+}
+
+const MACROS : &'static str = "
+#define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x \" must be a CUDA tensor\")
+#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x \" must be contiguous\")
+#define CHECK_INPUT(x) CHECK_CONTIGUOUS(x)
+";
+
+fn declare_torch_modules(host_entry : &Vec<HostTop>) -> String {
+    let pre = "PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {";
+    let post = "}";
+    let mid = host_entry.iter()
+        .flat_map(|entry| match entry {
+            HostTop::FunDef {id, ..} => {
+                vec![format!("  m.def(\"{0}\", &{0}, \"Parir {0}\")", id)]
+            },
+            _ => vec![]
+        })
+        .collect::<Vec<String>>()
+        .join("\n");
+    format!("{pre}\n{mid}\n{post}")
+}
+
+pub fn pprint_ast(ast : &Ast) -> (String, String) {
+    let cfg = PrintConfig::default();
+    let cpp = pprint_vec(&ast.host_entry, "\n", &mut cfg.clone());
+    let cu_dev = pprint_vec(&ast.kernels, "\n", &mut cfg.clone());
+    let cu_host = pprint_vec(&ast.host_stage, "\n", &mut cfg.clone());
+    let module_decls = declare_torch_modules(&ast.host_entry);
+    ( format!("{MACROS}\n{cpp}\n{module_decls}")
+    , format!("{cu_dev}\n{cu_host}") )
 }

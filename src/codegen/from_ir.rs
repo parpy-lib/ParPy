@@ -9,6 +9,8 @@ use std::fmt;
 use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 
+use rand::distributions::{Alphanumeric, DistString};
+
 #[derive(Clone, Debug)]
 pub struct CodegenError {
     msg : String
@@ -42,25 +44,326 @@ impl From<CodegenError> for PyErr {
     }
 }
 
+//////////////////////////////
+// PARALLEL CODE GENERATION //
+//////////////////////////////
+
+const DEFAULT_TPB : i64 = 256;
+
 struct ParFunDef {
     id : String,
     params : Vec<TypedParam>,
-    body : Vec<Stmt>,
     par : HashMap<String, Vec<ParKind>>
+}
+
+fn gen_kernel_id(
+    ast : &Ast,
+    fun_id : &str
+) -> String {
+    let kernel_ids = ast.kernels.iter()
+        .map(|DeviceTop::KernelFunDef {id, ..}| id)
+        .collect::<HashSet<&String>>();
+    let rand_str = Alphanumeric.sample_string(&mut rand::thread_rng(), 8);
+    let mut id = format!("{fun_id}{rand_str}");
+    while kernel_ids.contains(&id) {
+        let rand_str = Alphanumeric.sample_string(&mut rand::thread_rng(), 8);
+        id = format!("{fun_id}{rand_str}");
+    };
+    id
+}
+
+fn find_inner_parallelism_stmt(
+    stmt : &Stmt,
+    par : &HashMap<String, Vec<ParKind>>
+) -> CodegenResult<Option<i64>> {
+    match stmt {
+        Stmt::For {var, body, ..} => {
+            let inner_threads = find_inner_parallelism_stmts(body, par)?;
+            let empty = vec![];
+            let local_par = match par.get(var).unwrap_or(&empty)[..] {
+                [ParKind::GpuThreads(nthreads)] => Ok(Some(nthreads)),
+                [ParKind::GpuBlocks(_)] => codegen_error!("Nested GpuBlocks are not supported"),
+                [] => Ok(None),
+                _ => codegen_error!("Unsupported parallelization arguments: {par:?}")
+            }?;
+            match (inner_threads, local_par) {
+                (Some(a), Some(b)) if a == b => Ok(Some(a)),
+                (Some(_), Some(_)) => codegen_error!("Variable amount of parallelism within parallel loops is not supported"),
+                (Some(a), None) => Ok(Some(a)),
+                (None, Some(b)) => Ok(Some(b)),
+                _ => Ok(None)
+            }
+        },
+        _ => Ok(None)
+    }
+}
+
+fn find_inner_parallelism_stmts(
+    stmts : &Vec<Stmt>,
+    par : &HashMap<String, Vec<ParKind>>
+) -> CodegenResult<Option<i64>> {
+    stmts.iter()
+        .fold(Ok(None), |acc, stmt| {
+            if let Some(nthreads) = find_inner_parallelism_stmt(stmt, par)? {
+                match acc? {
+                    Some(n) => {
+                        if n == nthreads {
+                            Ok(Some(n))
+                        } else {
+                            codegen_error!("Variable amount of parallelism within parallel loops is not supported")
+                        }
+                    },
+                    None => Ok(Some(nthreads))
+                }
+            } else {
+                acc
+            }
+        })
+}
+
+fn codegen_kernel<'a>(
+    ast : Ast,
+    var : &'a String,
+    init : &'a Expr,
+    cond : &'a Expr,
+    body : Vec<Stmt>,
+    def : &'a ParFunDef,
+    par_kind : &'a ParKind
+) -> CodegenResult<(Ast, Stmt)> {
+    let kernel_id = gen_kernel_id(&ast, &def.id);
+    let kernel_args = def.params.clone()
+        .into_iter()
+        .map(|TypedParam {id, ty}| Expr::Var {id, ty})
+        .collect::<Vec<Expr>>();
+    let inner_threads = find_inner_parallelism_stmts(&body, &def.par)?.unwrap_or(1);
+    let (tpb, xblocks, yblocks) = match par_kind {
+        ParKind::GpuBlocks(nblocks) =>
+            if inner_threads <= 1024 {
+                Ok((inner_threads, 1, *nblocks))
+            } else {
+                let tpb = DEFAULT_TPB;
+                let xblocks = (inner_threads + tpb - 1) / tpb;
+                Ok((tpb, xblocks, *nblocks))
+            },
+        ParKind::GpuThreads(nthreads) =>
+            if inner_threads != 1 {
+                codegen_error!("Nested parallelism inside GpuThreads is not supported")
+            } else {
+                if *nthreads <= 1024 {
+                    Ok((*nthreads, 1, 1))
+                } else {
+                    let tpb = DEFAULT_TPB;
+                    let xblocks = (*nthreads + tpb - 1) / tpb;
+                    Ok((tpb, xblocks, 1))
+                }
+            }
+    }?;
+    let kernel_launch = Stmt::KernelLaunch {
+        threads : (tpb, 1, 1),
+        blocks : (xblocks, yblocks, 1),
+        id : kernel_id.clone(),
+        args : kernel_args
+    };
+    let (mut ast, stmts) = codegen_stmts(ast, body, def, true)?;
+    let (dev_init, dev_incr) = match par_kind {
+        ParKind::GpuBlocks(nblocks) => {
+            let dev_init = Expr::BinOp {
+                lhs : Box::new(init.clone()),
+                op : BinOp::Add,
+                rhs : Box::new(Expr::BlockIdx(Dim::Y)),
+                ty : Type::Int(IntSize::I64)
+            };
+            let dev_incr = Expr::Int {v : *nblocks, ty : Type::Int(IntSize::I64)};
+            (dev_init, dev_incr)
+        },
+        ParKind::GpuThreads(_) => {
+            let rhs = if xblocks == 1 {
+                Expr::ThreadIdx(Dim::X)
+            } else {
+                Expr::BinOp {
+                    lhs : Box::new(Expr::BinOp {
+                        lhs : Box::new(Expr::BlockIdx(Dim::X)),
+                        op : BinOp::Mul,
+                        rhs : Box::new(Expr::Int {v : xblocks, ty : Type::Int(IntSize::I64)}),
+                        ty : Type::Int(IntSize::I64)
+                    }),
+                    op : BinOp::Add,
+                    rhs : Box::new(Expr::ThreadIdx(Dim::X)),
+                    ty : Type::Int(IntSize::I64)
+                }
+            };
+            let dev_init = Expr::BinOp {
+                lhs : Box::new(init.clone()),
+                op : BinOp::Add,
+                rhs : Box::new(rhs),
+                ty : Type::Int(IntSize::I64)
+            };
+            let incr = tpb * xblocks;
+            let dev_incr = Expr::Int {v : incr, ty : Type::Int(IntSize::I64)};
+            (dev_init, dev_incr)
+        }
+    };
+    let kernel_body = Stmt::For {
+        var_ty : Type::Int(IntSize::I64),
+        var : var.clone(),
+        init : dev_init,
+        cond : cond.clone(),
+        incr : dev_incr,
+        body : stmts
+    };
+    let kernel_def = DeviceTop::KernelFunDef {
+        id : kernel_id,
+        params : def.params.clone(),
+        body : vec![kernel_body]
+    };
+    ast.kernels.push(kernel_def);
+    Ok((ast, kernel_launch))
+}
+
+fn codegen_stmt<'a>(
+    ast : Ast,
+    stmt : Stmt,
+    def : &'a ParFunDef,
+    device : bool
+) -> CodegenResult<(Ast, Stmt)> {
+    match &stmt {
+        Stmt::For {var_ty, var, init, cond, body, ..} => {
+            let empty_vec = vec![];
+            let par = def.par.get(var).unwrap_or(&empty_vec);
+            match &par[..] {
+                [] => Ok((ast, stmt)),
+                [pk @ ParKind::GpuBlocks(_)] => {
+                    if device {
+                        codegen_error!("Nested GpuBlock parallelism is not supported")
+                    } else {
+                        codegen_kernel(ast, var, init, cond, body.clone(), def, pk)
+                    }
+                },
+                [pk @ ParKind::GpuThreads(nthreads)] => {
+                    if device {
+                        // If we are already generating device code, we produce a for-loop running
+                        // in parallel over the threads.
+                        let rhs = if *nthreads >= 1024 {
+                            let tpb = DEFAULT_TPB;
+                            let nblocks = (*nthreads + tpb - 1) / tpb;
+                            Expr::BinOp {
+                                lhs : Box::new(Expr::BinOp {
+                                    lhs : Box::new(Expr::Int {v : nblocks, ty : Type::Int(IntSize::I64)}),
+                                    op : BinOp::Mul,
+                                    rhs : Box::new(Expr::BlockIdx(Dim::X)),
+                                    ty : Type::Int(IntSize::I64)
+                                }),
+                                op : BinOp::Add,
+                                rhs : Box::new(Expr::ThreadIdx(Dim::X)),
+                                ty : Type::Int(IntSize::I64)
+                            }
+                        } else {
+                            Expr::ThreadIdx(Dim::X)
+                        };
+                        let init_expr = Expr::BinOp {
+                            lhs : Box::new(init.clone()),
+                            op : BinOp::Add,
+                            rhs : Box::new(rhs),
+                            ty : Type::Int(IntSize::I64)
+                        };
+                        let (ast, stmts) = codegen_stmts(ast, body.clone(), def, true)?;
+                        let stmt = Stmt::For {
+                            var_ty : var_ty.clone(),
+                            var : var.clone(),
+                            init : init_expr,
+                            cond : cond.clone(),
+                            incr : Expr::Int {v : *nthreads, ty : Type::Int(IntSize::I64)},
+                            body : stmts
+                        };
+                        Ok((ast, stmt))
+                    } else {
+                        codegen_kernel(ast, var, init, cond, body.clone(), def, pk)
+                    }
+                },
+                _ => codegen_error!("Unsupported parallelism argument: {par:?}")
+            }
+        },
+        Stmt::KernelLaunch {..} => {
+            codegen_error!("Found kernel launch in host code generation")
+        },
+        _ => Ok((ast, stmt))
+    }
+}
+
+fn codegen_stmts(
+    ast : Ast,
+    stmts : Vec<Stmt>,
+    def : &ParFunDef,
+    device : bool
+) -> CodegenResult<(Ast, Vec<Stmt>)> {
+    stmts.into_iter()
+        .fold(Ok((ast, vec![])), |acc, stmt| {
+            let (ast, mut stmts) = acc?;
+            let (ast, stmt) = codegen_stmt(ast, stmt, &def, device)?;
+            stmts.push(stmt);
+            Ok((ast, stmts))
+        })
+}
+
+fn add_host_entry_functions(
+    mut host_entry : Vec<HostTop>,
+    body : &Vec<Stmt>,
+    def : &ParFunDef
+) -> Vec<HostTop> {
+    let fun_decl = HostTop::FunDecl {
+        id : def.id.clone(),
+        params : def.params.clone()
+    };
+    host_entry.push(fun_decl);
+    let check_inputs = def.params.iter()
+        .filter_map(|TypedParam {id, ty}| match ty {
+            Type::IntTensor(_) | Type::FloatTensor(_) =>
+                Some(Stmt::Expr {
+                    e : Expr::Call {
+                        fun : "CHECK_INPUT".to_string(),
+                        args : vec![Expr::Str {v : id.clone()}]
+                    }
+                }),
+            _ => None
+        })
+        .collect::<Vec<Stmt>>();
+    let entry_def = HostTop::FunDef {
+        id : format!("{0}_entry", def.id),
+        params : def.params.clone(),
+        body : check_inputs
+    };
+    host_entry.push(entry_def);
+    host_entry
+}
+
+fn add_host_stage_function(
+    mut host_stage : Vec<HostTop>,
+    body : Vec<Stmt>,
+    def : ParFunDef
+) -> Vec<HostTop> {
+    let fun_def = HostTop::FunDef {
+        id : def.id,
+        params : def.params,
+        body : body
+    };
+    host_stage.push(fun_def);
+    host_stage
 }
 
 fn instantiate_parallel_function(
     ast : Ast,
+    body : Vec<Stmt>,
     def : ParFunDef,
 ) -> CodegenResult<Ast> {
-    // TODO: generate code for the parallel instantiation by picking out the parallel and the
-    // sequential parts and adding appropriate definitions and declarations to the accumulated AST
-    //
-    // Think about how to do this in a rather extensible way, before diving into the details...
+    let (mut ast, body) = codegen_stmts(ast, body, &def, false)?;
+    ast.host_entry = add_host_entry_functions(ast.host_entry, &body, &def);
+    ast.host_stage = add_host_stage_function(ast.host_stage, body, def);
     Ok(ast)
 }
 
-type CodegenEnv = HashMap<String, (Vec<TypedParam>, Vec<Stmt>)>;
+//////////////////////////////////////
+// IR -> LOW-LEVEL CODE TRANSLATION //
+//////////////////////////////////////
 
 fn compile_ir_int_size(sz : ir_ast::IntSize) -> IntSize {
     match sz {
@@ -182,7 +485,7 @@ fn compile_ir_stmt(
 }
 
 fn compile_ir_stmts(
-    mut def_vars : HashSet<String>,
+    def_vars : HashSet<String>,
     stmts : Vec<ir_ast::Stmt>
 ) -> CodegenResult<(HashSet<String>, Vec<Stmt>)> {
     stmts.into_iter()
@@ -209,6 +512,8 @@ fn compile_ir_params(
         })
 }
 
+type CodegenEnv = HashMap<String, (Vec<TypedParam>, Vec<Stmt>)>;
+
 fn compile_ir_def(
     mut env : CodegenEnv,
     ast : Ast,
@@ -225,9 +530,9 @@ fn compile_ir_def(
         ir_ast::Def::ParFunInst {id, par} => {
             if let Some((params, body)) = env.get(&id) {
                 let def = ParFunDef {
-                    id, params : params.clone(), body : body.clone(), par
+                    id, params : params.clone(), par
                 };
-                let ast = instantiate_parallel_function(ast, def)?;
+                let ast = instantiate_parallel_function(ast, body.clone(), def)?;
                 Ok((env, ast))
             } else {
                 codegen_error!("Parallel instantiation {id} refers to unknown function")

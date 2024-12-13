@@ -2,6 +2,7 @@ import ast as python_ast
 import enum
 import inspect
 import torch
+import torch.utils.cpp_extension
 
 from . import key, ir, parir
 
@@ -25,11 +26,16 @@ def compile_function(ir_ast, args, kwargs, fn):
     # Compiles the IR AST using type information of the provided arguments and
     # the parallelization settings to determine how to generate parallel
     # low-level code.
-    code = parir.compile_ir(ir_ast, args, par)
-    print(code)
+    cpp, cu = parir.compile_ir(ir_ast, args, par)
 
-    # TODO: Produce binary code and return a function using this...
-    return fn
+    # Use Torch to produce binary code from the output code
+    module = torch.utils.cpp_extension.load_inline(
+        name = fn.__name__,
+        cpp_sources = [cpp],
+        cuda_sources = [cu],
+    )
+
+    return getattr(module, fn.__name__)
 
 def jit(fn):
     # When we first reach a function, we compile it to the IR AST with little
