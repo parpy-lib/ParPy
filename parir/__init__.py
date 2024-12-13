@@ -1,23 +1,20 @@
 import ast as python_ast
-import enum
 import inspect
-import torch
 import torch.utils.cpp_extension
 
-from . import key, ir, parir
+from . import key, parir
 
 compiled_cache = {}
 
 def compile_function(ir_ast, args, kwargs, fn):
     # Look for the parallelize keyword argument, which is used to control how
-    # the for-loops of the function should be parallelized.
-    if "parallelize" in kwargs:
-        par = kwargs["parallelize"]
-        if par is None:
-            par = {}
-        del kwargs["parallelize"]
-    else:
-        par = {}
+    # the for-loops of the function should be parallelized. If it is not
+    # specified, we return the original function without performing any extra
+    # work.
+    if "parallelize" not in kwargs or kwargs["parallelize"] is None:
+        return fn
+    par = kwargs["parallelize"]
+    del kwargs["parallelize"]
     if not isinstance(par, dict):
         raise RuntimeError("The parallelization argument must be a dictionary")
     if len(kwargs) > 0:

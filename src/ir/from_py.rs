@@ -28,6 +28,8 @@ struct ConvertEnv<'py> {
 fn convert_bin_op<'py>(binop : Bound<'py, PyAny>, env : &'py ConvertEnv<'py>) -> PyResult<BinOp> {
     if binop.is_instance(&env.ast.getattr("Add")?)? {
         Ok(BinOp::Add)
+    } else if binop.is_instance(&env.ast.getattr("Sub")?)? {
+        Ok(BinOp::Sub)
     } else if binop.is_instance(&env.ast.getattr("Mult")?)? {
         Ok(BinOp::Mul)
     } else {

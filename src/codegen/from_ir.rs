@@ -434,6 +434,7 @@ fn compile_ir_binop(
 ) -> BinOp {
     match bop {
         ir_ast::BinOp::Add => BinOp::Add,
+        ir_ast::BinOp::Sub => BinOp::Sub,
         ir_ast::BinOp::Mul => BinOp::Mul
     }
 }

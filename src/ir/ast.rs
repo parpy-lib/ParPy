@@ -23,7 +23,7 @@ pub enum Type {
 
 #[derive(Clone, Debug)]
 pub enum BinOp {
-    Add, Mul
+    Add, Sub, Mul
 }
 
 #[derive(Clone, Debug)]

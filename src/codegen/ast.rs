@@ -18,7 +18,7 @@ pub enum Type {
 
 #[derive(Clone, Copy, Debug)]
 pub enum BinOp {
-    Add, Mul, Proj
+    Add, Sub, Mul, Proj
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -161,6 +161,7 @@ impl PrettyPrint for BinOp {
     fn pprint(&self, _ : &mut PrintConfig) -> String {
         match self {
             BinOp::Add => " + ".to_string(),
+            BinOp::Sub => " - ".to_string(),
             BinOp::Mul => " * ".to_string(),
             BinOp::Proj => ".".to_string()
         }
@@ -181,9 +182,7 @@ impl PrettyPrint for Expr {
     fn pprint(&self, cfg : &mut PrintConfig) -> String {
         match self {
             Expr::Var {id, ..} => format!("{id}"),
-            Expr::Int {v, ty : Type::Int(IntSize::I64)} => format!("{v}LL"),
             Expr::Int {v, ..} => format!("{v}"),
-            Expr::Float {v, ty : Type::Float(FloatSize::F32)} => format!("{v}f"),
             Expr::Float {v, ..} => format!("{v}"),
             Expr::Str {v} => format!("{v}"),
             Expr::BinOp {lhs, op, rhs} => {
@@ -248,8 +247,8 @@ impl PrettyPrint for Stmt {
             },
             Stmt::KernelLaunch {threads, blocks, id, args} => {
                 let args = pprint_vec(args, ", ", cfg);
-                let threads = format!("({0}, {1}, {2})", threads.0, threads.1, threads.2);
-                let blocks = format!("({0}, {1}, {2})", blocks.0, blocks.1, blocks.2);
+                let threads = format!("({2}, {1}, {0})", threads.0, threads.1, threads.2);
+                let blocks = format!("({2}, {1}, {0})", blocks.0, blocks.1, blocks.2);
                 format!("{ii}{id}<<<{blocks}, {threads}>>>({args});")
             },
         }
@@ -312,7 +311,7 @@ fn declare_torch_modules(host_entry : &Vec<HostTop>) -> String {
         .flat_map(|entry| match entry {
             HostTop::FunDef {id : entry_id, ..} => {
                 let fun_id = &entry_id[0..entry_id.len() - 6];
-                vec![format!("  m.def(\"{0}\", &{1}, \"Parir {0}\")", fun_id, entry_id)]
+                vec![format!("  m.def(\"{0}\", &{1}, \"\");", fun_id, entry_id)]
             },
             _ => vec![]
         })
