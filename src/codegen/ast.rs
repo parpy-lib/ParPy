@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 #[derive(Clone, Copy, Debug)]
 pub enum IntSize {
     I8, I16, I32, I64
@@ -16,7 +18,7 @@ pub enum Type {
     FloatTensor(FloatSize)
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
 pub enum BinOp {
     Add, Sub, Mul, Proj
 }
@@ -168,6 +170,22 @@ impl PrettyPrint for BinOp {
     }
 }
 
+fn precedence(bop : &BinOp) -> i64 {
+    match bop {
+        BinOp::Add => 0,
+        BinOp::Sub => 0,
+        BinOp::Mul => 1,
+        BinOp::Proj => 2
+    }
+}
+
+// Defines a relative ordering for binary operators with respect to precedence.
+impl Ord for BinOp {
+    fn cmp(&self, other: &Self) -> Ordering {
+        precedence(&self).cmp(&precedence(other))
+    }
+}
+
 impl PrettyPrint for Dim {
     fn pprint(&self, _ : &mut PrintConfig) -> String {
         match self {
@@ -178,6 +196,26 @@ impl PrettyPrint for Dim {
     }
 }
 
+fn try_get_binop<'a>(e : &'a Expr) -> Option<&'a BinOp> {
+    match e {
+        Expr::BinOp {op, ..} => Some(op),
+        _ => None
+    }
+}
+
+fn parenthesize_if_lower_precedence(lhs : Option<&BinOp>, rhs : &BinOp, e : String) -> String {
+    match lhs {
+        Some (lhs) =>
+            if let Ordering::Less = lhs.cmp(rhs) {
+                format!("({e})")
+            } else {
+                e
+            },
+        None => e
+    }
+
+}
+
 impl PrettyPrint for Expr {
     fn pprint(&self, cfg : &mut PrintConfig) -> String {
         match self {
@@ -186,10 +224,18 @@ impl PrettyPrint for Expr {
             Expr::Float {v, ..} => format!("{v}"),
             Expr::Str {v} => format!("{v}"),
             Expr::BinOp {lhs, op, rhs} => {
-                let lhs = lhs.pprint(cfg);
-                let op = op.pprint(cfg);
-                let rhs = rhs.pprint(cfg);
-                format!("{lhs}{op}{rhs}")
+                let lhs_str = lhs.pprint(cfg);
+                let op_str = op.pprint(cfg);
+                let rhs_str = rhs.pprint(cfg);
+
+                // We consider precedence of binary operators when pretty-printing the code. In
+                // particular, we only need to include parentheses in subexpressions when their
+                // operator has lower precedence than the operator in the current expression.
+                let lhs_op = try_get_binop(lhs);
+                let rhs_op = try_get_binop(rhs);
+                let lhs_str = parenthesize_if_lower_precedence(lhs_op, &op, lhs_str);
+                let rhs_str = parenthesize_if_lower_precedence(rhs_op, &op, rhs_str);
+                format!("{lhs_str}{op_str}{rhs_str}")
             }
             Expr::Subscript {target, idx, ..} => {
                 let target = target.pprint(cfg);
@@ -328,4 +374,51 @@ pub fn pprint_ast(ast : &Ast) -> (String, String) {
     let module_decls = declare_torch_modules(&ast.host_entry);
     ( format!("{MACROS}\n{cpp}\n{module_decls}")
     , format!("{cu_dev}\n{cu_host}") )
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn int(v : i64) -> Expr {
+        Expr::Int {v, ty : Type::Int(IntSize::I64)}
+    }
+
+    fn bop(lhs : Expr, op : BinOp, rhs : Expr) -> Expr {
+        Expr::BinOp {lhs : Box::new(lhs), op, rhs : Box::new(rhs)}
+    }
+
+    fn add(lhs : Expr, rhs : Expr) -> Expr {
+        bop(lhs, BinOp::Add, rhs)
+    }
+
+    fn sub(lhs : Expr, rhs : Expr) -> Expr {
+        bop(lhs, BinOp::Sub, rhs)
+    }
+
+    fn mul(lhs : Expr, rhs : Expr) -> Expr {
+        bop(lhs, BinOp::Mul, rhs)
+    }
+
+    fn print(e : Expr) -> String {
+        e.pprint(&mut PrintConfig::default())
+    }
+
+    #[test]
+    fn test_precedence_print_paren() {
+        let e = mul(add(int(1), int(2)), add(int(3), int(4)));
+        assert_eq!(print(e), "(1 + 2) * (3 + 4)");
+    }
+
+    #[test]
+    fn test_precedence_print_no_paren() {
+        let e = add(int(1), mul(int(2), int(3)));
+        assert_eq!(print(e), "1 + 2 * 3");
+    }
+
+    #[test]
+    fn test_precedence_same_level() {
+        let e = add(int(1), sub(int(2), int(3)));
+        assert_eq!(print(e), "1 + 2 - 3");
+    }
 }
