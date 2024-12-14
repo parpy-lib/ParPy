@@ -2,17 +2,17 @@ use crate::par;
 
 use std::collections::HashMap;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum IntSize {
     I8, I16, I32, I64, Any
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FloatSize {
     F16, F32, F64, Any
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Int(IntSize),
     Float(FloatSize),
@@ -21,7 +21,7 @@ pub enum Type {
     Unknown
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum BinOp {
     Add, Sub, Mul
 }

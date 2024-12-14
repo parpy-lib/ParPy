@@ -96,8 +96,8 @@ impl Ast {
 
 #[derive(Clone)]
 pub struct PrintConfig {
-    indent : isize,
-    indent_sz : isize,
+    indent : usize,
+    indent_sz : usize,
     print_pointers : bool,
 }
 
@@ -111,8 +111,8 @@ impl Default for PrintConfig {
     }
 }
 
-fn pprint_indent(spaces : isize) -> String {
-    " ".repeat(spaces as usize)
+fn pprint_indent(spaces : usize) -> String {
+    " ".repeat(spaces)
 }
 
 pub trait PrettyPrint {
@@ -186,16 +186,6 @@ impl Ord for BinOp {
     }
 }
 
-impl PrettyPrint for Dim {
-    fn pprint(&self, _ : &mut PrintConfig) -> String {
-        match self {
-            Dim::X => "x".to_string(),
-            Dim::Y => "y".to_string(),
-            Dim::Z => "z".to_string(),
-        }
-    }
-}
-
 fn try_get_binop<'a>(e : &'a Expr) -> Option<&'a BinOp> {
     match e {
         Expr::BinOp {op, ..} => Some(op),
@@ -213,7 +203,16 @@ fn parenthesize_if_lower_precedence(lhs : Option<&BinOp>, rhs : &BinOp, e : Stri
             },
         None => e
     }
+}
 
+impl PrettyPrint for Dim {
+    fn pprint(&self, _ : &mut PrintConfig) -> String {
+        match self {
+            Dim::X => "x".to_string(),
+            Dim::Y => "y".to_string(),
+            Dim::Z => "z".to_string(),
+        }
+    }
 }
 
 impl PrettyPrint for Expr {
@@ -412,9 +411,9 @@ mod test {
     }
 
     #[test]
-    fn test_precedence_print_no_paren() {
-        let e = add(int(1), mul(int(2), int(3)));
-        assert_eq!(print(e), "1 + 2 * 3");
+    fn test_precedence_omit_paren() {
+        let e = add(int(1), add(mul(int(2), int(3)), int(4)));
+        assert_eq!(print(e), "1 + 2 * 3 + 4");
     }
 
     #[test]

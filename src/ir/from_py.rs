@@ -187,6 +187,12 @@ struct TypeEnv {
     vars : HashMap<String, Type>
 }
 
+impl Default for TypeEnv {
+    fn default() -> TypeEnv {
+        TypeEnv { vars : HashMap::new() }
+    }
+}
+
 fn ir_elem_type<'py>(
     dtype : Bound<'py, PyAny>,
     id : &str
@@ -302,9 +308,14 @@ fn typed_expr(
             let ty = lookup_type(env, &id)?;
             Ok(Expr::Var {id, ty})
         },
-        Expr::Int {..} => Ok(e),
-        Expr::Float {v, ..} => {
-            let ty = Type::Float(FloatSize::Any);
+        Expr::Int {v, ty} => {
+            let sz = if let Type::Int(sz) = ty { sz } else { IntSize::Any };
+            let ty = Type::Int(sz);
+            Ok(Expr::Int {v, ty})
+        },
+        Expr::Float {v, ty} => {
+            let sz = if let Type::Float(sz) = ty { sz } else { FloatSize::Any };
+            let ty = Type::Float(sz);
             Ok(Expr::Float {v, ty})
         },
         Expr::BinOp {lhs, op, rhs, ..} => {
@@ -322,7 +333,7 @@ fn typed_expr(
                 Type::IntTensor(sz) => Ok(Type::Int(*sz)),
                 Type::FloatTensor(sz) => Ok(Type::Float(*sz)),
                 _ => type_error(format!("Invalid type of subscript operation"))
-            }?.clone();
+            }?;
             Ok(Expr::Subscript {
                 target : Box::new(target),
                 idx : Box::new(idx),
@@ -399,13 +410,62 @@ pub fn to_typed_ir<'py>(
     let tyvars = typed_params.iter()
         .map(|TypedParam {id, ty}| (id.clone(), ty.clone()))
         .collect::<HashMap<String, Type>>();
-    let env = TypeEnv {
-        vars : tyvars
-    };
+    let env = TypeEnv { vars : tyvars };
     let (_, body) = typed_stmts(env, body.clone())?;
 
     Ok(vec![
         Def::FunDef {id : id.clone(), params : typed_params, body},
         Def::ParFunInst {id : id.clone(), par}
     ])
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn type_propagate_binop_type() {
+        let e = Expr::BinOp {
+            lhs : Box::new(Expr::Int {v : 1, ty : Type::Int(IntSize::Any)}),
+            op : BinOp::Add,
+            rhs : Box::new(Expr::Int {v : 2, ty : Type::Int(IntSize::I32)}),
+            ty : Type::Unknown
+        };
+        let env = TypeEnv::default();
+        let expected_ty = Type::Int(IntSize::I32);
+        match typed_expr(&env, e) {
+            Ok(Expr::BinOp {lhs, rhs, ty, ..}) => {
+                assert_eq!(lhs.get_type(), &expected_ty);
+                assert_eq!(rhs.get_type(), &expected_ty);
+                assert_eq!(ty, expected_ty);
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn var_type_lookup() {
+        let mut env = TypeEnv::default();
+        let id = "x".to_string();
+        let ty = Type::Float(FloatSize::F32);
+        env.vars.insert(id.clone(), ty.clone());
+        assert_eq!(lookup_type(&env, &id).unwrap(), ty);
+    }
+
+    #[test]
+    fn type_propagate_assign() {
+        let expected_ty = Type::Float(FloatSize::F32);
+        let s = Stmt::Assign {
+            dst : Expr::Var {id : "x".to_string(), ty : Type::Unknown},
+            e : Expr::Float {v : 3.14, ty : expected_ty.clone()}
+        };
+        let env = TypeEnv::default();
+        match typed_stmt(env, s) {
+            Ok((_, Stmt::Assign {dst, e})) => {
+                assert_eq!(dst.get_type(), &expected_ty);
+                assert_eq!(e.get_type(), &expected_ty);
+            },
+            _ => assert!(false)
+        }
+    }
 }
