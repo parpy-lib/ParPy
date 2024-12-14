@@ -23,13 +23,19 @@ def compile_function(ir_ast, args, kwargs, fn):
     # Compiles the IR AST using type information of the provided arguments and
     # the parallelization settings to determine how to generate parallel
     # low-level code.
-    cpp, cu = parir.compile_ir(ir_ast, args, par)
+    cpp, cu_host, cu_dev = parir.compile_ir(ir_ast, args, par)
 
     # Use Torch to produce binary code from the output code
+    if len(cu_dev) == 0:
+        cpp_sources = [f"{cu_host}\n{cpp}"]
+        cuda_sources = []
+    else:
+        cpp_sources = [cpp]
+        cuda_sources = [f"{cu_dev}\n{cu_host}"]
     module = torch.utils.cpp_extension.load_inline(
         name = fn.__name__,
-        cpp_sources = [cpp],
-        cuda_sources = [cu],
+        cpp_sources = cpp_sources,
+        cuda_sources = cuda_sources
     )
 
     return getattr(module, fn.__name__)

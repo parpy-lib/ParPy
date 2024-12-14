@@ -366,14 +366,15 @@ fn declare_torch_modules(host_entry : &Vec<HostTop>) -> String {
     format!("{pre}\n{mid}\n{post}")
 }
 
-pub fn pprint_ast(ast : &Ast) -> (String, String) {
+pub fn pprint_ast(ast : &Ast) -> (String, String, String) {
     let cfg = PrintConfig::default();
     let cpp = pprint_vec(&ast.host_entry, "\n", &mut cfg.clone());
     let cu_dev = pprint_vec(&ast.kernels, "\n", &mut cfg.clone());
     let cu_host = pprint_vec(&ast.host_stage, "\n", &mut cfg.clone());
     let module_decls = declare_torch_modules(&ast.host_entry);
     ( format!("{MACROS}\n{cpp}\n{module_decls}")
-    , format!("{cu_dev}\n{cu_host}") )
+    , format!("{cu_host}")
+    , format!("{cu_dev}") )
 }
 
 #[cfg(test)]
