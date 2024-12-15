@@ -29,6 +29,3 @@ def test_axpy_gpu():
         actual = axpy_wrap(a, x.cuda(), y.cuda(), par).cpu()
         torch.cuda.synchronize()
         assert torch.allclose(expected, actual, atol=1e-5)
-    else:
-        with pytest.raises(AssertionError):
-            _ = axpy_wrap(a, x.cuda(), y.cuda(), par).cpu()

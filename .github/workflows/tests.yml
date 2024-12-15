@@ -1,0 +1,37 @@
+# Rules for building Parir on the test runner and running all its tests
+name: tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: PyO3/maturin-action@v1
+        with:
+          args: --release -i python3.11
+
+      - name: Rust library tests
+        run: |
+          cargo test
+
+      - name: Python library tests
+        run: |
+          pip install .
+          pytest

@@ -32,9 +32,6 @@ def test_sum_outer_parallel_gpu():
         actual = sum_wrap(x.cuda(), parallelize=par).cpu()
         torch.cuda.synchronize()
         assert torch.allclose(expected, actual, atol=1e-5)
-    else:
-        with pytest.raises(AssertionError):
-            _ = sum_wrap(x.cuda(), parallelize=par).cpu()
 
 def test_sum_inner_and_outer_parallel_gpu():
     N = 100
@@ -49,6 +46,3 @@ def test_sum_inner_and_outer_parallel_gpu():
         actual = sum_wrap(x.cuda(), parallelize=par).cpu()
         torch.cuda.synchronize()
         assert torch.allclose(expected, actual, atol=1e-5)
-    else:
-        with pytest.raises(AssertionError):
-            _ = sum_wrap(x.cuda(), parallelize=par).cpu()

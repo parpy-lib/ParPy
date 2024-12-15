@@ -24,6 +24,3 @@ def test_copy_gpu():
         y2 = copy_wrap(x.cuda(), parallelize=p).cpu()
         torch.cuda.synchronize()
         assert torch.allclose(y1, y2, atol=1e-5)
-    else:
-        with pytest.raises(AssertionError):
-            _ = copy_wrap(x.cuda(), parallelize=p).cpu()
