@@ -1,5 +1,6 @@
 import parir
 from parir.parir import ParKind
+import pytest
 import torch
 
 torch.manual_seed(1234)
@@ -15,7 +16,7 @@ def axpy_wrap(a, x, y, parallelize=None):
     axpy(a, x, y, out, N, parallelize=parallelize)
     return out
 
-def test_axpy():
+def test_axpy_gpu():
     N = 100
     a = float(torch.randn(1, dtype=torch.float32)[0])
     x = torch.randn(N, dtype=torch.float32)
@@ -24,6 +25,10 @@ def test_axpy():
 
     # Run each iteration of the 'i' loop on a separate GPU thread.
     par = { "i": [ParKind.GpuThreads(128)] }
-    actual = axpy_wrap(a, x.cuda(), y.cuda(), par).cpu()
-    torch.cuda.synchronize()
-    assert torch.allclose(expected, actual, atol=1e-5)
+    if torch.cuda.is_available():
+        actual = axpy_wrap(a, x.cuda(), y.cuda(), par).cpu()
+        torch.cuda.synchronize()
+        assert torch.allclose(expected, actual, atol=1e-5)
+    else:
+        with pytest.raises(AssertionError):
+            _ = axpy_wrap(a, x.cuda(), y.cuda(), par).cpu()

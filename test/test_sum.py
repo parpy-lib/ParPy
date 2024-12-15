@@ -1,5 +1,6 @@
 import parir
 from parir.parir import ParKind
+import pytest
 import torch
 
 torch.manual_seed(1234)
@@ -19,7 +20,7 @@ def sum_wrap(x, parallelize=None):
     sum_rows(xflat, out, N, M, parallelize=parallelize)
     return out
 
-def test_sum_outer_parallel():
+def test_sum_outer_parallel_gpu():
     N = 100
     M = 50
     x = torch.randn((N, M), dtype=torch.float32)
@@ -27,11 +28,15 @@ def test_sum_outer_parallel():
 
     # Only parallelize over the outer loop
     par = { "i" : [ParKind.GpuBlocks(N)], }
-    actual = sum_wrap(x.cuda(), parallelize=par).cpu()
-    torch.cuda.synchronize()
-    assert torch.allclose(expected, actual, atol=1e-5)
+    if torch.cuda.is_available():
+        actual = sum_wrap(x.cuda(), parallelize=par).cpu()
+        torch.cuda.synchronize()
+        assert torch.allclose(expected, actual, atol=1e-5)
+    else:
+        with pytest.raises(AssertionError):
+            _ = sum_wrap(x.cuda(), parallelize=par).cpu()
 
-def test_sum_inner_and_outer_parallel():
+def test_sum_inner_and_outer_parallel_gpu():
     N = 100
     M = 500
     x = torch.randn((N, M), dtype=torch.float32)
@@ -40,6 +45,10 @@ def test_sum_inner_and_outer_parallel():
     # Run both the outer and the inner loops in parallel, by performing a
     # parallel reduction within each thread block.
     par = { "i": [ParKind.GpuBlocks(N)], "j": [ParKind.GpuThreads(128)] }
-    actual = sum_wrap(x.cuda(), parallelize=par).cpu()
-    torch.cuda.synchronize()
-    assert torch.allclose(expected, actual, atol=1e-5)
+    if torch.cuda.is_available():
+        actual = sum_wrap(x.cuda(), parallelize=par).cpu()
+        torch.cuda.synchronize()
+        assert torch.allclose(expected, actual, atol=1e-5)
+    else:
+        with pytest.raises(AssertionError):
+            _ = sum_wrap(x.cuda(), parallelize=par).cpu()
