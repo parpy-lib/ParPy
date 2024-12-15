@@ -45,9 +45,10 @@ def jit(fn):
     # type information. Then, when the function is actually called, we use the
     # provided function arguments and the parallelization arguments to produce
     # a complete IR AST before compiling this to low-level code.
-    src = inspect.getsource(fn)
-    ast = python_ast.parse(src)
-    ir_ast = parir.python_to_ir(ast)
+    filepath = inspect.getfile(fn)
+    src, fst_line = inspect.getsourcelines(fn)
+    ast = python_ast.parse("".join(src))
+    ir_ast = parir.python_to_ir(ast, filepath, fst_line-1)
 
     def inner(*args, **kwargs):
         k = key.generate_function_key(fn, args, kwargs)

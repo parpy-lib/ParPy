@@ -1,4 +1,5 @@
 use crate::par;
+use crate::info::Info;
 
 use std::collections::HashMap;
 
@@ -28,11 +29,11 @@ pub enum BinOp {
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Var {id : String, ty : Type},
-    Int {v : i64, ty : Type},
-    Float {v : f64, ty : Type},
-    BinOp {lhs : Box<Expr>, op : BinOp, rhs : Box<Expr>, ty : Type},
-    Subscript {target : Box<Expr>, idx : Box<Expr>, ty : Type}
+    Var {id : String, ty : Type, i : Info},
+    Int {v : i64, ty : Type, i : Info},
+    Float {v : f64, ty : Type, i : Info},
+    BinOp {lhs : Box<Expr>, op : BinOp, rhs : Box<Expr>, ty : Type, i : Info},
+    Subscript {target : Box<Expr>, idx : Box<Expr>, ty : Type, i : Info}
 }
 
 impl Expr {
@@ -48,19 +49,19 @@ impl Expr {
 
     pub fn with_type(self, ty : Type) -> Self {
         match self {
-            Expr::Var {id, ..} => Expr::Var {id, ty},
-            Expr::Int {v, ..} => Expr::Int {v, ty},
-            Expr::Float {v, ..} => Expr::Float {v, ty},
-            Expr::BinOp {lhs, op, rhs, ..} => Expr::BinOp {lhs, op, rhs, ty},
-            Expr::Subscript {target, idx, ..} => Expr::Subscript {target, idx, ty}
+            Expr::Var {id, i, ..} => Expr::Var {id, ty, i},
+            Expr::Int {v, i, ..} => Expr::Int {v, ty, i},
+            Expr::Float {v, i, ..} => Expr::Float {v, ty, i},
+            Expr::BinOp {lhs, op, rhs, i, ..} => Expr::BinOp {lhs, op, rhs, ty, i},
+            Expr::Subscript {target, idx, i, ..} => Expr::Subscript {target, idx, ty, i}
         }
     }
 }
 
 #[derive(Clone, Debug)]
 pub enum Stmt {
-    Assign {dst : Expr, e : Expr},
-    For {var : String, lo : Expr, hi : Expr, body : Vec<Stmt>}
+    Assign {dst : Expr, e : Expr, i : Info},
+    For {var : String, lo : Expr, hi : Expr, body : Vec<Stmt>, i : Info},
 }
 
 #[derive(Clone, Debug)]

@@ -1,4 +1,5 @@
 mod codegen;
+mod info;
 mod ir;
 mod par;
 
@@ -12,10 +13,12 @@ use pyo3::types::PyCapsule;
 
 #[pyfunction]
 fn python_to_ir<'py>(
-    py_ast : Bound<'py, PyAny>
+    py_ast : Bound<'py, PyAny>,
+    filepath : String,
+    fst_line : usize
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let py = py_ast.py().clone();
-    let ast = ir::from_py::to_untyped_ir(py_ast)?;
+    let ast = ir::from_py::to_untyped_ir(py_ast, filepath, fst_line)?;
 
     // Wrap the intermediate AST in a capsule so we can pass it back to Python.
     let name = CString::new("Parir IR AST")?;

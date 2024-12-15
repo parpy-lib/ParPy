@@ -1,3 +1,5 @@
+use crate::info::*;
+
 use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug)]
@@ -30,28 +32,54 @@ pub enum Dim {
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Var {id : String, ty : Type},
-    Int {v : i64, ty : Type},
-    Float {v : f64, ty : Type},
+    Var {id : String, ty : Type, i : Info},
+    Int {v : i64, ty : Type, i : Info},
+    Float {v : f64, ty : Type, i : Info},
     Str {v : String},
-    BinOp {lhs : Box<Expr>, op : BinOp, rhs : Box<Expr>},
-    Subscript {target : Box<Expr>, idx : Box<Expr>},
-    Call {target : Box<Expr>, ty_args : Vec<Type>, args : Vec<Expr>},
+    BinOp {lhs : Box<Expr>, op : BinOp, rhs : Box<Expr>, i : Info},
+    Subscript {target : Box<Expr>, idx : Box<Expr>, i : Info},
+    Call {target : Box<Expr>, ty_args : Vec<Type>, args : Vec<Expr>, i : Info},
     ThreadIdx(Dim),
     BlockIdx(Dim)
+}
+
+impl InfoNode for Expr {
+    fn get_info(&self) -> Info {
+        match self {
+            Expr::Var {i, ..} => i.clone(),
+            Expr::Int {i, ..} => i.clone(),
+            Expr::Float {i, ..} => i.clone(),
+            Expr::BinOp {i, ..} => i.clone(),
+            Expr::Subscript {i, ..} => i.clone(),
+            Expr::Call {i, ..} => i.clone(),
+            _ => Info::default()
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub enum Stmt {
     Expr {e : Expr},
-    Defn {ty : Type, id : String, e : Expr},
-    Assign {dst : Expr, e : Expr},
-    For {var_ty : Type, var : String, init : Expr, cond : Expr, incr : Expr, body : Vec<Stmt>},
+    Defn {ty : Type, id : String, e : Expr, i : Info},
+    Assign {dst : Expr, e : Expr, i : Info},
+    For {var_ty : Type, var : String, init : Expr, cond : Expr, incr : Expr, body : Vec<Stmt>, i : Info},
     KernelLaunch {
         threads : (i64, i64, i64),
         blocks : (i64, i64, i64),
         id : String,
         args : Vec<Expr>
+    }
+}
+
+impl InfoNode for Stmt {
+    fn get_info(&self) -> Info {
+        match self {
+            Stmt::Expr {e} => e.get_info(),
+            Stmt::Defn {i, ..} => i.clone(),
+            Stmt::Assign {i, ..} => i.clone(),
+            Stmt::For {i, ..} => i.clone(),
+            _ => Info::default()
+        }
     }
 }
 
@@ -221,8 +249,8 @@ impl PrettyPrint for Expr {
             Expr::Var {id, ..} => format!("{id}"),
             Expr::Int {v, ..} => format!("{v}"),
             Expr::Float {v, ..} => format!("{v}"),
-            Expr::Str {v} => format!("{v}"),
-            Expr::BinOp {lhs, op, rhs} => {
+            Expr::Str {v, ..} => format!("{v}"),
+            Expr::BinOp {lhs, op, rhs, ..} => {
                 let lhs_str = lhs.pprint(cfg);
                 let op_str = op.pprint(cfg);
                 let rhs_str = rhs.pprint(cfg);
@@ -241,7 +269,7 @@ impl PrettyPrint for Expr {
                 let idx = idx.pprint(cfg);
                 format!("{target}[{idx}]")
             },
-            Expr::Call {target, ty_args, args} => {
+            Expr::Call {target, ty_args, args, ..} => {
                 let target = target.pprint(cfg);
                 let ty_args = pprint_vec(ty_args, ", ", cfg);
                 let args = pprint_vec(args, ", ", cfg);
@@ -267,20 +295,20 @@ impl PrettyPrint for Stmt {
     fn pprint(&self, cfg : &mut PrintConfig) -> String {
         let ii = pprint_indent(cfg.indent);
         match self {
-            Stmt::Expr {e} => {
+            Stmt::Expr {e, ..} => {
                 format!("{ii}{0};", e.pprint(cfg))
             },
-            Stmt::Defn {ty, id, e} => {
+            Stmt::Defn {ty, id, e, ..} => {
                 let ty = ty.pprint(cfg);
                 let e = e.pprint(cfg);
                 format!("{ii}{ty} {id} = {e};")
             },
-            Stmt::Assign {dst, e} => {
+            Stmt::Assign {dst, e, ..} => {
                 let dst = dst.pprint(cfg);
                 let e = e.pprint(cfg);
                 format!("{ii}{dst} = {e};")
             },
-            Stmt::For {var_ty, var, init, cond, incr, body} => {
+            Stmt::For {var_ty, var, init, cond, incr, body, ..} => {
                 let var_ty = var_ty.pprint(cfg);
                 let init = init.pprint(cfg);
                 let cond = cond.pprint(cfg);
@@ -290,7 +318,7 @@ impl PrettyPrint for Stmt {
                 cfg.indent = cfg.indent - cfg.indent_sz;
                 format!("{ii}for ({var_ty} {var} = {init}; {var} < {cond}; {var} += {incr}) {{\n{body}\n{ii}}}")
             },
-            Stmt::KernelLaunch {threads, blocks, id, args} => {
+            Stmt::KernelLaunch {threads, blocks, id, args, ..} => {
                 let args = pprint_vec(args, ", ", cfg);
                 let threads = format!("({2}, {1}, {0})", threads.0, threads.1, threads.2);
                 let blocks = format!("({2}, {1}, {0})", blocks.0, blocks.1, blocks.2);
@@ -381,11 +409,11 @@ mod test {
     use super::*;
 
     fn int(v : i64) -> Expr {
-        Expr::Int {v, ty : Type::Int(IntSize::I64)}
+        Expr::Int {v, ty : Type::Int(IntSize::I64), i : Info::default()}
     }
 
     fn bop(lhs : Expr, op : BinOp, rhs : Expr) -> Expr {
-        Expr::BinOp {lhs : Box::new(lhs), op, rhs : Box::new(rhs)}
+        Expr::BinOp {lhs : Box::new(lhs), op, rhs : Box::new(rhs), i : Info::default()}
     }
 
     fn add(lhs : Expr, rhs : Expr) -> Expr {

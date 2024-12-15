@@ -1,3 +1,4 @@
+use crate::info::*;
 use crate::ir::ast as ir_ast;
 use crate::codegen::ast::*;
 use crate::par::ParKind;
@@ -33,9 +34,9 @@ impl fmt::Display for CodegenError {
 pub type CodegenResult<T> = Result<T, CodegenError>;
 
 macro_rules! codegen_error {
-    ($($t:tt)*) => {{
-        Err(CodegenError::new(format!($($t)*)))
-    }};
+    ($i:tt,$($t:tt)*) => {{
+        Err(CodegenError::new($i.error_msg(format!($($t)*))))
+    }}
 }
 
 impl From<CodegenError> for PyErr {
@@ -77,18 +78,18 @@ fn find_inner_parallelism_stmt(
     par : &HashMap<String, Vec<ParKind>>
 ) -> CodegenResult<Option<i64>> {
     match stmt {
-        Stmt::For {var, body, ..} => {
+        Stmt::For {var, body, i, ..} => {
             let inner_threads = find_inner_parallelism_stmts(body, par)?;
             let empty = vec![];
             let local_par = match par.get(var).unwrap_or(&empty)[..] {
                 [ParKind::GpuThreads(nthreads)] => Ok(Some(nthreads)),
-                [ParKind::GpuBlocks(_)] => codegen_error!("Nested GpuBlocks are not supported"),
+                [ParKind::GpuBlocks(_)] => codegen_error!(i, "Nested GpuBlocks are not supported"),
                 [] => Ok(None),
-                _ => codegen_error!("Unsupported parallelization arguments: {par:?}")
+                _ => codegen_error!(i, "Unsupported parallelization arguments: {par:?}")
             }?;
             match (inner_threads, local_par) {
                 (Some(a), Some(b)) if a == b => Ok(Some(a)),
-                (Some(_), Some(_)) => codegen_error!("Variable amount of parallelism within parallel loops is not supported"),
+                (Some(_), Some(_)) => codegen_error!(i, "Variable amount of parallelism within parallel loops is not supported"),
                 (Some(a), None) => Ok(Some(a)),
                 (None, Some(b)) => Ok(Some(b)),
                 _ => Ok(None)
@@ -104,13 +105,14 @@ fn find_inner_parallelism_stmts(
 ) -> CodegenResult<Option<i64>> {
     stmts.iter()
         .fold(Ok(None), |acc, stmt| {
+            let i = stmt.get_info();
             if let Some(nthreads) = find_inner_parallelism_stmt(stmt, par)? {
                 match acc? {
                     Some(n) => {
                         if n == nthreads {
                             Ok(Some(n))
                         } else {
-                            codegen_error!("Variable amount of parallelism within parallel loops is not supported")
+                            codegen_error!(i, "Variable amount of parallelism within parallel loops is not supported")
                         }
                     },
                     None => Ok(Some(nthreads))
@@ -142,15 +144,17 @@ fn codegen_kernel<'a>(
                 };
                 Expr::Call {
                     target : Box::new(Expr::BinOp {
-                        lhs : Box::new(Expr::Var {id, ty}),
+                        lhs : Box::new(Expr::Var {id, ty, i : Info::default()}),
                         op : BinOp::Proj,
-                        rhs : Box::new(Expr::Str {v : "data_ptr".to_string()})
+                        rhs : Box::new(Expr::Str {v : "data_ptr".to_string()}),
+                        i : Info::default()
                     }),
                     ty_args : vec![elem_ty],
-                    args : vec![]
+                    args : vec![],
+                    i : Info::default()
                 }
             },
-            _ => Expr::Var {id, ty}
+            _ => Expr::Var {id, ty, i : Info::default()}
         })
         .collect::<Vec<Expr>>();
     let inner_threads = find_inner_parallelism_stmts(&body, &def.par)?.unwrap_or(1);
@@ -165,7 +169,8 @@ fn codegen_kernel<'a>(
             },
         ParKind::GpuThreads(nthreads) =>
             if inner_threads != 1 {
-                codegen_error!("Nested parallelism inside GpuThreads is not supported")
+                let i = Info::default();
+                codegen_error!(i, "Nested parallelism inside GpuThreads is not supported")
             } else {
                 if *nthreads <= 1024 {
                     Ok((*nthreads, 1, 1))
@@ -188,9 +193,14 @@ fn codegen_kernel<'a>(
             let dev_init = Expr::BinOp {
                 lhs : Box::new(init.clone()),
                 op : BinOp::Add,
-                rhs : Box::new(Expr::BlockIdx(Dim::Y))
+                rhs : Box::new(Expr::BlockIdx(Dim::Y)),
+                i : Info::default()
             };
-            let dev_incr = Expr::Int {v : *nblocks, ty : Type::Int(IntSize::I64)};
+            let dev_incr = Expr::Int {
+                v : *nblocks,
+                ty : Type::Int(IntSize::I64),
+                i : Info::default()
+            };
             (dev_init, dev_incr)
         },
         ParKind::GpuThreads(_) => {
@@ -201,19 +211,30 @@ fn codegen_kernel<'a>(
                     lhs : Box::new(Expr::BinOp {
                         lhs : Box::new(Expr::BlockIdx(Dim::X)),
                         op : BinOp::Mul,
-                        rhs : Box::new(Expr::Int {v : xblocks, ty : Type::Int(IntSize::I64)})
+                        rhs : Box::new(Expr::Int {
+                            v : xblocks,
+                            ty : Type::Int(IntSize::I64),
+                            i : Info::default()
+                        }),
+                        i : Info::default()
                     }),
                     op : BinOp::Add,
-                    rhs : Box::new(Expr::ThreadIdx(Dim::X))
+                    rhs : Box::new(Expr::ThreadIdx(Dim::X)),
+                    i : Info::default()
                 }
             };
             let dev_init = Expr::BinOp {
                 lhs : Box::new(init.clone()),
                 op : BinOp::Add,
-                rhs : Box::new(rhs)
+                rhs : Box::new(rhs),
+                i : Info::default()
             };
             let incr = tpb * xblocks;
-            let dev_incr = Expr::Int {v : incr, ty : Type::Int(IntSize::I64)};
+            let dev_incr = Expr::Int {
+                v : incr,
+                ty : Type::Int(IntSize::I64),
+                i : Info::default()
+            };
             (dev_init, dev_incr)
         }
     };
@@ -223,7 +244,8 @@ fn codegen_kernel<'a>(
         init : dev_init,
         cond : cond.clone(),
         incr : dev_incr,
-        body : stmts
+        body : stmts,
+        i : Info::default()
     };
     let kernel_def = DeviceTop::KernelFunDef {
         id : kernel_id,
@@ -241,14 +263,14 @@ fn codegen_stmt<'a>(
     device : bool
 ) -> CodegenResult<(Ast, Stmt)> {
     match &stmt {
-        Stmt::For {var_ty, var, init, cond, body, ..} => {
+        Stmt::For {var_ty, var, init, cond, body, i, ..} => {
             let empty_vec = vec![];
             let par = def.par.get(var).unwrap_or(&empty_vec);
             match &par[..] {
                 [] => Ok((ast, stmt)),
                 [pk @ ParKind::GpuBlocks(_)] => {
                     if device {
-                        codegen_error!("Nested GpuBlock parallelism is not supported")
+                        codegen_error!(i, "Nested GpuBlock parallelism is not supported")
                     } else {
                         codegen_kernel(ast, var, init, cond, body.clone(), def, pk)
                     }
@@ -262,12 +284,18 @@ fn codegen_stmt<'a>(
                             let nblocks = (*nthreads + tpb - 1) / tpb;
                             Expr::BinOp {
                                 lhs : Box::new(Expr::BinOp {
-                                    lhs : Box::new(Expr::Int {v : nblocks, ty : Type::Int(IntSize::I64)}),
+                                    lhs : Box::new(Expr::Int {
+                                        v : nblocks,
+                                        ty : Type::Int(IntSize::I64),
+                                        i : i.clone()
+                                    }),
                                     op : BinOp::Mul,
-                                    rhs : Box::new(Expr::BlockIdx(Dim::X))
+                                    rhs : Box::new(Expr::BlockIdx(Dim::X)),
+                                    i : i.clone()
                                 }),
                                 op : BinOp::Add,
-                                rhs : Box::new(Expr::ThreadIdx(Dim::X))
+                                rhs : Box::new(Expr::ThreadIdx(Dim::X)),
+                                i : i.clone()
                             }
                         } else {
                             Expr::ThreadIdx(Dim::X)
@@ -275,7 +303,8 @@ fn codegen_stmt<'a>(
                         let init_expr = Expr::BinOp {
                             lhs : Box::new(init.clone()),
                             op : BinOp::Add,
-                            rhs : Box::new(rhs)
+                            rhs : Box::new(rhs),
+                            i : i.clone()
                         };
                         let (ast, stmts) = codegen_stmts(ast, body.clone(), def, true)?;
                         let stmt = Stmt::For {
@@ -283,19 +312,21 @@ fn codegen_stmt<'a>(
                             var : var.clone(),
                             init : init_expr,
                             cond : cond.clone(),
-                            incr : Expr::Int {v : *nthreads, ty : Type::Int(IntSize::I64)},
-                            body : stmts
+                            incr : Expr::Int {v : *nthreads, ty : Type::Int(IntSize::I64), i : i.clone()},
+                            body : stmts,
+                            i : i.clone()
                         };
                         Ok((ast, stmt))
                     } else {
                         codegen_kernel(ast, var, init, cond, body.clone(), def, pk)
                     }
                 },
-                _ => codegen_error!("Unsupported parallelism argument: {par:?}")
+                _ => codegen_error!(i, "Unsupported parallelism argument: {par:?}")
             }
         },
         Stmt::KernelLaunch {..} => {
-            codegen_error!("Found kernel launch in host code generation")
+            let i = Info::default();
+            codegen_error!(i, "Found kernel launch in host code generation")
         },
         _ => Ok((ast, stmt))
     }
@@ -329,9 +360,10 @@ fn add_host_entry_functions(
         .filter_map(|TypedParam {id, ty}| match ty {
             Type::IntTensor(_) | Type::FloatTensor(_) => Some(Stmt::Expr {
                 e : Expr::Call {
-                    target : Box::new(Expr::Str {v : "CHECK_INPUT".to_string() }),
+                    target : Box::new(Expr::Str {v : "CHECK_INPUT".to_string()}),
                     ty_args : vec![],
-                    args : vec![Expr::Str {v : id.clone()}]
+                    args : vec![Expr::Str {v : id.clone()}],
+                    i : Info::default()
                 }
             }),
             _ => None
@@ -339,13 +371,16 @@ fn add_host_entry_functions(
         .collect::<Vec<Stmt>>();
     let args = def.params.clone()
         .into_iter()
-        .map(|TypedParam {id, ty}| Expr::Var {id, ty})
+        .map(|TypedParam {id, ty}| Expr::Var {id, ty, i : Info::default()})
         .collect::<Vec<Expr>>();
-    body.push(Stmt::Expr {e : Expr::Call {
-        target : Box::new(Expr::Str {v : def.id.clone()}),
-        ty_args : vec![],
-        args
-    }});
+    body.push(Stmt::Expr {
+        e : Expr::Call {
+            target : Box::new(Expr::Str {v : def.id.clone()}),
+            ty_args : vec![],
+            args,
+            i : Info::default()
+        }
+    });
     let entry_def = HostTop::FunDef {
         id : format!("{0}_entry", def.id),
         params : def.params.clone(),
@@ -404,7 +439,8 @@ fn compile_ir_float_size(sz : ir_ast::FloatSize) -> FloatSize {
 }
 
 fn compile_ir_type(
-    ty : ir_ast::Type
+    ty : ir_ast::Type,
+    i : &Info
 ) -> CodegenResult<Type> {
     match ty {
         ir_ast::Type::Int(sz) => {
@@ -424,7 +460,7 @@ fn compile_ir_type(
             Ok(Type::FloatTensor(sz))
         },
         ir_ast::Type::Unknown => {
-            codegen_error!("Found unknown type in IR AST")
+            codegen_error!(i, "Found unknown type in IR AST")
         }
     }
 }
@@ -443,28 +479,28 @@ fn compile_ir_expr(
     e : ir_ast::Expr
 ) -> CodegenResult<Expr> {
     match e {
-        ir_ast::Expr::Var {id, ty} => {
-            let ty = compile_ir_type(ty)?;
-            Ok(Expr::Var {id, ty})
+        ir_ast::Expr::Var {id, ty, i} => {
+            let ty = compile_ir_type(ty, &i)?;
+            Ok(Expr::Var {id, ty, i})
         },
-        ir_ast::Expr::Int {v, ty} => {
-            let ty = compile_ir_type(ty)?;
-            Ok(Expr::Int {v, ty})
+        ir_ast::Expr::Int {v, ty, i} => {
+            let ty = compile_ir_type(ty, &i)?;
+            Ok(Expr::Int {v, ty, i})
         },
-        ir_ast::Expr::Float {v, ty} => {
-            let ty = compile_ir_type(ty)?;
-            Ok(Expr::Float {v, ty})
+        ir_ast::Expr::Float {v, ty, i} => {
+            let ty = compile_ir_type(ty, &i)?;
+            Ok(Expr::Float {v, ty, i})
         },
-        ir_ast::Expr::BinOp {lhs, op, rhs, ..} => {
+        ir_ast::Expr::BinOp {lhs, op, rhs, i, ..} => {
             let lhs = Box::new(compile_ir_expr(*lhs)?);
             let op = compile_ir_binop(op);
             let rhs = Box::new(compile_ir_expr(*rhs)?);
-            Ok(Expr::BinOp {lhs, op, rhs})
+            Ok(Expr::BinOp {lhs, op, rhs, i})
         },
-        ir_ast::Expr::Subscript {target, idx, ..} => {
+        ir_ast::Expr::Subscript {target, idx, i, ..} => {
             let target = Box::new(compile_ir_expr(*target)?);
             let idx = Box::new(compile_ir_expr(*idx)?);
-            Ok(Expr::Subscript {target, idx})
+            Ok(Expr::Subscript {target, idx, i})
         }
     }
 }
@@ -474,29 +510,29 @@ fn compile_ir_stmt(
     stmt : ir_ast::Stmt
 ) -> CodegenResult<(HashSet<String>, Stmt)> {
     match stmt {
-        ir_ast::Stmt::Assign {dst, e} => {
+        ir_ast::Stmt::Assign {dst, e, i} => {
             let e = compile_ir_expr(e)?;
             let dst = compile_ir_expr(dst)?;
             match &dst {
-                Expr::Var {id, ty} => {
+                Expr::Var {id, ty, ..} => {
                     if def_vars.contains(id) {
-                        Ok((def_vars, Stmt::Assign {dst : dst.clone(), e}))
+                        Ok((def_vars, Stmt::Assign {dst : dst.clone(), e, i}))
                     } else {
                         def_vars.insert(id.clone());
-                        Ok((def_vars, Stmt::Defn {ty : ty.clone(), id : id.clone(), e}))
+                        Ok((def_vars, Stmt::Defn {ty : ty.clone(), id : id.clone(), e, i}))
                     }
                 },
-                _ => Ok((def_vars, Stmt::Assign {dst, e}))
+                _ => Ok((def_vars, Stmt::Assign {dst, e, i}))
             }
         },
-        ir_ast::Stmt::For {var, lo, hi, body} => {
+        ir_ast::Stmt::For {var, lo, hi, body, i} => {
             let var_ty = Type::Int(IntSize::I64);
             let init = compile_ir_expr(lo)?;
             let cond = compile_ir_expr(hi)?;
-            let incr = Expr::Int {v : 1, ty : var_ty.clone()};
+            let incr = Expr::Int {v : 1, ty : var_ty.clone(), i : i.clone()};
             let (def_vars, body) = compile_ir_stmts(def_vars, body)?;
             Ok((def_vars, Stmt::For {
-                var_ty, var, init, cond, incr, body
+                var_ty, var, init, cond, incr, body, i
             }))
         }
     }
@@ -524,7 +560,7 @@ fn compile_ir_params(
             let (mut def_vars, mut params) = acc?;
             let ir_ast::TypedParam {id, ty} = param;
             def_vars.insert(id.clone());
-            let ty = compile_ir_type(ty)?;
+            let ty = compile_ir_type(ty, &Info::default())?;
             params.push(TypedParam {id, ty});
             Ok((def_vars, params))
         })
@@ -553,7 +589,8 @@ fn compile_ir_def(
                 let ast = instantiate_parallel_function(ast, body.clone(), def)?;
                 Ok((env, ast))
             } else {
-                codegen_error!("Parallel instantiation {id} refers to unknown function")
+                let i = Info::default();
+                codegen_error!(i, "Parallel instantiation {id} refers to unknown function")
             }
         }
     }
