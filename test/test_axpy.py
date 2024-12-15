@@ -16,6 +16,7 @@ def axpy_wrap(a, x, y, parallelize=None):
     axpy(a, x, y, out, N, parallelize=parallelize)
     return out
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_axpy_gpu():
     N = 100
     a = float(torch.randn(1, dtype=torch.float32)[0])
@@ -25,7 +26,6 @@ def test_axpy_gpu():
 
     # Run each iteration of the 'i' loop on a separate GPU thread.
     par = { "i": [ParKind.GpuThreads(128)] }
-    if torch.cuda.is_available():
-        actual = axpy_wrap(a, x.cuda(), y.cuda(), par).cpu()
-        torch.cuda.synchronize()
-        assert torch.allclose(expected, actual, atol=1e-5)
+    actual = axpy_wrap(a, x.cuda(), y.cuda(), par).cpu()
+    torch.cuda.synchronize()
+    assert torch.allclose(expected, actual, atol=1e-5)

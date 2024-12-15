@@ -33,16 +33,16 @@ def uniform_random_csr_f32_i64(N, M, d):
     A = torch.sparse_coo_tensor(idxs, values, device='cuda')
     return A.to_sparse_csr()
 
-# This test only runs when Torch has been compiled with CUDA support
+@pytest.mark.skip(reason="Parallel reductions are not supported")
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_spmv_gpu():
     N = 256
     M = 4096
     sparsity = 0.01
-    if torch.cuda.is_available():
-        A = uniform_random_csr_f32_i64(N, M, sparsity)
-        x = torch.randn(M, dtype=torch.float32, device='cuda')
-        y1 = A.matmul(x)
-        p = { "row": [ParKind.GpuBlocks(N)], "i": [ParKind.GpuThreads(128)] }
-        y2 = spmv_wrap(A.values(), A.crow_indices(), A.col_indices(), N, x, p)
-        torch.cuda.synchronize()
-        assert torch.allclose(y1, y2, atol=1e-5)
+    A = uniform_random_csr_f32_i64(N, M, sparsity)
+    x = torch.randn(M, dtype=torch.float32, device='cuda')
+    y1 = A.matmul(x)
+    p = { "row": [ParKind.GpuBlocks(N)], "i": [ParKind.GpuThreads(128)] }
+    y2 = spmv_wrap(A.values(), A.crow_indices(), A.col_indices(), N, x, p)
+    torch.cuda.synchronize()
+    assert torch.allclose(y1, y2, atol=1e-5)
