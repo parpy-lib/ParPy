@@ -20,6 +20,7 @@ def copy_wrap(x, parallelize=None):
 def test_copy_gpu():
     x = torch.randn(10, dtype=torch.float32)
     y1 = copy_wrap(x)
+    parir.clear_cache()
     p = { "i" : [ParKind.GpuThreads(1024)] }
     y2 = copy_wrap(x.cuda(), parallelize=p).cpu()
     torch.cuda.synchronize()

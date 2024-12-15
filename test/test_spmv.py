@@ -42,6 +42,7 @@ def test_spmv_gpu():
     A = uniform_random_csr_f32_i64(N, M, sparsity)
     x = torch.randn(M, dtype=torch.float32, device='cuda')
     y1 = A.matmul(x)
+    parir.clear_cache()
     p = { "row": [ParKind.GpuBlocks(N)], "i": [ParKind.GpuThreads(128)] }
     y2 = spmv_wrap(A.values(), A.crow_indices(), A.col_indices(), N, x, p)
     torch.cuda.synchronize()

@@ -30,7 +30,7 @@ fn compile_ir<'py>(
     ir_ast_cap : Bound<'py, PyCapsule>,
     args : Vec<Bound<'py, PyAny>>,
     par : HashMap<String, Vec<par::ParKind>>
-) -> PyResult<(String, String, String)> {
+) -> PyResult<(String, String)> {
     let untyped_ir_ast : &ir::ast::Ast = unsafe {
         ir_ast_cap.reference()
     };

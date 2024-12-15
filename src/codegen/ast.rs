@@ -22,7 +22,7 @@ pub enum Type {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
 pub enum BinOp {
-    Add, Sub, Mul, Proj
+    Add, Sub, Mul
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -35,10 +35,8 @@ pub enum Expr {
     Var {id : String, ty : Type, i : Info},
     Int {v : i64, ty : Type, i : Info},
     Float {v : f64, ty : Type, i : Info},
-    Str {v : String},
     BinOp {lhs : Box<Expr>, op : BinOp, rhs : Box<Expr>, i : Info},
     Subscript {target : Box<Expr>, idx : Box<Expr>, i : Info},
-    Call {target : Box<Expr>, ty_args : Vec<Type>, args : Vec<Expr>, i : Info},
     ThreadIdx(Dim),
     BlockIdx(Dim)
 }
@@ -51,7 +49,6 @@ impl InfoNode for Expr {
             Expr::Float {i, ..} => i.clone(),
             Expr::BinOp {i, ..} => i.clone(),
             Expr::Subscript {i, ..} => i.clone(),
-            Expr::Call {i, ..} => i.clone(),
             _ => Info::default()
         }
     }
@@ -59,7 +56,6 @@ impl InfoNode for Expr {
 
 #[derive(Clone, Debug)]
 pub enum Stmt {
-    Expr {e : Expr},
     Defn {ty : Type, id : String, e : Expr, i : Info},
     Assign {dst : Expr, e : Expr, i : Info},
     For {var_ty : Type, var : String, init : Expr, cond : Expr, incr : Expr, body : Vec<Stmt>, i : Info},
@@ -75,7 +71,6 @@ pub enum Stmt {
 impl InfoNode for Stmt {
     fn get_info(&self) -> Info {
         match self {
-            Stmt::Expr {e} => e.get_info(),
             Stmt::Defn {i, ..} => i.clone(),
             Stmt::Assign {i, ..} => i.clone(),
             Stmt::For {i, ..} => i.clone(),
@@ -93,7 +88,6 @@ pub struct TypedParam {
 
 #[derive(Clone, Debug)]
 pub enum HostTop {
-    FunDecl {id : String, params : Vec<TypedParam>},
     FunDef {id : String, params : Vec<TypedParam>, body : Vec<Stmt>},
 }
 
@@ -103,10 +97,6 @@ pub enum DeviceTop {
 }
 
 pub struct Ast {
-    // Definitions of entry-points to the host code. These do sanity checking on
-    // inputs before passing over control to a host stage function.
-    pub host_entry : Vec<HostTop>,
-
     // Host stage functions that may launch device kernels.
     pub host_stage : Vec<HostTop>,
 
@@ -116,7 +106,7 @@ pub struct Ast {
 
 impl Ast {
     pub fn new() -> Self {
-        Ast {host_entry : vec![], host_stage : vec![], kernels : vec![]}
+        Ast {host_stage : vec![], kernels : vec![]}
     }
 }
 
@@ -127,16 +117,14 @@ impl Ast {
 #[derive(Clone)]
 pub struct PrintConfig {
     indent : usize,
-    indent_sz : usize,
-    print_pointers : bool,
+    indent_sz : usize
 }
 
 impl Default for PrintConfig {
     fn default() -> PrintConfig {
         PrintConfig {
             indent : 0,
-            indent_sz : 2,
-            print_pointers : false
+            indent_sz : 2
         }
     }
 }
@@ -168,22 +156,14 @@ impl PrettyPrint for Type {
             Type::Float(FloatSize::F32) => "float".to_string(),
             Type::Float(FloatSize::F64) => "double".to_string(),
             Type::IntTensor(sz) => {
-                if cfg.print_pointers {
-                    let elem_ty = Type::Int(*sz);
-                    let ty = elem_ty.pprint(cfg);
-                    format!("{ty}*")
-                } else {
-                    format!("torch::Tensor")
-                }
+                let elem_ty = Type::Int(*sz);
+                let ty = elem_ty.pprint(cfg);
+                format!("{ty}*")
             },
             Type::FloatTensor(sz) => {
-                if cfg.print_pointers {
-                    let elem_ty = Type::Float(*sz);
-                    let ty = elem_ty.pprint(cfg);
-                    format!("{ty}*")
-                } else {
-                    format!("torch::Tensor")
-                }
+                let elem_ty = Type::Float(*sz);
+                let ty = elem_ty.pprint(cfg);
+                format!("{ty}*")
             }
         }
     }
@@ -194,8 +174,7 @@ impl PrettyPrint for BinOp {
         match self {
             BinOp::Add => " + ".to_string(),
             BinOp::Sub => " - ".to_string(),
-            BinOp::Mul => " * ".to_string(),
-            BinOp::Proj => ".".to_string()
+            BinOp::Mul => " * ".to_string()
         }
     }
 }
@@ -204,8 +183,7 @@ fn precedence(bop : &BinOp) -> i64 {
     match bop {
         BinOp::Add => 0,
         BinOp::Sub => 0,
-        BinOp::Mul => 1,
-        BinOp::Proj => 2
+        BinOp::Mul => 1
     }
 }
 
@@ -251,7 +229,6 @@ impl PrettyPrint for Expr {
             Expr::Var {id, ..} => format!("{id}"),
             Expr::Int {v, ..} => format!("{v}"),
             Expr::Float {v, ..} => format!("{v}"),
-            Expr::Str {v, ..} => format!("{v}"),
             Expr::BinOp {lhs, op, rhs, ..} => {
                 let lhs_str = lhs.pprint(cfg);
                 let op_str = op.pprint(cfg);
@@ -271,16 +248,6 @@ impl PrettyPrint for Expr {
                 let idx = idx.pprint(cfg);
                 format!("{target}[{idx}]")
             },
-            Expr::Call {target, ty_args, args, ..} => {
-                let target = target.pprint(cfg);
-                let ty_args = pprint_vec(ty_args, ", ", cfg);
-                let args = pprint_vec(args, ", ", cfg);
-                if ty_args.is_empty() {
-                    format!("{target}({args})")
-                } else {
-                    format!("{target}<{ty_args}>({args})")
-                }
-            }
             Expr::ThreadIdx(dim) => {
                 let dim = dim.pprint(cfg);
                 format!("threadIdx.{dim}")
@@ -297,9 +264,6 @@ impl PrettyPrint for Stmt {
     fn pprint(&self, cfg : &mut PrintConfig) -> String {
         let ii = pprint_indent(cfg.indent);
         match self {
-            Stmt::Expr {e, ..} => {
-                format!("{ii}{0};", e.pprint(cfg))
-            },
             Stmt::Defn {ty, id, e, ..} => {
                 let ty = ty.pprint(cfg);
                 let e = e.pprint(cfg);
@@ -322,8 +286,8 @@ impl PrettyPrint for Stmt {
             },
             Stmt::KernelLaunch {threads, blocks, id, args, ..} => {
                 let args = pprint_vec(args, ", ", cfg);
-                let threads = format!("({2}, {1}, {0})", threads.0, threads.1, threads.2);
-                let blocks = format!("({2}, {1}, {0})", blocks.0, blocks.1, blocks.2);
+                let threads = format!("dim3({0}, {1}, {2})", threads.0, threads.1, threads.2);
+                let blocks = format!("dim3({0}, {1}, {2})", blocks.0, blocks.1, blocks.2);
                 format!("{ii}{id}<<<{blocks}, {threads}>>>({args});")
             },
         }
@@ -341,18 +305,12 @@ impl PrettyPrint for TypedParam {
 impl PrettyPrint for HostTop {
     fn pprint(&self, cfg : &mut PrintConfig) -> String {
         match self {
-            HostTop::FunDecl {id, params} => {
-                cfg.print_pointers = false;
-                let params = pprint_vec(params, ", ", cfg);
-                format!("void {id}({params});")
-            },
             HostTop::FunDef {id, params, body} => {
-                cfg.print_pointers = false;
                 let params = pprint_vec(params, ", ", cfg);
                 cfg.indent = cfg.indent + cfg.indent_sz;
                 let body = pprint_vec(body, "\n", cfg);
                 cfg.indent = cfg.indent - cfg.indent_sz;
-                format!("void {id}({params}) {{\n{body}\n}}")
+                format!("extern \"C\" void {id}({params}) {{\n{body}\n}}")
             }
         }
     }
@@ -362,7 +320,6 @@ impl PrettyPrint for DeviceTop {
     fn pprint(&self, cfg : &mut PrintConfig) -> String {
         match self {
             DeviceTop::KernelFunDef {id, params, body} => {
-                cfg.print_pointers = true;
                 let params = pprint_vec(params, ", ", cfg);
                 cfg.indent = cfg.indent + cfg.indent_sz;
                 let body = pprint_vec(body, "\n", cfg);
@@ -373,37 +330,11 @@ impl PrettyPrint for DeviceTop {
     }
 }
 
-const MACROS : &'static str = "
-#define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x \" must be a CUDA tensor\")
-#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x \" must be contiguous\")
-#define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
-";
-
-fn declare_torch_modules(host_entry : &Vec<HostTop>) -> String {
-    let pre = "PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {";
-    let post = "}";
-    let mid = host_entry.iter()
-        .flat_map(|entry| match entry {
-            HostTop::FunDef {id : entry_id, ..} => {
-                let fun_id = &entry_id[0..entry_id.len() - 6];
-                vec![format!("  m.def(\"{0}\", &{1}, \"\");", fun_id, entry_id)]
-            },
-            _ => vec![]
-        })
-        .collect::<Vec<String>>()
-        .join("\n");
-    format!("{pre}\n{mid}\n{post}")
-}
-
-pub fn pprint_ast(ast : &Ast) -> (String, String, String) {
+pub fn pprint_ast(ast : &Ast) -> (String, String) {
     let cfg = PrintConfig::default();
-    let cpp = pprint_vec(&ast.host_entry, "\n", &mut cfg.clone());
     let cu_dev = pprint_vec(&ast.kernels, "\n", &mut cfg.clone());
     let cu_host = pprint_vec(&ast.host_stage, "\n", &mut cfg.clone());
-    let module_decls = declare_torch_modules(&ast.host_entry);
-    ( format!("{MACROS}\n{cpp}\n{module_decls}")
-    , format!("{cu_host}")
-    , format!("{cu_dev}") )
+    (format!("{cu_host}"), format!("{cu_dev}"))
 }
 
 #[cfg(test)]

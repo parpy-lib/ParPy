@@ -136,27 +136,7 @@ fn codegen_kernel<'a>(
     let kernel_id = gen_kernel_id(&ast, &def.id);
     let kernel_args = def.params.clone()
         .into_iter()
-        .map(|TypedParam {id, ty, i}| match ty {
-            Type::IntTensor(_) | Type::FloatTensor(_) => {
-                let elem_ty = match ty {
-                    Type::IntTensor(sz) => Type::Int(sz),
-                    Type::FloatTensor(sz) => Type::Float(sz),
-                    _ => panic!("Impossible case")
-                };
-                Expr::Call {
-                    target : Box::new(Expr::BinOp {
-                        lhs : Box::new(Expr::Var {id, ty, i : def.i.clone()}),
-                        op : BinOp::Proj,
-                        rhs : Box::new(Expr::Str {v : "data_ptr".to_string()}),
-                        i : i.clone()
-                    }),
-                    ty_args : vec![elem_ty],
-                    args : vec![],
-                    i : i.clone()
-                }
-            },
-            _ => Expr::Var {id, ty, i : i.clone()}
-        })
+        .map(|TypedParam {id, ty, i}| Expr::Var {id, ty, i : i.clone()})
         .collect::<Vec<Expr>>();
     let inner_threads = find_inner_parallelism_stmts(&body, &def.par)?.unwrap_or(1);
     let (tpb, xblocks, yblocks) = match par_kind {
@@ -348,49 +328,6 @@ fn codegen_stmts(
         })
 }
 
-fn add_host_entry_functions(
-    mut host_entry : Vec<HostTop>,
-    def : &ParFunDef
-) -> Vec<HostTop> {
-    let fun_decl = HostTop::FunDecl {
-        id : def.id.clone(),
-        params : def.params.clone()
-    };
-    host_entry.push(fun_decl);
-    let mut body = def.params.iter()
-        .filter_map(|TypedParam {id, ty, i}| match ty {
-            Type::IntTensor(_) | Type::FloatTensor(_) => Some(Stmt::Expr {
-                e : Expr::Call {
-                    target : Box::new(Expr::Str {v : "CHECK_INPUT".to_string()}),
-                    ty_args : vec![],
-                    args : vec![Expr::Str {v : id.clone()}],
-                    i : i.clone()
-                }
-            }),
-            _ => None
-        })
-        .collect::<Vec<Stmt>>();
-    let args = def.params.clone()
-        .into_iter()
-        .map(|TypedParam {id, ty, i}| Expr::Var {id, ty, i})
-        .collect::<Vec<Expr>>();
-    body.push(Stmt::Expr {
-        e : Expr::Call {
-            target : Box::new(Expr::Str {v : def.id.clone()}),
-            ty_args : vec![],
-            args,
-            i : def.i.clone()
-        }
-    });
-    let entry_def = HostTop::FunDef {
-        id : format!("{0}_entry", def.id),
-        params : def.params.clone(),
-        body : body
-    };
-    host_entry.push(entry_def);
-    host_entry
-}
-
 fn add_host_stage_function(
     mut host_stage : Vec<HostTop>,
     body : Vec<Stmt>,
@@ -411,7 +348,6 @@ fn instantiate_parallel_function(
     def : ParFunDef,
 ) -> CodegenResult<Ast> {
     let (mut ast, body) = codegen_stmts(ast, body, &def, false)?;
-    ast.host_entry = add_host_entry_functions(ast.host_entry, &def);
     ast.host_stage = add_host_stage_function(ast.host_stage, body, def);
     Ok(ast)
 }

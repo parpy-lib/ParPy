@@ -25,6 +25,7 @@ def test_axpy_gpu():
     expected = axpy_wrap(a, x, y)
 
     # Run each iteration of the 'i' loop on a separate GPU thread.
+    parir.clear_cache()
     par = { "i": [ParKind.GpuThreads(128)] }
     actual = axpy_wrap(a, x.cuda(), y.cuda(), par).cpu()
     torch.cuda.synchronize()
