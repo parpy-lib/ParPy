@@ -1,6 +1,6 @@
 
 use crate::par;
-use crate::info::Info;
+use crate::info::*;
 use crate::ir::ast::*;
 
 use std::collections::HashMap;
@@ -32,23 +32,33 @@ struct ConvertEnv<'py, 'a> {
     fst_line : usize
 }
 
-fn extract_info<'py, 'a>(
-    node : &'py Bound<'py, PyAny>,
-    env : &'py ConvertEnv<'py, 'a>
+fn extract_node_info<'py>(
+    node : &'py Bound<'py, PyAny>
 ) -> PyResult<Info> {
-    let l1 = node.getattr("lineno")?.extract::<usize>()? + env.fst_line;
+    let l1 = node.getattr("lineno")?.extract::<usize>()?;
+    let c1 = node.getattr("col_offset")?.extract::<usize>()?;
+    let start = FilePos::new(l1, c1);
     let l2 = if let Ok(line) = node.getattr("end_lineno") {
-        line.extract::<usize>()? + env.fst_line
+        line.extract::<usize>()?
     } else {
         l1
     };
-    let c1 = node.getattr("col_offset")?.extract::<usize>()?;
     let c2 = if let Ok(col) = node.getattr("end_col_offset") {
         col.extract::<usize>()?
     } else {
         c1
     };
-    Ok(Info::new(env.filepath, l1, l2, c1, c2))
+    let end = FilePos::new(l2, c2);
+    Ok(Info::new("", start, end))
+}
+
+fn extract_info<'py, 'a>(
+    node : &'py Bound<'py, PyAny>,
+    env : &'py ConvertEnv<'py, 'a>
+) -> PyResult<Info> {
+    let i = extract_node_info(node)?;
+    Ok(i.with_file(env.filepath)
+        .with_line_offset(env.fst_line))
 }
 
 fn convert_bin_op<'py, 'a>(
@@ -185,6 +195,14 @@ fn convert_stmt<'py, 'a>(
     }
 }
 
+fn merge_body_infos(
+    body : &Vec<Stmt>
+) -> Info {
+    body.iter().fold(Info::default(), |acc, stmt| {
+        Info::merge(acc, stmt.get_info())
+    })
+}
+
 fn convert_stmts<'py, 'a>(
     body : Bound<'py, PyAny>,
     env : &'py ConvertEnv<'py, 'a>
@@ -210,12 +228,14 @@ pub fn to_untyped_ir<'py>(
         .map(|arg| {
             let id = arg?.getattr("arg")?.extract::<String>()?;
             let ty = Type::Unknown;
-            Ok(TypedParam {id, ty})
+            let i = Info::default();
+            Ok(TypedParam {id, ty, i})
         })
         .collect::<PyResult<Vec<TypedParam>>>()?;
     let id = body.getattr("name")?.extract::<String>()?;
     let ir_body = convert_stmts(body.getattr("body")?, &env)?;
-    Ok(vec![Def::FunDef {id, params: untyped_args, body: ir_body}])
+    let i = merge_body_infos(&ir_body);
+    Ok(vec![Def::FunDef {id, params: untyped_args, body: ir_body, i}])
 }
 
 //////////////////////
@@ -432,21 +452,23 @@ pub fn to_typed_ir<'py>(
     args : Vec<Bound<'py, PyAny>>,
     par : HashMap<String, Vec<par::ParKind>>
 ) -> PyResult<Ast> {
-    let (id, params, body) = match &ast[..] {
-        [Def::FunDef {id, params, body}] => {
-            Ok((id, params, body))
+    let (id, params, body, i) = match &ast[..] {
+        [Def::FunDef {id, params, body, i}] => {
+            Ok((id, params, body, i))
         },
         _ => {
             let i = Info::default();
             runtime_error!(i, "Compiler expected Python IR AST to consist of one function definition")
         }
     }?;
+    let fst_line = i.get_start().line;
     let typed_params = if args.len() == params.len() {
         args.into_iter()
             .zip(params.into_iter())
             .map(|(a, TypedParam {id, ..})| {
+                let i = i.clone().with_line_offset(fst_line);
                 let ty = ir_type(&a, &id)?;
-                Ok(TypedParam {id : id.clone(), ty})
+                Ok(TypedParam {id : id.clone(), ty, i : i.clone()})
             })
             .collect::<PyResult<Vec<TypedParam>>>()
     } else {
@@ -456,14 +478,14 @@ pub fn to_typed_ir<'py>(
         runtime_error!(i, "Function {id} expected {l1} arguments but received {l2}")
     }?;
     let tyvars = typed_params.iter()
-        .map(|TypedParam {id, ty}| (id.clone(), ty.clone()))
+        .map(|TypedParam {id, ty, ..}| (id.clone(), ty.clone()))
         .collect::<HashMap<String, Type>>();
     let env = TypeEnv { vars : tyvars };
     let (_, body) = typed_stmts(env, body.clone())?;
 
     Ok(vec![
-        Def::FunDef {id : id.clone(), params : typed_params, body},
-        Def::ParFunInst {id : id.clone(), par}
+        Def::FunDef {id : id.clone(), params : typed_params, body, i : i.clone()},
+        Def::ParFunInst {id : id.clone(), par, i : i.clone()}
     ])
 }
 

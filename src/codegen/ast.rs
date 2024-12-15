@@ -67,7 +67,8 @@ pub enum Stmt {
         threads : (i64, i64, i64),
         blocks : (i64, i64, i64),
         id : String,
-        args : Vec<Expr>
+        args : Vec<Expr>,
+        i : Info
     }
 }
 
@@ -86,7 +87,8 @@ impl InfoNode for Stmt {
 #[derive(Clone, Debug)]
 pub struct TypedParam {
     pub id : String,
-    pub ty : Type
+    pub ty : Type,
+    pub i : Info
 }
 
 #[derive(Clone, Debug)]
@@ -330,7 +332,7 @@ impl PrettyPrint for Stmt {
 
 impl PrettyPrint for TypedParam {
     fn pprint(&self, cfg : &mut PrintConfig) -> String {
-        let TypedParam {id, ty} = self;
+        let TypedParam {id, ty, ..} = self;
         let ty = ty.pprint(cfg);
         format!("{ty} {id}")
     }

@@ -1,5 +1,5 @@
 use crate::par;
-use crate::info::Info;
+use crate::info::*;
 
 use std::collections::HashMap;
 
@@ -64,16 +64,26 @@ pub enum Stmt {
     For {var : String, lo : Expr, hi : Expr, body : Vec<Stmt>, i : Info},
 }
 
+impl InfoNode for Stmt {
+    fn get_info(&self) -> Info {
+        match self {
+            Stmt::Assign {i, ..} => i.clone(),
+            Stmt::For {i, ..} => i.clone()
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TypedParam {
     pub id : String,
-    pub ty : Type
+    pub ty : Type,
+    pub i : Info
 }
 
 #[derive(Clone, Debug)]
 pub enum Def {
-    FunDef {id : String, params : Vec<TypedParam>, body : Vec<Stmt>},
-    ParFunInst {id : String, par : HashMap<String, Vec<par::ParKind>>}
+    FunDef {id : String, params : Vec<TypedParam>, body : Vec<Stmt>, i : Info},
+    ParFunInst {id : String, par : HashMap<String, Vec<par::ParKind>>, i : Info}
 }
 
 pub type Ast = Vec<Def>;

@@ -54,7 +54,8 @@ const DEFAULT_TPB : i64 = 256;
 struct ParFunDef {
     id : String,
     params : Vec<TypedParam>,
-    par : HashMap<String, Vec<ParKind>>
+    par : HashMap<String, Vec<ParKind>>,
+    i : Info
 }
 
 fn gen_kernel_id(
@@ -135,7 +136,7 @@ fn codegen_kernel<'a>(
     let kernel_id = gen_kernel_id(&ast, &def.id);
     let kernel_args = def.params.clone()
         .into_iter()
-        .map(|TypedParam {id, ty}| match ty {
+        .map(|TypedParam {id, ty, i}| match ty {
             Type::IntTensor(_) | Type::FloatTensor(_) => {
                 let elem_ty = match ty {
                     Type::IntTensor(sz) => Type::Int(sz),
@@ -144,17 +145,17 @@ fn codegen_kernel<'a>(
                 };
                 Expr::Call {
                     target : Box::new(Expr::BinOp {
-                        lhs : Box::new(Expr::Var {id, ty, i : Info::default()}),
+                        lhs : Box::new(Expr::Var {id, ty, i : def.i.clone()}),
                         op : BinOp::Proj,
                         rhs : Box::new(Expr::Str {v : "data_ptr".to_string()}),
-                        i : Info::default()
+                        i : i.clone()
                     }),
                     ty_args : vec![elem_ty],
                     args : vec![],
-                    i : Info::default()
+                    i : i.clone()
                 }
             },
-            _ => Expr::Var {id, ty, i : Info::default()}
+            _ => Expr::Var {id, ty, i : i.clone()}
         })
         .collect::<Vec<Expr>>();
     let inner_threads = find_inner_parallelism_stmts(&body, &def.par)?.unwrap_or(1);
@@ -169,7 +170,7 @@ fn codegen_kernel<'a>(
             },
         ParKind::GpuThreads(nthreads) =>
             if inner_threads != 1 {
-                let i = Info::default();
+                let i = def.i.clone();
                 codegen_error!(i, "Nested parallelism inside GpuThreads is not supported")
             } else {
                 if *nthreads <= 1024 {
@@ -185,7 +186,8 @@ fn codegen_kernel<'a>(
         threads : (tpb, 1, 1),
         blocks : (xblocks, yblocks, 1),
         id : kernel_id.clone(),
-        args : kernel_args
+        args : kernel_args,
+        i : def.i.clone()
     };
     let (mut ast, stmts) = codegen_stmts(ast, body, def, true)?;
     let (dev_init, dev_incr) = match par_kind {
@@ -194,12 +196,12 @@ fn codegen_kernel<'a>(
                 lhs : Box::new(init.clone()),
                 op : BinOp::Add,
                 rhs : Box::new(Expr::BlockIdx(Dim::Y)),
-                i : Info::default()
+                i : def.i.clone()
             };
             let dev_incr = Expr::Int {
                 v : *nblocks,
                 ty : Type::Int(IntSize::I64),
-                i : Info::default()
+                i : def.i.clone()
             };
             (dev_init, dev_incr)
         },
@@ -214,26 +216,26 @@ fn codegen_kernel<'a>(
                         rhs : Box::new(Expr::Int {
                             v : xblocks,
                             ty : Type::Int(IntSize::I64),
-                            i : Info::default()
+                            i : def.i.clone()
                         }),
-                        i : Info::default()
+                        i : def.i.clone()
                     }),
                     op : BinOp::Add,
                     rhs : Box::new(Expr::ThreadIdx(Dim::X)),
-                    i : Info::default()
+                    i : def.i.clone()
                 }
             };
             let dev_init = Expr::BinOp {
                 lhs : Box::new(init.clone()),
                 op : BinOp::Add,
                 rhs : Box::new(rhs),
-                i : Info::default()
+                i : def.i.clone()
             };
             let incr = tpb * xblocks;
             let dev_incr = Expr::Int {
                 v : incr,
                 ty : Type::Int(IntSize::I64),
-                i : Info::default()
+                i : def.i.clone()
             };
             (dev_init, dev_incr)
         }
@@ -245,7 +247,7 @@ fn codegen_kernel<'a>(
         cond : cond.clone(),
         incr : dev_incr,
         body : stmts,
-        i : Info::default()
+        i : def.i.clone()
     };
     let kernel_def = DeviceTop::KernelFunDef {
         id : kernel_id,
@@ -324,8 +326,7 @@ fn codegen_stmt<'a>(
                 _ => codegen_error!(i, "Unsupported parallelism argument: {par:?}")
             }
         },
-        Stmt::KernelLaunch {..} => {
-            let i = Info::default();
+        Stmt::KernelLaunch {i, ..} => {
             codegen_error!(i, "Found kernel launch in host code generation")
         },
         _ => Ok((ast, stmt))
@@ -357,13 +358,13 @@ fn add_host_entry_functions(
     };
     host_entry.push(fun_decl);
     let mut body = def.params.iter()
-        .filter_map(|TypedParam {id, ty}| match ty {
+        .filter_map(|TypedParam {id, ty, i}| match ty {
             Type::IntTensor(_) | Type::FloatTensor(_) => Some(Stmt::Expr {
                 e : Expr::Call {
                     target : Box::new(Expr::Str {v : "CHECK_INPUT".to_string()}),
                     ty_args : vec![],
                     args : vec![Expr::Str {v : id.clone()}],
-                    i : Info::default()
+                    i : i.clone()
                 }
             }),
             _ => None
@@ -371,14 +372,14 @@ fn add_host_entry_functions(
         .collect::<Vec<Stmt>>();
     let args = def.params.clone()
         .into_iter()
-        .map(|TypedParam {id, ty}| Expr::Var {id, ty, i : Info::default()})
+        .map(|TypedParam {id, ty, i}| Expr::Var {id, ty, i})
         .collect::<Vec<Expr>>();
     body.push(Stmt::Expr {
         e : Expr::Call {
             target : Box::new(Expr::Str {v : def.id.clone()}),
             ty_args : vec![],
             args,
-            i : Info::default()
+            i : def.i.clone()
         }
     });
     let entry_def = HostTop::FunDef {
@@ -558,10 +559,10 @@ fn compile_ir_params(
     params.into_iter()
         .fold(Ok((def_vars, vec![])), |acc, param| {
             let (mut def_vars, mut params) = acc?;
-            let ir_ast::TypedParam {id, ty} = param;
+            let ir_ast::TypedParam {id, ty, i} = param;
             def_vars.insert(id.clone());
-            let ty = compile_ir_type(ty, &Info::default())?;
-            params.push(TypedParam {id, ty});
+            let ty = compile_ir_type(ty, &i)?;
+            params.push(TypedParam {id, ty, i});
             Ok((def_vars, params))
         })
 }
@@ -574,22 +575,21 @@ fn compile_ir_def(
     def : ir_ast::Def
 ) -> CodegenResult<(CodegenEnv, Ast)> {
     match def {
-        ir_ast::Def::FunDef {id, params, body} => {
+        ir_ast::Def::FunDef {id, params, body, ..} => {
             let vars = HashSet::new();
             let (vars, params) = compile_ir_params(vars, params)?;
             let (_, body) = compile_ir_stmts(vars, body)?;
             env.insert(id, (params, body));
             Ok((env, ast))
         },
-        ir_ast::Def::ParFunInst {id, par} => {
+        ir_ast::Def::ParFunInst {id, par, i} => {
             if let Some((params, body)) = env.get(&id) {
                 let def = ParFunDef {
-                    id, params : params.clone(), par
+                    id, params : params.clone(), par, i
                 };
                 let ast = instantiate_parallel_function(ast, body.clone(), def)?;
                 Ok((env, ast))
             } else {
-                let i = Info::default();
                 codegen_error!(i, "Parallel instantiation {id} refers to unknown function")
             }
         }
