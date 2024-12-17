@@ -1,5 +1,6 @@
 from . import compile, key, parir
 from .compile import clear_cache
+from .parir import ParKind
 
 def convert_python_function_to_ir(fn):
     import ast as python_ast
