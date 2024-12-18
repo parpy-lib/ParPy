@@ -4,6 +4,8 @@ from parir.parir import ParKind
 import pytest
 import torch
 
+import warnings
+
 torch.manual_seed(1234)
 np.random.seed(1234)
 
@@ -16,10 +18,22 @@ def spmv_row(A_values, A_rows, A_cols, A_nrows, x, y):
             sum = sum + A_values[i] * x[A_cols[i]]
         y[row] = sum
 
-def spmv_wrap(A_values, A_rows, A_cols, A_nrows, x, parallelize=None):
+def spmv_wrap(A_values, A_rows, A_cols, A_nrows, x, p=None):
     y = torch.empty((A_nrows,), dtype=x.dtype, device=x.device)
-    spmv_row(A_values, A_rows, A_cols, A_nrows, x, y, parallelize=parallelize)
+    spmv_row(A_values, A_rows, A_cols, A_nrows, x, y, parallelize=p)
     return y
+
+def compare_spmv(N, M, p=None):
+    sparsity = 0.01
+    A = uniform_random_csr_f32_i64(N, M, sparsity)
+    x = torch.randn(M, dtype=torch.float32, device='cuda')
+    # Compare result using PyTorch against parallelized code
+    y1 = A.matmul(x)
+    parir.clear_cache()
+    y2 = spmv_wrap(A.values(), A.crow_indices(), A.col_indices(), N, x, p)
+    torch.cuda.synchronize()
+    assert torch.allclose(y1, y2, atol=1e-5)
+
 
 def uniform_random_csr_f32_i64(N, M, d):
     nnz = int(N * M * d)
@@ -31,19 +45,22 @@ def uniform_random_csr_f32_i64(N, M, d):
     values = torch.randn(nnz, dtype=torch.float32, device='cuda')
     idxs = np.array((rows, cols))
     A = torch.sparse_coo_tensor(idxs, values, device='cuda')
-    return A.to_sparse_csr()
+    # Ignore warning about sparse CSR support being in beta state
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return A.to_sparse_csr()
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+def test_spmv_seq_reduce():
+    N = 256
+    M = 4096
+    p = { "row": [ParKind.GpuBlocks(N)] }
+    compare_spmv(N, M, p)
 
 @pytest.mark.skip(reason="Parallel reductions are not supported")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_spmv_gpu():
     N = 256
     M = 4096
-    sparsity = 0.01
-    A = uniform_random_csr_f32_i64(N, M, sparsity)
-    x = torch.randn(M, dtype=torch.float32, device='cuda')
-    y1 = A.matmul(x)
-    parir.clear_cache()
     p = { "row": [ParKind.GpuBlocks(N)], "i": [ParKind.GpuThreads(128)] }
-    y2 = spmv_wrap(A.values(), A.crow_indices(), A.col_indices(), N, x, p)
-    torch.cuda.synchronize()
-    assert torch.allclose(y1, y2, atol=1e-5)
+    compare_spmv(N, M, p)

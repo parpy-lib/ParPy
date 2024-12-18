@@ -13,40 +13,32 @@ def sum_rows(x, out, N, M):
             s = s + x[i * M + j]
         out[i] = s
 
-def sum_wrap(x, parallelize=None):
+def sum_wrap(x, p=None):
     N, M = x.shape
     xflat = x.flatten()
     out = torch.empty(N, dtype=x.dtype, device=x.device)
-    sum_rows(xflat, out, N, M, parallelize=parallelize)
+    sum_rows(xflat, out, N, M, parallelize=p)
     return out
 
-@pytest.mark.skip(reason="Parallel reductions are not supported")
+def compare_sum(N, M, p):
+    x = torch.randn((N, M), dtype=torch.float32)
+    # Run sequentially on CPU and compare result against parallelized version
+    expected = sum_wrap(x)
+    actual = sum_wrap(x.cuda(), p).cpu()
+    torch.cuda.synchronize()
+    assert torch.allclose(expected, actual, atol=1e-5)
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_sum_outer_parallel_gpu():
     N = 100
     M = 50
-    x = torch.randn((N, M), dtype=torch.float32)
-    expected = sum_wrap(x)
-
-    # Only parallelize over the outer loop
-    parir.clear_cache()
-    par = { "i" : [ParKind.GpuBlocks(N)], }
-    actual = sum_wrap(x.cuda(), parallelize=par).cpu()
-    torch.cuda.synchronize()
-    assert torch.allclose(expected, actual, atol=1e-5)
+    p = { "i" : [ParKind.GpuBlocks(N)], }
+    compare_sum(N, M, p)
 
 @pytest.mark.skip(reason="Parallel reductions are not supported")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_sum_inner_and_outer_parallel_gpu():
     N = 100
-    M = 500
-    x = torch.randn((N, M), dtype=torch.float32)
-    expected = sum_wrap(x)
-
-    # Run both the outer and the inner loops in parallel, by performing a
-    # parallel reduction within each thread block.
-    parir.clear_cache()
-    par = { "i": [ParKind.GpuBlocks(N)], "j": [ParKind.GpuThreads(128)] }
-    actual = sum_wrap(x.cuda(), parallelize=par).cpu()
-    torch.cuda.synchronize()
-    assert torch.allclose(expected, actual, atol=1e-5)
+    M = 50
+    p = { "i": [ParKind.GpuBlocks(N)], "j": [ParKind.GpuThreads(128)] }
+    compare_sum(N, M, p)

@@ -10,10 +10,10 @@ def axpy(a, x, y, out, N):
     for i in range(N):
         out[i] = a * x[i] + y[i]
 
-def axpy_wrap(a, x, y, parallelize=None):
+def axpy_wrap(a, x, y, p=None):
     N = len(x)
     out = torch.empty_like(x)
-    axpy(a, x, y, out, N, parallelize=parallelize)
+    axpy(a, x, y, out, N, parallelize=p)
     return out
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -25,8 +25,7 @@ def test_axpy_gpu():
     expected = axpy_wrap(a, x, y)
 
     # Run each iteration of the 'i' loop on a separate GPU thread.
-    parir.clear_cache()
-    par = { "i": [ParKind.GpuThreads(128)] }
-    actual = axpy_wrap(a, x.cuda(), y.cuda(), par).cpu()
+    p = { "i": [ParKind.GpuThreads(128)] }
+    actual = axpy_wrap(a, x.cuda(), y.cuda(), p).cpu()
     torch.cuda.synchronize()
     assert torch.allclose(expected, actual, atol=1e-5)
