@@ -13,7 +13,7 @@ def copy(x, y, N):
 def copy_wrap(x, p=None):
     N, = x.shape
     y = torch.empty_like(x)
-    copy(x, y, N, parallelize=p)
+    copy(x, y, N, parallelize=p, cache=False)
     return y
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")

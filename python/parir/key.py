@@ -24,17 +24,7 @@ def print_par_arg(key, values):
     return f"{key}:{sorted(values)}"
 
 def print_kwargs(kwargs):
-    if len(kwargs) == 0:
-        return ""
-    elif len(kwargs) == 1 and "parallelize" in kwargs:
-        par = kwargs["parallelize"]
-        if par is None:
-            return ""
-        else:
-            return ",".join([print_par_arg(k, v) for k, v in kwargs["parallelize"].items()])
-    else:
-        print(f"Unknown key-value arguments: {kwargs}")
-        exit(1)
+    return ",".join(kwargs)
 
 def generate_function_key(fn, args, kwargs):
     key_str = f"{fn.__name__}+{print_type_signature(args)}+{print_kwargs(kwargs)}"

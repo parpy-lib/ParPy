@@ -20,7 +20,7 @@ def spmv_row(A_values, A_rows, A_cols, A_nrows, x, y):
 
 def spmv_wrap(A_values, A_rows, A_cols, A_nrows, x, p=None):
     y = torch.empty((A_nrows,), dtype=x.dtype, device=x.device)
-    spmv_row(A_values, A_rows, A_cols, A_nrows, x, y, parallelize=p)
+    spmv_row(A_values, A_rows, A_cols, A_nrows, x, y, parallelize=p, cache=False)
     return y
 
 def compare_spmv(N, M, p=None):
@@ -29,7 +29,6 @@ def compare_spmv(N, M, p=None):
     x = torch.randn(M, dtype=torch.float32, device='cuda')
     # Compare result using PyTorch against parallelized code
     y1 = A.matmul(x)
-    parir.clear_cache()
     y2 = spmv_wrap(A.values(), A.crow_indices(), A.col_indices(), N, x, p)
     torch.cuda.synchronize()
     assert torch.allclose(y1, y2, atol=1e-5)

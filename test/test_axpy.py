@@ -13,7 +13,7 @@ def axpy(a, x, y, out, N):
 def axpy_wrap(a, x, y, p=None):
     N = len(x)
     out = torch.empty_like(x)
-    axpy(a, x, y, out, N, parallelize=p)
+    axpy(a, x, y, out, N, parallelize=p, cache=False)
     return out
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")

@@ -17,17 +17,31 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     # work.
     if "parallelize" not in kwargs or kwargs["parallelize"] is None:
         return fn
-    par = kwargs["parallelize"]
-    del kwargs["parallelize"]
-    if not isinstance(par, dict):
+    elif isinstance(kwargs["parallelize"], dict):
+        par = kwargs["parallelize"]
+    else:
         raise RuntimeError("The parallelization argument must be a dictionary")
+    del kwargs["parallelize"]
+
+    # The cache argument is used to specify whether the compiled shared library
+    # should be cached or not. By default, we cache the result.
+    if "cache" not in kwargs or kwargs["cache"] is None:
+        cache = True
+    elif isinstance(kwargs["cache"], bool):
+        cache = kwargs["cache"]
+    else:
+        raise RuntimeError("The cache argument must be a boolean")
+    del kwargs["cache"]
+
+    # Any keyword arguments remaining after processing the known ones above are
+    # considered unknown.
     if len(kwargs) > 0:
         raise RuntimeError(f"Received unknown keyword arguments: {kwargs}")
 
     # Compiles the IR AST using type information of the provided arguments and
     # the parallelization settings to determine how to generate parallel
     # low-level code.
-    if not compile.is_cached(key):
+    if not cache or not compile.is_cached(key):
         # TODO: build differently if we have no device code
         cu_host, cu_dev = parir.compile_ir(ir_ast, args, par)
         cu_source = f"{cu_dev}\n{cu_host}"
