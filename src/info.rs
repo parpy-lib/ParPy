@@ -103,7 +103,7 @@ impl Default for Info {
     fn default() -> Info {
         let start = FilePos::default();
         let end = FilePos::default();
-        Info {filename : String::from("<unknown>"), start, end}
+        Info {filename : String::new(), start, end}
     }
 }
 

@@ -1,6 +1,6 @@
 import numpy as np
 import parir
-from parir.parir import ParKind
+from parir import ParKind, ParSpec
 import pytest
 import torch
 
@@ -53,7 +53,7 @@ def uniform_random_csr_f32_i64(N, M, d):
 def test_spmv_seq_reduce():
     N = 256
     M = 4096
-    p = { "row": [ParKind.GpuBlocks(N)] }
+    p = { "row": ParSpec(ParKind.GpuThreads(N)) }
     compare_spmv(N, M, p)
 
 @pytest.mark.skip(reason="Parallel reductions are not supported")
@@ -61,5 +61,8 @@ def test_spmv_seq_reduce():
 def test_spmv_gpu():
     N = 256
     M = 4096
-    p = { "row": [ParKind.GpuBlocks(N)], "i": [ParKind.GpuThreads(128)] }
+    p = {
+        "row": ParSpec(ParKind.GpuThreads(N)),
+        "i": ParSpec(ParKind.GpuThreads(128))
+    }
     compare_spmv(N, M, p)

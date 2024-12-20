@@ -1,5 +1,5 @@
 import parir
-from parir.parir import ParKind
+from parir import ParKind, ParSpec
 import pytest
 import torch
 
@@ -25,7 +25,7 @@ def test_axpy_gpu():
     expected = axpy_wrap(a, x, y)
 
     # Run each iteration of the 'i' loop on a separate GPU thread.
-    p = { "i": [ParKind.GpuThreads(128)] }
+    p = { "i": ParSpec(ParKind.GpuThreads(128)) }
     actual = axpy_wrap(a, x.cuda(), y.cuda(), p).cpu()
     torch.cuda.synchronize()
     assert torch.allclose(expected, actual, atol=1e-5)

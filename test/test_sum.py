@@ -1,5 +1,5 @@
 import parir
-from parir.parir import ParKind
+from parir import ParKind, ParSpec
 import pytest
 import torch
 
@@ -32,7 +32,7 @@ def compare_sum(N, M, p):
 def test_sum_outer_parallel_gpu():
     N = 100
     M = 50
-    p = { "i" : [ParKind.GpuBlocks(N)], }
+    p = { "i" : ParSpec(ParKind.GpuThreads(N)) }
     compare_sum(N, M, p)
 
 @pytest.mark.skip(reason="Parallel reductions are not supported")
@@ -40,5 +40,8 @@ def test_sum_outer_parallel_gpu():
 def test_sum_inner_and_outer_parallel_gpu():
     N = 100
     M = 50
-    p = { "i": [ParKind.GpuBlocks(N)], "j": [ParKind.GpuThreads(128)] }
+    p = {
+        "i": ParSpec(ParKind.GpuThreads(N)),
+        "j": ParSpec(ParKind.GpuThreads(128))
+    }
     compare_sum(N, M, p)

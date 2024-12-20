@@ -60,8 +60,8 @@ pub enum Stmt {
     Assign {dst : Expr, e : Expr, i : Info},
     For {var_ty : Type, var : String, init : Expr, cond : Expr, incr : Expr, body : Vec<Stmt>, i : Info},
     KernelLaunch {
-        threads : (i64, i64, i64),
-        blocks : (i64, i64, i64),
+        threads : (u64, u64, u64),
+        blocks : (u64, u64, u64),
         id : String,
         args : Vec<Expr>,
         i : Info
@@ -179,7 +179,7 @@ impl PrettyPrint for BinOp {
     }
 }
 
-fn precedence(bop : &BinOp) -> i64 {
+fn precedence(bop : &BinOp) -> u64 {
     match bop {
         BinOp::Add => 0,
         BinOp::Sub => 0,

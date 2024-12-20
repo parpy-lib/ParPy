@@ -1,7 +1,7 @@
 
 use crate::par;
 use crate::info::*;
-use crate::ir::ast::*;
+use crate::py_ir::ast::*;
 
 use std::collections::HashMap;
 
@@ -450,7 +450,7 @@ fn typed_stmts(
 pub fn to_typed_ir<'py>(
     ast : &Ast,
     args : Vec<Bound<'py, PyAny>>,
-    par : HashMap<String, Vec<par::ParKind>>
+    par : HashMap<String, par::ParSpec>
 ) -> PyResult<Ast> {
     let (id, params, body, i) = match &ast[..] {
         [Def::FunDef {id, params, body, i}] => {
