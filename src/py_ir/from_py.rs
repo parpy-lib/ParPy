@@ -1,5 +1,6 @@
 
 use crate::par;
+use crate::err::*;
 use crate::info::*;
 use crate::py_ir::ast::*;
 
@@ -8,18 +9,17 @@ use std::collections::HashMap;
 use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
 use pyo3::types;
-use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 
 macro_rules! runtime_error {
-    ($i:tt,$($t:tt)*) => {{
-        Err(PyRuntimeError::new_err($i.error_msg(format!($($t)*))))
-    }}
+    ($i:tt, $($t:tt)*) => {
+        Err(Into::<PyErr>::into(CompileError::runtime_err($i.error_msg(format!($($t)*)))))
+    }
 }
 
 macro_rules! type_error {
-    ($i:tt,$($t:tt)*) => {{
-        Err(PyTypeError::new_err($i.error_msg(format!($($t)*))))
-    }}
+    ($i:tt, $($t:tt)*) => {
+        Err(Into::<PyErr>::into(CompileError::type_err($i.error_msg(format!($($t)*)))))
+    }
 }
 
 //////////////////
