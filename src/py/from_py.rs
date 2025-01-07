@@ -1,8 +1,7 @@
-
 use crate::par;
 use crate::err::*;
 use crate::info::*;
-use crate::py_ir::ast::*;
+use super::ast::*;
 
 use std::collections::HashMap;
 

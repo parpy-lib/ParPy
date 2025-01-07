@@ -4,7 +4,7 @@ use crate::err::*;
 use crate::info::*;
 use crate::par::*;
 use crate::ir::ast::*;
-use crate::py_ir::ast as src_ast;
+use crate::py::ast as src_ast;
 
 use std::collections::HashMap;
 

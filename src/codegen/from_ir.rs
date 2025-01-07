@@ -1,5 +1,5 @@
 use crate::info::*;
-use crate::py_ir::ast as ir_ast;
+use crate::py::ast as ir_ast;
 use crate::codegen::ast::*;
 use crate::par::*;
 

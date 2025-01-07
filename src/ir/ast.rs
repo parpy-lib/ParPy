@@ -1,7 +1,7 @@
 use crate::info::*;
 
 // Reuse the binary operations defined in the Python IR.
-pub use crate::py_ir::ast::BinOp;
+pub use crate::py::ast::BinOp;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum IntSize {

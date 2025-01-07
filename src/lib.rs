@@ -3,7 +3,7 @@ mod err;
 mod info;
 mod ir;
 mod par;
-mod py_ir;
+mod py;
 
 use codegen::ast;
 
@@ -20,11 +20,11 @@ fn python_to_ir<'py>(
     fst_line : usize
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let py = py_ast.py().clone();
-    let ast = py_ir::from_py::to_untyped_ir(py_ast, filepath, fst_line)?;
+    let ast = py::to_untyped_ir(py_ast, filepath, fst_line)?;
 
     // Wrap the intermediate AST in a capsule so we can pass it back to Python.
     let name = CString::new("Parir IR AST")?;
-    Ok(PyCapsule::new::<py_ir::ast::Ast>(py, ast, Some(name))?)
+    Ok(PyCapsule::new::<py::ast::Ast>(py, ast, Some(name))?)
 }
 
 #[pyfunction]
@@ -33,10 +33,10 @@ fn compile_ir<'py>(
     args : Vec<Bound<'py, PyAny>>,
     par : HashMap<String, par::ParSpec>
 ) -> PyResult<(String, String)> {
-    let untyped_ir_ast : &py_ir::ast::Ast = unsafe {
+    let untyped_ir_ast : &py::ast::Ast = unsafe {
         ir_ast_cap.reference()
     };
-    let ir_ast = py_ir::from_py::to_typed_ir(untyped_ir_ast, args, par)?;
+    let ir_ast = py::to_typed_ir(untyped_ir_ast, args, par)?;
     let ast = codegen::from_ir::ir_to_code(ir_ast)?;
     Ok(ast::pprint_ast(&ast))
 }
