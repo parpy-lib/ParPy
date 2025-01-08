@@ -11,7 +11,7 @@ pub use crate::py::ast::TypedParam;
 #[derive(Clone, Debug)]
 pub struct LoopProperties {
     init: Option<Expr>,
-    incr: i64,
+    incr: u64,
     precond: Option<Expr>
 }
 
@@ -55,8 +55,8 @@ pub enum Top {
         id: String,
         params: Vec<TypedParam>,
         body: Vec<Stmt>,
-        nblocks: i64,
-        nthreads: i64,
+        nblocks: u64,
+        nthreads: u64,
         i: Info
     }
 }
