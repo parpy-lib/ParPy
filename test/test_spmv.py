@@ -12,27 +12,15 @@ np.random.seed(1234)
 @parir.jit
 def spmv_row(A_values, A_rows, A_cols, A_nrows, x, y):
     for row in range(A_nrows):
-        nnz_row = A_rows[row+1] - A_rows[row]
-        sum = 0.0
+        s = 0.0
         for i in range(A_rows[row], A_rows[row+1]):
-            sum = sum + A_values[i] * x[A_cols[i]]
-        y[row] = sum
+            s = s + A_values[i] * x[A_cols[i]]
+        y[row] = s
 
 def spmv_wrap(A_values, A_rows, A_cols, A_nrows, x, p=None):
     y = torch.empty((A_nrows,), dtype=x.dtype, device=x.device)
     spmv_row(A_values, A_rows, A_cols, A_nrows, x, y, parallelize=p, cache=False)
     return y
-
-def compare_spmv(N, M, p=None):
-    sparsity = 0.01
-    A = uniform_random_csr_f32_i64(N, M, sparsity)
-    x = torch.randn(M, dtype=torch.float32, device='cuda')
-    # Compare result using PyTorch against parallelized code
-    y1 = A.matmul(x)
-    y2 = spmv_wrap(A.values(), A.crow_indices(), A.col_indices(), N, x, p)
-    torch.cuda.synchronize()
-    assert torch.allclose(y1, y2, atol=1e-5)
-
 
 def uniform_random_csr_f32_i64(N, M, d):
     nnz = int(N * M * d)
@@ -48,6 +36,16 @@ def uniform_random_csr_f32_i64(N, M, d):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         return A.to_sparse_csr()
+
+def compare_spmv(N, M, p=None):
+    sparsity = 0.01
+    A = uniform_random_csr_f32_i64(N, M, sparsity)
+    x = torch.randn(M, dtype=torch.float32, device='cuda')
+    # Compare result using PyTorch against parallelized code
+    y1 = A.matmul(x)
+    y2 = spmv_wrap(A.values(), A.crow_indices(), A.col_indices(), N, x, p)
+    torch.cuda.synchronize()
+    assert torch.allclose(y1, y2, atol=1e-5)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_spmv_seq_reduce():

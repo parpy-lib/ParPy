@@ -1,5 +1,6 @@
 from . import compile, key, parir
 from .compile import clear_cache
+from .operators import exp, inf, log, min, max, sum
 from .parir import ParKind, ParSpec
 
 def convert_python_function_to_ir(fn):
@@ -19,9 +20,9 @@ def compile_function(ir_ast, args, kwargs, fn, key):
         return fn
     elif isinstance(kwargs["parallelize"], dict):
         par = kwargs["parallelize"]
+        del kwargs["parallelize"]
     else:
         raise RuntimeError("The parallelization argument must be a dictionary")
-    del kwargs["parallelize"]
 
     # The cache argument is used to specify whether the compiled shared library
     # should be cached or not. By default, we cache the result.
@@ -29,14 +30,21 @@ def compile_function(ir_ast, args, kwargs, fn, key):
         cache = True
     elif isinstance(kwargs["cache"], bool):
         cache = kwargs["cache"]
+        del kwargs["cache"]
     else:
         raise RuntimeError("The cache argument must be a boolean")
-    del kwargs["cache"]
 
     # Any keyword arguments remaining after processing the known ones above are
     # considered unknown.
     if len(kwargs) > 0:
         raise RuntimeError(f"Received unknown keyword arguments: {kwargs}")
+
+    # TODO: When the compiler is able to generate valid parallelized CUDA C++
+    # code, the below return should be removed. It is kept like this for now to
+    # ensure running 'pytest' still tests that the files can be handled by the
+    # partial pipeline.
+    cu_host, cu_dev = parir.compile_ir(ir_ast, args, par)
+    return fn
 
     # Compiles the IR AST using type information of the provided arguments and
     # the parallelization settings to determine how to generate parallel

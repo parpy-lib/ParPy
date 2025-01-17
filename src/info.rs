@@ -92,9 +92,14 @@ impl Info {
             " ".repeat(start.col),
             "^".repeat(end.col - start.col)
         );
+        let lines_msg = if start.line == end.line {
+            format!("line {0}", start.line)
+        } else {
+            format!("lines {0}-{1}", start.line, end.line)
+        };
         format!(
-            "{msg}\n\nIn span [{0},{1}:{2},{3}] of file {4}:\n{select_lines}\n{err_markers}",
-            start.line, start.col, end.line, end.col, self.filename
+            "{msg}\n\nOn {lines_msg} of file {0}:\n{select_lines}\n{err_markers}",
+            self.filename
         )
     }
 }

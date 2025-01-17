@@ -1,11 +1,7 @@
-mod codegen;
 mod err;
 mod info;
-mod ir;
 mod par;
 mod py;
-
-use codegen::ast;
 
 use std::collections::HashMap;
 use std::ffi::CString;
@@ -36,9 +32,10 @@ fn compile_ir<'py>(
     let untyped_ir_ast : &py::ast::Ast = unsafe {
         ir_ast_cap.reference()
     };
-    let ir_ast = py::to_typed_ir(untyped_ir_ast, args, par)?;
-    let ast = codegen::from_ir::ir_to_code(ir_ast)?;
-    Ok(ast::pprint_ast(&ast))
+    let ir_ast = py::type_check_ast(untyped_ir_ast.clone(), args)?;
+    // TODO: Implement the translation from the typed AST down to machine code, including
+    // parallelization of for-loops based on the provided specification.
+    Ok((String::default(), String::default()))
 }
 
 #[pymodule]

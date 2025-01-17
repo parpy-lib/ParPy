@@ -9,23 +9,6 @@ def assert_runtime_error_on_jit(fn):
     with pytest.raises(RuntimeError):
         parir.jit(fn)
 
-def if_fun(x, y, N):
-    for i in range(N):
-        if x[i] > y[i]:
-            x[i] = y[i]
-        else:
-            x[i] = x[i] + 1
-def test_conditions_rejected():
-    assert_runtime_error_on_jit(if_fun)
-
-def max_fun(x, out, N):
-    out[0] = 0.0
-    for i in range(N):
-        out[0] = max(out[0], x[i])
-
-def test_max_rejected():
-    assert_runtime_error_on_jit(max_fun)
-
 def add_slice(x, y, out, N):
     out[:N] = x[:N] + y[:N]
 def test_slicing_rejected():
