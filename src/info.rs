@@ -1,6 +1,6 @@
 use std::fs;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FilePos {
     pub line : usize,
     pub col : usize
@@ -31,7 +31,7 @@ impl Default for FilePos {
 
 // The info field contains information referring back to the source file an AST node was parsed
 // from.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Info {
     filename : String,
     start : FilePos,

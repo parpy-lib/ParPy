@@ -162,7 +162,7 @@ impl fmt::Display for BinOp {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Var {id: String, ty: Type, i: Info},
     String {v: String, ty: Type, i: Info},
@@ -172,7 +172,7 @@ pub enum Expr {
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     Subscript {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Tuple {elems: Vec<Expr>, ty: Type, i: Info},
-    Record {keys: Vec<String>, values: Vec<Expr>, ty: Type, i: Info},
+    Dict {fields: HashMap<String, Expr>, ty: Type, i: Info},
     Builtin {func: Builtin, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 }
@@ -188,7 +188,7 @@ impl Expr {
             Expr::BinOp {ty, ..} => ty.clone(),
             Expr::Subscript {ty, ..} => ty.clone(),
             Expr::Tuple {ty, ..} => ty.clone(),
-            Expr::Record {ty, ..} => ty.clone(),
+            Expr::Dict {ty, ..} => ty.clone(),
             Expr::Builtin {ty, ..} => ty.clone(),
             Expr::Convert {ty, ..} => ty.clone(),
         }
@@ -204,7 +204,7 @@ impl Expr {
             Expr::BinOp {lhs, op, rhs, i, ..} => Expr::BinOp {lhs, op, rhs, ty, i},
             Expr::Subscript {target, idx, i, ..} => Expr::Subscript {target, idx, ty, i},
             Expr::Tuple {elems, i, ..} => Expr::Tuple {elems, ty, i},
-            Expr::Record {keys, values, i, ..} => Expr::Record {keys, values, ty, i},
+            Expr::Dict {fields, i, ..} => Expr::Dict {fields, ty, i},
             Expr::Builtin {func, args, i, ..} => Expr::Builtin {func, args, ty, i},
             Expr::Convert {e, ..} => Expr::Convert {e, ty},
         }
@@ -228,9 +228,8 @@ impl fmt::Display for Expr {
                     .join(",");
                 write!(f, "({elems})")
             },
-            Expr::Record {keys, values, ..} => {
-                let fields = keys.iter()
-                    .zip(values.iter())
+            Expr::Dict {fields, ..} => {
+                let fields = fields.iter()
                     .map(|(k, v)| format!("{k}: {v}"))
                     .collect::<Vec<String>>()
                     .join(",");
@@ -265,16 +264,16 @@ impl InfoNode for Expr {
             Expr::BinOp {i, ..} => i.clone(),
             Expr::Subscript {i, ..} => i.clone(),
             Expr::Tuple {i, ..} => i.clone(),
-            Expr::Record {i, ..} => i.clone(),
+            Expr::Dict {i, ..} => i.clone(),
             Expr::Builtin {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
-    Assign {dst: Vec<Expr>, exprs: Vec<Expr>, i: Info},
+    Assign {dst: Expr, expr: Expr, i: Info},
     For {var: String, lo: Expr, hi: Expr, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
 }

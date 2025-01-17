@@ -7,6 +7,7 @@ use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
 use pyo3::types;
 
+use std::collections::HashMap;
 use std::ffi::CString;
 
 struct ConvertEnv<'py, 'a> {
@@ -38,10 +39,13 @@ fn extract_node_info<'py>(
 fn extract_info<'py, 'a>(
     node: &'py Bound<'py, PyAny>,
     env: &'py ConvertEnv<'py, 'a>
-) -> PyResult<Info> {
-    let i = extract_node_info(node)?;
-    Ok(i.with_file(env.filepath)
-        .with_line_offset(env.fst_line))
+) -> Info {
+    if let Ok(i) = extract_node_info(node) {
+        i.with_file(env.filepath)
+            .with_line_offset(env.fst_line)
+    } else {
+        Info::default()
+    }
 }
 
 fn convert_unary_op<'py, 'a>(
@@ -93,6 +97,7 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
     let s = ast.call_method1("unparse", types::PyTuple::new(py, vec![expr])?)?
         .extract::<String>()?;
     let globals = types::PyDict::new(py);
+    globals.set_item("math", py.import("math")?)?;
     globals.set_item("parir", parir.clone())?;
     match py.eval(&CString::new(s)?, Some(&globals), None) {
         Ok(e) => {
@@ -113,8 +118,8 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
             }?;
             Ok(Expr::Builtin {func, args: vec![], ty: Type::Unknown, i: i.clone()})
         },
-        Err(py_err) => {
-            py_runtime_error!(i, "Failed to identify built-in operator {expr} (error: {py_err})")
+        Err(_) => {
+            py_runtime_error!(i, "Failed to identify built-in operator {expr}")
         },
     }
 }
@@ -122,7 +127,7 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
 fn convert_expr<'py, 'a>(
     expr: Bound<'py, PyAny>, env: &'py ConvertEnv<'py, 'a>
 ) -> PyResult<Expr> {
-    let i = extract_info(&expr, env)?;
+    let i = extract_info(&expr, env);
     let ty = Type::Unknown;
     if expr.is_instance(&env.ast.getattr("Name")?)? {
         if let Ok(e) = lookup_builtin(&expr, &i) {
@@ -191,7 +196,10 @@ fn convert_expr<'py, 'a>(
             .try_iter()?
             .map(|v| convert_expr(v?, env))
             .collect::<PyResult<Vec<Expr>>>()?;
-        Ok(Expr::Record {keys, values, ty, i})
+        let fields = keys.into_iter()
+            .zip(values.into_iter())
+            .collect::<HashMap<String, Expr>>();
+        Ok(Expr::Dict {fields, ty, i})
     } else if expr.is_instance(&env.ast.getattr("Call")?)? {
         let args = expr.getattr("args")?
             .try_iter()?
@@ -212,7 +220,7 @@ fn convert_stmt<'py, 'a>(
     stmt: Bound<'py, PyAny>,
     env: &'py ConvertEnv<'py, 'a>
 ) -> PyResult<Stmt> {
-    let i = extract_info(&stmt, env)?;
+    let i = extract_info(&stmt, env);
     if stmt.is_instance(&env.ast.getattr("For")?)? {
         // Ensure that the for-loop only assigns to a single variable
         let target = stmt.getattr("target")?;
@@ -275,10 +283,10 @@ fn convert_stmt<'py, 'a>(
             py_runtime_error!(i, "Cannot have more than one target of assignment")
         } else {
             let dst = convert_expr(targets.get_item(0)?, env)?;
-            let e = convert_expr(stmt.getattr("value")?, env)?;
-            match (dst, e) {
-                (dst @ (Expr::Var {..} | Expr::Subscript {..}), e) => {
-                    Ok(Stmt::Assign {dst: vec![dst], exprs: vec![e], i})
+            let expr = convert_expr(stmt.getattr("value")?, env)?;
+            match (dst, expr) {
+                (dst @ (Expr::Var {..} | Expr::Subscript {..}), expr) => {
+                    Ok(Stmt::Assign {dst, expr, i})
                 },
                 _ => py_runtime_error!(i, "Unsupported form of assignment")
             }
@@ -327,4 +335,431 @@ pub fn to_untyped_ir<'py>(
     let ir_body = convert_stmts(body.getattr("body")?, &env)?;
     let i = merge_body_infos(&ir_body);
     Ok(vec![FunDef {id, params: untyped_args, body: ir_body, i}])
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use pyo3::types::*;
+
+    fn parse_str<'py>(
+        py: Python<'py>,
+        s: &str,
+        as_expr: bool
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let ast_module = py.import("ast")?;
+        let py_str = PyString::new(py, s);
+        let py_args = PyTuple::new(py, vec![py_str])?;
+        let py_kwargs = PyDict::new(py);
+        if as_expr {
+            py_kwargs.set_item("mode", PyString::new(py, "eval"))?;
+        }
+        let ast = ast_module.call_method("parse", py_args, Some(&py_kwargs))?;
+        ast.getattr("body")
+    }
+
+    fn parse_str_stmt<'py>(
+        py: Python<'py>,
+        s: &str
+    ) -> PyResult<Bound<'py, PyAny>> {
+        parse_str(py, s, false)?.get_item(0)
+    }
+
+    fn parse_str_expr<'py>(
+        py: Python<'py>,
+        s: &str
+    ) -> PyResult<Bound<'py, PyAny>> {
+        parse_str(py, s, true)
+    }
+
+    fn lookup_builtin_ok(
+        s: &str,
+        expected_func: Builtin
+    ) -> PyResult<()> {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let ast = parse_str_expr(py, s)?;
+            let e = lookup_builtin(&ast, &Info::default())?;
+            if let Expr::Builtin {func, ..} = e {
+                assert_eq!(func, expected_func);
+            } else {
+                assert!(false)
+            }
+            Ok(())
+        })
+    }
+
+    fn lookup_builtin_fail(s: &str) -> PyResult<()> {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let ast = parse_str_expr(py, s)?;
+            assert!(lookup_builtin(&ast, &Info::default()).is_err());
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn lookup_builtin_exp() -> PyResult<()> {
+        lookup_builtin_ok("parir.exp", Builtin::Exp)?;
+        lookup_builtin_ok("math.exp", Builtin::Exp)?;
+        lookup_builtin_fail("exp")
+    }
+
+    #[test]
+    fn lookup_builtin_inf() -> PyResult<()> {
+        lookup_builtin_ok("parir.inf", Builtin::Inf)?;
+        lookup_builtin_ok("math.inf", Builtin::Inf)?;
+        lookup_builtin_ok("float('inf')", Builtin::Inf)?;
+        lookup_builtin_fail("inf")
+    }
+
+    #[test]
+    fn lookup_builtin_log() -> PyResult<()> {
+        lookup_builtin_ok("parir.log", Builtin::Log)?;
+        lookup_builtin_ok("math.log", Builtin::Log)?;
+        lookup_builtin_fail("log")
+    }
+
+    #[test]
+    fn lookup_builtin_max() -> PyResult<()> {
+        lookup_builtin_ok("parir.max", Builtin::Max)?;
+        lookup_builtin_ok("max", Builtin::Max)
+    }
+
+    #[test]
+    fn lookup_builtin_min() -> PyResult<()> {
+        lookup_builtin_ok("parir.min", Builtin::Min)?;
+        lookup_builtin_ok("min", Builtin::Min)
+    }
+
+    #[test]
+    fn lookup_builtin_sum() -> PyResult<()> {
+        lookup_builtin_ok("parir.sum", Builtin::Sum)?;
+        lookup_builtin_ok("sum", Builtin::Sum)
+    }
+
+    #[test]
+    fn lookup_builtin_torch_prefix_fail() -> PyResult<()> {
+        lookup_builtin_fail("torch.log")?;
+        lookup_builtin_fail("torch.max")?;
+        lookup_builtin_fail("torch.sum")
+    }
+
+    fn convert_expr_wrap(s: &str) -> PyResult<Expr> {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let expr = parse_str_expr(py, s)?;
+            let env = ConvertEnv {
+                ast : py.import("ast")?,
+                filepath: &String::from("<test>"),
+                fst_line: 0
+            };
+            convert_expr(expr, &env)
+        })
+    }
+
+    fn mkinfo(line1: usize, col1: usize, line2: usize, col2: usize) -> Info {
+        Info::new("<test>", FilePos::new(line1, col1), FilePos::new(line2, col2))
+    }
+
+    #[test]
+    fn convert_expr_variable() {
+        let expr = convert_expr_wrap("a").unwrap();
+        assert_eq!(expr, Expr::Var {
+            id: "a".to_string(),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 1)
+        });
+    }
+
+    #[test]
+    fn convert_expr_int_literal() {
+        let expr = convert_expr_wrap("3").unwrap();
+        assert_eq!(expr, Expr::Int {
+            v: 3,
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 1)
+        });
+    }
+
+    #[test]
+    fn convert_expr_float_literal() {
+        let expr = convert_expr_wrap("2.718").unwrap();
+        assert_eq!(expr, Expr::Float {
+            v: 2.718,
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 5)
+        });
+    }
+
+    #[test]
+    fn convert_expr_string_literal() {
+        let expr = convert_expr_wrap("'hello'").unwrap();
+        assert_eq!(expr, Expr::String {
+            v: "hello".to_string(),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 7)
+        });
+    }
+
+    #[test]
+    fn convert_expr_unop_int_negation() {
+        let expr = convert_expr_wrap("-2").unwrap();
+        assert_eq!(expr, Expr::UnOp {
+            op: UnOp::Sub,
+            arg: Box::new(Expr::Int {
+                v: 2,
+                ty: Type::Unknown,
+                i: mkinfo(1, 1, 1, 2)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 2)
+        });
+    }
+
+    #[test]
+    fn convert_expr_unop_float_negation() {
+        let expr = convert_expr_wrap("-3.14").unwrap();
+        assert_eq!(expr, Expr::UnOp {
+            op: UnOp::Sub,
+            arg: Box::new(Expr::Float {
+                v: 3.14,
+                ty: Type::Unknown,
+                i: mkinfo(1, 1, 1, 5)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 5)
+        });
+    }
+
+    #[test]
+    fn convert_expr_binop_add() {
+        let expr = convert_expr_wrap("1 + 1").unwrap();
+        assert_eq!(expr, Expr::BinOp {
+            lhs: Box::new(Expr::Int {
+                v: 1,
+                ty : Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            op: BinOp::Add,
+            rhs: Box::new(Expr::Int {
+                v: 1,
+                ty: Type::Unknown,
+                i: mkinfo(1, 4, 1, 5)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 5)
+        });
+    }
+
+    #[test]
+    fn convert_expr_binop_pow_fail() {
+        let result = convert_expr_wrap("2 ** 4");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn convert_expr_equality() {
+        let expr = convert_expr_wrap("a == b").unwrap();
+        assert_eq!(expr, Expr::BinOp {
+            lhs: Box::new(Expr::Var {
+                id: "a".to_string(),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            op: BinOp::Eq,
+            rhs: Box::new(Expr::Var {
+                id: "b".to_string(),
+                ty: Type::Unknown,
+                i: mkinfo(1, 5, 1, 6)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 6)
+        });
+    }
+
+    #[test]
+    fn convert_expr_string_lookup() {
+        let expr = convert_expr_wrap("a['x']").unwrap();
+        assert_eq!(expr, Expr::Subscript {
+            target: Box::new(Expr::Var {
+                id: "a".to_string(),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            idx: Box::new(Expr::String {
+                v: "x".to_string(),
+                ty: Type::Unknown,
+                i: mkinfo(1, 2, 1, 5)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 6)
+        });
+    }
+
+    #[test]
+    fn convert_expr_int_lookup() {
+        let expr = convert_expr_wrap("a[0]").unwrap();
+        assert_eq!(expr, Expr::Subscript {
+            target: Box::new(Expr::Var {
+                id: "a".to_string(),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            idx: Box::new(Expr::Int {
+                v: 0,
+                ty: Type::Unknown,
+                i: mkinfo(1, 2, 1, 3)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 4)
+        });
+    }
+
+    #[test]
+    fn convert_expr_multi_dim_lookup() {
+        let expr = convert_expr_wrap("a[x, y]").unwrap();
+        assert_eq!(expr, Expr::Subscript {
+            target: Box::new(Expr::Var {
+                id: "a".to_string(),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            idx: Box::new(Expr::Tuple {
+                elems: vec![
+                    Expr::Var {id: "x".to_string(), ty: Type::Unknown, i: mkinfo(1, 2, 1, 3)},
+                    Expr::Var {id: "y".to_string(), ty: Type::Unknown, i: mkinfo(1, 5, 1, 6)}
+                ],
+                ty: Type::Unknown,
+                i: mkinfo(1, 2, 1, 6)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 7)
+        });
+    }
+
+    #[test]
+    fn convert_expr_dict() {
+        let expr = convert_expr_wrap("{'a': 2, 'b': 3.14}").unwrap();
+        let fields = vec![
+            ("a", Expr::Int {v: 2, ty: Type::Unknown, i: mkinfo(1, 6, 1, 7)}),
+            ("b", Expr::Float {v: 3.14, ty: Type::Unknown, i: mkinfo(1, 14, 1, 18)})
+        ];
+        let fields = fields.into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect::<HashMap<String, Expr>>();
+        assert_eq!(expr, Expr::Dict {
+            fields,
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 19)
+        });
+    }
+
+    fn convert_stmt_wrap(s: &str) -> PyResult<Stmt> {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let stmt = parse_str_stmt(py, s)?;
+            let env = ConvertEnv {
+                ast : py.import("ast")?,
+                filepath: &String::from("<test>"),
+                fst_line: 0
+            };
+            convert_stmt(stmt, &env)
+        })
+    }
+
+    #[test]
+    fn convert_stmt_assignment() {
+        let stmt = convert_stmt_wrap("a = 2").unwrap();
+        assert_eq!(stmt, Stmt::Assign {
+            dst: Expr::Var {
+                id: "a".to_string(),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            },
+            expr: Expr::Int {
+                v: 2,
+                ty: Type::Unknown,
+                i: mkinfo(1, 4, 1, 5)
+            },
+            i: mkinfo(1, 0, 1, 5)
+        });
+    }
+
+    #[test]
+    fn convert_stmt_for_loop_range() {
+        let stmt = convert_stmt_wrap("for i in range(1, 10):\n  x[i] = i").unwrap();
+        assert_eq!(stmt, Stmt::For {
+            var: "i".to_string(),
+            lo: Expr::Int {v: 1, ty: Type::Unknown, i: mkinfo(1, 15, 1, 16)},
+            hi: Expr::Int {v: 10, ty: Type::Unknown, i: mkinfo(1, 18, 1, 20)},
+            body: vec![
+                Stmt::Assign {
+                    dst: Expr::Subscript {
+                        target: Box::new(Expr::Var {
+                            id: "x".to_string(),
+                            ty: Type::Unknown,
+                            i: mkinfo(2, 2, 2, 3)
+                        }),
+                        idx: Box::new(Expr::Var {
+                            id: "i".to_string(),
+                            ty: Type::Unknown,
+                            i: mkinfo(2, 4, 2, 5)
+                        }),
+                        ty: Type::Unknown,
+                        i: mkinfo(2, 2, 2, 6)
+                    },
+                    expr: Expr::Var {
+                        id: "i".to_string(),
+                        ty: Type::Unknown,
+                        i: mkinfo(2, 9, 2, 10)
+                    },
+                    i: mkinfo(2, 2, 2, 10)
+                }
+            ],
+            i: mkinfo(1, 0, 2, 10)
+        })
+    }
+
+    #[test]
+    fn convert_stmt_for_in_loop_fail() {
+        let result = convert_stmt_wrap("for x in s:\n  x += 1");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn convert_stmt_if_cond() {
+        let stmt = convert_stmt_wrap("if x:\n  y = 1\nelse:\n  y = 2").unwrap();
+        assert_eq!(stmt, Stmt::If {
+            cond: Expr::Var {
+                id: "x".to_string(),
+                ty: Type::Unknown,
+                i: mkinfo(1, 3, 1, 4)
+            },
+            thn: vec![
+                Stmt::Assign {
+                    dst: Expr::Var {
+                        id: "y".to_string(),
+                        ty: Type::Unknown,
+                        i: mkinfo(2, 2, 2, 3)
+                    },
+                    expr: Expr::Int {v: 1, ty: Type::Unknown, i: mkinfo(2, 6, 2, 7)},
+                    i: mkinfo(2, 2, 2, 7)
+                }
+            ],
+            els: vec![
+                Stmt::Assign {
+                    dst: Expr::Var {
+                        id: "y".to_string(),
+                        ty: Type::Unknown,
+                        i: mkinfo(4, 2, 4, 3)
+                    },
+                    expr: Expr::Int {v: 2, ty: Type::Unknown, i: mkinfo(4, 6, 4, 7)},
+                    i: mkinfo(4, 2, 4, 7)
+                }
+            ],
+            i: mkinfo(1, 0, 4, 7)
+        });
+    }
 }
