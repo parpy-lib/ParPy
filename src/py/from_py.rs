@@ -463,11 +463,15 @@ mod test {
         Info::new("<test>", FilePos::new(line1, col1), FilePos::new(line2, col2))
     }
 
+    fn var(s: &str) -> String {
+        s.to_string()
+    }
+
     #[test]
     fn convert_expr_variable() {
         let expr = convert_expr_wrap("a").unwrap();
         assert_eq!(expr, Expr::Var {
-            id: "a".to_string(),
+            id: var("a"),
             ty: Type::Unknown,
             i: mkinfo(1, 0, 1, 1)
         });
@@ -564,13 +568,13 @@ mod test {
         let expr = convert_expr_wrap("a == b").unwrap();
         assert_eq!(expr, Expr::BinOp {
             lhs: Box::new(Expr::Var {
-                id: "a".to_string(),
+                id: var("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
             op: BinOp::Eq,
             rhs: Box::new(Expr::Var {
-                id: "b".to_string(),
+                id: var("b"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 5, 1, 6)
             }),
@@ -584,7 +588,7 @@ mod test {
         let expr = convert_expr_wrap("a['x']").unwrap();
         assert_eq!(expr, Expr::Subscript {
             target: Box::new(Expr::Var {
-                id: "a".to_string(),
+                id: var("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
@@ -603,7 +607,7 @@ mod test {
         let expr = convert_expr_wrap("a[0]").unwrap();
         assert_eq!(expr, Expr::Subscript {
             target: Box::new(Expr::Var {
-                id: "a".to_string(),
+                id: var("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
@@ -622,14 +626,14 @@ mod test {
         let expr = convert_expr_wrap("a[x, y]").unwrap();
         assert_eq!(expr, Expr::Subscript {
             target: Box::new(Expr::Var {
-                id: "a".to_string(),
+                id: var("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
             idx: Box::new(Expr::Tuple {
                 elems: vec![
-                    Expr::Var {id: "x".to_string(), ty: Type::Unknown, i: mkinfo(1, 2, 1, 3)},
-                    Expr::Var {id: "y".to_string(), ty: Type::Unknown, i: mkinfo(1, 5, 1, 6)}
+                    Expr::Var {id: var("x"), ty: Type::Unknown, i: mkinfo(1, 2, 1, 3)},
+                    Expr::Var {id: var("y"), ty: Type::Unknown, i: mkinfo(1, 5, 1, 6)}
                 ],
                 ty: Type::Unknown,
                 i: mkinfo(1, 2, 1, 6)
@@ -674,7 +678,7 @@ mod test {
         let stmt = convert_stmt_wrap("a = 2").unwrap();
         assert_eq!(stmt, Stmt::Assign {
             dst: Expr::Var {
-                id: "a".to_string(),
+                id: var("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             },
@@ -691,19 +695,19 @@ mod test {
     fn convert_stmt_for_loop_range() {
         let stmt = convert_stmt_wrap("for i in range(1, 10):\n  x[i] = i").unwrap();
         assert_eq!(stmt, Stmt::For {
-            var: "i".to_string(),
+            var: var("i"),
             lo: Expr::Int {v: 1, ty: Type::Unknown, i: mkinfo(1, 15, 1, 16)},
             hi: Expr::Int {v: 10, ty: Type::Unknown, i: mkinfo(1, 18, 1, 20)},
             body: vec![
                 Stmt::Assign {
                     dst: Expr::Subscript {
                         target: Box::new(Expr::Var {
-                            id: "x".to_string(),
+                            id: var("x"),
                             ty: Type::Unknown,
                             i: mkinfo(2, 2, 2, 3)
                         }),
                         idx: Box::new(Expr::Var {
-                            id: "i".to_string(),
+                            id: var("i"),
                             ty: Type::Unknown,
                             i: mkinfo(2, 4, 2, 5)
                         }),
@@ -711,7 +715,7 @@ mod test {
                         i: mkinfo(2, 2, 2, 6)
                     },
                     expr: Expr::Var {
-                        id: "i".to_string(),
+                        id: var("i"),
                         ty: Type::Unknown,
                         i: mkinfo(2, 9, 2, 10)
                     },
@@ -733,14 +737,14 @@ mod test {
         let stmt = convert_stmt_wrap("if x:\n  y = 1\nelse:\n  y = 2").unwrap();
         assert_eq!(stmt, Stmt::If {
             cond: Expr::Var {
-                id: "x".to_string(),
+                id: var("x"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 3, 1, 4)
             },
             thn: vec![
                 Stmt::Assign {
                     dst: Expr::Var {
-                        id: "y".to_string(),
+                        id: var("y"),
                         ty: Type::Unknown,
                         i: mkinfo(2, 2, 2, 3)
                     },
@@ -751,7 +755,7 @@ mod test {
             els: vec![
                 Stmt::Assign {
                     dst: Expr::Var {
-                        id: "y".to_string(),
+                        id: var("y"),
                         ty: Type::Unknown,
                         i: mkinfo(4, 2, 4, 3)
                     },

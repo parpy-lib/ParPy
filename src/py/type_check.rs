@@ -635,6 +635,10 @@ mod test {
         test_lub_type_ok(ty.clone(), ty.clone(), ty.clone())
     }
 
+    fn var(s: &str) -> String {
+        s.to_string()
+    }
+
     fn test_tc_unop(op: UnOp, arg: Expr) -> PyResult<Type> {
         type_check_unop(&op, &arg, &Info::default())
     }
@@ -651,7 +655,7 @@ mod test {
     #[test]
     fn type_check_unop_float_negation() {
         let ty = Type::Scalar {sz: ElemSize::F32};
-        let arg = Expr::Var {id: "x".to_string(), ty: ty.clone(), i: Info::default()};
+        let arg = Expr::Var {id: var("x"), ty: ty.clone(), i: Info::default()};
         let r = test_tc_unop(UnOp::Sub, arg);
         assert!(r.is_ok());
         assert_eq!(r.unwrap(), ty);
@@ -674,9 +678,9 @@ mod test {
     #[test]
     fn type_check_binop_coerced_signed_int_multiplication() {
         let lty = Type::Scalar {sz: ElemSize::I32};
-        let lhs = Expr::Var {id: "x".to_string(), ty: lty.clone(), i: Info::default()};
+        let lhs = Expr::Var {id: var("x"), ty: lty.clone(), i: Info::default()};
         let rty = Type::Scalar {sz: ElemSize::I16};
-        let rhs = Expr::Var {id: "y".to_string(), ty: rty, i: Info::default()};
+        let rhs = Expr::Var {id: var("y"), ty: rty, i: Info::default()};
         let r = test_tc_binop(lhs, BinOp::Mul, rhs);
         assert!(r.is_ok());
         assert_eq!(r.unwrap(), lty);
@@ -686,7 +690,7 @@ mod test {
     fn type_check_binop_float_subtraction() {
         let ty = Type::Scalar {sz: ElemSize::F32};
         let lhs = Expr::Float {v: 3.14, ty: ty.clone(), i: Info::default()};
-        let rhs = Expr::Var {id: "x".to_string(), ty: ty.clone(), i: Info::default()};
+        let rhs = Expr::Var {id: var("x"), ty: ty.clone(), i: Info::default()};
         let r = test_tc_binop(lhs, BinOp::Sub, rhs);
         assert!(r.is_ok());
         assert_eq!(r.unwrap(), ty);
@@ -701,7 +705,7 @@ mod test {
     #[test]
     fn type_check_expr_known_var() {
         let vars = make_map(vec![("x", Type::Boolean)]);
-        let v = Expr::Var {id: "x".to_string(), ty: Type::Unknown, i: Info::default()};
+        let v = Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()};
         let r = type_check_expr(&vars, v);
         assert!(r.is_ok());
         assert_eq!(r.unwrap().get_type(), Type::Boolean);
@@ -710,7 +714,7 @@ mod test {
     #[test]
     fn type_check_expr_unknown_var() {
         let vars = make_map(vec![]);
-        let v = Expr::Var {id: "x".to_string(), ty: Type::Unknown, i: Info::default()};
+        let v = Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()};
         assert!(type_check_expr(&vars, v).is_err())
     }
 
@@ -747,7 +751,7 @@ mod test {
         let dict_ty = Type::Dict {fields};
         let vars = make_map(vec![("x", dict_ty.clone())]);
         let v = Expr::Subscript {
-            target: Box::new(Expr::Var {id: "x".to_string(), ty: Type::Unknown, i: Info::default()}),
+            target: Box::new(Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()}),
             idx: Box::new(Expr::String {v: "a".to_string(), ty: Type::Unknown, i: Info::default()}),
             ty: Type::Unknown,
             i: Info::default()
@@ -768,7 +772,7 @@ mod test {
         let tensor_ty = Type::Tensor {sz: ElemSize::F32};
         let vars = make_map(vec![("x", tensor_ty.clone())]);
         let v = Expr::Subscript {
-            target: Box::new(Expr::Var {id: "x".to_string(), ty: Type::Unknown, i: Info::default()}),
+            target: Box::new(Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()}),
             idx: Box::new(Expr::Int {v: 0, ty: Type::Unknown, i: Info::default()}),
             ty: Type::Unknown,
             i: Info::default()
@@ -792,8 +796,8 @@ mod test {
             ("y", Type::Scalar {sz: ElemSize::I32})
         ]);
         let v = Expr::Subscript {
-            target: Box::new(Expr::Var {id: "x".to_string(), ty: Type::Unknown, i: Info::default()}),
-            idx: Box::new(Expr::Var {id: "y".to_string(), ty: Type::Unknown, i: Info::default()}),
+            target: Box::new(Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()}),
+            idx: Box::new(Expr::Var {id: var("y"), ty: Type::Unknown, i: Info::default()}),
             ty: Type::Unknown,
             i: Info::default()
         };
