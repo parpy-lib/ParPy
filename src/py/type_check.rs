@@ -1,6 +1,6 @@
 use crate::py_type_error;
-use crate::err::*;
-use crate::info::*;
+use crate::utils::err::*;
+use crate::utils::info::*;
 use super::ast::*;
 
 use pyo3::PyTypeInfo;
@@ -48,7 +48,7 @@ fn get_tensor_shape<'py>(
         .collect::<PyResult<Vec<i64>>>()
 }
 
-fn compile_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
+fn convert_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
     let py = arg.py();
     let torch = py.import("torch")?;
     let ty = arg.get_type();
@@ -68,7 +68,7 @@ fn compile_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
                 let f = f?;
                 let id = f.get_item(0)?.extract::<String>()?;
                 let ty = f.get_item(1)?;
-                Ok((id, compile_type(&ty)?))
+                Ok((id, convert_type(&ty)?))
             })
             .collect::<PyResult<BTreeMap<String, Type>>>()?;
         Ok(Type::Dict {fields})
@@ -85,7 +85,7 @@ fn add_param_types<'py>(
     if args.len() == params.len() {
         args.into_iter()
             .zip(params.into_iter())
-            .map(|(arg, Param {id, i, ..})| Ok(Param {id, ty: compile_type(&arg)?, i}))
+            .map(|(arg, Param {id, i, ..})| Ok(Param {id, ty: convert_type(&arg)?, i}))
             .collect::<PyResult<Vec<Param>>>()
     } else {
         py_type_error!(Info::default(), "Function {id} expected {0} arguments but received {1}", params.len(), args.len())
@@ -219,10 +219,10 @@ fn type_check_builtin(
         Builtin::Inf if args.is_empty() => {
             Ok(Expr::Builtin {func, args, ty: Type::Tensor {sz: ElemSize::F64, shape: vec![]}, i})
         },
-        // Unary operations on scalar values
+        // Unary operations on (floating-point) scalar values
         Builtin::Exp | Builtin::Log if args.len() == 1 => {
             let ty = args[0].get_type().clone();
-            if let Some(_) = ty.get_scalar_elem_size() {
+            if ty.is_floating_point() {
                 Ok(Expr::Builtin {func, args, ty, i})
             } else {
                 py_type_error!(i, "Unexpected type {ty} of unary builtin (expected scalar)")

@@ -1,4 +1,4 @@
-mod ast;
+pub mod ast;
 mod from_py_ast;
 mod symbolize;
 

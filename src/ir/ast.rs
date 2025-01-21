@@ -1,5 +1,5 @@
-use crate::info::*;
-use crate::name::Name;
+use crate::utils::info::*;
+use crate::utils::name::Name;
 
 // Reuse the definition of element sizes from the Python AST.
 pub use crate::py::ast::ElemSize;
@@ -9,6 +9,15 @@ pub enum Type {
     Boolean,
     Tensor {sz: ElemSize, shape: Vec<i64>},
     Struct {id: Name},
+}
+
+impl Type {
+    pub fn get_scalar_elem_size<'a>(&'a self) -> Option<&'a ElemSize> {
+        match self {
+            Type::Tensor {sz, shape} if shape.len() == 0 => Some(sz),
+            _ => None,
+        }
+    }
 }
 
 // Reuse the below enums from the Python AST.

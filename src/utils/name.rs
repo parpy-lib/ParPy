@@ -36,6 +36,14 @@ impl Name {
     pub fn get_str<'a>(&'a self) -> &'a String {
         &self.s
     }
+
+    pub fn print_with_sym(&self) -> String {
+        if let Some(sym) = self.sym {
+            format!("{0}_{1}", self.s, sym)
+        } else {
+            self.s.clone()
+        }
+    }
 }
 
 impl fmt::Display for Name {

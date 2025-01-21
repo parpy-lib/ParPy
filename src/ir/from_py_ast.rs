@@ -1,9 +1,9 @@
 use super::ast::*;
 
 use crate::parir_compile_error;
-use crate::err::*;
-use crate::info::*;
-use crate::name::Name;
+use crate::utils::err::*;
+use crate::utils::info::*;
+use crate::utils::name::Name;
 use crate::par::{ParKind, ParSpec};
 use crate::py::ast as py_ast;
 use crate::py::struct_types;

@@ -1,9 +1,8 @@
-mod err;
-mod info;
+mod cuda;
 mod ir;
-mod name;
 mod par;
 mod py;
+mod utils;
 
 use std::collections::BTreeMap;
 use std::ffi::CString;

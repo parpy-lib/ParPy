@@ -1,4 +1,4 @@
-use crate::info::*;
+use crate::utils::info::*;
 
 use strum_macros::EnumIter;
 use itertools::Itertools;
@@ -183,6 +183,18 @@ impl fmt::Display for UnOp {
 #[derive(Clone, Debug, PartialEq)]
 pub enum BinOp {
     Add, Sub, Mul, FloorDiv, Div, Mod, BitAnd, Eq, Neq, Lt, Gt
+}
+
+impl BinOp {
+    pub fn precedence(&self) -> usize {
+        match self {
+            BinOp::BitAnd => 0,
+            BinOp::Eq | BinOp::Neq => 1,
+            BinOp::Lt | BinOp::Gt => 2,
+            BinOp::Add | BinOp::Sub => 3,
+            BinOp::Mul | BinOp::FloorDiv | BinOp::Div | BinOp::Mod => 4,
+        }
+    }
 }
 
 impl fmt::Display for BinOp {
