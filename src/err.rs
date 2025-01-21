@@ -46,14 +46,14 @@ pub type CompileResult<T> = Result<T, CompileError>;
 
 #[macro_export]
 macro_rules! parir_compile_error {
-    ($i:tt,$($t:tt)*) => {{
+    ($i:expr,$($t:tt)*) => {{
         Err(CompileError::compile_err($i.error_msg(format!($($t)*))))
     }}
 }
 
 #[macro_export]
 macro_rules! parir_type_error {
-    ($i:tt,$($t:tt)*) => {{
+    ($i:expr,$($t:tt)*) => {{
         Err(CompileError::type_err($i.error_msg(format!($($t)*))))
     }}
 }

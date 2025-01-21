@@ -8,14 +8,14 @@ pub use type_check::type_check_ast;
 
 #[macro_export]
 macro_rules! py_runtime_error {
-    ($i:tt, $($t:tt)*) => {
+    ($i:expr,$($t:tt)*) => {
         Err(Into::<PyErr>::into(CompileError::compile_err($i.error_msg(format!($($t)*)))))
     }
 }
 
 #[macro_export]
 macro_rules! py_type_error {
-    ($i:tt, $($t:tt)*) => {
+    ($i:expr,$($t:tt)*) => {
         Err(Into::<PyErr>::into(CompileError::type_err($i.error_msg(format!($($t)*)))))
     }
 }

@@ -31,8 +31,7 @@ fn compile_elem_size<'py>(dtype: Bound<'py, PyAny>) -> PyResult<ElemSize> {
     } else if dtype.eq(torch.getattr("float64")?)? {
         Ok(ElemSize::F64)
     } else {
-        let i = Info::default();
-        py_type_error!(i, "Unsupported element type: {dtype}")
+        py_type_error!(Info::default(), "Unsupported element type: {dtype}")
     }
 }
 
@@ -74,8 +73,7 @@ fn compile_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
             .collect::<PyResult<BTreeMap<String, Type>>>()?;
         Ok(Type::Dict {fields})
     } else {
-        let i = Info::default();
-        py_type_error!(i, "Argument {0:?} has unsupported type {1:?}", arg, ty)
+        py_type_error!(Info::default(), "Argument {0:?} has unsupported type {1:?}", arg, ty)
     }
 }
 
@@ -90,8 +88,7 @@ fn add_param_types<'py>(
             .map(|(arg, Param {id, i, ..})| Ok(Param {id, ty: compile_type(&arg)?, i}))
             .collect::<PyResult<Vec<Param>>>()
     } else {
-        let i = Info::default();
-        py_type_error!(i, "Function {id} expected {0} arguments but received {1}", params.len(), args.len())
+        py_type_error!(Info::default(), "Function {id} expected {0} arguments but received {1}", params.len(), args.len())
     }
 }
 
@@ -101,8 +98,7 @@ fn unwrap_ast<'py>(
     if ast.len() == 1 {
         Ok(ast.remove(0))
     } else {
-        let i = Info::default();
-        py_type_error!(i, "Expected Python AST to consist of one function definition")
+        py_type_error!(Info::default(), "Expected Python AST to consist of one function definition")
     }
 }
 
