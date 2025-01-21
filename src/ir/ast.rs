@@ -19,7 +19,6 @@ pub use crate::py::ast::BinOp;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Var {id: Name, ty: Type, i: Info},
-    String {v: String, ty: Type, i: Info},
     Int {v: i64, ty: Type, i: Info},
     Float {v: f64, ty: Type, i: Info},
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
@@ -35,7 +34,6 @@ impl Expr {
     pub fn get_type<'a>(&'a self) -> &'a Type {
         match self {
             Expr::Var {ty, ..} => ty,
-            Expr::String {ty, ..} => ty,
             Expr::Int {ty, ..} => ty,
             Expr::Float {ty, ..} => ty,
             Expr::UnOp {ty, ..} => ty,
@@ -51,7 +49,6 @@ impl Expr {
     pub fn with_type(self, ty: Type) -> Self {
         match self {
             Expr::Var {id, i, ..} => Expr::Var {id, ty, i},
-            Expr::String {v, i, ..} => Expr::String {v, ty, i},
             Expr::Int {v, i, ..} => Expr::Int {v, ty, i},
             Expr::Float {v, i, ..} => Expr::Float {v, ty, i},
             Expr::UnOp {op, arg, i, ..} => Expr::UnOp {op, arg, ty, i},
@@ -71,7 +68,6 @@ impl InfoNode for Expr {
     fn get_info(&self) -> Info {
         match self {
             Expr::Var {i, ..} => i.clone(),
-            Expr::String {i, ..} => i.clone(),
             Expr::Int {i, ..} => i.clone(),
             Expr::Float {i, ..} => i.clone(),
             Expr::UnOp {i, ..} => i.clone(),
@@ -86,17 +82,8 @@ impl InfoNode for Expr {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum ReductionOp {
-    Add,
-    Mul,
-    Min,
-    Max,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub enum LoopProperty {
     Threads {n: i64},
-    ParallelReduction {op: ReductionOp, ne: Expr, ty: Type},
 }
 
 #[derive(Clone, Debug, PartialEq)]

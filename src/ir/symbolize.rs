@@ -128,7 +128,7 @@ fn symbolize_expr(env: &SymbolizeEnv, e: Expr) -> CompileResult<Expr> {
             let e = Box::new(symbolize_expr(env, *e)?);
             Ok(Expr::Convert {e, ty})
         },
-        Expr::String {..} | Expr::Int {..} | Expr::Float {..} => Ok(e),
+        Expr::Int {..} | Expr::Float {..} => Ok(e),
     }
 }
 

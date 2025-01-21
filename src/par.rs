@@ -3,9 +3,7 @@ use pyo3::prelude::*;
 #[pyclass]
 #[derive(Clone, Debug)]
 pub enum ParKind {
-    CpuThreads(u64),
-    GpuThreads(u64),
-    GpuBlocks(u64)
+    GpuThreads(i64)
 }
 
 #[pymethods]

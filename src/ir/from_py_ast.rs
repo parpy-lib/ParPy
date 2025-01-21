@@ -10,7 +10,7 @@ use crate::py::struct_types;
 
 use itertools::Itertools;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::BTreeMap;
 
 struct IREnv {
     structs: BTreeMap<py_ast::Type, Name>,
@@ -55,7 +55,7 @@ fn to_ir_type(
             parir_compile_error!(i, "Encountered standalone string type when translating to IR AST")
         },
         py_ast::Type::Tensor {sz, shape} => Ok(Type::Tensor {sz, shape}),
-        py_ast::Type::Tuple {elems} => {
+        py_ast::Type::Tuple {..} => {
             parir_compile_error!(i, "Encountered standalone tuple type when translating to IR AST")
         },
         py_ast::Type::Dict {..} => {
@@ -198,11 +198,18 @@ fn to_ir_stmt(
             Ok(Stmt::Assign {dst, expr, i})
         },
         py_ast::Stmt::For {var, lo, hi, body, i} => {
-            let var = Name::new(var);
             let lo = to_ir_expr(env, lo)?;
             let hi = to_ir_expr(env, hi)?;
             let body = to_ir_stmts(env, body)?;
-            Ok(Stmt::For {var, lo, hi, body, par: vec![], i})
+            let par = if let Some(ParSpec {kind}) = env.par.get(&var) {
+                match kind {
+                    ParKind::GpuThreads(n) => vec![LoopProperty::Threads {n: *n}],
+                }
+            } else {
+                vec![]
+            };
+            let var = Name::new(var);
+            Ok(Stmt::For {var, lo, hi, body, par, i})
         },
         py_ast::Stmt::If {cond, thn, els, i} => {
             let cond = to_ir_expr(env, cond)?;

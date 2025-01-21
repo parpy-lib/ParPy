@@ -1,8 +1,6 @@
 use super::ast::*;
 
-use itertools::Itertools;
-
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 type StructTypes = BTreeSet<Type>;
 

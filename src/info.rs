@@ -46,10 +46,6 @@ impl Info {
         Info {filename, start, end}
     }
 
-    pub fn get_start(&self) -> &FilePos {
-        &self.start
-    }
-
     pub fn with_file(self, fname : &str) -> Info {
         Info {filename : fname.to_string(), ..self}
     }
