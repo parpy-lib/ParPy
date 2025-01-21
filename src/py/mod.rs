@@ -1,5 +1,6 @@
 pub mod ast;
 mod from_py;
+pub mod struct_types;
 mod type_check;
 
 pub use from_py::to_untyped_ir;

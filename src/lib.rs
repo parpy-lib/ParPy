@@ -1,9 +1,11 @@
 mod err;
 mod info;
+mod ir;
+mod name;
 mod par;
 mod py;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ffi::CString;
 
 use pyo3::prelude::*;
@@ -27,12 +29,14 @@ fn python_to_ir<'py>(
 fn compile_ir<'py>(
     ir_ast_cap : Bound<'py, PyCapsule>,
     args : Vec<Bound<'py, PyAny>>,
-    par : HashMap<String, par::ParSpec>
+    par : BTreeMap<String, par::ParSpec>
 ) -> PyResult<(String, String)> {
     let untyped_ir_ast : &py::ast::Ast = unsafe {
         ir_ast_cap.reference()
     };
-    let ir_ast = py::type_check_ast(untyped_ir_ast.clone(), args)?;
+    let py_ir_ast = py::type_check_ast(untyped_ir_ast.clone(), args)?;
+    let ir_ast = ir::from_python(py_ir_ast, par)?;
+    // Ok(codegen::build_ast(ir_ast)?)
     // TODO: Implement the translation from the typed AST down to machine code, including
     // parallelization of for-loops based on the provided specification.
     Ok((String::default(), String::default()))

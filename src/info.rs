@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use std::fs;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -85,7 +87,6 @@ impl Info {
         let select_lines = code.lines()
             .skip(start.line - 1)
             .take(end.line - start.line + 1)
-            .collect::<Vec<&str>>()
             .join("\n");
         let err_markers = format!(
             "{0}{1}\n",

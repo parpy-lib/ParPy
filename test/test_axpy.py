@@ -18,7 +18,7 @@ def axpy_wrap(a, x, y, N, p=None):
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_axpy_gpu():
     N = 100
-    a = torch.randn(1, dtype=torch.float32)
+    a = torch.randn(1, dtype=torch.float32)[0]
     x = torch.randn(N, dtype=torch.float32)
     y = torch.randn(N, dtype=torch.float32)
     expected = axpy_wrap(a, x, y, N)

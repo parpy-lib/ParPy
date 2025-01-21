@@ -6,8 +6,11 @@ use super::ast::*;
 use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
 use pyo3::types::*;
+use pyo3::types::IntoPyDict;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
+
+use itertools::Itertools;
 
 fn compile_elem_size<'py>(dtype: Bound<'py, PyAny>) -> PyResult<ElemSize> {
     let torch = dtype.py().import("torch")?;
@@ -33,21 +36,32 @@ fn compile_elem_size<'py>(dtype: Bound<'py, PyAny>) -> PyResult<ElemSize> {
     }
 }
 
+fn get_tensor_shape<'py>(
+    t: &Bound<'py, PyAny>
+) -> PyResult<Vec<i64>> {
+    let py = t.py();
+    let ndims = t.getattr("ndim")?.extract::<i64>()?;
+    (0..ndims).into_iter()
+        .map(|i| {
+            let kwargs = [("dim", i)].into_py_dict(py)?;
+            t.call_method("size", (), Some(&kwargs))?.extract::<i64>()
+        })
+        .collect::<PyResult<Vec<i64>>>()
+}
+
 fn compile_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
-    let torch = arg.py().import("torch")?;
+    let py = arg.py();
+    let torch = py.import("torch")?;
     let ty = arg.get_type();
     if ty.eq(torch.getattr("Tensor")?)? {
         let dtype = arg.getattr("dtype")?;
         let sz = compile_elem_size(dtype)?;
-        if arg.call_method0("numel")?.extract::<usize>()? == 1 {
-            Ok(Type::Scalar {sz})
-        } else {
-            Ok(Type::Tensor {sz})
-        }
+        let shape = get_tensor_shape(&arg)?;
+        Ok(Type::Tensor {sz, shape})
     } else if arg.is_instance(&PyInt::type_object(arg.py()))? {
-        Ok(Type::Scalar {sz: ElemSize::I64})
+        Ok(Type::Tensor {sz: ElemSize::I64, shape: vec![]})
     } else if arg.is_instance(&PyFloat::type_object(arg.py()))? {
-        Ok(Type::Scalar {sz: ElemSize::F64})
+        Ok(Type::Tensor {sz: ElemSize::F64, shape: vec![]})
     } else if arg.is_instance(&PyDict::type_object(arg.py()))? {
         let fields = arg.call_method0("items")?
             .try_iter()?
@@ -57,7 +71,7 @@ fn compile_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
                 let ty = f.get_item(1)?;
                 Ok((id, compile_type(&ty)?))
             })
-            .collect::<PyResult<HashMap<String, Type>>>()?;
+            .collect::<PyResult<BTreeMap<String, Type>>>()?;
         Ok(Type::Dict {fields})
     } else {
         let i = Info::default();
@@ -121,21 +135,21 @@ fn compatible_elem_types(lhs: &ElemSize, rhs: &ElemSize) -> bool {
 
 fn ensure_scalar_type(e: Expr, expected: ElemSize) -> PyResult<Expr> {
     let i = e.get_info();
-    match e.get_type() {
-        Type::Scalar {sz: actual} => {
-            // We allow it if the two element size types are compatible. If the types are not
-            // equivalent, we insert a conversion to the expected type.
-            if compatible_elem_types(&actual, &expected) {
-                if actual.eq(&expected) {
-                    Ok(e)
-                } else {
-                    Ok(Expr::Convert {e: Box::new(e), ty: Type::Scalar {sz: expected}})
-                }
+    let ty = e.get_type();
+    if let Some(actual) = ty.get_scalar_elem_size() {
+        // We allow it if the two element size types are compatible. If the types are not
+        // equivalent, we insert a conversion to the expected type.
+        if compatible_elem_types(&actual, &expected) {
+            if actual.eq(&expected) {
+                Ok(e)
             } else {
-                py_type_error!(i, "Expected element of type {expected}, found incompatible element type {actual}")
+                Ok(Expr::Convert {e: Box::new(e), ty: Type::Tensor {sz: expected, shape: vec![]}})
             }
-        },
-        ty => py_type_error!(i, "Expected element of type {expected}, found type {ty}")
+        } else {
+            py_type_error!(i, "Expected element of type {expected}, found incompatible element type {actual}")
+        }
+    } else {
+        py_type_error!(i, "Expected element of type {expected}, found type {ty}")
     }
 }
 
@@ -155,11 +169,16 @@ fn coerce_type(e: Expr, expected: &Type) -> PyResult<Expr> {
     } else {
         let i = e.get_info();
         let actual = e.get_type();
-        match (&actual, expected) {
-            (Type::Scalar {..}, Type::Scalar {sz: rsz}) => ensure_scalar_type(e, rsz.clone()),
-            (Type::Tensor {sz: lsz}, Type::Tensor {sz: rsz}) if lsz == rsz => {
-                Ok(e)
-            },
+        match (actual, expected) {
+            (Type::Tensor {sz: lsz, shape: lsh}, Type::Tensor {sz: rsz, shape: rsh}) => {
+                if lsh.len() == 0 && rsh.len() == 0 {
+                    ensure_scalar_type(e, rsz.clone())
+                } else if lsz == rsz && lsh == rsh {
+                    Ok(e)
+                } else {
+                    py_type_error!(i, "Cannot coerce incompatible tensor types ({actual} != {expected})")
+                }
+            }
             (Type::Tuple {..}, Type::Tuple {elems: r}) => {
                 if let Expr::Tuple {elems, i, ..} = e {
                     let elems = elems.into_iter()
@@ -167,7 +186,7 @@ fn coerce_type(e: Expr, expected: &Type) -> PyResult<Expr> {
                         .map(|(e, ty)| coerce_type(e, ty))
                         .collect::<PyResult<Vec<Expr>>>()?;
                     let elem_tys = elems.iter()
-                        .map(|e| e.get_type())
+                        .map(|e| e.get_type().clone())
                         .collect::<Vec<Type>>();
                     let ty = Type::Tuple {elems: elem_tys};
                     Ok(Expr::Tuple {elems, ty, i})
@@ -185,14 +204,12 @@ fn coerce_type(e: Expr, expected: &Type) -> PyResult<Expr> {
 /// size that is larger than or equal to that of both arguments. For instance, the least upper
 /// bound of an int16 and an int32 is int32.
 fn lub_type(l: Type, r: Type, i: &Info) -> PyResult<Type> {
-    match (&l, &r) {
-        (Type::Scalar {sz: lsz}, Type::Scalar {sz: rsz}) => {
-            Ok(Type::Scalar {sz: lub_elem_size(&lsz, &rsz, i)?})
+    match (l.get_scalar_elem_size(), r.get_scalar_elem_size()) {
+        (Some(lsz), Some(rsz)) => {
+            Ok(Type::Tensor {sz: lub_elem_size(lsz, rsz, i)?, shape: vec![]})
         },
-        _ if l.eq(&r) => {
-            Ok(l)
-        },
-        _ => py_type_error!(i, "Cannot unify incompatible types {l} and {r}")
+        (None, None) if l.eq(&r) => Ok(l),
+        _ => py_type_error!(i, "Cannot unify incompatible types {l} and {r}"),
     }
 }
 
@@ -204,39 +221,30 @@ fn type_check_builtin(
     match &func {
         // Literals
         Builtin::Inf if args.is_empty() => {
-            Ok(Expr::Builtin {func, args, ty: Type::Scalar {sz: ElemSize::F64}, i})
+            Ok(Expr::Builtin {func, args, ty: Type::Tensor {sz: ElemSize::F64, shape: vec![]}, i})
         },
         // Unary operations on scalar values
         Builtin::Exp | Builtin::Log if args.len() == 1 => {
-            match args[0].get_type() {
-                ty @ Type::Scalar {..} => Ok(Expr::Builtin {func, args, ty, i}),
-                ty => py_type_error!(i, "Unexpected type {ty} of unary operation (expected scalar)")
-            }
-        },
-        // Unary operations on tensors
-        Builtin::Max | Builtin::Min | Builtin::Sum if args.len() == 1 => {
-            match args[0].get_type() {
-                Type::Tensor {sz} => {
-                    let ty = Type::Scalar {sz};
-                    Ok(Expr::Builtin {func, args, ty, i})
-                },
-                ty => py_type_error!(i, "Unexpected type {ty} of unary operation (expected tensor)")
+            let ty = args[0].get_type().clone();
+            if let Some(_) = ty.get_scalar_elem_size() {
+                Ok(Expr::Builtin {func, args, ty, i})
+            } else {
+                py_type_error!(i, "Unexpected type {ty} of unary builtin (expected scalar)")
             }
         },
         // Binary operations on scalar values
         Builtin::Max | Builtin::Min if args.len() == 2 => {
             let snd = args.pop().unwrap();
             let fst = args.pop().unwrap();
-            let ty = lub_type(fst.get_type(), snd.get_type(), &i)?;
-            match ty {
-                Type::Scalar {..} => {
-                    let args = vec![
-                        fst.with_type(ty.clone()),
-                        snd.with_type(ty.clone())
-                    ];
-                    Ok(Expr::Builtin {func, args, ty, i})
-                },
-                _ => py_type_error!(i, "Unexpected type {ty} of binary operation (expected scalar)")
+            let ty = lub_type(fst.get_type().clone(), snd.get_type().clone(), &i)?;
+            if let Some(_) = ty.get_scalar_elem_size() {
+                let args = vec![
+                    fst.with_type(ty.clone()),
+                    snd.with_type(ty.clone())
+                ];
+                Ok(Expr::Builtin {func, args, ty, i})
+            } else {
+                py_type_error!(i, "Unexpected type {ty} of binary builtin (expected scalar)")
             }
         },
         _ => py_type_error!(i, "Unexpected number of arguments of builtin {func}")
@@ -252,7 +260,7 @@ fn type_check_unop(
     match op {
         UnOp::Sub => {
             if ty.is_signed_integer() || ty.is_floating_point() {
-                Ok(ty)
+                Ok(ty.clone())
             } else {
                 py_type_error!(i, "Invalid type {ty} of unary minus argument")
             }
@@ -266,8 +274,8 @@ fn type_check_binop(
     rhs: &Expr,
     i: &Info
 ) -> PyResult<Type> {
-    let lty = lhs.get_type();
-    let rty = rhs.get_type();
+    let lty = lhs.get_type().clone();
+    let rty = rhs.get_type().clone();
     let ty = lub_type(lty, rty, i)?;
     match op {
         // Arithmetic operations supporting both integers and floating point numbers
@@ -296,7 +304,7 @@ fn type_check_binop(
         },
         // Boolean comparison operations, allowing comparison between elementary types
         BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt => {
-            if let Type::Scalar {..} = ty {
+            if let Some(_) = ty.get_scalar_elem_size() {
                 Ok(ty)
             } else {
                 py_type_error!(i, "Invalid type {ty} of boolean comparison operation")
@@ -306,7 +314,7 @@ fn type_check_binop(
 }
 
 fn type_check_expr(
-    vars: &HashMap<String, Type>,
+    vars: &BTreeMap<String, Type>,
     e: Expr
 ) -> PyResult<Expr> {
     match e {
@@ -318,8 +326,10 @@ fn type_check_expr(
             Ok(Expr::Var {id, ty, i})
         },
         Expr::String {v, i, ..} => Ok(Expr::String {v, ty: Type::String, i}),
-        Expr::Int {v, i, ..} => Ok(Expr::Int {v, ty: Type::Scalar {sz: ElemSize::I64}, i}),
-        Expr::Float {v, i, ..} => Ok(Expr::Float {v, ty: Type::Scalar {sz: ElemSize::F64}, i}),
+        Expr::Int {v, i, ..} =>
+            Ok(Expr::Int {v, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]}, i}),
+        Expr::Float {v, i, ..} =>
+            Ok(Expr::Float {v, ty: Type::Tensor {sz: ElemSize::F64, shape: vec![]}, i}),
         Expr::UnOp {op, arg, i, ..} => {
             let arg = Box::new(type_check_expr(vars, *arg)?);
             let ty = type_check_unop(&op, &arg, &i)?;
@@ -348,19 +358,33 @@ fn type_check_expr(
                 },
                 idx => {
                     let idx = type_check_expr(vars, idx)?;
-                    let elem_ty = if let Type::Tensor {sz} = target.get_type() {
-                        Ok(Type::Scalar {sz})
+                    let elem_ty = if let Type::Tensor {sz, shape} = target.get_type() {
+                        let idx_dims = match idx.get_type() {
+                            Type::Tensor {shape, ..} if shape.len() == 0 => Ok(1),
+                            Type::Tuple {elems} => Ok(elems.len()),
+                            ty => py_type_error!(i, "Unsupported index of type {ty}")
+                        }?;
+                        if idx_dims <= shape.len() {
+                            let res_shape = shape.clone()
+                                .into_iter()
+                                .skip(idx_dims)
+                                .collect::<Vec<i64>>();
+                            Ok(Type::Tensor {sz: sz.clone(), shape: res_shape})
+                        } else {
+                            let sh = shape.iter().map(|i| i.to_string()).join(",");
+                            py_type_error!(i, "Indexing with {idx_dims} dimensions on tensor of shape [{sh}]")
+                        }
                     } else {
                         py_type_error!(i, "Subscript operation on unsupported target {target}")
                     }?;
                     match idx.get_type() {
-                        Type::Scalar {..} => {
-                            let expected_ty = Type::Scalar {sz: ElemSize::I64};
+                        Type::Tensor {shape, ..} if shape.len() == 0 => {
+                            let expected_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
                             Ok((elem_ty, coerce_type(idx, &expected_ty)?))
                         },
                         Type::Tuple {elems} => {
                             let expected_types = elems.iter()
-                                .map(|_| Type::Scalar {sz: ElemSize::I64})
+                                .map(|_| Type::Tensor {sz: ElemSize::I64, shape: vec![]})
                                 .collect::<Vec<Type>>();
                             let expected_ty = Type::Tuple {elems: expected_types};
                             Ok((elem_ty, coerce_type(idx, &expected_ty)?))
@@ -376,7 +400,7 @@ fn type_check_expr(
                 .map(|e| type_check_expr(vars, e))
                 .collect::<PyResult<Vec<Expr>>>()?;
             let elem_types = elems.iter()
-                .map(|e| e.get_type())
+                .map(|e| e.get_type().clone())
                 .collect::<Vec<Type>>();
             let ty = Type::Tuple {elems: elem_types};
             Ok(Expr::Tuple {elems, ty, i})
@@ -384,10 +408,10 @@ fn type_check_expr(
         Expr::Dict {fields, i, ..} => {
             let fields = fields.into_iter()
                 .map(|(k, v)| Ok((k, type_check_expr(vars, v)?)))
-                .collect::<PyResult<HashMap<String, Expr>>>()?;
+                .collect::<PyResult<BTreeMap<String, Expr>>>()?;
             let ty_fields = fields.iter()
-                .map(|(k, v)| (k.clone(), v.get_type()))
-                .collect::<HashMap<String, Type>>();
+                .map(|(k, v)| (k.clone(), v.get_type().clone()))
+                .collect::<BTreeMap<String, Type>>();
             let ty = Type::Dict {fields: ty_fields};
             Ok(Expr::Dict {fields, ty, i})
         },
@@ -400,7 +424,7 @@ fn type_check_expr(
 }
 
 fn type_check_exprs(
-    vars: &HashMap<String, Type>,
+    vars: &BTreeMap<String, Type>,
     exprs: Vec<Expr>
 ) -> PyResult<Vec<Expr>> {
     exprs.into_iter()
@@ -409,9 +433,9 @@ fn type_check_exprs(
 }
 
 fn type_check_stmt(
-    mut vars: HashMap<String, Type>,
+    mut vars: BTreeMap<String, Type>,
     stmt: Stmt
-) -> PyResult<(HashMap<String, Type>, Stmt)> {
+) -> PyResult<(BTreeMap<String, Type>, Stmt)> {
     match stmt {
         Stmt::Assign {dst, expr, i} => {
             let def_id = if let Expr::Var {id, ..} = &dst {
@@ -427,7 +451,7 @@ fn type_check_stmt(
                 // The variable is being assigned and defined. In this case, we type-check
                 // the expression first, to be able to determine the type of the variable.
                 let expr = type_check_expr(&vars, expr)?;
-                vars.insert(id.clone(), expr.get_type());
+                vars.insert(id.clone(), expr.get_type().clone());
                 let dst = type_check_expr(&vars, dst)?;
                 Ok((vars, Stmt::Assign {dst, expr, i}))
             } else {
@@ -436,7 +460,7 @@ fn type_check_stmt(
                 // determine whether the assigned expression needs to be converted.
                 let dst = type_check_expr(&vars, dst)?;
                 let expr = type_check_expr(&vars, expr)?;
-                let expr = coerce_type(expr, &dst.get_type())?;
+                let expr = coerce_type(expr, dst.get_type())?;
                 Ok((vars, Stmt::Assign {dst, expr, i}))
             }
         },
@@ -446,7 +470,7 @@ fn type_check_stmt(
             let hi = type_check_expr(&vars, hi)?;
             let hi = ensure_scalar_type(hi, ElemSize::I64)?;
             let mut body_vars = vars.clone();
-            body_vars.insert(var.clone(), Type::Scalar {sz: ElemSize::I64});
+            body_vars.insert(var.clone(), Type::Tensor {sz: ElemSize::I64, shape: vec![]});
             let (_, body) = type_check_stmts(body_vars, body)?;
             Ok((vars, Stmt::For {var, lo, hi, body, i}))
         },
@@ -455,7 +479,7 @@ fn type_check_stmt(
             let ty = cond.get_type();
             let cond = match &ty {
                 Type::Boolean => Ok(cond),
-                Type::Scalar {..} if ty.is_signed_integer() || ty.is_unsigned_integer() => {
+                Type::Tensor {..} if ty.is_signed_integer() || ty.is_unsigned_integer() => {
                     let cond_info = cond.get_info();
                     let zero = Expr::Int {v: 0, ty: ty.clone(), i: cond_info.clone()};
                     Ok(Expr::BinOp {
@@ -476,9 +500,9 @@ fn type_check_stmt(
 }
 
 fn type_check_stmts(
-    vars: HashMap<String, Type>,
+    vars: BTreeMap<String, Type>,
     stmts: Vec<Stmt>
-) -> PyResult<(HashMap<String, Type>, Vec<Stmt>)> {
+) -> PyResult<(BTreeMap<String, Type>, Vec<Stmt>)> {
     stmts.into_iter()
         .fold(Ok((vars, vec![])), |acc: PyResult<_>, stmt| {
             let (vars, mut stmts) = acc?;
@@ -494,7 +518,7 @@ fn type_check_body(
 ) -> PyResult<Vec<Stmt>> {
     let vars = params.iter()
         .map(|Param {id, ty, ..}| (id.clone(), ty.clone()))
-        .collect::<HashMap<String, Type>>();
+        .collect::<BTreeMap<String, Type>>();
     let (_, body) = type_check_stmts(vars, body)?;
     Ok(body)
 }
@@ -523,6 +547,10 @@ mod test {
     fn test_lub_elem_size_fail(lhs: &ElemSize, rhs: &ElemSize) {
         let result = lub_elem_size(lhs, rhs, &Info::default());
         assert!(result.is_err());
+    }
+
+    fn scalar_type(sz: ElemSize) -> Type {
+        Type::Tensor {sz, shape: vec![]}
     }
 
     #[test]
@@ -585,53 +613,63 @@ mod test {
 
     #[test]
     fn lub_type_elem_eq() {
-        let ty = Type::Scalar {sz: ElemSize::I16};
+        let ty = scalar_type(ElemSize::I16);
         test_lub_type_ok(ty.clone(), ty.clone(), ty.clone())
     }
 
     #[test]
     fn lub_type_elem_compatible() {
-        let ty1 = Type::Scalar {sz: ElemSize::F32};
-        let ty2 = Type::Scalar {sz: ElemSize::F64};
+        let ty1 = scalar_type(ElemSize::F32);
+        let ty2 = scalar_type(ElemSize::F64);
         test_lub_type_ok(ty1.clone(), ty2.clone(), ty2.clone())
     }
 
     #[test]
     fn lub_type_elem_incompatible() {
-        let ty1 = Type::Scalar {sz: ElemSize::F32};
-        let ty2 = Type::Scalar {sz: ElemSize::U8};
+        let ty1 = scalar_type(ElemSize::F32);
+        let ty2 = scalar_type(ElemSize::U8);
         test_lub_type_fail(ty1, ty2)
     }
 
     #[test]
-    fn lub_type_tensor_eq() {
-        let ty = Type::Tensor {sz: ElemSize::I32};
+    fn lub_type_tensor_equal_ok() {
+        let ty = Type::Tensor {sz: ElemSize::I32, shape: vec![5]};
         test_lub_type_ok(ty.clone(), ty.clone(), ty.clone())
     }
 
     #[test]
     fn lub_type_tensor_compatible_fails() {
-        let ty1 = Type::Tensor {sz: ElemSize::F32};
-        let ty2 = Type::Tensor {sz: ElemSize::F64};
+        let ty1 = Type::Tensor {sz: ElemSize::F32, shape: vec![5]};
+        let ty2 = Type::Tensor {sz: ElemSize::F64, shape: vec![5]};
+        test_lub_type_fail(ty1, ty2)
+    }
+
+    #[test]
+    fn lub_type_tensor_different_shape_fails() {
+        let ty1 = Type::Tensor {sz: ElemSize::F32, shape: vec![5]};
+        let ty2 = Type::Tensor {sz: ElemSize::F32, shape: vec![4]};
         test_lub_type_fail(ty1, ty2)
     }
 
     #[test]
     fn lub_type_tuple_eq_elems() {
-        let ty = Type::Tuple {elems: vec![Type::Boolean, Type::Scalar {sz: ElemSize::F32}]};
+        let ty = Type::Tuple {elems: vec![
+            Type::Boolean,
+            scalar_type(ElemSize::F32)
+        ]};
         test_lub_type_ok(ty.clone(), ty.clone(), ty.clone())
     }
 
     #[test]
     fn lub_type_tuple_compatible_elems_fails() {
-        let ty1 = Type::Tuple {elems: vec![Type::Scalar {sz: ElemSize::F32}]};
-        let ty2 = Type::Tuple {elems: vec![Type::Scalar {sz: ElemSize::F64}]};
+        let ty1 = Type::Tuple {elems: vec![scalar_type(ElemSize::F32)]};
+        let ty2 = Type::Tuple {elems: vec![scalar_type(ElemSize::F64)]};
         test_lub_type_fail(ty1, ty2)
     }
 
     #[test]
     fn lub_type_dict() {
-        let ty = Type::Dict {fields: HashMap::new()};
+        let ty = Type::Dict {fields: BTreeMap::new()};
         test_lub_type_ok(ty.clone(), ty.clone(), ty.clone())
     }
 
@@ -645,7 +683,7 @@ mod test {
 
     #[test]
     fn type_check_unop_signed_int_negation() {
-        let ty = Type::Scalar {sz: ElemSize::I64};
+        let ty = scalar_type(ElemSize::I64);
         let arg = Expr::Int {v: 1, ty: ty.clone(), i: Info::default()};
         let r = test_tc_unop(UnOp::Sub, arg);
         assert!(r.is_ok());
@@ -654,7 +692,7 @@ mod test {
 
     #[test]
     fn type_check_unop_float_negation() {
-        let ty = Type::Scalar {sz: ElemSize::F32};
+        let ty = scalar_type(ElemSize::F32);
         let arg = Expr::Var {id: var("x"), ty: ty.clone(), i: Info::default()};
         let r = test_tc_unop(UnOp::Sub, arg);
         assert!(r.is_ok());
@@ -667,7 +705,7 @@ mod test {
 
     #[test]
     fn type_check_binop_signed_int_addition() {
-        let ty = Type::Scalar {sz: ElemSize::I64};
+        let ty = scalar_type(ElemSize::I64);
         let lhs = Expr::Int {v: 1, ty: ty.clone(), i: Info::default()};
         let rhs = Expr::Int {v: 2, ty: ty.clone(), i: Info::default()};
         let r = test_tc_binop(lhs, BinOp::Add, rhs);
@@ -677,9 +715,9 @@ mod test {
 
     #[test]
     fn type_check_binop_coerced_signed_int_multiplication() {
-        let lty = Type::Scalar {sz: ElemSize::I32};
+        let lty = scalar_type(ElemSize::I32);
         let lhs = Expr::Var {id: var("x"), ty: lty.clone(), i: Info::default()};
-        let rty = Type::Scalar {sz: ElemSize::I16};
+        let rty = scalar_type(ElemSize::I16);
         let rhs = Expr::Var {id: var("y"), ty: rty, i: Info::default()};
         let r = test_tc_binop(lhs, BinOp::Mul, rhs);
         assert!(r.is_ok());
@@ -688,7 +726,7 @@ mod test {
 
     #[test]
     fn type_check_binop_float_subtraction() {
-        let ty = Type::Scalar {sz: ElemSize::F32};
+        let ty = scalar_type(ElemSize::F32);
         let lhs = Expr::Float {v: 3.14, ty: ty.clone(), i: Info::default()};
         let rhs = Expr::Var {id: var("x"), ty: ty.clone(), i: Info::default()};
         let r = test_tc_binop(lhs, BinOp::Sub, rhs);
@@ -696,10 +734,10 @@ mod test {
         assert_eq!(r.unwrap(), ty);
     }
 
-    fn make_map<'a>(entries: Vec<(&'a str, Type)>) -> HashMap<String, Type> {
+    fn make_map<'a>(entries: Vec<(&'a str, Type)>) -> BTreeMap<String, Type> {
         entries.into_iter()
             .map(|(id, ty)| (id.to_string(), ty))
-            .collect::<HashMap<String, Type>>()
+            .collect::<BTreeMap<String, Type>>()
     }
 
     #[test]
@@ -708,7 +746,7 @@ mod test {
         let v = Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()};
         let r = type_check_expr(&vars, v);
         assert!(r.is_ok());
-        assert_eq!(r.unwrap().get_type(), Type::Boolean);
+        assert_eq!(r.unwrap().get_type().clone(), Type::Boolean);
     }
 
     #[test]
@@ -724,7 +762,7 @@ mod test {
         let v = Expr::String {v: "x".to_string(), ty: Type::Unknown, i: Info::default()};
         let r = type_check_expr(&vars, v);
         assert!(r.is_ok());
-        assert_eq!(r.unwrap().get_type(), Type::String);
+        assert_eq!(r.unwrap().get_type().clone(), Type::String);
     }
 
     #[test]
@@ -733,7 +771,7 @@ mod test {
         let v = Expr::Int {v: 0, ty: Type::Unknown, i: Info::default()};
         let r = type_check_expr(&vars, v);
         assert!(r.is_ok());
-        assert_eq!(r.unwrap().get_type(), Type::Scalar {sz: ElemSize::I64});
+        assert_eq!(r.unwrap().get_type().clone(), scalar_type(ElemSize::I64));
     }
 
     #[test]
@@ -742,7 +780,7 @@ mod test {
         let v = Expr::Float {v: 0.0, ty: Type::Unknown, i: Info::default()};
         let r = type_check_expr(&vars, v);
         assert!(r.is_ok());
-        assert_eq!(r.unwrap().get_type(), Type::Scalar {sz: ElemSize::F64});
+        assert_eq!(r.unwrap().get_type().clone(), scalar_type(ElemSize::F64));
     }
 
     #[test]
@@ -760,8 +798,8 @@ mod test {
         assert!(r.is_ok());
         if let Expr::Subscript {target, idx, ty, ..} = r.unwrap() {
             assert_eq!(ty, Type::Boolean);
-            assert_eq!(target.get_type(), dict_ty);
-            assert_eq!(idx.get_type(), Type::String);
+            assert_eq!(target.get_type().clone(), dict_ty);
+            assert_eq!(idx.get_type().clone(), Type::String);
         } else {
             assert!(false);
         }
@@ -769,7 +807,7 @@ mod test {
 
     #[test]
     fn type_check_expr_tensor_lookup() {
-        let tensor_ty = Type::Tensor {sz: ElemSize::F32};
+        let tensor_ty = Type::Tensor {sz: ElemSize::F32, shape: vec![5]};
         let vars = make_map(vec![("x", tensor_ty.clone())]);
         let v = Expr::Subscript {
             target: Box::new(Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()}),
@@ -780,9 +818,9 @@ mod test {
         let r = type_check_expr(&vars, v);
         assert!(r.is_ok());
         if let Expr::Subscript {target, idx, ty, ..} = r.unwrap() {
-            assert_eq!(ty, Type::Scalar {sz: ElemSize::F32});
-            assert_eq!(target.get_type(), tensor_ty.clone());
-            assert_eq!(idx.get_type(), Type::Scalar {sz: ElemSize::I64});
+            assert_eq!(ty, scalar_type(ElemSize::F32));
+            assert_eq!(target.get_type().clone(), tensor_ty.clone());
+            assert_eq!(idx.get_type().clone(), scalar_type(ElemSize::I64));
         } else {
             assert!(false);
         }
@@ -790,10 +828,10 @@ mod test {
 
     #[test]
     fn type_check_expr_tensor_lookup_with_conversion() {
-        let tensor_ty = Type::Tensor {sz: ElemSize::F32};
+        let tensor_ty = Type::Tensor {sz: ElemSize::F32, shape: vec![5]};
         let vars = make_map(vec![
             ("x", tensor_ty.clone()),
-            ("y", Type::Scalar {sz: ElemSize::I32})
+            ("y", scalar_type(ElemSize::I32))
         ]);
         let v = Expr::Subscript {
             target: Box::new(Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()}),
@@ -802,19 +840,49 @@ mod test {
             i: Info::default()
         };
         let r = type_check_expr(&vars, v);
-        assert!(r.is_ok());
         if let Expr::Subscript {target, idx, ty, ..} = r.unwrap() {
-            assert_eq!(ty, Type::Scalar {sz: ElemSize::F32});
-            assert_eq!(target.get_type(), tensor_ty.clone());
+            assert_eq!(ty, scalar_type(ElemSize::F32));
+            assert_eq!(target.get_type().clone(), tensor_ty);
             // As the variable y is a 32-bit integer, the type-checker should insert a Convert node
             // indicating that it needs to be converted to a 64-bit signed integer value (we always
             // expect this for indexing operations).
             if let Expr::Convert {e, ty} = *idx {
-                assert_eq!(e.get_type(), Type::Scalar {sz: ElemSize::I32});
-                assert_eq!(ty, Type::Scalar {sz: ElemSize::I64});
+                assert_eq!(e.get_type().clone(), scalar_type(ElemSize::I32));
+                assert_eq!(ty, scalar_type(ElemSize::I64));
             } else {
                 assert!(false);
             }
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn type_check_expr_tensor_slicing() {
+        let tensor_ty = Type::Tensor {sz: ElemSize::F32, shape: vec![5,6,4]};
+        let vars = make_map(vec![
+            ("x", tensor_ty.clone()),
+        ]);
+        let tuple_ty = Type::Tuple {
+            elems: vec![scalar_type(ElemSize::I64), scalar_type(ElemSize::I64)]
+        };
+        let idx = Box::new(Expr::Tuple {
+            elems: vec![
+                Expr::Int {v: 2, ty: scalar_type(ElemSize::I64), i: Info::default()},
+                Expr::Int {v: 5, ty: scalar_type(ElemSize::I64), i: Info::default()}
+            ],
+            ty: tuple_ty.clone(),
+            i: Info::default()
+        });
+        let v = Expr::Subscript {
+            target: Box::new(Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()}),
+            idx, ty: Type::Unknown, i: Info::default()
+        };
+        let r = type_check_expr(&vars, v);
+        if let Expr::Subscript {target, idx, ty, ..} = r.unwrap() {
+            assert_eq!(ty, Type::Tensor {sz: ElemSize::F32, shape: vec![4]});
+            assert_eq!(target.get_type().clone(), tensor_ty);
+            assert_eq!(idx.get_type().clone(), tuple_ty);
         } else {
             assert!(false);
         }

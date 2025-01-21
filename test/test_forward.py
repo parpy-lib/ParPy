@@ -112,15 +112,15 @@ def forward(hmm, seqs):
 def test_forward():
     hmm = {
         'gamma': torch.tensor(0.0, dtype=torch.float32),
-        'trans1': torch.randn(10, dtype=torch.float32),
+        'trans1': torch.randn((10, 4), dtype=torch.float32),
         'trans2': torch.randn(10, dtype=torch.float32),
-        'output_prob': torch.randn(10, dtype=torch.float32),
+        'output_prob': torch.randn((10, 10), dtype=torch.float32),
         'initial_prob': torch.randn(10, dtype=torch.float32),
         'synthetic_248': torch.tensor(0.0, dtype=torch.float32),
         'num_states': torch.tensor(0, dtype=torch.int64)
     }
     seqs = {
-        'data': torch.zeros(10, dtype=torch.uint8),
+        'data': torch.zeros((10, 10), dtype=torch.uint8),
         'lens': torch.zeros(10, dtype=torch.int64),
         'maxlen': torch.tensor(0, dtype=torch.int64),
         'num_instances': torch.tensor(0, dtype=torch.int64)

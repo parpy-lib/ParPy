@@ -7,7 +7,7 @@ use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
 use pyo3::types;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ffi::CString;
 
 struct ConvertEnv<'py, 'a> {
@@ -111,8 +111,6 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
                 Ok(Builtin::Min)
             } else if e.eq(parir.getattr("max")?)? {
                 Ok(Builtin::Max)
-            } else if e.eq(parir.getattr("sum")?)? {
-                Ok(Builtin::Sum)
             } else {
                 py_runtime_error!(i, "Unknown built-in operator {expr}")
             }?;
@@ -198,7 +196,7 @@ fn convert_expr<'py, 'a>(
             .collect::<PyResult<Vec<Expr>>>()?;
         let fields = keys.into_iter()
             .zip(values.into_iter())
-            .collect::<HashMap<String, Expr>>();
+            .collect::<BTreeMap<String, Expr>>();
         Ok(Expr::Dict {fields, ty, i})
     } else if expr.is_instance(&env.ast.getattr("Call")?)? {
         let args = expr.getattr("args")?
@@ -434,12 +432,6 @@ mod test {
     }
 
     #[test]
-    fn lookup_builtin_sum() -> PyResult<()> {
-        lookup_builtin_ok("parir.sum", Builtin::Sum)?;
-        lookup_builtin_ok("sum", Builtin::Sum)
-    }
-
-    #[test]
     fn lookup_builtin_torch_prefix_fail() -> PyResult<()> {
         lookup_builtin_fail("torch.log")?;
         lookup_builtin_fail("torch.max")?;
@@ -652,7 +644,7 @@ mod test {
         ];
         let fields = fields.into_iter()
             .map(|(k, v)| (k.to_string(), v))
-            .collect::<HashMap<String, Expr>>();
+            .collect::<BTreeMap<String, Expr>>();
         assert_eq!(expr, Expr::Dict {
             fields,
             ty: Type::Unknown,

@@ -1,11 +1,13 @@
 use crate::info::*;
 
 use strum_macros::EnumIter;
+use itertools::Itertools;
 
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::fmt;
 
-#[derive(Clone, Debug, PartialEq, EnumIter)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum ElemSize {
     I8, I16, I32, I64, U8, F16, F32, F64
 }
@@ -52,55 +54,95 @@ impl fmt::Display for ElemSize {
 pub enum Type {
     Boolean,
     String,
-    Scalar {sz: ElemSize},
-    Tensor {sz: ElemSize},
+    Tensor {sz: ElemSize, shape: Vec<i64>},
     Tuple {elems: Vec<Type>},
-    Dict {fields: HashMap<String, Type>},
+    Dict {fields: BTreeMap<String, Type>},
     Unknown
 }
 
 impl Type {
-    pub fn is_signed_integer(&self) -> bool {
+    pub fn get_scalar_elem_size<'a>(&'a self) -> Option<&'a ElemSize> {
         match self {
-            Type::Scalar {sz} => sz.is_signed_integer(),
-            _ => false
+            Type::Tensor {sz, shape} if shape.len() == 0 => Some(sz),
+            _ => None
         }
+    }
+
+    pub fn is_signed_integer(&self) -> bool {
+        self.get_scalar_elem_size()
+            .is_some_and(|sz| sz.is_signed_integer())
     }
 
     pub fn is_unsigned_integer(&self) -> bool {
-        match self {
-            Type::Scalar {sz} => sz.is_unsigned_integer(),
-            _ => false
-        }
+        self.get_scalar_elem_size()
+            .is_some_and(|sz| sz.is_unsigned_integer())
     }
 
     pub fn is_floating_point(&self) -> bool {
-        match self {
-            Type::Scalar {sz} => sz.is_floating_point(),
-            _ => false
+        self.get_scalar_elem_size()
+            .is_some_and(|sz| sz.is_floating_point())
+    }
+}
+
+impl Ord for Type {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Type::Boolean, Type::Boolean) => Ordering::Equal,
+            (Type::Boolean, _) => Ordering::Less,
+            (Type::String, Type::Boolean) => Ordering::Greater,
+            (Type::String, Type::String) => Ordering::Equal,
+            (Type::String, _) => Ordering::Less,
+            (Type::Tensor {..}, Type::Boolean | Type::String) =>
+                Ordering::Greater,
+            (Type::Tensor {sz: lsz, shape: lsh}, Type::Tensor {sz: rsz, shape: rsh}) => {
+                lsz.cmp(rsz).then(lsh.cmp(rsh))
+            },
+            (Type::Tensor {..}, _) => Ordering::Less,
+            (Type::Tuple {..}, Type::Dict {..} | Type::Unknown) => Ordering::Less,
+            (Type::Tuple {elems: lelems}, Type::Tuple {elems: relems}) =>
+                lelems.cmp(relems),
+            (Type::Tuple {..}, _) => Ordering::Greater,
+            (Type::Dict {..}, Type::Unknown) => Ordering::Less,
+            (Type::Dict {fields: lfields}, Type::Dict {fields: rfields}) =>
+                lfields.iter()
+                    .zip(rfields.iter())
+                    .fold(Ordering::Equal, |acc, ((lk, lv), (rk, rv))| {
+                        acc.then(lk.cmp(rk)).then(lv.cmp(rv))
+                    }),
+            (Type::Dict {..}, _) => Ordering::Greater,
+            (Type::Unknown, Type::Unknown) => Ordering::Equal,
+            (Type::Unknown, _) => Ordering::Greater,
         }
     }
 }
+
+impl PartialOrd for Type {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for Type {}
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Type::Boolean => write!(f, "boolean"),
             Type::String => write!(f, "string"),
-            Type::Scalar {sz} => write!(f, "{sz}"),
-            Type::Tensor {sz} => write!(f, "tensor[{sz}]"),
+            Type::Tensor {sz, shape} => {
+                let sh = shape.iter().map(|i| i.to_string()).join(",");
+                write!(f, "tensor<{sz}>[{sh}]")
+            },
             Type::Unknown => write!(f, "?"),
             Type::Tuple {elems} => {
                 let elems = elems.iter()
                     .map(|e| format!("{e}"))
-                    .collect::<Vec<String>>()
                     .join(",");
                 write!(f, "({elems})")
             },
             Type::Dict {fields} => {
                 let fields = fields.iter()
                     .map(|(k, v)| format!("{k} {v}"))
-                    .collect::<Vec<String>>()
                     .join(",");
                 write!(f, "dict {{{fields}}}")
             },
@@ -110,7 +152,7 @@ impl fmt::Display for Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Builtin {
-    Exp, Inf, Log, Max, Min, Sum
+    Exp, Inf, Log, Max, Min
 }
 
 impl fmt::Display for Builtin {
@@ -121,7 +163,6 @@ impl fmt::Display for Builtin {
             Builtin::Log => write!(f, "log"),
             Builtin::Max => write!(f, "max"),
             Builtin::Min => write!(f, "min"),
-            Builtin::Sum => write!(f, "sum"),
         }
     }
 }
@@ -172,25 +213,25 @@ pub enum Expr {
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     Subscript {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Tuple {elems: Vec<Expr>, ty: Type, i: Info},
-    Dict {fields: HashMap<String, Expr>, ty: Type, i: Info},
+    Dict {fields: BTreeMap<String, Expr>, ty: Type, i: Info},
     Builtin {func: Builtin, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 }
 
 impl Expr {
-    pub fn get_type(&self) -> Type {
+    pub fn get_type<'a>(&'a self) -> &'a Type {
         match self {
-            Expr::Var {ty, ..} => ty.clone(),
-            Expr::String {ty, ..} => ty.clone(),
-            Expr::Int {ty, ..} => ty.clone(),
-            Expr::Float {ty, ..} => ty.clone(),
-            Expr::UnOp {ty, ..} => ty.clone(),
-            Expr::BinOp {ty, ..} => ty.clone(),
-            Expr::Subscript {ty, ..} => ty.clone(),
-            Expr::Tuple {ty, ..} => ty.clone(),
-            Expr::Dict {ty, ..} => ty.clone(),
-            Expr::Builtin {ty, ..} => ty.clone(),
-            Expr::Convert {ty, ..} => ty.clone(),
+            Expr::Var {ty, ..} => ty,
+            Expr::String {ty, ..} => ty,
+            Expr::Int {ty, ..} => ty,
+            Expr::Float {ty, ..} => ty,
+            Expr::UnOp {ty, ..} => ty,
+            Expr::BinOp {ty, ..} => ty,
+            Expr::Subscript {ty, ..} => ty,
+            Expr::Tuple {ty, ..} => ty,
+            Expr::Dict {ty, ..} => ty,
+            Expr::Builtin {ty, ..} => ty,
+            Expr::Convert {ty, ..} => ty,
         }
     }
 
@@ -224,14 +265,12 @@ impl fmt::Display for Expr {
             Expr::Tuple {elems, ..} => {
                 let elems = elems.iter()
                     .map(|e| format!("{e}"))
-                    .collect::<Vec<String>>()
                     .join(",");
                 write!(f, "({elems})")
             },
             Expr::Dict {fields, ..} => {
                 let fields = fields.iter()
                     .map(|(k, v)| format!("{k}: {v}"))
-                    .collect::<Vec<String>>()
                     .join(",");
                 write!(f, "{{{fields}}}")
             },
@@ -241,7 +280,6 @@ impl fmt::Display for Expr {
                 } else {
                     let args = args.iter()
                         .map(|a| format!("{a}"))
-                        .collect::<Vec<String>>()
                         .join(",");
                     write!(f, "{func}({args})")
                 }
