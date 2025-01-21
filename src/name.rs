@@ -23,15 +23,18 @@ impl Name {
         Name {s, sym: None}
     }
 
-    pub fn new_sym(self, n: Name) -> Name {
-        let Name {s, ..} = n;
+    pub fn with_new_sym(self) -> Name {
+        let Name {s, ..} = self;
         let sym = Some(gensym());
         Name {s, sym}
     }
 
-    pub fn with_sym(self, n: Name, sym: Sym) -> Name {
-        let Name {s, ..} = n;
-        Name {s, sym: Some(sym)}
+    pub fn has_sym(&self) -> bool {
+        self.sym.is_some()
+    }
+
+    pub fn get_str<'a>(&'a self) -> &'a String {
+        &self.s
     }
 }
 

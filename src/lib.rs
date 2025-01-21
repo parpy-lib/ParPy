@@ -36,6 +36,7 @@ fn compile_ir<'py>(
     };
     let py_ir_ast = py::type_check_ast(untyped_ir_ast.clone(), args)?;
     let ir_ast = ir::from_python(py_ir_ast, par)?;
+    let ir_ast = ir::symbolize(ir_ast)?;
     // Ok(codegen::build_ast(ir_ast)?)
     // TODO: Implement the translation from the typed AST down to machine code, including
     // parallelization of for-loops based on the provided specification.
