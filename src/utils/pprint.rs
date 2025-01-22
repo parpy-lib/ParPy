@@ -5,6 +5,8 @@ use rand::distributions::{Alphanumeric, DistString};
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub const DEFAULT_INDENT: usize = 2;
+
 pub struct PrettyPrintEnv {
     strs: BTreeSet<String>,
     vars: BTreeMap<Name, String>,
@@ -18,7 +20,7 @@ impl PrettyPrintEnv {
             strs: BTreeSet::new(),
             vars: BTreeMap::new(),
             indent: 0,
-            indent_increment: 2,
+            indent_increment: DEFAULT_INDENT,
         }
     }
 
@@ -33,7 +35,16 @@ impl PrettyPrintEnv {
     }
 
     pub fn print_indent(&self) -> String {
-        (0..self.indent).map(|_| ' ').collect::<String>()
+        " ".repeat(self.indent)
+    }
+}
+
+pub trait PrettyPrint {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String);
+
+    fn pprint_default(&self) -> String {
+        let (_, s) = self.pprint(PrettyPrintEnv::new());
+        s
     }
 }
 
@@ -51,19 +62,17 @@ fn alloc_free_string(mut env: PrettyPrintEnv, id: &Name) -> (PrettyPrintEnv, Str
     (env, s)
 }
 
-pub fn pprint_var(env: PrettyPrintEnv, id: &Name) -> (PrettyPrintEnv, String) {
-    if let Some(x) = &env.vars.get(id) {
-        let s = x.to_string();
-        (env, s)
-    } else {
-        let (mut env, s) = alloc_free_string(env, id);
-        env.vars.insert(id.clone(), s.clone());
-        (env, s)
+impl PrettyPrint for Name {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        if let Some(x) = &env.vars.get(self) {
+            let s = x.to_string();
+            (env, s)
+        } else {
+            let (mut env, s) = alloc_free_string(env, self);
+            env.vars.insert(self.clone(), s.clone());
+            (env, s)
+        }
     }
-}
-
-pub trait PrettyPrint {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String);
 }
 
 pub fn pprint_iter<'a, T: PrettyPrint + 'a, I: Iterator<Item=&'a T>>(

@@ -11,15 +11,6 @@ pub enum Type {
     Struct {id: Name},
 }
 
-impl Type {
-    pub fn get_scalar_elem_size<'a>(&'a self) -> Option<&'a ElemSize> {
-        match self {
-            Type::Tensor {sz, shape} if shape.len() == 0 => Some(sz),
-            _ => None,
-        }
-    }
-}
-
 // Reuse the below enums from the Python AST.
 pub use crate::py::ast::Builtin;
 pub use crate::py::ast::UnOp;
