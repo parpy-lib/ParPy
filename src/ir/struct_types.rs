@@ -1,4 +1,4 @@
-use super::ast::*;
+use crate::py::ast::*;
 
 use std::collections::BTreeSet;
 
@@ -79,9 +79,6 @@ fn find_struct_types_def(
         .fold(types, find_struct_types_stmt)
 }
 
-pub fn find_struct_types(ast: &Ast) -> StructTypes {
-    ast.iter()
-        .fold(StructTypes::default(), |types, def| {
-            find_struct_types_def(types, def)
-        })
+pub fn find_struct_types(def: &FunDef) -> StructTypes {
+    find_struct_types_def(StructTypes::default(), def)
 }

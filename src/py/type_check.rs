@@ -92,16 +92,6 @@ fn add_param_types<'py>(
     }
 }
 
-fn unwrap_ast<'py>(
-    mut ast: Ast
-) -> PyResult<FunDef> {
-    if ast.len() == 1 {
-        Ok(ast.remove(0))
-    } else {
-        py_type_error!(Info::default(), "Expected Python AST to consist of one function definition")
-    }
-}
-
 fn lub_elem_size(
     lhs: &ElemSize,
     rhs: &ElemSize,
@@ -519,14 +509,14 @@ fn type_check_body(
     Ok(body)
 }
 
-pub fn type_check_ast<'py>(
-    ast: Ast,
+pub fn type_check<'py>(
+    def: FunDef,
     args: Vec<Bound<'py, PyAny>>
-) -> PyResult<Ast> {
-    let FunDef {id, params, body, i} = unwrap_ast(ast)?;
+) -> PyResult<FunDef> {
+    let FunDef {id, params, body, i} = def;
     let params = add_param_types(&id, params, args)?;
     let body = type_check_body(body, params.clone())?;
-    Ok(vec![FunDef {id, params, body, i}])
+    Ok(FunDef {id, params, body, i})
 }
 
 #[cfg(test)]

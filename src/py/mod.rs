@@ -1,10 +1,9 @@
 pub mod ast;
 mod from_py;
-pub mod struct_types;
 mod type_check;
 
 pub use from_py::to_untyped_ir;
-pub use type_check::type_check_ast;
+pub use type_check::type_check;
 
 #[macro_export]
 macro_rules! py_runtime_error {

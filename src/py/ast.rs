@@ -352,5 +352,3 @@ pub struct FunDef {
     pub body: Vec<Stmt>,
     pub i: Info
 }
-
-pub type Ast = Vec<FunDef>;

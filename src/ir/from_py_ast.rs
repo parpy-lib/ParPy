@@ -6,15 +6,23 @@ use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::par::{ParKind, ParSpec};
 use crate::py::ast as py_ast;
-use crate::py::struct_types;
 
 use itertools::Itertools;
 
 use std::collections::BTreeMap;
 
-struct IREnv {
+pub struct IREnv {
     structs: BTreeMap<py_ast::Type, Name>,
     par: BTreeMap<String, ParSpec>,
+}
+
+impl IREnv {
+    pub fn new(
+        structs: BTreeMap<py_ast::Type, Name>,
+        par: BTreeMap<String, ParSpec>
+    ) -> Self {
+        IREnv {structs, par}
+    }
 }
 
 fn get_dict_type_fields(ty: py_ast::Type) -> BTreeMap<String, py_ast::Type> {
@@ -25,13 +33,13 @@ fn get_dict_type_fields(ty: py_ast::Type) -> BTreeMap<String, py_ast::Type> {
     }
 }
 
-fn generate_struct_name(ty: py_ast::Type) -> Name {
-    let fields = get_dict_type_fields(ty);
+pub fn generate_struct_name(ty: &py_ast::Type) -> Name {
+    let fields = get_dict_type_fields(ty.clone());
     let id = fields.keys().join("_");
     Name::new(format!("dict_{id}"))
 }
 
-fn to_struct_def(
+pub fn to_struct_def(
     env: &IREnv,
     id: Name,
     ty: py_ast::Type
@@ -114,8 +122,6 @@ fn to_ir_expr(
             } else if let py_ast::Expr::Tuple {elems, i: i_tuple, ..} = *idx {
                 if let Type::Tensor {sz, shape} = target.get_type() {
                     if elems.len() <= shape.len() {
-                        // t[3,4] where t.shape = [6, 5, 4]
-                        // t[3,4] -> t[3*6+4*5] with shape = [4]
                         let int_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
                         let zero = Expr::Int {v: 0, ty: int_ty.clone(), i: i_tuple.clone()};
                         let idx = shape.clone()
@@ -239,7 +245,7 @@ fn to_ir_param(
     Ok(Param {id, ty, i})
 }
 
-fn to_ir_def(
+pub fn to_ir_def(
     env: &IREnv,
     def: py_ast::FunDef
 ) -> CompileResult<Top> {
@@ -250,24 +256,4 @@ fn to_ir_def(
         .collect::<CompileResult<Vec<Param>>>()?;
     let body = to_ir_stmts(env, body)?;
     Ok(Top::FunDef {id, params, body, i})
-}
-
-pub fn from_python(
-    ast: py_ast::Ast,
-    par: BTreeMap<String, ParSpec>
-) -> CompileResult<Ast> {
-    let structs = struct_types::find_struct_types(&ast).into_iter()
-        .map(|ty| {
-            let id = generate_struct_name(ty.clone());
-            (ty, id)
-        })
-        .collect::<BTreeMap<py_ast::Type, Name>>();
-    let env = IREnv {structs: structs.clone(), par};
-    let struct_defs = structs.into_iter()
-        .map(|(ty, id)| to_struct_def(&env, id, ty))
-        .collect::<CompileResult<Vec<Top>>>()?;
-    let fun_defs = ast.into_iter()
-        .map(|def| to_ir_def(&env, def))
-        .collect::<CompileResult<Vec<Top>>>()?;
-    Ok(struct_defs.into_iter().chain(fun_defs.into_iter()).collect::<_>())
 }

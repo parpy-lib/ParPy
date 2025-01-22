@@ -45,23 +45,6 @@ impl Expr {
             Expr::Convert {ty, ..} => ty,
         }
     }
-
-    pub fn with_type(self, ty: Type) -> Self {
-        match self {
-            Expr::Var {id, i, ..} => Expr::Var {id, ty, i},
-            Expr::Int {v, i, ..} => Expr::Int {v, ty, i},
-            Expr::Float {v, i, ..} => Expr::Float {v, ty, i},
-            Expr::UnOp {op, arg, i, ..} => Expr::UnOp {op, arg, ty, i},
-            Expr::BinOp {lhs, op, rhs, i, ..} => Expr::BinOp {lhs, op, rhs, ty, i},
-            Expr::StructFieldAccess {target, label, i, ..} =>
-                Expr::StructFieldAccess {target, label, ty, i},
-            Expr::TensorAccess {target, idx, i, ..} =>
-                Expr::TensorAccess {target, idx, ty, i},
-            Expr::Struct {id, fields, i, ..} => Expr::Struct {id, fields, ty, i},
-            Expr::Builtin {func, args, i, ..} => Expr::Builtin {func, args, ty, i},
-            Expr::Convert {e, ..} => Expr::Convert {e, ty},
-        }
-    }
 }
 
 impl InfoNode for Expr {
@@ -92,6 +75,17 @@ pub enum Stmt {
     Assign {dst: Expr, expr: Expr, i: Info},
     For {var: Name, lo: Expr, hi: Expr, body: Vec<Stmt>, par: Vec<LoopProperty>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
+}
+
+impl InfoNode for Stmt {
+    fn get_info(&self) -> Info {
+        match self {
+            Stmt::Definition {i, ..} => i.clone(),
+            Stmt::Assign {i, ..} => i.clone(),
+            Stmt::For {i, ..} => i.clone(),
+            Stmt::If {i, ..} => i.clone()
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

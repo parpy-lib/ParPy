@@ -313,7 +313,7 @@ pub fn to_untyped_ir<'py>(
     ast: Bound<'py, PyAny>,
     filepath: String,
     fst_line: usize
-) -> PyResult<Ast> {
+) -> PyResult<FunDef> {
     let env = ConvertEnv {
         ast : ast.py().import("ast")?,
         filepath : &filepath,
@@ -332,7 +332,7 @@ pub fn to_untyped_ir<'py>(
     let id = body.getattr("name")?.extract::<String>()?;
     let ir_body = convert_stmts(body.getattr("body")?, &env)?;
     let i = merge_body_infos(&ir_body);
-    Ok(vec![FunDef {id, params: untyped_args, body: ir_body, i}])
+    Ok(FunDef {id, params: untyped_args, body: ir_body, i})
 }
 
 #[cfg(test)]

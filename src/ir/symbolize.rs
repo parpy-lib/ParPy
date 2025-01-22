@@ -7,26 +7,26 @@ use crate::utils::name::Name;
 use std::collections::BTreeMap;
 
 #[derive(Debug)]
-struct SymbolizeEnv {
-    vars: BTreeMap<String, Name>
+pub struct SymbolizeEnv {
+    vars: BTreeMap<String, Name>,
+    i: Info
 }
 
 type SymbolizeResult<T> = CompileResult<(SymbolizeEnv, T)>;
 
 impl SymbolizeEnv {
-
     pub fn has_symbol(&self, id: &Name) -> bool {
         id.has_sym() || self.vars.contains_key(id.get_str())
     }
 
-    pub fn get_symbol(&self, i: &Info, id: Name) -> CompileResult<Name> {
+    pub fn get_symbol(&self, id: Name) -> CompileResult<Name> {
         if id.has_sym() {
             Ok(id)
         } else {
             if let Some(n) = self.vars.get(id.get_str()) {
                 Ok(n.clone())
             } else {
-                parir_compile_error!(i, "Found reference to unknown variable {id}")
+                parir_compile_error!(self.i, "Found reference to unknown variable {id}")
             }
         }
     }
@@ -40,174 +40,195 @@ impl SymbolizeEnv {
             (self, id)
         }
     }
+
+    pub fn set_info(self, i: Info) -> Self {
+        SymbolizeEnv {i, ..self}
+    }
 }
 
 impl Default for SymbolizeEnv {
     fn default() -> Self {
-        SymbolizeEnv {vars: BTreeMap::new()}
+        SymbolizeEnv {vars: BTreeMap::new(), i: Info::default()}
     }
 }
 
-fn symbolize_vec<T>(
-    env: SymbolizeEnv,
-    nodes: Vec<T>,
-    symbolize_fun: impl Fn(SymbolizeEnv, T) -> SymbolizeResult<T>
-) -> SymbolizeResult<Vec<T>> {
-    nodes.into_iter()
-        .fold(Ok((env, vec![])), |acc, v| {
-            let (env, mut vec) = acc?;
-            let (env, v) = symbolize_fun(env, v)?;
-            vec.push(v);
-            Ok((env, vec))
-        })
-}
+pub trait Symbolize {
+    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Self> where Self: Sized;
 
-fn symbolize_vec_borrow<T>(
-    env: &SymbolizeEnv,
-    nodes: Vec<T>,
-    symbolize_fun: impl Fn(&SymbolizeEnv, T) -> CompileResult<T>
-) -> CompileResult<Vec<T>> {
-    nodes.into_iter()
-        .fold(Ok(vec![]), |acc, v| {
-            let mut vec = acc?;
-            let v = symbolize_fun(&env, v)?;
-            vec.push(v);
-            Ok(vec)
-        })
-}
-
-fn symbolize_type(env: &SymbolizeEnv, i: &Info, ty: Type) -> CompileResult<Type> {
-    match ty {
-        Type::Struct {id} => {
-            let id = env.get_symbol(i, id)?;
-            Ok(Type::Struct {id})
-        },
-        Type::Boolean | Type::Tensor {..} => Ok(ty)
+    fn symbolize_default(self) -> SymbolizeResult<Self> where Self: Sized {
+        self.symbolize(SymbolizeEnv::default())
     }
 }
 
-fn symbolize_expr(env: &SymbolizeEnv, e: Expr) -> CompileResult<Expr> {
-    let ty = symbolize_type(env, &e.get_info(), e.get_type().clone())?;
-    let e = e.with_type(ty);
-    match e {
-        Expr::Var {id, ty, i} => {
-            let id = env.get_symbol(&i, id)?;
-            Ok(Expr::Var {id, ty, i})
-        },
-        Expr::UnOp {op, arg, ty, i} => {
-            let arg = symbolize_expr(env, *arg)?;
-            Ok(Expr::UnOp {op, arg: Box::new(arg), ty, i})
-        },
-        Expr::BinOp {lhs, op, rhs, ty, i} => {
-            let lhs = Box::new(symbolize_expr(env, *lhs)?);
-            let rhs = Box::new(symbolize_expr(env, *rhs)?);
-            Ok(Expr::BinOp {lhs, op, rhs, ty, i})
-        },
-        Expr::StructFieldAccess {target, label, ty, i} => {
-            let target = Box::new(symbolize_expr(env, *target)?);
-            Ok(Expr::StructFieldAccess {target, label, ty, i})
-        },
-        Expr::TensorAccess {target, idx, ty, i} => {
-            let target = Box::new(symbolize_expr(env, *target)?);
-            let idx = Box::new(symbolize_expr(env, *idx)?);
-            Ok(Expr::TensorAccess {target, idx, ty, i})
-        },
-        Expr::Struct {id, fields, ty, i} => {
-            let id = env.get_symbol(&i, id)?;
-            let fields = symbolize_vec_borrow(&env, fields, |env, (id, e)| {
-                let e = symbolize_expr(&env, e)?;
-                Ok((id, e))
-            })?;
-            Ok(Expr::Struct {id, fields, ty, i})
-        },
-        Expr::Builtin {func, args, ty, i} => {
-            let args = symbolize_vec_borrow(&env, args, symbolize_expr)?;
-            Ok(Expr::Builtin {func, args, ty, i})
-        },
-        Expr::Convert {e, ty} => {
-            let e = Box::new(symbolize_expr(env, *e)?);
-            Ok(Expr::Convert {e, ty})
-        },
-        Expr::Int {..} | Expr::Float {..} => Ok(e),
+impl<'a, T: Symbolize + 'a> Symbolize for Vec<T> {
+    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Vec<T>> {
+        self.into_iter()
+            .fold(Ok((env, vec![])), |acc, v| {
+                let (env, mut vec) = acc?;
+                let (env, v) = v.symbolize(env)?;
+                vec.push(v);
+                Ok((env, vec))
+            })
     }
 }
 
-fn symbolize_stmt(env: SymbolizeEnv, stmt: Stmt) -> SymbolizeResult<Stmt> {
-    match stmt {
-        Stmt::Definition {ty, id, expr, i} => {
-            let ty = symbolize_type(&env, &i, ty)?;
-            let (env, id) = env.set_symbol(id);
-            let expr = symbolize_expr(&env, expr)?;
-            Ok((env, Stmt::Definition {ty, id, expr, i}))
-        },
-        Stmt::Assign {dst, expr, i} => {
-            // If we are assigning to a variable that does not yet have a symbol, it is being
-            // introduced. In this case, we replace the assign node with a definition node, to
-            // indicate that this introduces and assigns a value to a new variable.
-            match dst {
-                Expr::Var {id, ty, i: var_i} if !env.has_symbol(&id) => {
-                    let (env, id) = env.set_symbol(id);
-                    let ty = symbolize_type(&env, &var_i, ty)?;
-                    let expr = symbolize_expr(&env, expr)?;
-                    Ok((env, Stmt::Definition {ty, id, expr, i}))
-                },
-                _ => {
-                    let dst = symbolize_expr(&env, dst)?;
-                    let expr = symbolize_expr(&env, expr)?;
-                    Ok((env, Stmt::Assign {dst, expr, i}))
-                }
+impl Symbolize for Type {
+    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Type> {
+        let ty = match self {
+            Type::Struct {id} => {
+                let id = env.get_symbol(id)?;
+                Type::Struct {id}
+            },
+            Type::Boolean | Type::Tensor {..} => self
+        };
+        Ok((env, ty))
+    }
+}
+
+impl Symbolize for Expr {
+    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Expr> {
+        let env = env.set_info(self.get_info());
+        match self {
+            Expr::Var {id, ty, i} => {
+                let id = env.get_symbol(id)?;
+                let (env, ty) = ty.symbolize(env)?;
+                Ok((env, Expr::Var {id, ty, i}))
+            },
+            Expr::Int {v, ty, i} => {
+                let (env, ty) = ty.symbolize(env)?;
+                Ok((env, Expr::Int {v, ty, i}))
+            },
+            Expr::Float {v, ty, i} => {
+                let (env, ty) = ty.symbolize(env)?;
+                Ok((env, Expr::Float {v, ty, i}))
+            },
+            Expr::UnOp {op, arg, ty, i} => {
+                let (env, arg) = arg.symbolize(env)?;
+                let (env, ty) = ty.symbolize(env)?;
+                Ok((env, Expr::UnOp {op, arg: Box::new(arg), ty, i}))
+            },
+            Expr::BinOp {lhs, op, rhs, ty, i} => {
+                let (env, lhs) = lhs.symbolize(env)?;
+                let (env, rhs) = rhs.symbolize(env)?;
+                let (env, ty) = ty.symbolize(env)?;
+                Ok((env, Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i}))
+            },
+            Expr::StructFieldAccess {target, label, ty, i} => {
+                let (env, target) = target.symbolize(env)?;
+                let (env, ty) = ty.symbolize(env)?;
+                Ok((env, Expr::StructFieldAccess {target: Box::new(target), label, ty, i}))
+            },
+            Expr::TensorAccess {target, idx, ty, i} => {
+                let (env, target) = target.symbolize(env)?;
+                let (env, idx) = idx.symbolize(env)?;
+                let (env, ty) = ty.symbolize(env)?;
+                Ok((env, Expr::TensorAccess {target: Box::new(target), idx: Box::new(idx), ty, i}))
+            },
+            Expr::Struct {id, fields, ty, i} => {
+                let id = env.get_symbol(id)?;
+                let (env, fields) = fields.into_iter()
+                    .fold(Ok((env, vec![])), |acc, (id, e)| {
+                        let (env, mut v) = acc?;
+                        let (env, e) = e.symbolize(env)?;
+                        v.push((id, e));
+                        Ok((env, v))
+                    })?;
+                let (env, ty) = ty.symbolize(env)?;
+                Ok((env, Expr::Struct {id, fields, ty, i}))
+            },
+            Expr::Builtin {func, args, ty, i} => {
+                let (env, args) = args.symbolize(env)?;
+                let (env, ty) = ty.symbolize(env)?;
+                Ok((env, Expr::Builtin {func, args, ty, i}))
+            },
+            Expr::Convert {e, ty} => {
+                let (env, e) = e.symbolize(env)?;
+                let (env, ty) = ty.symbolize(env)?;
+                Ok((env, Expr::Convert {e: Box::new(e), ty}))
             }
-        },
-        Stmt::For {var, lo, hi, body, par, i} => {
-            let (env, var) = env.set_symbol(var);
-            let lo = symbolize_expr(&env, lo)?;
-            let hi = symbolize_expr(&env, hi)?;
-            let (env, body) = symbolize_vec(env, body, symbolize_stmt)?;
-            Ok((env, Stmt::For {var, lo, hi, body, par, i}))
-        },
-        Stmt::If {cond, thn, els, i} => {
-            let cond = symbolize_expr(&env, cond)?;
-            let (env, thn) = symbolize_vec(env, thn, symbolize_stmt)?;
-            let (env, els) = symbolize_vec(env, els, symbolize_stmt)?;
-            Ok((env, Stmt::If {cond, thn, els, i}))
-        },
+        }
     }
 }
 
-fn symbolize_field(env: SymbolizeEnv, field: Field) -> SymbolizeResult<Field> {
-    let (env, id) = env.set_symbol(field.id);
-    let ty = symbolize_type(&env, &field.i, field.ty)?;
-    Ok((env, Field {id, ty, ..field}))
-}
-
-fn symbolize_param(env: SymbolizeEnv, param: Param) -> SymbolizeResult<Param> {
-    let (env, id) = env.set_symbol(param.id);
-    let ty = symbolize_type(&env, &param.i, param.ty)?;
-    Ok((env, Param {id, ty, ..param}))
-}
-
-fn symbolize_top(
-    env: SymbolizeEnv,
-    top: Top
-) -> SymbolizeResult<Top> {
-    match top {
-        Top::StructDef {id, fields, i} => {
-            let (env, id) = env.set_symbol(id);
-            let (env, fields) = symbolize_vec(env, fields, symbolize_field)?;
-            Ok((env, Top::StructDef {id, fields, i}))
-        },
-        Top::FunDef {id, params, body, i} => {
-            let (env, id) = env.set_symbol(id);
-            let (env, params) = symbolize_vec(env, params, symbolize_param)?;
-            let (env, body) = symbolize_vec(env, body, symbolize_stmt)?;
-            Ok((env, Top::FunDef {id, params, body, i}))
-        },
+impl Symbolize for Stmt {
+    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Stmt> {
+        let env = env.set_info(self.get_info());
+        match self {
+            Stmt::Definition {ty, id, expr, i} => {
+                let (env, ty) = ty.symbolize(env)?;
+                let (env, id) = env.set_symbol(id);
+                let (env, expr) = expr.symbolize(env)?;
+                Ok((env, Stmt::Definition {ty, id, expr, i}))
+            },
+            Stmt::Assign {dst, expr, i} => {
+                // If we are assigning to a variable that does not yet have a symbol, it is being
+                // introduced. In this case, we replace the assign node with a definition node, to
+                // indicate that this introduces and assigns a value to a new variable.
+                match dst {
+                    Expr::Var {id, ty, ..} if !env.has_symbol(&id) => {
+                        let (env, id) = env.set_symbol(id);
+                        let (env, ty) = ty.symbolize(env)?;
+                        let (env, expr) = expr.symbolize(env)?;
+                        Ok((env, Stmt::Definition {ty, id, expr, i}))
+                    },
+                    _ => {
+                        let (env, dst) = dst.symbolize(env)?;
+                        let (env, expr) = expr.symbolize(env)?;
+                        Ok((env, Stmt::Assign {dst, expr, i}))
+                    }
+                }
+            },
+            Stmt::For {var, lo, hi, body, par, i} => {
+                let (env, var) = env.set_symbol(var);
+                let (env, lo) = lo.symbolize(env)?;
+                let (env, hi) = hi.symbolize(env)?;
+                let (env, body) = body.symbolize(env)?;
+                Ok((env, Stmt::For {var, lo, hi, body, par, i}))
+            },
+            Stmt::If {cond, thn, els, i} => {
+                let (env, cond) = cond.symbolize(env)?;
+                let (env, thn) = thn.symbolize(env)?;
+                let (env, els) = els.symbolize(env)?;
+                Ok((env, Stmt::If {cond, thn, els, i}))
+            }
+        }
     }
 }
 
-pub fn symbolize(ast: Ast) -> CompileResult<Ast> {
-    let (_, tops) = symbolize_vec(SymbolizeEnv::default(), ast, symbolize_top)?;
-    Ok(tops)
+impl Symbolize for Field {
+    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Field> {
+        let Field {id, ty, i} = self;
+        let (env, id) = env.set_symbol(id);
+        let (env, ty) = ty.symbolize(env)?;
+        Ok((env, Field {id, ty, i}))
+    }
+}
+
+impl Symbolize for Param {
+    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Param> {
+        let Param {id, ty, i} = self;
+        let (env, id) = env.set_symbol(id);
+        let (env, ty) = ty.symbolize(env)?;
+        Ok((env, Param {id, ty, i}))
+    }
+}
+
+impl Symbolize for Top {
+    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Top> {
+        match self {
+            Top::StructDef {id, fields, i} => {
+                let (env, id) = env.set_symbol(id);
+                let (env, fields) = fields.symbolize(env)?;
+                Ok((env, Top::StructDef {id, fields, i}))
+            },
+            Top::FunDef {id, params, body, i} => {
+                let (env, id) = env.set_symbol(id);
+                let (env, params) = params.symbolize(env)?;
+                let (env, body) = body.symbolize(env)?;
+                Ok((env, Top::FunDef {id, params, body, i}))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -226,11 +247,12 @@ mod test {
         let vars = entries.into_iter()
             .map(|id| (id.get_str().clone(), id))
             .collect::<BTreeMap<String, Name>>();
-        SymbolizeEnv {vars}
+        SymbolizeEnv {vars, i: Info::default()}
     }
 
     fn sym_type_with_env(env: SymbolizeEnv, ty: Type) -> CompileResult<Type> {
-        symbolize_type(&env, &Info::default(), ty)
+        let (_, ty) = ty.symbolize(env)?;
+        Ok(ty)
     }
 
     fn sym_type(ty: Type) -> CompileResult<Type> {
@@ -285,15 +307,14 @@ mod test {
 
     #[test]
     fn symbolize_unknown_var_fail() {
-        let env = sym_env(vec![]);
-        assert!(symbolize_expr(&env, var("x")).is_err());
+        assert!(var("x").symbolize_default().is_err());
     }
 
     #[test]
     fn symbolize_known_var_ok() {
         let x = name("x");
         let env = sym_env(vec![x.clone()]);
-        let var = symbolize_expr(&env, var("x")).unwrap();
+        let (_, var) = var("x").symbolize(env).unwrap();
         if let Expr::Var {id, ..} = var {
             assert_eq!(x, id);
         } else {
@@ -309,7 +330,7 @@ mod test {
             dst: nvar(&id), expr: int(0), i: i.clone()
         };
         let env = sym_env(vec![]);
-        let (env, stmt) = symbolize_stmt(env, s).unwrap();
+        let (env, stmt) = s.symbolize(env).unwrap();
         assert!(env.vars.len() == 1);
         assert!(env.vars.contains_key(id.get_str()));
         if let Stmt::Definition {id: def_id, ..} = stmt {
@@ -328,7 +349,7 @@ mod test {
         };
         let id_sym = id.clone().with_new_sym();
         let env = sym_env(vec![id_sym.clone()]);
-        let (env, stmt) = symbolize_stmt(env, s).unwrap();
+        let (env, stmt) = s.symbolize(env).unwrap();
         assert!(env.vars.len() == 1);
         assert_eq!(env.vars.get(id.get_str()), Some(id_sym.clone()).as_ref());
         if let Stmt::Assign {dst: Expr::Var {id: var_id, ..}, ..} = stmt {
@@ -352,7 +373,7 @@ mod test {
             i: i.clone()
         };
         let env = sym_env(vec![]);
-        let (env, stmt) = symbolize_stmt(env, s).unwrap();
+        let (env, stmt) = s.symbolize(env).unwrap();
         assert!(env.vars.len() == 2);
         assert!(env.vars.contains_key(x.get_str()));
         assert!(env.vars.contains_key(y.get_str()));
