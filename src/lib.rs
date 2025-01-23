@@ -4,6 +4,8 @@ mod par;
 mod py;
 mod utils;
 
+use crate::utils::pprint::PrettyPrint;
+
 use std::collections::BTreeMap;
 use std::ffi::CString;
 
@@ -32,7 +34,7 @@ fn compile_ir<'py>(
     ir_ast_cap : Bound<'py, PyCapsule>,
     args : Vec<Bound<'py, PyAny>>,
     par : BTreeMap<String, par::ParSpec>
-) -> PyResult<(String, String)> {
+) -> PyResult<String> {
     // Extract a reference to the untyped AST parsed earlier.
     let untyped_ir_def : &py::ast::FunDef = unsafe {
         ir_ast_cap.reference()
@@ -49,10 +51,10 @@ fn compile_ir<'py>(
     let ir_ast = ir::from_python(py_ir_ast, par)?;
     let ir_ast = ir::symbolize(ir_ast)?;
 
-    // Ok(codegen::build_ast(ir_ast)?)
-    // TODO: Implement the translation from the typed AST down to machine code, including
-    // parallelization of for-loops based on the provided specification.
-    Ok((String::default(), String::default()))
+    // Convert the IR AST to CUDA code, based on the parallel annotations on for-loops.
+    let ast = cuda::codegen(ir_ast)?;
+
+    Ok(ast.pprint_default())
 }
 
 #[pymodule]

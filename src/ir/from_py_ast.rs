@@ -43,13 +43,13 @@ pub fn to_struct_def(
     env: &IREnv,
     id: Name,
     ty: py_ast::Type
-) -> CompileResult<Top> {
+) -> CompileResult<StructDef> {
     let i = Info::default();
     let mut fields = get_dict_type_fields(ty).into_iter()
         .map(|(id, ty)| Ok(Field {id: Name::new(id), ty: to_ir_type(env, &i, ty)?, i: i.clone()}))
         .collect::<CompileResult<Vec<Field>>>()?;
     fields.sort_by(|Field {id: lid, ..}, Field {id: rid, ..}| lid.cmp(&rid));
-    Ok(Top::StructDef {id, fields, i: Info::default()})
+    Ok(StructDef {id, fields, i: Info::default()})
 }
 
 fn to_ir_type(
@@ -209,10 +209,10 @@ fn to_ir_stmt(
             let body = to_ir_stmts(env, body)?;
             let par = if let Some(ParSpec {kind}) = env.par.get(&var) {
                 match kind {
-                    ParKind::GpuThreads(n) => vec![LoopProperty::Threads {n: *n}],
+                    ParKind::GpuThreads(n) => Some(LoopProperty::Threads {n: *n}),
                 }
             } else {
-                vec![]
+                None
             };
             let var = Name::new(var);
             Ok(Stmt::For {var, lo, hi, body, par, i})
@@ -248,12 +248,12 @@ fn to_ir_param(
 pub fn to_ir_def(
     env: &IREnv,
     def: py_ast::FunDef
-) -> CompileResult<Top> {
+) -> CompileResult<FunDef> {
     let py_ast::FunDef {id, params, body, i} = def;
     let id = Name::new(id);
     let params = params.into_iter()
         .map(|p| to_ir_param(env, p))
         .collect::<CompileResult<Vec<Param>>>()?;
     let body = to_ir_stmts(env, body)?;
-    Ok(Top::FunDef {id, params, body, i})
+    Ok(FunDef {id, params, body, i})
 }

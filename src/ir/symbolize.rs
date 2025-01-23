@@ -213,21 +213,31 @@ impl Symbolize for Param {
     }
 }
 
-impl Symbolize for Top {
-    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Top> {
-        match self {
-            Top::StructDef {id, fields, i} => {
-                let (env, id) = env.set_symbol(id);
-                let (env, fields) = fields.symbolize(env)?;
-                Ok((env, Top::StructDef {id, fields, i}))
-            },
-            Top::FunDef {id, params, body, i} => {
-                let (env, id) = env.set_symbol(id);
-                let (env, params) = params.symbolize(env)?;
-                let (env, body) = body.symbolize(env)?;
-                Ok((env, Top::FunDef {id, params, body, i}))
-            }
-        }
+impl Symbolize for StructDef {
+    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<StructDef> {
+        let StructDef {id, fields, i} = self;
+        let (env, id) = env.set_symbol(id);
+        let (env, fields) = fields.symbolize(env)?;
+        Ok((env, StructDef {id, fields, i}))
+    }
+}
+
+impl Symbolize for FunDef {
+    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<FunDef> {
+        let FunDef {id, params, body, i} = self;
+        let (env, id) = env.set_symbol(id);
+        let (env, params) = params.symbolize(env)?;
+        let (env, body) = body.symbolize(env)?;
+        Ok((env, FunDef {id, params, body, i}))
+    }
+}
+
+impl Symbolize for Ast {
+    fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Ast> {
+        let Ast {structs, fun} = self;
+        let (env, structs) = structs.symbolize(env)?;
+        let (env, fun) = fun.symbolize(env)?;
+        Ok((env, Ast {structs, fun}))
     }
 }
 
@@ -369,7 +379,7 @@ mod test {
             lo: int(0),
             hi: int(10),
             body: vec![Stmt::Assign {dst: nvar(&y), expr: nvar(&x), i: i.clone()}],
-            par: vec![],
+            par: None,
             i: i.clone()
         };
         let env = sym_env(vec![]);

@@ -23,12 +23,11 @@ pub fn from_python(
         })
         .collect::<BTreeMap<py_ast::Type, Name>>();
     let env = from_py_ast::IREnv::new(structs.clone(), par);
-    let mut defs = structs.into_iter()
+    let structs = structs.into_iter()
         .map(|(ty, id)| from_py_ast::to_struct_def(&env, id, ty))
-        .collect::<CompileResult<Vec<Top>>>()?;
-    let fun_def = from_py_ast::to_ir_def(&env, def)?;
-    defs.push(fun_def);
-    Ok(defs)
+        .collect::<CompileResult<Vec<StructDef>>>()?;
+    let fun = from_py_ast::to_ir_def(&env, def)?;
+    Ok(Ast {structs, fun})
 }
 
 pub fn symbolize(ast: Ast) -> CompileResult<Ast> {

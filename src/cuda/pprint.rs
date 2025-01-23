@@ -374,6 +374,12 @@ impl PrettyPrint for Top {
     }
 }
 
+impl PrettyPrint for Ast {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        pprint_iter(self.iter(), env, "\n")
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

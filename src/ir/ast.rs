@@ -73,7 +73,7 @@ pub enum LoopProperty {
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr, i: Info},
     Assign {dst: Expr, expr: Expr, i: Info},
-    For {var: Name, lo: Expr, hi: Expr, body: Vec<Stmt>, par: Vec<LoopProperty>, i: Info},
+    For {var: Name, lo: Expr, hi: Expr, body: Vec<Stmt>, par: Option<LoopProperty>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
 }
 
@@ -103,9 +103,22 @@ pub struct Param {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Top {
-    StructDef {id: Name, fields: Vec<Field>, i: Info},
-    FunDef {id: Name, params: Vec<Param>, body: Vec<Stmt>, i: Info},
+pub struct StructDef {
+    pub id: Name,
+    pub fields: Vec<Field>,
+    pub i: Info
 }
 
-pub type Ast = Vec<Top>;
+#[derive(Clone, Debug, PartialEq)]
+pub struct FunDef {
+    pub id: Name,
+    pub params: Vec<Param>,
+    pub body: Vec<Stmt>,
+    pub i: Info
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ast {
+    pub structs: Vec<StructDef>,
+    pub fun: FunDef,
+}

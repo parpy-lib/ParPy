@@ -43,7 +43,7 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     # code, the below return should be removed. It is kept like this for now to
     # ensure running 'pytest' still tests that the files can be handled by the
     # partial pipeline.
-    cu_host, cu_dev = parir.compile_ir(ir_ast, args, par)
+    code = parir.compile_ir(ir_ast, args, par)
     return fn
 
     # Compiles the IR AST using type information of the provided arguments and
@@ -51,8 +51,7 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     # low-level code.
     if not cache or not compile.is_cached(key):
         # TODO: build differently if we have no device code
-        cu_host, cu_dev = parir.compile_ir(ir_ast, args, par)
-        cu_source = f"{cu_dev}\n{cu_host}"
+        cu_source = parir.compile_ir(ir_ast, args, par)
         compile.build_cuda_shared_library(key, cu_source)
 
     return compile.get_cuda_wrapper(fn.__name__, args, key)
