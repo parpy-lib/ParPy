@@ -1,6 +1,7 @@
-/// Identifies the structure of parallelism given an AST and a parallel specification belonging to
-/// a particular function.
+/// Functions defining how to map the parallel specification of for-loops in a Python function to a
+/// GPU grid using a straightforward approach.
 
+use super::ast::{Dim, LaunchArgs};
 use crate::parir_compile_error;
 use crate::ir::ast::*;
 use crate::utils::err::*;
@@ -61,7 +62,7 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
                 parir_compile_error!(i, "{}", msg)
             }
         },
-        Stmt::For {body, par, i, ..} => {
+        Stmt::For {body, par, ..} => {
             let mut inner_par = find_parallel_structure_stmts_par(body)?;
             match par {
                 Some(LoopProperty::Threads {n}) => inner_par.n.insert(0, *n),
@@ -90,7 +91,7 @@ fn find_parallel_structure_stmt_seq(
             let acc = find_parallel_structure_stmts_seq(acc, thn)?;
             find_parallel_structure_stmts_seq(acc, els)
         },
-        Stmt::For {var, body, par, i, ..} => {
+        Stmt::For {var, body, par, ..} => {
             match par {
                 Some(LoopProperty::Threads {n}) => {
                     let mut p = find_parallel_structure_stmts_par(body)?;
@@ -119,6 +120,121 @@ fn find_parallel_structure_fun_def(fun_def: &FunDef) -> ParResult {
 
 pub fn find_parallel_structure(ast: &Ast) -> ParResult {
     find_parallel_structure_fun_def(&ast.fun)
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum GpuMap {
+    Block {n: i64, dim: Dim},
+    Thread {n: i64, dim: Dim},
+    ThreadBlock {nthreads: i64, nblocks: i64, dim: Dim}
+}
+
+const DEFAULT_TPB : i64 = 512;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GpuMapping {
+    grid: LaunchArgs,
+    mapping: Vec<GpuMap>,
+    tpb: i64
+}
+
+impl GpuMapping {
+    pub fn add_parallelism(self, n: i64) -> Self {
+        match self.mapping.last() {
+            Some(GpuMap::Block {..}) | Some(GpuMap::ThreadBlock {..}) => {
+                self.add_block_par(n)
+            },
+            Some(GpuMap::Thread {..}) => {
+                if self.grid.threads.product() * n > self.tpb {
+                    self.add_block_par(n)
+                } else {
+                    self.add_thread_par(n)
+                }
+            },
+            None => {
+                if n > self.tpb {
+                    let GpuMapping {grid, mut mapping, tpb} = self;
+                    let nblocks = (n + tpb - 1) / tpb;
+                    let grid = grid
+                        .with_blocks_dim(Dim::X, nblocks)
+                        .with_threads_dim(Dim::X, tpb);
+                    mapping.push(GpuMap::ThreadBlock {nthreads: tpb, nblocks, dim: Dim::X});
+                    GpuMapping {grid, mapping, tpb}
+                } else {
+                    self.with_thread_par(Dim::X, n)
+                }
+            },
+        }
+    }
+
+    pub fn add_thread_par(self, n: i64) -> Self {
+        if self.grid.threads.x == 1 {
+            self.with_thread_par(Dim::X, n)
+        } else if self.grid.threads.y == 1 {
+            self.with_thread_par(Dim::Y, n)
+        } else {
+            self.with_thread_par(Dim::Z, n)
+        }
+    }
+
+    pub fn with_thread_par(self, dim: Dim, n: i64) -> Self {
+        let GpuMapping {grid, mut mapping, tpb} = self;
+        let new_dim_threads = grid.threads.get_dim(dim) * n;
+        let grid = grid.with_threads_dim(dim, new_dim_threads);
+        mapping.push(GpuMap::Thread {n, dim});
+        GpuMapping {grid, mapping, tpb}
+    }
+
+    pub fn add_block_par(self, n: i64) -> Self {
+        if self.grid.blocks.x == 1 {
+            self.with_block_par(Dim::X, n)
+        } else if self.grid.blocks.y == 1 {
+            self.with_block_par(Dim::Y, n)
+        } else {
+            self.with_block_par(Dim::Z, n)
+        }
+    }
+
+    pub fn with_block_par(self, dim: Dim, n: i64) -> Self {
+        let GpuMapping {grid, mut mapping, tpb} = self;
+        let new_dim_blocks = grid.blocks.get_dim(dim) * n;
+        let grid = grid.with_blocks_dim(dim, new_dim_blocks);
+        mapping.push(GpuMap::Block {n, dim});
+        GpuMapping {grid, mapping, tpb}
+    }
+
+    pub fn rev_mapping(mut self) -> Self {
+        self.mapping.reverse();
+        self
+    }
+}
+
+impl Default for GpuMapping {
+    fn default() -> Self {
+        GpuMapping {
+            grid: LaunchArgs::default(),
+            mapping: vec![],
+            tpb: DEFAULT_TPB}
+    }
+}
+
+fn add_par_to_grid(m: GpuMapping, n: i64) -> GpuMapping {
+    m.add_parallelism(n)
+}
+
+fn par_to_gpu_mapping(par: Vec<i64>) -> GpuMapping {
+    par.into_iter()
+        .rev()
+        .fold(GpuMapping::default(), add_par_to_grid)
+        .rev_mapping()
+}
+
+pub fn map_gpu_grid(
+    par: BTreeMap<Name, Vec<i64>>
+) -> BTreeMap<Name, GpuMapping> {
+    par.into_iter()
+        .map(|(id, par)| (id, par_to_gpu_mapping(par)))
+        .collect::<BTreeMap<Name, GpuMapping>>()
 }
 
 #[cfg(test)]
@@ -154,8 +270,8 @@ mod test {
         find_parallel_structure_fun_def(&def).unwrap()
     }
 
-    fn to_map(v: Vec<(Name, Vec<i64>)>) -> BTreeMap<Name, Vec<i64>> {
-        v.into_iter().collect::<BTreeMap<Name, Vec<i64>>>()
+    fn to_map<T1: Ord, T2>(v: Vec<(T1, T2)>) -> BTreeMap<T1, T2> {
+        v.into_iter().collect::<BTreeMap<T1, T2>>()
     }
 
     #[test]
@@ -276,5 +392,94 @@ mod test {
             (x2, vec![7, 12])
         ]);
         assert_eq!(find_structure(def), expected);
+    }
+
+    fn assert_par_mapping(par: Vec<i64>, mapping: GpuMapping) {
+        let x = id("x");
+        let par = to_map(vec![(x.clone(), par)]);
+        let expected = to_map(vec![(x, mapping)]);
+        assert_eq!(map_gpu_grid(par), expected);
+    }
+
+    #[test]
+    fn map_empty_grid() {
+        assert_eq!(map_gpu_grid(BTreeMap::new()), BTreeMap::new());
+    }
+
+    #[test]
+    fn map_threads_single_par() {
+        let par = vec![128];
+        let mapping = GpuMapping {
+            grid: LaunchArgs::default().with_threads_dim(Dim::X, 128),
+            mapping: vec![GpuMap::Thread {n: 128, dim: Dim::X}],
+            tpb: DEFAULT_TPB
+        };
+        assert_par_mapping(par, mapping);
+    }
+
+    #[test]
+    fn map_many_threads_to_grid() {
+        let par = vec![2048];
+        let mapping = GpuMapping {
+            grid: LaunchArgs::default()
+                .with_threads_dim(Dim::X, 512)
+                .with_blocks_dim(Dim::X, 4),
+            mapping: vec![GpuMap::ThreadBlock {nthreads: 512, nblocks: 4, dim: Dim::X}],
+            tpb: DEFAULT_TPB
+        };
+        assert_par_mapping(par, mapping);
+    }
+
+    #[test]
+    fn map_par_threads_and_blocks() {
+        let par = vec![64, 128];
+        let mapping = GpuMapping {
+            grid: LaunchArgs::default()
+                .with_threads_dim(Dim::X, 128)
+                .with_blocks_dim(Dim::X, 64),
+            mapping: vec![
+                GpuMap::Block {n: 64, dim: Dim::X},
+                GpuMap::Thread {n: 128, dim: Dim::X}
+            ],
+            tpb: DEFAULT_TPB
+        };
+        assert_par_mapping(par, mapping);
+    }
+
+    #[test]
+    fn map_multi_threads() {
+        let par = vec![4, 8, 12];
+        let mapping = GpuMapping {
+            grid: LaunchArgs::default()
+                .with_threads_dim(Dim::X, 12)
+                .with_threads_dim(Dim::Y, 8)
+                .with_threads_dim(Dim::Z, 4),
+            mapping: vec![
+                GpuMap::Thread {n: 4, dim: Dim::Z},
+                GpuMap::Thread {n: 8, dim: Dim::Y},
+                GpuMap::Thread {n: 12, dim: Dim::X}
+            ],
+            tpb: DEFAULT_TPB
+        };
+        assert_par_mapping(par, mapping);
+    }
+
+    #[test]
+    fn map_multi_blocks() {
+        let par = vec![512, 128, 2048];
+        let mapping = GpuMapping {
+            grid: LaunchArgs::default()
+                .with_threads_dim(Dim::X, 512)
+                .with_blocks_dim(Dim::X, 4)
+                .with_blocks_dim(Dim::Y, 128)
+                .with_blocks_dim(Dim::Z, 512),
+            mapping: vec![
+                GpuMap::Block {n: 512, dim: Dim::Z},
+                GpuMap::Block {n: 128, dim: Dim::Y},
+                GpuMap::ThreadBlock {nthreads: 512, nblocks: 4, dim: Dim::X}
+            ],
+            tpb: DEFAULT_TPB
+        };
+        assert_par_mapping(par, mapping);
     }
 }

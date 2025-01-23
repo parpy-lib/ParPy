@@ -24,7 +24,7 @@ impl Type {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Dim {
     X, Y, Z
 }
@@ -53,17 +53,63 @@ pub enum Expr {
     Min {lhs: Box<Expr>, rhs: Box<Expr>, ty: Type, i: Info},
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Dim3 {
     pub x: i64,
     pub y: i64,
     pub z: i64
 }
 
-#[derive(Clone, Debug)]
+impl Dim3 {
+    pub fn get_dim(&self, dim: Dim) -> i64 {
+        match dim {
+            Dim::X => self.x,
+            Dim::Y => self.y,
+            Dim::Z => self.z
+        }
+    }
+
+    pub fn with_dim(self, dim: Dim, n: i64) -> Dim3 {
+        match dim {
+            Dim::X => Dim3 {x: n, ..self},
+            Dim::Y => Dim3 {y: n, ..self},
+            Dim::Z => Dim3 {z: n, ..self}
+        }
+    }
+
+    pub fn product(&self) -> i64 {
+        self.x * self.y * self.z
+    }
+}
+
+impl Default for Dim3 {
+    fn default() -> Self {
+        Dim3 {x: 1, y: 1, z: 1}
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct LaunchArgs {
     pub blocks: Dim3,
     pub threads: Dim3
+}
+
+impl LaunchArgs {
+    pub fn with_blocks_dim(mut self, dim: Dim, n: i64) -> LaunchArgs {
+        self.blocks = self.blocks.with_dim(dim, n);
+        self
+    }
+
+    pub fn with_threads_dim(mut self, dim: Dim, n: i64) -> LaunchArgs {
+        self.threads = self.threads.with_dim(dim, n);
+        self
+    }
+}
+
+impl Default for LaunchArgs {
+    fn default() -> Self {
+        LaunchArgs {blocks: Dim3::default(), threads: Dim3::default()}
+    }
 }
 
 #[derive(Clone, Debug)]

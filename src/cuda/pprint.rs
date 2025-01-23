@@ -513,10 +513,12 @@ mod test {
 
     #[test]
     fn pprint_launch_args() {
-        let args = LaunchArgs {
-            blocks: Dim3 {x: 1, y: 2, z: 3},
-            threads: Dim3 {x: 4, y: 5, z: 6},
-        };
+        let args = LaunchArgs::default()
+            .with_blocks_dim(Dim::Y, 2)
+            .with_blocks_dim(Dim::Z, 3)
+            .with_threads_dim(Dim::X, 4)
+            .with_threads_dim(Dim::Y, 5)
+            .with_threads_dim(Dim::Z, 6);
         let s = args.pprint_default();
         assert_eq!(&s, "dim3 tpb(4, 5, 6);\ndim3 blocks(1, 2, 3);");
     }
@@ -595,7 +597,27 @@ mod test {
 
     #[test]
     fn pprint_if_cond_elseif() {
-
+        let cond = Stmt::If {
+            cond: var("x"),
+            thn: vec![Stmt::Assign {dst: var("y"), expr: var("z"), i: Info::default()}],
+            els: vec![Stmt::If {
+                    cond: var("y"),
+                    thn: vec![
+                        Stmt::Assign {dst: var("x"), expr: var("z"), i: Info::default()}
+                    ],
+                    els: vec![
+                        Stmt::Assign {dst: var("z"), expr: var("x"), i: Info::default()}
+                    ],
+                    i: Info::default()
+            }],
+            i: Info::default()
+        };
+        let indent = " ".repeat(pprint::DEFAULT_INDENT);
+        let expected = format!(
+            "if (x) {{\n{0}y = z;\n}} else {{\n{0}if (y) {{\n{0}{0}x = z;\n{0}}} else {{\n{0}{0}z = x;\n{0}}}\n}}",
+            indent
+        );
+        assert_eq!(cond.pprint_default(), expected);
     }
 
     #[test]
@@ -603,10 +625,7 @@ mod test {
         let id = "kernel";
         let kernel = Stmt::KernelLaunch {
             id: Name::new(id.to_string()),
-            launch_args: LaunchArgs {
-                blocks: Dim3 {x: 1, y: 1, z: 1},
-                threads: Dim3 {x: 128, y: 1, z: 1}
-            },
+            launch_args: LaunchArgs::default().with_threads_dim(Dim::X, 128),
             args: vec![var("x"), var("y")],
             i: Info::default()
         };
