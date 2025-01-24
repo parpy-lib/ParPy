@@ -123,19 +123,19 @@ pub fn find_parallel_structure(ast: &Ast) -> ParResult {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum GpuMap {
+pub enum GpuMap {
     Block {n: i64, dim: Dim},
     Thread {n: i64, dim: Dim},
     ThreadBlock {nthreads: i64, nblocks: i64, dim: Dim}
 }
 
-const DEFAULT_TPB : i64 = 512;
+pub const DEFAULT_TPB : i64 = 512;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GpuMapping {
-    grid: LaunchArgs,
-    mapping: Vec<GpuMap>,
-    tpb: i64
+    pub grid: LaunchArgs,
+    pub mapping: Vec<GpuMap>,
+    pub tpb: i64
 }
 
 impl GpuMapping {
@@ -206,6 +206,10 @@ impl GpuMapping {
     pub fn rev_mapping(mut self) -> Self {
         self.mapping.reverse();
         self
+    }
+
+    pub fn get_mapping(&self) -> Vec<GpuMap> {
+        self.mapping.clone().into_iter().rev().collect::<Vec<GpuMap>>()
     }
 }
 
