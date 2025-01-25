@@ -182,17 +182,18 @@ impl fmt::Display for UnOp {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BinOp {
-    Add, Sub, Mul, FloorDiv, Div, Mod, BitAnd, Eq, Neq, Lt, Gt
+    Add, Sub, Mul, FloorDiv, Div, Mod, BoolAnd, BitAnd, Eq, Neq, Lt, Gt
 }
 
 impl BinOp {
     pub fn precedence(&self) -> usize {
         match self {
-            BinOp::BitAnd => 0,
-            BinOp::Eq | BinOp::Neq => 1,
-            BinOp::Lt | BinOp::Gt => 2,
-            BinOp::Add | BinOp::Sub => 3,
-            BinOp::Mul | BinOp::FloorDiv | BinOp::Div | BinOp::Mod => 4,
+            BinOp::BoolAnd => 0,
+            BinOp::BitAnd => 1,
+            BinOp::Eq | BinOp::Neq => 2,
+            BinOp::Lt | BinOp::Gt => 3,
+            BinOp::Add | BinOp::Sub => 4,
+            BinOp::Mul | BinOp::FloorDiv | BinOp::Div | BinOp::Mod => 5
         }
     }
 }
@@ -206,6 +207,7 @@ impl fmt::Display for BinOp {
             BinOp::FloorDiv => write!(f, "//"),
             BinOp::Div => write!(f, "/"),
             BinOp::Mod => write!(f, "%"),
+            BinOp::BoolAnd => write!(f, "&&"),
             BinOp::BitAnd => write!(f, "&"),
             BinOp::Eq => write!(f, "=="),
             BinOp::Neq => write!(f, "!="),

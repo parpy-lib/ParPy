@@ -90,7 +90,7 @@ impl InfoNode for Stmt {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Field {
-    pub id: Name,
+    pub id: String,
     pub ty: Type,
     pub i: Info
 }

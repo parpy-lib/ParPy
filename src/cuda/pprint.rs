@@ -46,9 +46,9 @@ impl PrettyPrint for Type {
                 let (env, sz) = sz.pprint(env);
                 (env, format!("{sz}*"))
             },
-            Type::Struct {id} => {
+            Type::Struct {id, ..} => {
                 let (env, id) = id.pprint(env);
-                (env, format!("struct {id}"))
+                (env, format!("{id}"))
             },
         }
     }
@@ -70,6 +70,7 @@ impl PrettyPrint for BinOp {
             BinOp::Mul => (env, "*".to_string()),
             BinOp::Div | BinOp::FloorDiv => (env, "/".to_string()),
             BinOp::Mod => (env, "%".to_string()),
+            BinOp::BoolAnd => (env, "&&".to_string()),
             BinOp::BitAnd => (env, "&".to_string()),
             BinOp::Eq => (env, "==".to_string()),
             BinOp::Neq => (env, "!=".to_string()),
@@ -86,23 +87,38 @@ fn try_get_binop(e: &Box<Expr>) -> Option<BinOp> {
     }
 }
 
-fn parenthesize_if_lower_precedence(
+fn parenthesize_if_pred(
     inner_op_opt: Option<BinOp>,
-    outer_op: &BinOp, 
-    s: String
+    outer_op: &BinOp,
+    s: String,
+    pred: impl Fn(Ordering) -> bool
 ) -> String {
     match inner_op_opt {
         Some(inner_op) => {
-            // If the inner operator has a lower precedence than the outer operator, we add
-            // parentheses to enforce the correct evaluation order.
-            if let Ordering::Less = inner_op.precedence().cmp(&outer_op.precedence()) {
+            if pred(inner_op.precedence().cmp(&outer_op.precedence())) {
                 format!("({s})")
             } else {
                 s
             }
-        }
-        None => s,
+        },
+        None => s
     }
+}
+
+fn parenthesize_if_lower_precedence(
+    inner_op_opt: Option<BinOp>,
+    outer_op: &BinOp,
+    s: String
+) -> String {
+    parenthesize_if_pred(inner_op_opt, outer_op, s, |p| p == Ordering::Less)
+}
+
+fn parenthesize_if_lower_or_same_precedence(
+    inner_op_opt: Option<BinOp>,
+    outer_op: &BinOp,
+    s: String
+) -> String {
+    parenthesize_if_pred(inner_op_opt, outer_op, s, |p| p != Ordering::Greater)
 }
 
 impl PrettyPrint for Dim {
@@ -137,7 +153,7 @@ impl PrettyPrint for Expr {
                 let lhs_op = try_get_binop(lhs);
                 let rhs_op = try_get_binop(rhs);
                 let lhs_str = parenthesize_if_lower_precedence(lhs_op, &op, lhs_str);
-                let rhs_str = parenthesize_if_lower_precedence(rhs_op, &op, rhs_str);
+                let rhs_str = parenthesize_if_lower_or_same_precedence(rhs_op, &op, rhs_str);
                 (env, format!("{lhs_str} {op_str} {rhs_str}"))
             },
             Expr::StructFieldAccess {target, label, ..} => {
@@ -326,7 +342,7 @@ impl PrettyPrint for Attribute {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
             Attribute::Global => "__global__",
-            Attribute::Host => "__host__",
+            Attribute::Entry => "extern \"C\"",
         };
         (env, s.to_string())
     }
@@ -335,7 +351,6 @@ impl PrettyPrint for Attribute {
 impl PrettyPrint for Field {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let Field {id, ty, ..} = self;
-        let (env, id) = id.pprint(env);
         let (env, ty) = ty.pprint(env);
         let indent = env.print_indent();
         (env, format!("{indent}{ty} {id};"))
@@ -354,6 +369,9 @@ impl PrettyPrint for Param {
 impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
+            Top::Include {header} => {
+                (env, format!("#include {header}"))
+            },
             Top::StructDef {id, fields, ..} => {
                 let (env, id) = id.pprint(env);
                 let env = env.incr_indent();
@@ -410,6 +428,10 @@ mod test {
         bop(lhs, BinOp::Mul, rhs)
     }
 
+    fn rem(lhs: Expr, rhs: Expr) -> Expr {
+        bop(lhs, BinOp::Mod, rhs)
+    }
+
     fn scalar_ty(sz: ElemSize) -> Type {
         Type::Scalar {sz}
     }
@@ -419,13 +441,13 @@ mod test {
     }
 
     #[test]
-    fn pprint_precedence_same_level() {
+    fn pprint_precedence_same_level_with_paren() {
         let s = add(var("x"), add(var("y"), var("z"))).pprint_default();
-        assert_eq!(&s, "x + y + z");
+        assert_eq!(&s, "x + (y + z)");
     }
 
     #[test]
-    fn pprint_precedence_same_level_paren() {
+    fn pprint_precedence_same_level_omit_paren() {
         let s = add(add(var("x"), var("y")), var("z")).pprint_default();
         assert_eq!(&s, "x + y + z");
     }
@@ -437,9 +459,15 @@ mod test {
     }
 
     #[test]
-    fn pprint_precedence_omit_paren() {
+    fn pprint_precedence_rhs_paren() {
         let s = add(var("x"), add(mul(var("y"), var("y")), var("z"))).pprint_default();
-        assert_eq!(&s, "x + y * y + z");
+        assert_eq!(&s, "x + (y * y + z)");
+    }
+
+    #[test]
+    fn pprint_precedence_same_level_paren() {
+        let s = mul(var("x"), rem(var("y"), var("z"))).pprint_default();
+        assert_eq!(&s, "x * (y % z)");
     }
 
     #[test]
@@ -514,11 +542,11 @@ mod test {
     #[test]
     fn pprint_launch_args() {
         let args = LaunchArgs::default()
-            .with_blocks_dim(Dim::Y, 2)
-            .with_blocks_dim(Dim::Z, 3)
-            .with_threads_dim(Dim::X, 4)
-            .with_threads_dim(Dim::Y, 5)
-            .with_threads_dim(Dim::Z, 6);
+            .with_blocks_dim(&Dim::Y, 2)
+            .with_blocks_dim(&Dim::Z, 3)
+            .with_threads_dim(&Dim::X, 4)
+            .with_threads_dim(&Dim::Y, 5)
+            .with_threads_dim(&Dim::Z, 6);
         let s = args.pprint_default();
         assert_eq!(&s, "dim3 tpb(4, 5, 6);\ndim3 blocks(1, 2, 3);");
     }
@@ -625,7 +653,7 @@ mod test {
         let id = "kernel";
         let kernel = Stmt::KernelLaunch {
             id: Name::new(id.to_string()),
-            launch_args: LaunchArgs::default().with_threads_dim(Dim::X, 128),
+            launch_args: LaunchArgs::default().with_threads_dim(&Dim::X, 128),
             args: vec![var("x"), var("y")],
             i: Info::default()
         };
@@ -642,8 +670,8 @@ mod test {
         let def = Top::StructDef {
             id: Name::new("point".to_string()),
             fields: vec![
-                Field {id: Name::new("x".to_string()), ty: scalar_ty(ElemSize::F32), i: Info::default()},
-                Field {id: Name::new("y".to_string()), ty: scalar_ty(ElemSize::F32), i: Info::default()},
+                Field {id: "x".to_string(), ty: scalar_ty(ElemSize::F32), i: Info::default()},
+                Field {id: "y".to_string(), ty: scalar_ty(ElemSize::F32), i: Info::default()},
             ],
             i: Info::default()
         };
@@ -657,7 +685,7 @@ mod test {
     #[test]
     fn pprint_attributes() {
         assert_eq!(Attribute::Global.pprint_default(), "__global__");
-        assert_eq!(Attribute::Host.pprint_default(), "__host__");
+        assert_eq!(Attribute::Entry.pprint_default(), "extern \"C\"");
     }
 
     #[test]

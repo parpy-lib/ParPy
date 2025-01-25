@@ -46,7 +46,7 @@ pub fn to_struct_def(
 ) -> CompileResult<StructDef> {
     let i = Info::default();
     let mut fields = get_dict_type_fields(ty).into_iter()
-        .map(|(id, ty)| Ok(Field {id: Name::new(id), ty: to_ir_type(env, &i, ty)?, i: i.clone()}))
+        .map(|(id, ty)| Ok(Field {id, ty: to_ir_type(env, &i, ty)?, i: i.clone()}))
         .collect::<CompileResult<Vec<Field>>>()?;
     fields.sort_by(|Field {id: lid, ..}, Field {id: rid, ..}| lid.cmp(&rid));
     Ok(StructDef {id, fields, i: Info::default()})

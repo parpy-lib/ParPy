@@ -53,10 +53,13 @@ fn rand_alphanum(n: usize) -> String {
 }
 
 fn alloc_free_string(mut env: PrettyPrintEnv, id: &Name) -> (PrettyPrintEnv, String) {
-    let mut s = id.print_with_sym();
-    while env.strs.contains(&s) {
-        s = format!("{0}_{1}", id.get_str(), rand_alphanum(5));
-    }
+    let mut s = id.get_str().clone();
+    if env.strs.contains(&s) {
+        s = id.print_with_sym();
+        while env.strs.contains(&s) {
+            s = format!("{0}_{1}", id.get_str(), rand_alphanum(5));
+        }
+    };
     env.strs.insert(s.clone());
     env.vars.insert(id.clone(), s.clone());
     (env, s)

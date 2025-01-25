@@ -1,5 +1,7 @@
-pub mod ast;
-pub mod pprint;
+mod ast;
+mod codegen;
+mod free_vars;
+mod pprint;
 mod par;
 mod sync;
 
@@ -18,8 +20,5 @@ pub fn codegen(ast: ir_ast::Ast) -> CompileResult<Ast> {
     // inter-block synchronization (which is not supported).
     let sync = sync::identify_sync_points(&ast, &gpu_mapping)?;
 
-    // Remaining parts for codegen:
-    // * Use the mapping to translate the AST to CUDA
-    // * Pretty-print the CUDA AST (this part is already implemented)
-    Ok(vec![])
+    codegen::from_ir(ast, gpu_mapping, sync)
 }

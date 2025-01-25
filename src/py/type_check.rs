@@ -289,7 +289,7 @@ fn type_check_binop(
             }
         },
         // Boolean comparison operations, allowing comparison between elementary types
-        BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt => {
+        BinOp::BoolAnd | BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt => {
             if let Some(_) = ty.get_scalar_elem_size() {
                 Ok(ty)
             } else {

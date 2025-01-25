@@ -53,6 +53,52 @@ pub enum Expr {
     Min {lhs: Box<Expr>, rhs: Box<Expr>, ty: Type, i: Info},
 }
 
+impl Expr {
+    pub fn get_type<'a>(&'a self) -> &'a Type {
+        match self {
+            Expr::Var {ty, ..} => ty,
+            Expr::Int {ty, ..} => ty,
+            Expr::Float {ty, ..} => ty,
+            Expr::UnOp {ty, ..} => ty,
+            Expr::BinOp {ty, ..} => ty,
+            Expr::StructFieldAccess {ty, ..} => ty,
+            Expr::ArrayAccess {ty, ..} => ty,
+            Expr::Struct {ty, ..} => ty,
+            Expr::Convert {ty, ..} => ty,
+            Expr::ThreadIdx {ty, ..} => ty,
+            Expr::BlockIdx {ty, ..} => ty,
+            Expr::Exp {ty, ..} => ty,
+            Expr::Inf {ty, ..} => ty,
+            Expr::Log {ty, ..} => ty,
+            Expr::Max {ty, ..} => ty,
+            Expr::Min {ty, ..} => ty
+        }
+    }
+}
+
+impl InfoNode for Expr {
+    fn get_info(&self) -> Info {
+        match self {
+            Expr::Var {i, ..} => i.clone(),
+            Expr::Int {i, ..} => i.clone(),
+            Expr::Float {i, ..} => i.clone(),
+            Expr::UnOp {i, ..} => i.clone(),
+            Expr::BinOp {i, ..} => i.clone(),
+            Expr::StructFieldAccess {i, ..} => i.clone(),
+            Expr::ArrayAccess {i, ..} => i.clone(),
+            Expr::Struct {i, ..} => i.clone(),
+            Expr::Convert {e, ..} => e.get_info(),
+            Expr::ThreadIdx {i, ..} => i.clone(),
+            Expr::BlockIdx {i, ..} => i.clone(),
+            Expr::Exp {i, ..} => i.clone(),
+            Expr::Inf {i, ..} => i.clone(),
+            Expr::Log {i, ..} => i.clone(),
+            Expr::Max {i, ..} => i.clone(),
+            Expr::Min {i, ..} => i.clone()
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Dim3 {
     pub x: i64,
@@ -61,7 +107,7 @@ pub struct Dim3 {
 }
 
 impl Dim3 {
-    pub fn get_dim(&self, dim: Dim) -> i64 {
+    pub fn get_dim(&self, dim: &Dim) -> i64 {
         match dim {
             Dim::X => self.x,
             Dim::Y => self.y,
@@ -69,7 +115,7 @@ impl Dim3 {
         }
     }
 
-    pub fn with_dim(self, dim: Dim, n: i64) -> Dim3 {
+    pub fn with_dim(self, dim: &Dim, n: i64) -> Dim3 {
         match dim {
             Dim::X => Dim3 {x: n, ..self},
             Dim::Y => Dim3 {y: n, ..self},
@@ -95,12 +141,12 @@ pub struct LaunchArgs {
 }
 
 impl LaunchArgs {
-    pub fn with_blocks_dim(mut self, dim: Dim, n: i64) -> LaunchArgs {
+    pub fn with_blocks_dim(mut self, dim: &Dim, n: i64) -> LaunchArgs {
         self.blocks = self.blocks.with_dim(dim, n);
         self
     }
 
-    pub fn with_threads_dim(mut self, dim: Dim, n: i64) -> LaunchArgs {
+    pub fn with_threads_dim(mut self, dim: &Dim, n: i64) -> LaunchArgs {
         self.threads = self.threads.with_dim(dim, n);
         self
     }
@@ -127,13 +173,13 @@ pub enum Stmt {
 
 #[derive(Clone, Debug)]
 pub enum Attribute {
-    Global, Host
+    Global, Entry
 }
 
 #[derive(Clone, Debug)]
 pub struct Field {
     pub ty: Type,
-    pub id: Name,
+    pub id: String,
     pub i: Info
 }
 
@@ -146,6 +192,7 @@ pub struct Param {
 
 #[derive(Clone, Debug)]
 pub enum Top {
+    Include {header: String},
     StructDef {id: Name, fields: Vec<Field>, i: Info},
     FunDef {
         attr: Attribute, ret_ty: Type, id: Name, params: Vec<Param>,

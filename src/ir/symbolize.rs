@@ -198,7 +198,6 @@ impl Symbolize for Stmt {
 impl Symbolize for Field {
     fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Field> {
         let Field {id, ty, i} = self;
-        let (env, id) = env.set_symbol(id);
         let (env, ty) = ty.symbolize(env)?;
         Ok((env, Field {id, ty, i}))
     }

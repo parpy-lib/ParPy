@@ -1,5 +1,5 @@
 import parir
-from parir import ParKind
+from parir import ParKind, ParSpec
 import torch
 
 @parir.jit
@@ -89,40 +89,42 @@ def forward(hmm, seqs):
     alpha2 = torch.empty_like(alpha1)
 
     par = {
-        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
-        'state': [ParKind.GpuThreads(hmm["num_states"])]
+        'inst': ParSpec(ParKind.GpuThreads(seqs["num_instances"])),
+        'state': ParSpec(ParKind.GpuThreads(hmm["num_states"]))
     }
-    forward_init(hmm, seqs, alpha1, parallelize={}, cache=False)
+    forward_init(hmm, seqs, alpha1, parallelize=par, cache=False)
 
     par = {
-        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
-        'state': [ParKind.GpuThreads(hmm["num_states"])]
+        'inst': ParSpec(ParKind.GpuThreads(seqs["num_instances"])),
+        'state': ParSpec(ParKind.GpuThreads(hmm["num_states"]))
     }
-    forward_steps(hmm, seqs, alpha1, alpha2, parallelize={}, cache=False)
+    forward_steps(hmm, seqs, alpha1, alpha2, parallelize=par, cache=False)
 
     par = {
-        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
-        'state': [ParKind.GpuThreads(hmm["num_states"])]
+        'inst': ParSpec(ParKind.GpuThreads(seqs["num_instances"])),
+        'state': ParSpec(ParKind.GpuThreads(hmm["num_states"]))
     }
-    forward_lse(hmm, seqs, result, alpha1, alpha2, parallelize={}, cache=False)
+    forward_lse(hmm, seqs, result, alpha1, alpha2, parallelize=par, cache=False)
 
     return result
 
 # Tests that we can run the Forward algorithm with dummy values
 def test_forward():
     hmm = {
-        'gamma': torch.tensor(0.0, dtype=torch.float32),
-        'trans1': torch.randn((10, 4), dtype=torch.float32),
-        'trans2': torch.randn(10, dtype=torch.float32),
-        'output_prob': torch.randn((10, 10), dtype=torch.float32),
-        'initial_prob': torch.randn(10, dtype=torch.float32),
-        'synthetic_248': torch.tensor(0.0, dtype=torch.float32),
-        'num_states': torch.tensor(0, dtype=torch.int64)
+        'gamma': torch.tensor(0.5, dtype=torch.float32),
+        'trans1': torch.randn((1024, 4), dtype=torch.float32),
+        'trans2': torch.randn(16, dtype=torch.float32),
+        'output_prob': torch.randn((101, 1024), dtype=torch.float32),
+        'initial_prob': torch.randn(1024, dtype=torch.float32),
+        'synthetic_248': torch.tensor(0.5, dtype=torch.float32),
+        'num_states': torch.tensor(1024, dtype=torch.int64)
     }
     seqs = {
-        'data': torch.zeros((10, 10), dtype=torch.uint8),
-        'lens': torch.zeros(10, dtype=torch.int64),
+        'data': torch.zeros((8885, 100), dtype=torch.uint8),
+        'lens': torch.zeros(100, dtype=torch.int64),
         'maxlen': torch.tensor(0, dtype=torch.int64),
-        'num_instances': torch.tensor(0, dtype=torch.int64)
+        'num_instances': torch.tensor(1, dtype=torch.int64)
     }
     forward(hmm, seqs)
+
+test_forward()

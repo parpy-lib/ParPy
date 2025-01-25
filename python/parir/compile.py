@@ -1,4 +1,5 @@
 import ctypes
+import itertools
 import os
 import tempfile
 import torch
@@ -38,28 +39,68 @@ def build_cuda_shared_library(key, source):
         if r.returncode != 0:
             raise RuntimeError(f"Compilation of generated CUDA code failed with exit code {r.returncode}:\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}")
 
+def torch_to_ctype(dtype):
+    if dtype == torch.int8:
+        return ctypes.c_int8
+    elif dtype == torch.int16:
+        return ctypes.c_int16
+    elif dtype == torch.int32:
+        return ctypes.c_int32
+    elif dtype == torch.int64:
+        return ctypes.c_int64
+    elif dtype == torch.uint8:
+        return ctypes.c_uint8
+    elif dtype == torch.float16:
+        return ctypes.c_int16
+    elif dtype == torch.float32:
+        return ctypes.c_float
+    elif dtype == torch.float64:
+        return ctypes.c_double
+    else:
+        raise RuntimeError(f"Unknown torch dtype: {dtype}")
+
 def get_cuda_wrapper(name, args, key):
     libpath = get_library_path(key)
     lib = ctypes.cdll.LoadLibrary(libpath)
 
-    # TODO: Below code assumes int -> int64 and float -> float32, but it should
-    # be possible to have other type mappings as well.
+    # Expand the arguments by making each field of a dictionary a separate argument
+    def expand_arg(arg):
+        if isinstance(arg, dict):
+            return arg.values()
+        else:
+            return [arg]
+    args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
+
+    # Extract the C type of each argument
     def get_ctype(arg):
+        # We treat int and floats from Python as 64-bit values
         if isinstance(arg, int):
             return ctypes.c_int64
         elif isinstance(arg, float):
-            return ctypes.c_float
+            return ctypes.c_double
+        elif isinstance(arg, torch.Tensor):
+            if arg.ndim == 0:
+                return torch_to_ctype(arg.dtype)
+            else:
+                return ctypes.c_void_p
         else:
             return ctypes.c_void_p
     getattr(lib, name).argtypes = [get_ctype(arg) for arg in args]
 
+    # Extract the pointers or values of tensor arguments before passing to CUDA
     def value_or_ptr(arg):
         if isinstance(arg, torch.Tensor):
-            return arg.data_ptr()
+            if arg.ndim == 0:
+                return arg.item()
+            else:
+                return arg.data_ptr()
         else:
             return arg
+    def extract_args(args):
+        args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
+        return [value_or_ptr(arg) for arg in args]
     def wrapper(*args):
-        ptr_args = [value_or_ptr(arg) for arg in args]
+        ptr_args = extract_args(args)
         getattr(lib, name)(*ptr_args)
     wrapper.__name__ = name
     return wrapper

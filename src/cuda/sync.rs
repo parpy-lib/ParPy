@@ -148,7 +148,6 @@ fn ensure_no_inter_block_sync_par_stmts(
     Ok(())
 }
 
-
 fn ensure_no_inter_block_sync_stmt(
     stmt: &Stmt,
     sync: &BTreeSet<Name>,
@@ -158,8 +157,8 @@ fn ensure_no_inter_block_sync_stmt(
         Stmt::Definition {..} | Stmt::Assign {..} => Ok(()),
         Stmt::For {var, body, ..} => {
             match gpu_mapping.get(var) {
-                Some(mut m) => {
-                    let map = &m.get_mapping()[..];
+                Some(m) => {
+                    let map = &m.get_mapping()[1..];
                     ensure_no_inter_block_sync_par_stmts(body, sync, map)
                 },
                 None => ensure_no_inter_block_sync_stmts(body, sync, gpu_mapping)
@@ -294,15 +293,14 @@ mod test {
         ])]);
         let m = GpuMapping {
             grid: LaunchArgs::default()
-                .with_blocks_dim(Dim::X, 24)
-                .with_threads_dim(Dim::X, 64),
+                .with_blocks_dim(&Dim::X, 24)
+                .with_threads_dim(&Dim::X, 64),
             mapping: vec![
                 GpuMap::Block {n: 24, dim: Dim::X},
                 GpuMap::Thread {n: 64, dim: Dim::X}
             ],
             tpb: DEFAULT_TPB
         };
-        println!("{m:?}");
         let mapping = make_mapping(vec![(x.clone(), m)]);
         let expected = BTreeSet::from([y]);
         assert_sync(ast, mapping, expected);

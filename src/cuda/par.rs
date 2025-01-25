@@ -126,10 +126,10 @@ pub fn find_parallel_structure(ast: &Ast) -> ParResult {
 pub enum GpuMap {
     Block {n: i64, dim: Dim},
     Thread {n: i64, dim: Dim},
-    ThreadBlock {nthreads: i64, nblocks: i64, dim: Dim}
+    ThreadBlock {n: i64, nthreads: i64, nblocks: i64, dim: Dim}
 }
 
-pub const DEFAULT_TPB : i64 = 512;
+pub const DEFAULT_TPB : i64 = 1024;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GpuMapping {
@@ -156,9 +156,9 @@ impl GpuMapping {
                     let GpuMapping {grid, mut mapping, tpb} = self;
                     let nblocks = (n + tpb - 1) / tpb;
                     let grid = grid
-                        .with_blocks_dim(Dim::X, nblocks)
-                        .with_threads_dim(Dim::X, tpb);
-                    mapping.push(GpuMap::ThreadBlock {nthreads: tpb, nblocks, dim: Dim::X});
+                        .with_blocks_dim(&Dim::X, nblocks)
+                        .with_threads_dim(&Dim::X, tpb);
+                    mapping.push(GpuMap::ThreadBlock {n, nthreads: tpb, nblocks, dim: Dim::X});
                     GpuMapping {grid, mapping, tpb}
                 } else {
                     self.with_thread_par(Dim::X, n)
@@ -179,8 +179,8 @@ impl GpuMapping {
 
     pub fn with_thread_par(self, dim: Dim, n: i64) -> Self {
         let GpuMapping {grid, mut mapping, tpb} = self;
-        let new_dim_threads = grid.threads.get_dim(dim) * n;
-        let grid = grid.with_threads_dim(dim, new_dim_threads);
+        let new_dim_threads = grid.threads.get_dim(&dim) * n;
+        let grid = grid.with_threads_dim(&dim, new_dim_threads);
         mapping.push(GpuMap::Thread {n, dim});
         GpuMapping {grid, mapping, tpb}
     }
@@ -197,8 +197,8 @@ impl GpuMapping {
 
     pub fn with_block_par(self, dim: Dim, n: i64) -> Self {
         let GpuMapping {grid, mut mapping, tpb} = self;
-        let new_dim_blocks = grid.blocks.get_dim(dim) * n;
-        let grid = grid.with_blocks_dim(dim, new_dim_blocks);
+        let new_dim_blocks = grid.blocks.get_dim(&dim) * n;
+        let grid = grid.with_blocks_dim(&dim, new_dim_blocks);
         mapping.push(GpuMap::Block {n, dim});
         GpuMapping {grid, mapping, tpb}
     }
@@ -209,7 +209,7 @@ impl GpuMapping {
     }
 
     pub fn get_mapping(&self) -> Vec<GpuMap> {
-        self.mapping.clone().into_iter().rev().collect::<Vec<GpuMap>>()
+        self.mapping.clone()
     }
 }
 
@@ -414,7 +414,7 @@ mod test {
     fn map_threads_single_par() {
         let par = vec![128];
         let mapping = GpuMapping {
-            grid: LaunchArgs::default().with_threads_dim(Dim::X, 128),
+            grid: LaunchArgs::default().with_threads_dim(&Dim::X, 128),
             mapping: vec![GpuMap::Thread {n: 128, dim: Dim::X}],
             tpb: DEFAULT_TPB
         };
@@ -426,9 +426,9 @@ mod test {
         let par = vec![2048];
         let mapping = GpuMapping {
             grid: LaunchArgs::default()
-                .with_threads_dim(Dim::X, 512)
-                .with_blocks_dim(Dim::X, 4),
-            mapping: vec![GpuMap::ThreadBlock {nthreads: 512, nblocks: 4, dim: Dim::X}],
+                .with_threads_dim(&Dim::X, 1024)
+                .with_blocks_dim(&Dim::X, 2),
+            mapping: vec![GpuMap::ThreadBlock {n: 2048, nthreads: 1024, nblocks: 2, dim: Dim::X}],
             tpb: DEFAULT_TPB
         };
         assert_par_mapping(par, mapping);
@@ -439,8 +439,8 @@ mod test {
         let par = vec![64, 128];
         let mapping = GpuMapping {
             grid: LaunchArgs::default()
-                .with_threads_dim(Dim::X, 128)
-                .with_blocks_dim(Dim::X, 64),
+                .with_threads_dim(&Dim::X, 128)
+                .with_blocks_dim(&Dim::X, 64),
             mapping: vec![
                 GpuMap::Block {n: 64, dim: Dim::X},
                 GpuMap::Thread {n: 128, dim: Dim::X}
@@ -455,9 +455,9 @@ mod test {
         let par = vec![4, 8, 12];
         let mapping = GpuMapping {
             grid: LaunchArgs::default()
-                .with_threads_dim(Dim::X, 12)
-                .with_threads_dim(Dim::Y, 8)
-                .with_threads_dim(Dim::Z, 4),
+                .with_threads_dim(&Dim::X, 12)
+                .with_threads_dim(&Dim::Y, 8)
+                .with_threads_dim(&Dim::Z, 4),
             mapping: vec![
                 GpuMap::Thread {n: 4, dim: Dim::Z},
                 GpuMap::Thread {n: 8, dim: Dim::Y},
@@ -470,17 +470,17 @@ mod test {
 
     #[test]
     fn map_multi_blocks() {
-        let par = vec![512, 128, 2048];
+        let par = vec![512, 128, 1682];
         let mapping = GpuMapping {
             grid: LaunchArgs::default()
-                .with_threads_dim(Dim::X, 512)
-                .with_blocks_dim(Dim::X, 4)
-                .with_blocks_dim(Dim::Y, 128)
-                .with_blocks_dim(Dim::Z, 512),
+                .with_threads_dim(&Dim::X, 1024)
+                .with_blocks_dim(&Dim::X, 2)
+                .with_blocks_dim(&Dim::Y, 128)
+                .with_blocks_dim(&Dim::Z, 512),
             mapping: vec![
                 GpuMap::Block {n: 512, dim: Dim::Z},
                 GpuMap::Block {n: 128, dim: Dim::Y},
-                GpuMap::ThreadBlock {nthreads: 512, nblocks: 4, dim: Dim::X}
+                GpuMap::ThreadBlock {n: 1682, nthreads: 1024, nblocks: 2, dim: Dim::X}
             ],
             tpb: DEFAULT_TPB
         };
