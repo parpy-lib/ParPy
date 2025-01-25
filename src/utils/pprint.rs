@@ -7,9 +7,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub const DEFAULT_INDENT: usize = 2;
 
+#[derive(Debug)]
 pub struct PrettyPrintEnv {
     strs: BTreeSet<String>,
-    vars: BTreeMap<Name, String>,
+    vars: BTreeMap<String, Name>,
     indent: usize,
     indent_increment: usize,
 }
@@ -61,18 +62,18 @@ fn alloc_free_string(mut env: PrettyPrintEnv, id: &Name) -> (PrettyPrintEnv, Str
         }
     };
     env.strs.insert(s.clone());
-    env.vars.insert(id.clone(), s.clone());
+    env.vars.insert(s.clone(), id.clone());
     (env, s)
 }
 
 impl PrettyPrint for Name {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        if let Some(x) = &env.vars.get(self) {
+        if let Some(x) = &env.vars.get(self.get_str()) {
             let s = x.to_string();
             (env, s)
         } else {
             let (mut env, s) = alloc_free_string(env, self);
-            env.vars.insert(self.clone(), s.clone());
+            env.vars.insert(s.clone(), self.clone());
             (env, s)
         }
     }

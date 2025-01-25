@@ -7,7 +7,7 @@ import torch
 torch.manual_seed(1234)
 np.random.seed(1234)
 
-#@parir.jit
+@parir.jit
 def softmax(x, N, M, out):
     # We have N independent instances we want to do softmax on
     for i in range(N):

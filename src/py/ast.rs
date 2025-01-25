@@ -248,22 +248,6 @@ impl Expr {
             Expr::Convert {ty, ..} => ty,
         }
     }
-
-    pub fn with_type(self, ty: Type) -> Self {
-        match self {
-            Expr::Var {id, i, ..} => Expr::Var {id, ty, i},
-            Expr::String {v, i, ..} => Expr::String {v, ty, i},
-            Expr::Int {v, i, ..} => Expr::Int {v, ty, i},
-            Expr::Float {v, i, ..} => Expr::Float {v, ty, i},
-            Expr::UnOp {op, arg, i, ..} => Expr::UnOp {op, arg, ty, i},
-            Expr::BinOp {lhs, op, rhs, i, ..} => Expr::BinOp {lhs, op, rhs, ty, i},
-            Expr::Subscript {target, idx, i, ..} => Expr::Subscript {target, idx, ty, i},
-            Expr::Tuple {elems, i, ..} => Expr::Tuple {elems, ty, i},
-            Expr::Dict {fields, i, ..} => Expr::Dict {fields, ty, i},
-            Expr::Builtin {func, args, i, ..} => Expr::Builtin {func, args, ty, i},
-            Expr::Convert {e, ..} => Expr::Convert {e, ty},
-        }
-    }
 }
 
 impl fmt::Display for Expr {

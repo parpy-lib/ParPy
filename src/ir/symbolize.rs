@@ -6,7 +6,7 @@ use crate::utils::name::Name;
 
 use std::collections::BTreeMap;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SymbolizeEnv {
     vars: BTreeMap<String, Name>,
     i: Info
@@ -179,16 +179,16 @@ impl Symbolize for Stmt {
                 }
             },
             Stmt::For {var, lo, hi, body, par, i} => {
-                let (env, var) = env.set_symbol(var);
-                let (env, lo) = lo.symbolize(env)?;
-                let (env, hi) = hi.symbolize(env)?;
-                let (env, body) = body.symbolize(env)?;
+                let (body_env, var) = env.clone().set_symbol(var);
+                let (body_env, lo) = lo.symbolize(body_env)?;
+                let (body_env, hi) = hi.symbolize(body_env)?;
+                let (_, body) = body.symbolize(body_env)?;
                 Ok((env, Stmt::For {var, lo, hi, body, par, i}))
             },
             Stmt::If {cond, thn, els, i} => {
                 let (env, cond) = cond.symbolize(env)?;
-                let (env, thn) = thn.symbolize(env)?;
-                let (env, els) = els.symbolize(env)?;
+                let (_, thn) = thn.symbolize(env.clone())?;
+                let (_, els) = els.symbolize(env.clone())?;
                 Ok((env, Stmt::If {cond, thn, els, i}))
             }
         }
@@ -382,10 +382,7 @@ mod test {
             i: i.clone()
         };
         let env = sym_env(vec![]);
-        let (env, stmt) = s.symbolize(env).unwrap();
-        assert!(env.vars.len() == 2);
-        assert!(env.vars.contains_key(x.get_str()));
-        assert!(env.vars.contains_key(y.get_str()));
+        let (_, stmt) = s.symbolize(env).unwrap();
         if let Stmt::For {var, body, ..} = stmt {
             assert!(var.has_sym());
             assert_eq!(var.get_str(), x.get_str());

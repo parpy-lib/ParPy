@@ -39,11 +39,13 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     if len(kwargs) > 0:
         raise RuntimeError(f"Received unknown keyword arguments: {kwargs}")
 
+    if len(par) == 0:
+        return fn
+
     # Compiles the IR AST using type information of the provided arguments and
     # the parallelization settings to determine how to generate parallel
     # low-level code.
     if not cache or not compile.is_cached(key):
-        # TODO: build differently if we have no device code
         code = parir.compile_ir(ir_ast, args, par)
         print(code)
         compile.build_cuda_shared_library(key, code)

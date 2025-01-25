@@ -319,7 +319,7 @@ impl PrettyPrint for Stmt {
                 (env, s)
             },
             Stmt::Syncthreads {..} => {
-                (env, "__syncthreads();".to_string())
+                (env, format!("{indent}__syncthreads();"))
             },
             Stmt::KernelLaunch {id, launch_args, args, ..} => {
                 let (env, id) = id.pprint(env);

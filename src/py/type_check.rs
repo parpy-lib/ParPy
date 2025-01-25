@@ -224,10 +224,9 @@ fn type_check_builtin(
             let fst = args.pop().unwrap();
             let ty = lub_type(fst.get_type().clone(), snd.get_type().clone(), &i)?;
             if let Some(_) = ty.get_scalar_elem_size() {
-                let args = vec![
-                    fst.with_type(ty.clone()),
-                    snd.with_type(ty.clone())
-                ];
+                let fst = coerce_type(fst, &ty)?;
+                let snd = coerce_type(snd, &ty)?;
+                let args = vec![fst, snd];
                 Ok(Expr::Builtin {func, args, ty, i})
             } else {
                 py_type_error!(i, "Unexpected type {ty} of binary builtin (expected scalar)")
