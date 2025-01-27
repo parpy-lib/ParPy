@@ -168,7 +168,9 @@ pub enum Stmt {
     },
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>},
     Syncthreads {},
-    KernelLaunch {id: Name, launch_args: LaunchArgs, args: Vec<Expr>},
+    Dim3Definition {id: Name, args: Dim3},
+    KernelLaunch {id: Name, blocks: Name, threads: Name, args: Vec<Expr>},
+    Scope {body: Vec<Stmt>},
 }
 
 #[derive(Clone, Debug)]

@@ -321,18 +321,23 @@ impl PrettyPrint for Stmt {
             Stmt::Syncthreads {..} => {
                 (env, format!("{indent}__syncthreads();"))
             },
-            Stmt::KernelLaunch {id, launch_args, args, ..} => {
+            Stmt::Dim3Definition {id, args} => {
                 let (env, id) = id.pprint(env);
-                let env = env.incr_indent();
-                let inner_indent = env.print_indent();
-                let (env, launch_args) = launch_args.pprint(env);
-                let env = env.decr_indent();
+                let (env, args) = args.pprint(env);
+                (env, format!("{indent}dim3 {id}({args});"))
+            },
+            Stmt::KernelLaunch {id, blocks, threads, args} => {
+                let (env, id) = id.pprint(env);
+                let (env, blocks) = blocks.pprint(env);
+                let (env, threads) = threads.pprint(env);
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
-                let s = format!(
-                    "{0}{{\n{1}\n{2}{3}<<<blocks, tpb>>>({4});\n{0}}}",
-                    indent, launch_args, inner_indent, id, args
-                );
-                (env, s)
+                (env, format!("{indent}{id}<<<{blocks}, {threads}>>>({args});"))
+            },
+            Stmt::Scope {body} => {
+                let env = env.incr_indent();
+                let (env, body) = pprint_iter(body.iter(), env, "\n");
+                let env = env.decr_indent();
+                (env, format!("{0}{{\n{1}\n{0}}}", indent, body))
             },
         }
     }
@@ -654,15 +659,11 @@ mod test {
         let id = "kernel";
         let kernel = Stmt::KernelLaunch {
             id: Name::new(id.to_string()),
-            launch_args: LaunchArgs::default().with_threads_dim(&Dim::X, 128),
+            blocks: Name::new("blocks".to_string()),
+            threads: Name::new("threads".to_string()),
             args: vec![var("x"), var("y")],
-            i: Info::default()
         };
-        let indent = " ".repeat(pprint::DEFAULT_INDENT);
-        let expected = format!(
-            "{{\n{0}dim3 tpb(128, 1, 1);\n{0}dim3 blocks(1, 1, 1);\n{0}{1}<<<blocks, tpb>>>(x, y);\n}}",
-            indent, id
-        );
+        let expected = format!("{id}<<<blocks, threads>>>(x, y);");
         assert_eq!(kernel.pprint_default(), expected);
     }
 

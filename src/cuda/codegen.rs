@@ -282,6 +282,21 @@ fn generate_kernel_stmts(
         .fold(Ok(acc), |acc, stmt| generate_kernel_stmt(grid.clone(), map, sync, acc?, stmt))
 }
 
+fn generate_host_kernel_launch(
+    id: Name,
+    launch_args: LaunchArgs,
+    args: Vec<Expr>
+) -> Stmt {
+    let threads_id = Name::new("threads".to_string()).with_new_sym();
+    let blocks_id = Name::new("blocks".to_string()).with_new_sym();
+    let body = vec![
+        Stmt::Dim3Definition {id: threads_id.clone(), args: launch_args.threads},
+        Stmt::Dim3Definition {id: blocks_id.clone(), args: launch_args.blocks},
+        Stmt::KernelLaunch {id, blocks: blocks_id, threads: threads_id, args}
+    ];
+    Stmt::Scope { body }
+}
+
 fn from_ir_stmt(
     env: &CodegenEnv,
     mut host_body: Vec<Stmt>,
@@ -318,9 +333,7 @@ fn from_ir_stmt(
                     let args = fv.into_iter()
                         .map(|(id, ty)| Expr::Var {id, ty, i: i.clone()})
                         .collect::<Vec<Expr>>();
-                    host_body.push(Stmt::KernelLaunch {
-                        id: kernel_id, launch_args: m.grid.clone(), args
-                    });
+                    host_body.push(generate_host_kernel_launch(kernel_id, m.grid.clone(), args));
                     Ok(kernels)
                 },
                 None => {

@@ -84,8 +84,15 @@ impl FreeVariables<Type> for Stmt {
                 els.fv(env)
             },
             Stmt::Syncthreads {..} => env,
+            Stmt::Dim3Definition {id, ..} => {
+                env.bound.insert(id.clone(), Type::Void);
+                env
+            },
             Stmt::KernelLaunch {args, ..} => {
                 args.fv(env)
+            },
+            Stmt::Scope {body, ..} => {
+                body.fv(env)
             },
         }
     }
