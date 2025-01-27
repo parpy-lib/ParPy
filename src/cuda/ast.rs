@@ -160,15 +160,15 @@ impl Default for LaunchArgs {
 
 #[derive(Clone, Debug)]
 pub enum Stmt {
-    Definition {ty: Type, id: Name, expr: Expr, i: Info},
-    Assign {dst: Expr, expr: Expr, i: Info},
+    Definition {ty: Type, id: Name, expr: Expr},
+    Assign {dst: Expr, expr: Expr},
     For {
         var_ty: Type, var: Name, init: Expr, cond: Expr,
-        incr: i64, body: Vec<Stmt>, i: Info
+        incr: i64, body: Vec<Stmt>
     },
-    If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
-    Syncthreads {i: Info},
-    KernelLaunch {id: Name, launch_args: LaunchArgs, args: Vec<Expr>, i: Info},
+    If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>},
+    Syncthreads {},
+    KernelLaunch {id: Name, launch_args: LaunchArgs, args: Vec<Expr>},
 }
 
 #[derive(Clone, Debug)]
@@ -193,10 +193,10 @@ pub struct Param {
 #[derive(Clone, Debug)]
 pub enum Top {
     Include {header: String},
-    StructDef {id: Name, fields: Vec<Field>, i: Info},
+    StructDef {id: Name, fields: Vec<Field>},
     FunDef {
         attr: Attribute, ret_ty: Type, id: Name, params: Vec<Param>,
-        body: Vec<Stmt>, i: Info
+        body: Vec<Stmt>
     },
 }
 

@@ -234,17 +234,17 @@ fn generate_kernel_stmt(
     stmt: ir_ast::Stmt
 ) -> CompileResult<Vec<Stmt>> {
     match stmt {
-        ir_ast::Stmt::Definition {ty, id, expr, i} => {
+        ir_ast::Stmt::Definition {ty, id, expr, ..} => {
             let ty = from_ir_type(ty);
             let expr = from_ir_expr(expr)?;
-            acc.push(Stmt::Definition {ty, id, expr, i});
+            acc.push(Stmt::Definition {ty, id, expr});
         },
-        ir_ast::Stmt::Assign {dst, expr, i} => {
+        ir_ast::Stmt::Assign {dst, expr, ..} => {
             let dst = from_ir_expr(dst)?;
             let expr = from_ir_expr(expr)?;
-            acc.push(Stmt::Assign {dst, expr, i});
+            acc.push(Stmt::Assign {dst, expr});
         },
-        ir_ast::Stmt::For {var, lo, hi, body, par, i} => {
+        ir_ast::Stmt::For {var, lo, hi, body, par, ..} => {
             let (par, grid, map) = if par.is_some() {
                 let m = map[0].clone();
                 let grid = subtract_from_grid(grid, &m);
@@ -256,16 +256,16 @@ fn generate_kernel_stmt(
             let (init, cond, incr) = determine_loop_bounds(&grid, lo, hi, par)?;
             let body = generate_kernel_stmts(grid, map, sync, vec![], body)?;
             let should_sync = sync.contains(&var);
-            acc.push(Stmt::For {var_ty, var, init, cond, incr, body, i: i.clone()});
+            acc.push(Stmt::For {var_ty, var, init, cond, incr, body});
             if should_sync {
-                acc.push(Stmt::Syncthreads {i});
+                acc.push(Stmt::Syncthreads {});
             };
         },
-        ir_ast::Stmt::If {cond, thn, els, i} => {
+        ir_ast::Stmt::If {cond, thn, els, ..} => {
             let cond = from_ir_expr(cond)?;
             let thn = generate_kernel_stmts(grid.clone(), map, sync, vec![], thn)?;
             let els = generate_kernel_stmts(grid, map, sync, vec![], els)?;
-            acc.push(Stmt::If {cond, thn, els, i});
+            acc.push(Stmt::If {cond, thn, els});
         }
     };
     Ok(acc)
@@ -312,14 +312,14 @@ fn from_ir_stmt(
                     let kernel = Top::FunDef {
                         attr: Attribute::Global, ret_ty: Type::Void,
                         id: kernel_id.clone(), params: kernel_params,
-                        body: kernel_body, i: i.clone()
+                        body: kernel_body
                     };
                     kernels.push(kernel);
                     let args = fv.into_iter()
                         .map(|(id, ty)| Expr::Var {id, ty, i: i.clone()})
                         .collect::<Vec<Expr>>();
                     host_body.push(Stmt::KernelLaunch {
-                        id: kernel_id, launch_args: m.grid.clone(), args, i
+                        id: kernel_id, launch_args: m.grid.clone(), args
                     });
                     Ok(kernels)
                 },
@@ -329,17 +329,17 @@ fn from_ir_stmt(
                     let incr = 1;
                     let (body, kernels) = from_ir_stmts(env, vec![], kernels, body)?;
                     host_body.push(Stmt::For {
-                        var_ty, var, init, cond, incr, body, i
+                        var_ty, var, init, cond, incr, body
                     });
                     Ok(kernels)
                 }
             }
         },
-        ir_ast::Stmt::If {cond, thn, els, i} => {
+        ir_ast::Stmt::If {cond, thn, els, ..} => {
             let cond = from_ir_expr(cond)?;
             let (thn, kernels) = from_ir_stmts(env, vec![], kernels, thn)?;
             let (els, kernels) = from_ir_stmts(env, vec![], kernels, els)?;
-            host_body.push(Stmt::If {cond, thn, els, i});
+            host_body.push(Stmt::If {cond, thn, els});
             Ok(kernels)
         },
     }?;
@@ -381,10 +381,10 @@ fn unwrap_params(
                     .collect::<Vec<(String, Expr)>>();
                 let init_expr = Expr::Struct {
                     id: id.clone(), fields: field_exprs, ty: p.ty.clone(),
-                    i: p.i.clone()
+                    i: p.i
                 };
                 params_init.push(Stmt::Definition {
-                    ty: p.ty, id: p.id, expr: init_expr, i: p.i
+                    ty: p.ty, id: p.id, expr: init_expr
                 });
 
                 let mut struct_params = fields.clone()
@@ -406,15 +406,14 @@ fn unwrap_params(
 fn from_ir_fun_body(
     env: CodegenEnv,
     params: Vec<Param>,
-    body: Vec<ir_ast::Stmt>,
-    i: Info
+    body: Vec<ir_ast::Stmt>
 ) -> CompileResult<Vec<Top>> {
     let (mut params_init, unwrapped_params) = unwrap_params(&env, params)?;
     let (mut host_body, mut tops) = from_ir_stmts(&env, vec![], vec![], body)?;
     params_init.append(&mut host_body);
     tops.push(Top::FunDef {
         attr: Attribute::Entry, ret_ty: Type::Void, id: env.id,
-        params: unwrapped_params, body: params_init, i
+        params: unwrapped_params, body: params_init
     });
     Ok(tops)
 }
@@ -428,12 +427,12 @@ fn from_ir_fun_def(
     mut env: CodegenEnv,
     fun: ir_ast::FunDef
 ) -> CompileResult<Vec<Top>> {
-    let ir_ast::FunDef {id, params, body, i} = fun;
+    let ir_ast::FunDef {id, params, body, ..} = fun;
     env.id = id;
     let params = params.into_iter()
         .map(|p| from_ir_param(p))
         .collect::<Vec<Param>>();
-    from_ir_fun_body(env, params, body, i)
+    from_ir_fun_body(env, params, body)
 }
 
 fn from_ir_field(f: ir_ast::Field) -> Field {
@@ -446,8 +445,7 @@ fn from_ir_struct(s: ir_ast::StructDef) -> Top {
         id: s.id,
         fields: s.fields.into_iter()
             .map(|f| from_ir_field(f))
-            .collect::<Vec<Field>>(),
-        i: s.i
+            .collect::<Vec<Field>>()
     }
 }
 

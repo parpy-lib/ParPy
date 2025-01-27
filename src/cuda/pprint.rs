@@ -379,14 +379,15 @@ impl PrettyPrint for Top {
                 let env = env.decr_indent();
                 (env, format!("struct {id} {{\n{fields}\n}};"))
             },
-            Top::FunDef {attr, id, params, body, ..} => {
+            Top::FunDef {attr, ret_ty, id, params, body, ..} => {
                 let (env, attr) = attr.pprint(env);
+                let (env, ret_ty) = ret_ty.pprint(env);
                 let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("{attr}\nvoid {id}({params}) {{\n{body}\n}}"))
+                (env, format!("{attr}\n{ret_ty} {id}({params}) {{\n{body}\n}}"))
             },
         }
     }

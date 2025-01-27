@@ -144,7 +144,7 @@ fn ensure_no_inter_block_sync_par_stmts(
 ) -> CompileResult<()> {
     stmts.iter()
         .map(|stmt| ensure_no_inter_block_sync_par_stmt(stmt, sync, pars))
-        .collect::<CompileResult<_>>()?;
+        .collect::<CompileResult<()>>()?;
     Ok(())
 }
 
@@ -178,7 +178,7 @@ fn ensure_no_inter_block_sync_stmts(
 ) -> CompileResult<()> {
     stmts.iter()
         .map(|stmt| ensure_no_inter_block_sync_stmt(stmt, sync, gpu_mapping))
-        .collect::<CompileResult<_>>()?;
+        .collect::<CompileResult<()>>()?;
     Ok(())
 }
 
