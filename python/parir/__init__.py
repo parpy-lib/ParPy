@@ -47,7 +47,6 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     # low-level code.
     if not cache or not compile.is_cached(key):
         code = parir.compile_ir(ir_ast, args, par)
-        print(code)
         compile.build_cuda_shared_library(key, code)
 
     return compile.get_cuda_wrapper(fn.__name__, args, key)

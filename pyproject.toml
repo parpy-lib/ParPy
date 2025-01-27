@@ -18,6 +18,7 @@ dependencies = [
   "numpy",
   "pytest",
   "torch",
+  "h5py"
 ]
 [tool.maturin]
 features = ["pyo3/extension-module"]
