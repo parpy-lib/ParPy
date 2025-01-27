@@ -124,8 +124,13 @@ fn to_ir_expr(
                     if elems.len() <= shape.len() {
                         let int_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
                         let zero = Expr::Int {v: 0, ty: int_ty.clone(), i: i_tuple.clone()};
+                        // NOTE: We want to multiply each value by all lower dimensions, so we skip
+                        // the most significant one and add a trailing one at the end of the
+                        // sequence (to prevent the zip from excluding the final argument).
                         let idx = shape.clone()
                             .into_iter()
+                            .skip(1)
+                            .chain([1].into_iter())
                             .zip(elems.clone().into_iter())
                             .fold(Ok(zero), |acc, (n, idx)| {
                                 let n = Expr::Int {v: n, ty: int_ty.clone(), i: i_tuple.clone()};
