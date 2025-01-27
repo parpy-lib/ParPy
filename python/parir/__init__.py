@@ -1,7 +1,7 @@
 from . import compile, key, parir
 from .compile import clear_cache
 from .operators import exp, inf, log, min, max, sum
-from .parir import ParKind, ParSpec
+from .parir import ParKind
 
 def convert_python_function_to_ir(fn):
     import ast as python_ast

@@ -245,7 +245,7 @@ fn generate_kernel_stmt(
             acc.push(Stmt::Assign {dst, expr});
         },
         ir_ast::Stmt::For {var, lo, hi, body, par, ..} => {
-            let (par, grid, map) = if par.is_some() {
+            let (par, grid, map) = if par.is_parallel() {
                 let m = map[0].clone();
                 let grid = subtract_from_grid(grid, &m);
                 (Some(m), grid, &map[1..])

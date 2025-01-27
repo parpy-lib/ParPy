@@ -14,7 +14,7 @@ fn collect_sync_points_stmt(
         Stmt::Definition {..} | Stmt::Assign {..} => acc,
         Stmt::For {var, body, par, ..} => {
             let mut sync = acc?;
-            if let Some(_) = par {
+            if par.is_parallel() {
                 sync.insert(var.clone());
             };
             collect_sync_points_stmts(Ok(sync), body)
@@ -237,11 +237,7 @@ mod test {
     }
 
     fn for_loop(var: Name, n : i64, body: Vec<Stmt>) -> Stmt {
-        let par = if n == 1 {
-            None
-        } else {
-            Some(LoopProperty::Threads {n})
-        };
+        let par = LoopParallelism::default().with_threads(n);
         Stmt::For {var, lo: int(0), hi: int(10), body, par, i: Info::default()}
     }
 

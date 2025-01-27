@@ -33,7 +33,7 @@ fn python_to_ir<'py>(
 fn compile_ir<'py>(
     ir_ast_cap : Bound<'py, PyCapsule>,
     args : Vec<Bound<'py, PyAny>>,
-    par : BTreeMap<String, par::ParSpec>
+    par : BTreeMap<String, Vec<par::ParKind>>
 ) -> PyResult<String> {
     // Extract a reference to the untyped AST parsed earlier.
     let untyped_ir_def : &py::ast::FunDef = unsafe {
@@ -62,6 +62,5 @@ fn parir(m : &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(python_to_ir, m)?)?;
     m.add_function(wrap_pyfunction!(compile_ir, m)?)?;
     m.add_class::<par::ParKind>()?;
-    m.add_class::<par::ParSpec>()?;
     Ok(())
 }

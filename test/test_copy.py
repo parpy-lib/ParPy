@@ -1,5 +1,5 @@
 import parir
-from parir import ParKind, ParSpec
+from parir import ParKind
 import pytest
 import torch
 
@@ -20,7 +20,7 @@ def copy_wrap(x, p=None):
 def test_copy_gpu():
     x = torch.randn(10, dtype=torch.float32)
     y1 = copy_wrap(x)
-    p = { "i" : ParSpec(ParKind.GpuThreads(1024)) }
+    p = { "i" : [ParKind.GpuThreads(1024)] }
     y2 = copy_wrap(x.cuda(), p).cpu()
     torch.cuda.synchronize()
     assert torch.allclose(y1, y2, atol=1e-5)

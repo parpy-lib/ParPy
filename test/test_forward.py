@@ -2,7 +2,7 @@ import h5py
 import numpy as np
 from math import inf
 import parir
-from parir import ParKind, ParSpec
+from parir import ParKind
 import pytest
 import torch
 
@@ -163,21 +163,20 @@ def forward(hmm, seqs):
     alpha2 = torch.empty_like(alpha1)
 
     par = {
-        'inst': ParSpec(ParKind.GpuThreads(seqs["num_instances"])),
-        'state': ParSpec(ParKind.GpuThreads(hmm["num_states"]))
+        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
+        'state': [ParKind.GpuThreads(hmm["num_states"])]
     }
     forward_init(hmm, seqs, alpha1, parallelize=par, cache=False)
 
     par = {
-        'inst': ParSpec(ParKind.GpuThreads(seqs["num_instances"])),
-        'state': ParSpec(ParKind.GpuThreads(hmm["num_states"]))
+        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
+        'state': [ParKind.GpuThreads(hmm["num_states"])]
     }
     forward_steps(hmm, seqs, alpha1, alpha2, parallelize=par, cache=False)
 
-    # TODO: parallelize over states when parallel reductions are supported...
     par = {
-        'inst': ParSpec(ParKind.GpuThreads(seqs["num_instances"])),
-        #'state': ParSpec(ParKind.GpuThreads(hmm["num_states"]))
+        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
+        #'state': [ParKind.GpuThreads(hmm["num_states"]), ParKind.GpuReduction()]
     }
     forward_lse(hmm, seqs, result, alpha1, alpha2, parallelize=par, cache=False)
 

@@ -1,6 +1,6 @@
 import numpy as np
 import parir
-from parir import ParKind, ParSpec
+from parir import ParKind
 import pytest
 import torch
 
@@ -42,7 +42,7 @@ def compare_softmax(p):
 @pytest.mark.skip(reason="Uses unsupported language features")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_softmax_seq_reduce():
-    p = { "i" : ParSpec(ParKind.GpuThreads(N)) }
+    p = { "i" : [ParKind.GpuThreads(N)] }
     compare_softmax(p)
 
 @pytest.mark.skip(reason="Uses unsupported language features")
@@ -50,7 +50,7 @@ def test_softmax_seq_reduce():
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_softmax_gpu():
     p = {
-        "i" : ParSpec(ParKind.GpuThreads(N)),
-        "j" : ParSpec(ParKind.GpuThreads(128))
+        "i" : [ParKind.GpuThreads(N)],
+        "j" : [ParKind.GpuThreads(128)]
     }
     compare_softmax(p)

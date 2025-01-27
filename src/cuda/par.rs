@@ -64,9 +64,8 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
         },
         Stmt::For {body, par, ..} => {
             let mut inner_par = find_parallel_structure_stmts_par(body)?;
-            match par {
-                Some(LoopProperty::Threads {n}) => inner_par.n.insert(0, *n),
-                None => ()
+            if par.is_parallel() {
+                inner_par.n.insert(0, par.nthreads);
             };
             Ok(inner_par)
         },
@@ -92,14 +91,13 @@ fn find_parallel_structure_stmt_seq(
             find_parallel_structure_stmts_seq(acc, els)
         },
         Stmt::For {var, body, par, ..} => {
-            match par {
-                Some(LoopProperty::Threads {n}) => {
-                    let mut p = find_parallel_structure_stmts_par(body)?;
-                    p.n.insert(0, *n);
-                    acc.insert(var.clone(), p.n);
-                    Ok(acc)
-                },
-                None => find_parallel_structure_stmts_seq(acc, body)
+            if par.is_parallel() {
+                let mut p = find_parallel_structure_stmts_par(body)?;
+                p.n.insert(0, par.nthreads);
+                acc.insert(var.clone(), p.n);
+                Ok(acc)
+            } else {
+                find_parallel_structure_stmts_seq(acc, body)
             }
         }
     }
@@ -254,11 +252,7 @@ mod test {
     }
 
     fn for_loop(var: Name, nthreads: i64, body: Vec<Stmt>) -> Stmt {
-        let par = if nthreads == 1 {
-            None
-        } else {
-            Some(LoopProperty::Threads {n: nthreads})
-        };
+        let par = LoopParallelism::default().with_threads(nthreads);
         Stmt::For {var, lo: int(0), hi: int(10), body, par, i: Info::default()}
     }
 

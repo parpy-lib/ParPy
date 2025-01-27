@@ -1,6 +1,6 @@
 import numpy as np
 import parir
-from parir import ParKind, ParSpec
+from parir import ParKind
 import pytest
 import torch
 
@@ -51,7 +51,7 @@ def compare_spmv(N, M, p=None):
 def test_spmv_seq_reduce():
     N = 256
     M = 4096
-    p = { "row": ParSpec(ParKind.GpuThreads(N)) }
+    p = { "row": [ParKind.GpuThreads(N)] }
     compare_spmv(N, M, p)
 
 @pytest.mark.skip(reason="Parallel reductions are not supported")
@@ -60,7 +60,7 @@ def test_spmv_gpu():
     N = 256
     M = 4096
     p = {
-        "row": ParSpec(ParKind.GpuThreads(N)),
-        "i": ParSpec(ParKind.GpuThreads(128))
+        "row": [ParKind.GpuThreads(N)],
+        "i": [ParKind.GpuThreads(128)]
     }
     compare_spmv(N, M, p)

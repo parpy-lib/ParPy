@@ -5,7 +5,7 @@ mod symbolize;
 
 use ast::*;
 use symbolize::Symbolize;
-use crate::par::ParSpec;
+use crate::par::ParKind;
 use crate::py::ast as py_ast;
 use crate::utils::err::*;
 use crate::utils::name::Name;
@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 pub fn from_python(
     def: py_ast::FunDef,
-    par: BTreeMap<String, ParSpec>
+    par: BTreeMap<String, Vec<ParKind>>
 ) -> CompileResult<Ast> {
     let structs = struct_types::find_struct_types(&def).into_iter()
         .map(|ty| {

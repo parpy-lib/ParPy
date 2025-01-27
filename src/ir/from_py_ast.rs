@@ -4,7 +4,7 @@ use crate::parir_compile_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::par::{ParKind, ParSpec};
+use crate::par::ParKind;
 use crate::py::ast as py_ast;
 
 use itertools::Itertools;
@@ -13,13 +13,13 @@ use std::collections::BTreeMap;
 
 pub struct IREnv {
     structs: BTreeMap<py_ast::Type, Name>,
-    par: BTreeMap<String, ParSpec>,
+    par: BTreeMap<String, Vec<ParKind>>,
 }
 
 impl IREnv {
     pub fn new(
         structs: BTreeMap<py_ast::Type, Name>,
-        par: BTreeMap<String, ParSpec>
+        par: BTreeMap<String, Vec<ParKind>>
     ) -> Self {
         IREnv {structs, par}
     }
@@ -198,6 +198,16 @@ fn to_ir_expr(
     }
 }
 
+fn convert_par_spec(p: Option<&Vec<ParKind>>) -> LoopParallelism {
+    p.unwrap_or(&vec![])
+        .clone()
+        .into_iter()
+        .fold(LoopParallelism::default(), |acc, kind| match kind {
+            ParKind::GpuThreads(n) => acc.with_threads(n),
+            ParKind::GpuReduction {} => acc.with_reduction()
+        })
+}
+
 fn to_ir_stmt(
     env: &IREnv,
     stmt: py_ast::Stmt
@@ -212,13 +222,7 @@ fn to_ir_stmt(
             let lo = to_ir_expr(env, lo)?;
             let hi = to_ir_expr(env, hi)?;
             let body = to_ir_stmts(env, body)?;
-            let par = if let Some(ParSpec {kind}) = env.par.get(&var) {
-                match kind {
-                    ParKind::GpuThreads(n) => Some(LoopProperty::Threads {n: *n}),
-                }
-            } else {
-                None
-            };
+            let par = convert_par_spec(env.par.get(&var));
             let var = Name::new(var);
             Ok(Stmt::For {var, lo, hi, body, par, i})
         },

@@ -271,18 +271,18 @@ impl PrettyPrint for Stmt {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let indent = env.print_indent();
         match self {
-            Stmt::Definition {ty, id, expr, ..} => {
+            Stmt::Definition {ty, id, expr} => {
                 let (env, ty) = ty.pprint(env);
                 let (env, id) = id.pprint(env);
                 let (env, expr) = expr.pprint(env);
                 (env, format!("{indent}{ty} {id} = {expr};"))
             },
-            Stmt::Assign {dst, expr, ..} => {
+            Stmt::Assign {dst, expr} => {
                 let (env, dst) = dst.pprint(env);
                 let (env, expr) = expr.pprint(env);
                 (env, format!("{indent}{dst} = {expr};"))
             },
-            Stmt::For {var_ty, var, init, cond, incr, body, ..} => {
+            Stmt::For {var_ty, var, init, cond, incr, body} => {
                 let (env, var_ty) = var_ty.pprint(env);
                 let (env, var) = var.pprint(env);
                 let (env, init) = init.pprint(env);
@@ -297,7 +297,7 @@ impl PrettyPrint for Stmt {
                 );
                 (env, s)
             },
-            Stmt::If {cond, thn, els, ..} => {
+            Stmt::If {cond, thn, els} => {
                 let (env, cond) = cond.pprint(env);
                 let env = env.incr_indent();
                 let (env, thn) = pprint_iter(thn.iter(), env, "\n");
@@ -318,7 +318,7 @@ impl PrettyPrint for Stmt {
                 let env = env.decr_indent();
                 (env, s)
             },
-            Stmt::Syncthreads {..} => {
+            Stmt::Syncthreads {} => {
                 (env, format!("{indent}__syncthreads();"))
             },
             Stmt::Dim3Definition {id, args} => {
@@ -559,7 +559,7 @@ mod test {
 
     #[test]
     fn pprint_syncthreads() {
-        let s = Stmt::Syncthreads {i: Info::default()}.pprint_default();
+        let s = Stmt::Syncthreads {}.pprint_default();
         assert_eq!(&s, "__syncthreads();");
     }
 
@@ -571,10 +571,7 @@ mod test {
             init: int(0),
             cond: int(10),
             incr: 1,
-            body: vec![
-                Stmt::Assign {dst: var("x"), expr: var("y"), i: Info::default()}
-            ],
-            i: Info::default(),
+            body: vec![Stmt::Assign {dst: var("x"), expr: var("y")}],
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
         let expected = format!(
@@ -593,13 +590,8 @@ mod test {
                 ty: Type::Boolean,
                 i: Info::default()
             },
-            thn: vec![
-                Stmt::Assign {dst: var("x"), expr: var("y"), i: Info::default()},
-            ],
-            els: vec![
-                Stmt::Assign {dst: var("y"), expr: var("x"), i: Info::default()}
-            ],
-            i: Info::default()
+            thn: vec![Stmt::Assign {dst: var("x"), expr: var("y")}],
+            els: vec![Stmt::Assign {dst: var("y"), expr: var("x")}],
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
         let expected = format!(
@@ -618,11 +610,8 @@ mod test {
                 ty: Type::Boolean,
                 i: Info::default()
             },
-            thn: vec![
-                Stmt::Assign {dst: var("x"), expr: var("y"), i: Info::default()},
-            ],
+            thn: vec![Stmt::Assign {dst: var("x"), expr: var("y")},],
             els: vec![],
-            i: Info::default()
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
         let expected = format!("if (x == y) {{\n{indent}x = y;\n}}");
@@ -633,18 +622,12 @@ mod test {
     fn pprint_if_cond_elseif() {
         let cond = Stmt::If {
             cond: var("x"),
-            thn: vec![Stmt::Assign {dst: var("y"), expr: var("z"), i: Info::default()}],
+            thn: vec![Stmt::Assign {dst: var("y"), expr: var("z")}],
             els: vec![Stmt::If {
                     cond: var("y"),
-                    thn: vec![
-                        Stmt::Assign {dst: var("x"), expr: var("z"), i: Info::default()}
-                    ],
-                    els: vec![
-                        Stmt::Assign {dst: var("z"), expr: var("x"), i: Info::default()}
-                    ],
-                    i: Info::default()
+                    thn: vec![Stmt::Assign {dst: var("x"), expr: var("z")}],
+                    els: vec![Stmt::Assign {dst: var("z"), expr: var("x")}],
             }],
-            i: Info::default()
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
         let expected = format!(
@@ -674,8 +657,7 @@ mod test {
             fields: vec![
                 Field {id: "x".to_string(), ty: scalar_ty(ElemSize::F32), i: Info::default()},
                 Field {id: "y".to_string(), ty: scalar_ty(ElemSize::F32), i: Info::default()},
-            ],
-            i: Info::default()
+            ]
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
         let expected = format!(
@@ -698,9 +680,8 @@ mod test {
             id: Name::new("f".to_string()),
             params: vec![],
             body: vec![
-                Stmt::Assign {dst: var("x"), expr: var("y"), i: Info::default()}
-            ],
-            i: Info::default()
+                Stmt::Assign {dst: var("x"), expr: var("y")}
+            ]
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
         let expected = format!("__global__\nvoid f() {{\n{0}x = y;\n}}", indent);

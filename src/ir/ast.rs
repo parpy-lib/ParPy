@@ -65,15 +65,36 @@ impl InfoNode for Expr {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum LoopProperty {
-    Threads {n: i64},
+pub struct LoopParallelism {
+    pub nthreads : i64,
+    pub reduction : bool
+}
+
+impl LoopParallelism {
+    pub fn with_threads(self, nthreads: i64) -> Self {
+        LoopParallelism {nthreads, ..self}
+    }
+
+    pub fn with_reduction(self) -> Self {
+        LoopParallelism {reduction: true, ..self}
+    }
+
+    pub fn is_parallel(&self) -> bool {
+        self.nthreads
+    }
+}
+
+impl Default for LoopParallelism {
+    fn default() -> Self {
+        LoopParallelism {nthreads: 1, reduction: false}
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr, i: Info},
     Assign {dst: Expr, expr: Expr, i: Info},
-    For {var: Name, lo: Expr, hi: Expr, body: Vec<Stmt>, par: Option<LoopProperty>, i: Info},
+    For {var: Name, lo: Expr, hi: Expr, body: Vec<Stmt>, par: LoopParallelism, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
 }
 

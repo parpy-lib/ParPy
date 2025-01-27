@@ -378,7 +378,7 @@ mod test {
             lo: int(0),
             hi: int(10),
             body: vec![Stmt::Assign {dst: nvar(&y), expr: nvar(&x), i: i.clone()}],
-            par: None,
+            par: LoopParallelism::default(),
             i: i.clone()
         };
         let env = sym_env(vec![]);
