@@ -27,11 +27,14 @@ jobs:
         with:
           args: --release -i python3.11
 
+      - name: Install library
+        run: |
+          pip install .
+
       - name: Rust library tests
         run: |
           cargo test
 
       - name: Python library tests
         run: |
-          pip install .
           pytest
