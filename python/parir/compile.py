@@ -76,7 +76,7 @@ def get_cuda_wrapper(name, args, key):
     # Expand the arguments by making each field of a dictionary a separate argument
     def expand_arg(arg):
         if isinstance(arg, dict):
-            return arg.values()
+            return [v for (_, v) in sorted(arg.items())]
         else:
             return [arg]
     args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
