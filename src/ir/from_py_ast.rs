@@ -7,8 +7,6 @@ use crate::utils::name::Name;
 use crate::par::ParKind;
 use crate::py::ast as py_ast;
 
-use itertools::Itertools;
-
 use std::collections::BTreeMap;
 
 pub struct IREnv {
@@ -25,27 +23,13 @@ impl IREnv {
     }
 }
 
-fn get_dict_type_fields(ty: py_ast::Type) -> BTreeMap<String, py_ast::Type> {
-    if let py_ast::Type::Dict {fields} = ty {
-        fields
-    } else {
-        panic!("Parir internal error: expected struct type, found {ty}")
-    }
-}
-
-pub fn generate_struct_name(ty: &py_ast::Type) -> Name {
-    let fields = get_dict_type_fields(ty.clone());
-    let id = fields.keys().join("_");
-    Name::new(format!("dict_{id}"))
-}
-
 pub fn to_struct_def(
     env: &IREnv,
     id: Name,
     ty: py_ast::Type
 ) -> CompileResult<StructDef> {
     let i = Info::default();
-    let mut fields = get_dict_type_fields(ty).into_iter()
+    let mut fields = ty.get_dict_type_fields().into_iter()
         .map(|(id, ty)| Ok(Field {id, ty: to_ir_type(env, &i, ty)?, i: i.clone()}))
         .collect::<CompileResult<Vec<Field>>>()?;
     fields.sort_by(|Field {id: lid, ..}, Field {id: rid, ..}| lid.cmp(&rid));

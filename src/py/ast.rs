@@ -69,6 +69,14 @@ impl Type {
         self.get_scalar_elem_size()
             .is_some_and(|sz| sz.is_floating_point())
     }
+
+    pub fn get_dict_type_fields(&self) -> BTreeMap<String, Type> {
+        if let Type::Dict {fields} = self {
+            fields.clone()
+        } else {
+            panic!("Parir internal error: expected dictionary type, found {self}")
+        }
+    }
 }
 
 impl Ord for Type {

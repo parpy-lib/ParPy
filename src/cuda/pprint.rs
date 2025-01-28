@@ -219,8 +219,12 @@ impl PrettyPrint for Expr {
                         strs.push(format!("{id}: {e}"));
                         (env, strs)
                     });
-                let fields = fields.into_iter().join(", ");
-                (env, format!("{id} {{{fields}}}"))
+                let outer_indent = env.print_indent();
+                let env = env.incr_indent();
+                let indent = env.print_indent();
+                let fields = fields.into_iter().join(&format!(",\n{indent}"));
+                let env = env.decr_indent();
+                (env, format!("{id} {{\n{indent}{fields}\n{outer_indent}}}"))
             },
             Expr::Convert {e, ty} => {
                 let (env, e) = e.pprint(env);
@@ -562,6 +566,21 @@ mod test {
     fn pprint_max_i64() {
         let s = max(var("x"), var("y"), scalar_ty(ElemSize::I64)).pprint_default();
         assert_eq!(&s, "max(x, y)");
+    }
+
+    #[test]
+    fn pprint_struct_literal() {
+        let s = Expr::Struct {
+            id: Name::sym_str("id"),
+            fields: vec![
+                ("x".to_string(), int(5)),
+                ("y".to_string(), int(25)),
+                ("z".to_string(), var("q"))
+            ],
+            ty: Type::Struct {id: Name::sym_str("ty")},
+            i: Info::default()
+        };
+        assert_eq!(&s.pprint_default(), "id {\n  x: 5,\n  y: 25,\n  z: q\n}");
     }
 
     #[test]
