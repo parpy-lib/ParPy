@@ -68,13 +68,20 @@ fn alloc_free_string(mut env: PrettyPrintEnv, id: &Name) -> (PrettyPrintEnv, Str
 
 impl PrettyPrint for Name {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        if let Some(x) = &env.vars.get(self.get_str()) {
-            let s = x.to_string();
-            (env, s)
-        } else {
+        let alloc_new = |env| {
             let (mut env, s) = alloc_free_string(env, self);
             env.vars.insert(s.clone(), self.clone());
             (env, s)
+        };
+        if let Some(x) = &env.vars.get(self.get_str()) {
+            if self.eq(x) {
+                let s = x.to_string();
+                (env, s)
+            } else {
+                alloc_new(env)
+            }
+        } else {
+            alloc_new(env)
         }
     }
 }
@@ -90,4 +97,21 @@ pub fn pprint_iter<'a, T: PrettyPrint + 'a, I: Iterator<Item=&'a T>>(
             (env, strs)
         });
     (env, strs.into_iter().join(separator))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_distinct_names_print() {
+        let n1 = Name::sym_str("x");
+        let n2 = n1.clone().with_new_sym();
+        assert!(n1 != n2);
+        let env = PrettyPrintEnv::new();
+        let (env, s1) = n1.pprint(env);
+        let (env, s2) = n2.pprint(env);
+        assert_eq!(env.strs.len(), 2);
+        assert!(s1 != s2);
+    }
 }
