@@ -54,7 +54,6 @@ def test_spmv_seq_reduce():
     p = { "row": [ParKind.GpuThreads(N)] }
     compare_spmv(N, M, p)
 
-@pytest.mark.skip(reason="Parallel reductions are not supported")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_spmv_gpu():
     N = 256

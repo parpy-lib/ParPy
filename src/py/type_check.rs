@@ -22,8 +22,6 @@ fn compile_elem_size<'py>(dtype: Bound<'py, PyAny>) -> PyResult<ElemSize> {
         Ok(ElemSize::I32)
     } else if dtype.eq(torch.getattr("int64")?)? {
         Ok(ElemSize::I64)
-    } else if dtype.eq(torch.getattr("uint8")?)? {
-        Ok(ElemSize::U8)
     } else if dtype.eq(torch.getattr("float16")?)? {
         Ok(ElemSize::F16)
     } else if dtype.eq(torch.getattr("float32")?)? {
@@ -104,9 +102,6 @@ fn lub_elem_size(
         (ElemSize::I32, ElemSize::I8 | ElemSize::I16) => Ok(ElemSize::I32),
         (ElemSize::I32, _) if rhs.is_signed_integer() => Ok(rhs.clone()),
         (ElemSize::I64, _) if rhs.is_signed_integer() => Ok(lhs.clone()),
-        (ElemSize::U8, ElemSize::U8) => Ok(ElemSize::U8),
-        (ElemSize::U8, _) if rhs.is_signed_integer() => Ok(rhs.clone()),
-        (_, ElemSize::U8) if lhs.is_signed_integer() => Ok(lhs.clone()),
         (ElemSize::F16, _) if rhs.is_floating_point() => Ok(rhs.clone()),
         (ElemSize::F32, ElemSize::F16) => Ok(ElemSize::F32),
         (ElemSize::F32, _) if rhs.is_floating_point() => Ok(rhs.clone()),
@@ -218,6 +213,19 @@ fn type_check_builtin(
                 py_type_error!(i, "Unexpected type {ty} of unary builtin (expected scalar)")
             }
         },
+        // Unary cast operations on scalar values
+        Builtin::Convert {sz} if args.len() == 1 => {
+            let arg = args.remove(0);
+            let ty = arg.get_type().clone();
+            if ty.get_scalar_elem_size().is_some() {
+                Ok(Expr::Convert {
+                    e: Box::new(arg),
+                    ty: Type::Tensor {sz: sz.clone(), shape: vec![]}
+                })
+            } else {
+                py_type_error!(i, "Expected scalar argument to type conversion (found {ty})")
+            }
+        },
         // Binary operations on scalar values
         Builtin::Max | Builtin::Min if args.len() == 2 => {
             let snd = args.pop().unwrap();
@@ -288,7 +296,7 @@ fn type_check_binop(
             }
         },
         // Boolean comparison operations, allowing comparison between elementary types
-        BinOp::BoolAnd | BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt => {
+        BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt => {
             if let Some(_) = ty.get_scalar_elem_size() {
                 Ok(ty)
             } else {
@@ -464,7 +472,7 @@ fn type_check_stmt(
             let ty = cond.get_type();
             let cond = match &ty {
                 Type::Boolean => Ok(cond),
-                Type::Tensor {..} if ty.is_signed_integer() || ty.is_unsigned_integer() => {
+                Type::Tensor {..} if ty.is_signed_integer() => {
                     let cond_info = cond.get_info();
                     let zero = Expr::Int {v: 0, ty: ty.clone(), i: cond_info.clone()};
                     Ok(Expr::BinOp {
@@ -571,11 +579,6 @@ mod test {
         test_lub_elem_size_fail(&ElemSize::I32, &ElemSize::F32)
     }
 
-    #[test]
-    fn lub_elem_size_signed_to_unsigned() {
-        test_lub_elem_size_ok(&ElemSize::I16, &ElemSize::U8, ElemSize::I16)
-    }
-
     fn test_lub_type_ok(lty: Type, rty: Type, expected: Type) {
         let r = lub_type(lty, rty, &Info::default());
         assert_eq!(expected, r.unwrap());
@@ -612,7 +615,7 @@ mod test {
     #[test]
     fn lub_type_elem_incompatible() {
         let ty1 = scalar_type(ElemSize::F32);
-        let ty2 = scalar_type(ElemSize::U8);
+        let ty2 = scalar_type(ElemSize::I8);
         test_lub_type_fail(ty1, ty2)
     }
 

@@ -9,20 +9,13 @@ use std::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum ElemSize {
-    I8, I16, I32, I64, U8, F16, F32, F64
+    I8, I16, I32, I64, F16, F32, F64
 }
 
 impl ElemSize {
     pub fn is_signed_integer(&self) -> bool {
         match self {
             ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 => true,
-            _ => false
-        }
-    }
-
-    pub fn is_unsigned_integer(&self) -> bool {
-        match self {
-            ElemSize::U8 => true,
             _ => false
         }
     }
@@ -42,7 +35,6 @@ impl fmt::Display for ElemSize {
             ElemSize::I16 => write!(f, "int16"),
             ElemSize::I32 => write!(f, "int32"),
             ElemSize::I64 => write!(f, "int64"),
-            ElemSize::U8 => write!(f, "uint8"),
             ElemSize::F16 => write!(f, "float16"),
             ElemSize::F32 => write!(f, "float32"),
             ElemSize::F64 => write!(f, "float64"),
@@ -71,11 +63,6 @@ impl Type {
     pub fn is_signed_integer(&self) -> bool {
         self.get_scalar_elem_size()
             .is_some_and(|sz| sz.is_signed_integer())
-    }
-
-    pub fn is_unsigned_integer(&self) -> bool {
-        self.get_scalar_elem_size()
-            .is_some_and(|sz| sz.is_unsigned_integer())
     }
 
     pub fn is_floating_point(&self) -> bool {
@@ -152,7 +139,8 @@ impl fmt::Display for Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Builtin {
-    Exp, Inf, Log, Max, Min
+    Exp, Inf, Log, Max, Min,
+    Convert {sz: ElemSize}
 }
 
 impl fmt::Display for Builtin {
@@ -163,6 +151,7 @@ impl fmt::Display for Builtin {
             Builtin::Log => write!(f, "log"),
             Builtin::Max => write!(f, "max"),
             Builtin::Min => write!(f, "min"),
+            Builtin::Convert {sz} => write!(f, "convert({sz})"),
         }
     }
 }
@@ -182,20 +171,7 @@ impl fmt::Display for UnOp {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BinOp {
-    Add, Sub, Mul, FloorDiv, Div, Mod, BoolAnd, BitAnd, Eq, Neq, Lt, Gt
-}
-
-impl BinOp {
-    pub fn precedence(&self) -> usize {
-        match self {
-            BinOp::BoolAnd => 0,
-            BinOp::BitAnd => 1,
-            BinOp::Eq | BinOp::Neq => 2,
-            BinOp::Lt | BinOp::Gt => 3,
-            BinOp::Add | BinOp::Sub => 4,
-            BinOp::Mul | BinOp::FloorDiv | BinOp::Div | BinOp::Mod => 5
-        }
-    }
+    Add, Sub, Mul, FloorDiv, Div, Mod, BitAnd, Eq, Neq, Lt, Gt
 }
 
 impl fmt::Display for BinOp {
@@ -207,7 +183,6 @@ impl fmt::Display for BinOp {
             BinOp::FloorDiv => write!(f, "//"),
             BinOp::Div => write!(f, "/"),
             BinOp::Mod => write!(f, "%"),
-            BinOp::BoolAnd => write!(f, "&&"),
             BinOp::BitAnd => write!(f, "&"),
             BinOp::Eq => write!(f, "=="),
             BinOp::Neq => write!(f, "!="),

@@ -49,13 +49,11 @@ impl FreeVariables<Type> for Expr {
             Expr::Convert {e, ..} => {
                 e.fv(env)
             },
+            Expr::ShflXorSync {value, idx, ..} => {
+                let env = value.fv(env);
+                idx.fv(env)
+            },
             Expr::ThreadIdx {..} | Expr::BlockIdx {..} => env,
-            Expr::Inf {..} => env,
-            Expr::Exp {arg, ..} | Expr::Log {arg, ..} => arg.fv(env),
-            Expr::Max {lhs, rhs, ..} | Expr::Min {lhs, rhs, ..} => {
-                let env = lhs.fv(env);
-                rhs.fv(env)
-            }
         }
     }
 }
@@ -71,6 +69,10 @@ impl FreeVariables<Type> for Stmt {
             Stmt::Assign {dst, expr, ..} => {
                 let env = dst.fv(env);
                 expr.fv(env)
+            },
+            Stmt::AllocShared {ty, id, ..} => {
+                env.bound.insert(id.clone(), ty.clone());
+                env
             },
             Stmt::For {var, init, cond, body, ..} => {
                 env.bound.insert(var.clone(), init.get_type().clone());

@@ -176,7 +176,7 @@ def forward(hmm, seqs):
 
     par = {
         'inst': [ParKind.GpuThreads(seqs["num_instances"])],
-        #'state': [ParKind.GpuThreads(hmm["num_states"]), ParKind.GpuReduction()]
+        'state': [ParKind.GpuThreads(hmm["num_states"]), ParKind.GpuReduction()]
     }
     forward_lse(hmm, seqs, result, alpha1, alpha2, parallelize=par, cache=False)
 

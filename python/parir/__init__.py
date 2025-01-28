@@ -1,6 +1,6 @@
 from . import compile, key, parir
 from .compile import clear_cache
-from .operators import exp, inf, log, min, max, sum
+from .operators import *
 from .parir import ParKind
 
 def convert_python_function_to_ir(fn):

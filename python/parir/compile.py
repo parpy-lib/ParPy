@@ -37,7 +37,9 @@ def build_cuda_shared_library(key, source):
             f.write(source)
         r = subprocess.run(["nvcc", "-O3", "--shared", "-Xcompiler", "-fPIC", f"-arch={arch}", "-x", "cu", tmp.name, "-o", libpath], capture_output=True)
         if r.returncode != 0:
-            raise RuntimeError(f"Compilation of generated CUDA code failed with exit code {r.returncode}:\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}")
+            stdout = r.stdout.decode('ascii')
+            stderr = r.stderr.decode('ascii')
+            raise RuntimeError(f"Compilation of generated CUDA code failed with exit code {r.returncode}:\nstdout:\n{stdout}\nstderr:\n{stderr}")
 
 def torch_to_ctype(dtype):
     if dtype == torch.int8:

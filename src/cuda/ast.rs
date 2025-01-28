@@ -3,8 +3,6 @@ use crate::utils::name::Name;
 
 // Re-export nodes from the IR AST that we reuse as is.
 pub use crate::ir::ast::ElemSize;
-pub use crate::ir::ast::UnOp;
-pub use crate::ir::ast::BinOp;
 
 #[derive(Clone, Debug)]
 pub enum Type {
@@ -20,6 +18,40 @@ impl Type {
         match self {
             Type::Scalar {sz} => Some(sz),
             _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum UnOp {
+    Sub, Exp, Log
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BinOp {
+    Add, Sub, Mul, Div, Rem, BoolAnd, BitAnd, Eq, Neq, Lt, Gt,
+    Max, Min
+}
+
+impl BinOp {
+    pub fn is_infix(&self) -> bool {
+        match self {
+            BinOp::Max | BinOp::Min => false,
+            _ => true
+        }
+    }
+}
+
+impl BinOp {
+    pub fn precedence(&self) -> usize {
+        match self {
+            BinOp::BoolAnd => 0,
+            BinOp::BitAnd => 1,
+            BinOp::Eq | BinOp::Neq => 2,
+            BinOp::Lt | BinOp::Gt => 3,
+            BinOp::Add | BinOp::Sub => 4,
+            BinOp::Mul | BinOp::Div | BinOp::Rem => 5,
+            BinOp::Max | BinOp::Min => 6,
         }
     }
 }
@@ -42,15 +74,9 @@ pub enum Expr {
     Convert {e: Box<Expr>, ty: Type},
 
     // CUDA-specific nodes
+    ShflXorSync {value: Box<Expr>, idx: Box<Expr>, ty : Type, i: Info},
     ThreadIdx {dim: Dim, ty: Type, i: Info},
     BlockIdx {dim: Dim, ty: Type, i: Info},
-
-    // Built-in expression nodes
-    Exp {arg: Box<Expr>, ty: Type, i: Info},
-    Inf {ty: Type, i: Info},
-    Log {arg: Box<Expr>, ty: Type, i: Info},
-    Max {lhs: Box<Expr>, rhs: Box<Expr>, ty: Type, i: Info},
-    Min {lhs: Box<Expr>, rhs: Box<Expr>, ty: Type, i: Info},
 }
 
 impl Expr {
@@ -65,13 +91,9 @@ impl Expr {
             Expr::ArrayAccess {ty, ..} => ty,
             Expr::Struct {ty, ..} => ty,
             Expr::Convert {ty, ..} => ty,
+            Expr::ShflXorSync {ty, ..} => ty,
             Expr::ThreadIdx {ty, ..} => ty,
             Expr::BlockIdx {ty, ..} => ty,
-            Expr::Exp {ty, ..} => ty,
-            Expr::Inf {ty, ..} => ty,
-            Expr::Log {ty, ..} => ty,
-            Expr::Max {ty, ..} => ty,
-            Expr::Min {ty, ..} => ty
         }
     }
 }
@@ -88,13 +110,44 @@ impl InfoNode for Expr {
             Expr::ArrayAccess {i, ..} => i.clone(),
             Expr::Struct {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
+            Expr::ShflXorSync {i, ..} => i.clone(),
             Expr::ThreadIdx {i, ..} => i.clone(),
             Expr::BlockIdx {i, ..} => i.clone(),
-            Expr::Exp {i, ..} => i.clone(),
-            Expr::Inf {i, ..} => i.clone(),
-            Expr::Log {i, ..} => i.clone(),
-            Expr::Max {i, ..} => i.clone(),
-            Expr::Min {i, ..} => i.clone()
+        }
+    }
+}
+
+impl PartialEq for Expr {
+    fn eq(&self, other: &Expr) -> bool {
+        match (self, other) {
+            (Expr::Var {id: lid, ..}, Expr::Var {id: rid, ..}) => lid.eq(rid),
+            (Expr::Int {v: lv, ..}, Expr::Int {v: rv, ..}) => lv.eq(rv),
+            (Expr::Float {v: lv, ..}, Expr::Float {v: rv, ..}) => lv.eq(rv),
+            ( Expr::UnOp {op: lop, arg: larg, ..}
+            , Expr::UnOp {op: rop, arg: rarg, ..} ) =>
+                lop.eq(rop) && larg.eq(rarg),
+            ( Expr::BinOp {lhs: llhs, op: lop, rhs: lrhs, ..}
+            , Expr::BinOp {lhs: rlhs, op: rop, rhs: rrhs, ..} ) =>
+                llhs.eq(rlhs) && lop.eq(rop) && lrhs.eq(rrhs),
+            ( Expr::StructFieldAccess {target: ltarget, label: llabel, ..}
+            , Expr::StructFieldAccess {target: rtarget, label: rlabel, ..} ) =>
+                ltarget.eq(rtarget) && llabel.eq(rlabel),
+            ( Expr::ArrayAccess {target: ltarget, idx: lidx, ..}
+            , Expr::ArrayAccess {target: rtarget, idx: ridx, ..} ) =>
+                ltarget.eq(rtarget) && lidx.eq(ridx),
+            ( Expr::Struct {id: lid, fields: lfields, ..}
+            , Expr::Struct {id: rid, fields: rfields, ..} ) =>
+                lid.eq(rid) && lfields.eq(rfields),
+            (Expr::Convert {e: le, ..}, Expr::Convert {e: re, ..}) => le.eq(re),
+            ( Expr::ShflXorSync {value: lval, idx: lidx, ..}
+            , Expr::ShflXorSync {value: rval, idx: ridx, ..} ) => {
+                lval.eq(rval) && lidx.eq(ridx)
+            },
+            (Expr::ThreadIdx {dim: ldim, ..}, Expr::ThreadIdx {dim: rdim, ..}) =>
+                ldim.eq(rdim),
+            (Expr::BlockIdx {dim: ldim, ..}, Expr::BlockIdx {dim: rdim, ..}) =>
+                ldim.eq(rdim),
+            (_, _) => false
         }
     }
 }
@@ -162,9 +215,10 @@ impl Default for LaunchArgs {
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr},
     Assign {dst: Expr, expr: Expr},
+    AllocShared {ty: Type, id: Name, sz: i64},
     For {
         var_ty: Type, var: Name, init: Expr, cond: Expr,
-        incr: i64, body: Vec<Stmt>
+        incr: Expr, body: Vec<Stmt>
     },
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>},
     Syncthreads {},

@@ -111,6 +111,20 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
                 Ok(Builtin::Min)
             } else if e.eq(parir.getattr("max")?)? {
                 Ok(Builtin::Max)
+            } else if e.eq(parir.getattr("float16")?)? {
+                Ok(Builtin::Convert {sz: ElemSize::F16})
+            } else if e.eq(parir.getattr("float32")?)? {
+                Ok(Builtin::Convert {sz: ElemSize::F32})
+            } else if e.eq(parir.getattr("float64")?)? {
+                Ok(Builtin::Convert {sz: ElemSize::F64})
+            } else if e.eq(parir.getattr("int8")?)? {
+                Ok(Builtin::Convert {sz: ElemSize::I8})
+            } else if e.eq(parir.getattr("int16")?)? {
+                Ok(Builtin::Convert {sz: ElemSize::I16})
+            } else if e.eq(parir.getattr("int32")?)? {
+                Ok(Builtin::Convert {sz: ElemSize::I32})
+            } else if e.eq(parir.getattr("int64")?)? {
+                Ok(Builtin::Convert {sz: ElemSize::I64})
             } else {
                 py_runtime_error!(i, "Unknown built-in operator {expr}")
             }?;
@@ -433,8 +447,16 @@ mod test {
 
     #[test]
     fn lookup_builtin_torch_prefix_fail() -> PyResult<()> {
-        lookup_builtin_fail("torch.log")?;
-        lookup_builtin_fail("torch.max")?;
+        lookup_builtin_fail("torch.log")
+    }
+
+    #[test]
+    fn lookup_builtin_torch_max_fail() -> PyResult<()> {
+        lookup_builtin_fail("torch.max")
+    }
+
+    #[test]
+    fn lookup_builtin_torch_sum_fail() -> PyResult<()> {
         lookup_builtin_fail("torch.sum")
     }
 

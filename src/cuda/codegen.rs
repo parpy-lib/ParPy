@@ -1,6 +1,7 @@
 use super::ast::*;
 use super::free_vars::FreeVariables;
 use super::par::{GpuMap, GpuMapping};
+use super::pprint;
 use crate::parir_compile_error;
 use crate::ir::ast as ir_ast;
 use crate::utils::err::*;
@@ -43,24 +44,46 @@ fn to_builtin(
     match func {
         ir_ast::Builtin::Exp if args.len() == 1 => {
             let arg = Box::new(args.remove(0));
-            Ok(Expr::Exp {arg, ty, i})
+            Ok(Expr::UnOp {op: UnOp::Exp, arg, ty, i})
         },
-        ir_ast::Builtin::Inf if args.is_empty() => Ok(Expr::Inf {ty, i}),
+        ir_ast::Builtin::Inf if args.is_empty() =>
+            Ok(Expr::Float {v: f64::INFINITY, ty, i}),
         ir_ast::Builtin::Log if args.len() == 1 => {
             let arg = Box::new(args.remove(0));
-            Ok(Expr::Log {arg, ty, i})
+            Ok(Expr::UnOp {op: UnOp::Log, arg, ty, i})
         },
         ir_ast::Builtin::Max if args.len() == 2 => {
             let lhs = Box::new(args.remove(0));
             let rhs = Box::new(args.remove(0));
-            Ok(Expr::Max {lhs, rhs, ty, i})
+            Ok(Expr::BinOp {lhs, op: BinOp::Max, rhs, ty, i})
         },
         ir_ast::Builtin::Min => {
             let lhs = Box::new(args.remove(0));
             let rhs = Box::new(args.remove(0));
-            Ok(Expr::Min {lhs, rhs, ty, i})
+            Ok(Expr::BinOp {lhs, op: BinOp::Min, rhs, ty, i})
         },
         _ => parir_compile_error!(i, "Invalid use of builtin")
+    }
+}
+
+fn from_ir_unop(op: ir_ast::UnOp) -> UnOp {
+    match op {
+        ir_ast::UnOp::Sub => UnOp::Sub,
+    }
+}
+
+fn from_ir_binop(op: ir_ast::BinOp) -> BinOp {
+    match op {
+        ir_ast::BinOp::Add => BinOp::Add,
+        ir_ast::BinOp::Sub => BinOp::Sub,
+        ir_ast::BinOp::Mul => BinOp::Mul,
+        ir_ast::BinOp::FloorDiv | ir_ast::BinOp::Div => BinOp::Div,
+        ir_ast::BinOp::Mod => BinOp::Rem,
+        ir_ast::BinOp::BitAnd => BinOp::BitAnd,
+        ir_ast::BinOp::Eq => BinOp::Eq,
+        ir_ast::BinOp::Neq => BinOp::Neq,
+        ir_ast::BinOp::Lt => BinOp::Lt,
+        ir_ast::BinOp::Gt => BinOp::Gt,
     }
 }
 
@@ -72,10 +95,12 @@ fn from_ir_expr(e: ir_ast::Expr) -> CompileResult<Expr> {
         ir_ast::Expr::Float {v, i, ..} => Ok(Expr::Float {v, ty, i}),
         ir_ast::Expr::UnOp {op, arg, i, ..} => {
             let arg = Box::new(from_ir_expr(*arg)?);
+            let op = from_ir_unop(op);
             Ok(Expr::UnOp {op, arg, ty, i})
         },
         ir_ast::Expr::BinOp {lhs, op, rhs, i, ..} => {
             let lhs = Box::new(from_ir_expr(*lhs)?);
+            let op = from_ir_binop(op);
             let rhs = Box::new(from_ir_expr(*rhs)?);
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})
         },
@@ -128,14 +153,29 @@ fn remainder_if_shared_dimension(idx: Expr, dim_tot: i64, v: i64) -> Expr {
 
 fn determine_loop_bounds(
     grid: &LaunchArgs,
+    var: Name,
     lo: ir_ast::Expr,
     hi: ir_ast::Expr,
     par: Option<GpuMap>
-) -> CompileResult<(Expr, Expr, i64)> {
+) -> CompileResult<(Expr, Expr, Expr)> {
     let init = from_ir_expr(lo)?;
-    let cond = from_ir_expr(hi)?;
     let ty = init.get_type().clone();
     let i = init.get_info();
+    let var_e = Expr::Var {id: var, ty: ty.clone(), i: i.clone()};
+    let cond = Expr::BinOp {
+        lhs: Box::new(var_e.clone()),
+        op: BinOp::Lt,
+        rhs: Box::new(from_ir_expr(hi)?),
+        ty: Type::Boolean,
+        i: i.clone()
+    };
+    let fn_incr = |v| Expr::BinOp {
+        lhs: Box::new(var_e), op: BinOp::Add,
+        rhs: Box::new(Expr::Int {
+            v, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
+        }),
+        ty: ty.clone(), i: i.clone()
+    };
     match par {
         Some(GpuMap::Thread {n, dim}) => {
             let tot = grid.threads.get_dim(&dim);
@@ -145,7 +185,7 @@ fn determine_loop_bounds(
                 lhs: Box::new(init), op: BinOp::Add, rhs: Box::new(rhs),
                 ty: ty.clone(), i: i.clone()
             };
-            Ok((init, cond, n))
+            Ok((init, cond, fn_incr(n)))
         },
         Some(GpuMap::Block {n, dim}) => {
             let tot = grid.blocks.get_dim(&dim);
@@ -155,7 +195,7 @@ fn determine_loop_bounds(
                 lhs: Box::new(init), op: BinOp::Add, rhs: Box::new(rhs),
                 ty: ty.clone(), i: i.clone()
             };
-            Ok((init, cond, n))
+            Ok((init, cond, fn_incr(n)))
         },
         Some(GpuMap::ThreadBlock {n, nthreads, nblocks, dim}) => {
             let tot_blocks = grid.blocks.get_dim(&dim);
@@ -201,9 +241,9 @@ fn determine_loop_bounds(
             } else {
                 cond
             };
-            Ok((init, cond, n))
+            Ok((init, cond, fn_incr(n)))
         },
-        None => Ok((init, cond, 1))
+        None => Ok((init, cond, fn_incr(1)))
     }
 }
 
@@ -226,6 +266,250 @@ fn subtract_from_grid(grid: LaunchArgs, m: &GpuMap) -> LaunchArgs {
     }
 }
 
+fn generate_literal(v: f64, sz: &ElemSize, i: Info) -> Expr {
+    let ty = Type::Scalar {sz: sz.clone()};
+    match sz {
+        ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 =>
+            Expr::Int {v: v as i64, ty, i},
+        ElemSize::F16 | ElemSize::F32 | ElemSize::F64 => Expr::Float {v, ty, i}
+    }
+}
+
+fn reduction_op_neutral_element(
+    op: &BinOp,
+    ty: Type,
+    i: Info
+) -> CompileResult<Expr> {
+    if let Type::Scalar {sz} = &ty {
+        match op {
+            BinOp::Add => Ok(generate_literal(0.0, sz, i)),
+            BinOp::Mul => Ok(generate_literal(1.0, sz, i)),
+            BinOp::Max => Ok(generate_literal(f64::NEG_INFINITY, sz, i)),
+            BinOp::Min => Ok(generate_literal(f64::INFINITY, sz, i)),
+            _ => {
+                let op = pprint::print_binop(op, &ty);
+                parir_compile_error!(i, "Parallel reductions not supported for operator {op}")
+            }
+        }
+    } else {
+        parir_compile_error!(i, "Parallel reductions not supported for non-scalar arguments")
+    }
+}
+
+fn generate_warp_sync(
+    acc: &mut Vec<Stmt>,
+    opfn: impl Fn(Expr, Expr) -> Expr,
+    temp_var: &Expr,
+    i: &Info
+) -> () {
+    let iter_id = Name::sym_str("i");
+    let i64_ty = Type::Scalar {sz: ElemSize::I64};
+    let iter_var = Expr::Var {id: iter_id.clone(), ty: i64_ty.clone(), i: i.clone()};
+    let rhs = Expr::ShflXorSync {
+        value: Box::new(temp_var.clone()),
+        idx: Box::new(iter_var.clone()), ty: temp_var.get_type().clone(), i: i.clone(),
+    };
+    let sync_stmt = Stmt::Assign {
+        dst: temp_var.clone(),
+        expr: opfn(temp_var.clone(), rhs)
+    };
+    let int_lit = |v| {
+        Expr::Int {v, ty: i64_ty.clone(), i: i.clone()}
+    };
+    let cond_expr = Expr::BinOp {
+        lhs: Box::new(iter_var.clone()),
+        op: BinOp::Gt,
+        rhs: Box::new(int_lit(0)),
+        ty: Type::Boolean,
+        i: i.clone()
+    };
+    let incr_expr = Expr::BinOp {
+        lhs: Box::new(iter_var),
+        op: BinOp::Div,
+        rhs: Box::new(int_lit(2)),
+        ty: i64_ty.clone(),
+        i: i.clone()
+    };
+    acc.push(Stmt::For {
+        var_ty: i64_ty.clone(), var: iter_id, init: int_lit(16),
+        cond: cond_expr, incr: incr_expr, body: vec![sync_stmt]
+    });
+}
+
+fn parallel_reduction_error<T>(i: &Info) -> CompileResult<T> {
+    let msg = concat!(
+        "Parallel reduction are only supported on for-loops of the form\n",
+        "  for i in range(a, b):\n",
+        "    x = x + y\n",
+        "where x is either a variable or an array access involving i, y is any ",
+        "expression, and '+' is a known binary reduction operation.",
+    );
+    parir_compile_error!(i, "{msg}")
+}
+
+fn generate_parallel_reduction(
+    var_ty: Type,
+    var: Name,
+    init: Expr,
+    cond: Expr,
+    incr: Expr,
+    mut body: Vec<ir_ast::Stmt>,
+    nthreads: i64,
+    i: Info
+) -> CompileResult<Stmt> {
+    if body.len() == 1 {
+        Ok(())
+    } else {
+        parallel_reduction_error(&i)
+    }?;
+    let mut acc = Vec::new();
+    let fst = body.remove(0);
+    let acc = if let ir_ast::Stmt::Assign {dst: dst @ ir_ast::Expr::Var {..}, expr, ..} = fst {
+        let dst = from_ir_expr(dst)?;
+        let expr = from_ir_expr(expr)?;
+        match expr {
+            Expr::BinOp {lhs, op, rhs, ty, i} => {
+                let ne = reduction_op_neutral_element(&op, ty.clone(), i.clone())?;
+                let opfn = |lhs, rhs| Expr::BinOp {
+                    lhs: Box::new(lhs), op: op.clone(), rhs: Box::new(rhs),
+                    ty: ty.clone(), i: i.clone()
+                };
+                if dst == *lhs {
+                    let temp_id = Name::sym_str("t");
+                    let temp_var = Expr::Var {id: temp_id.clone(), ty: ty.clone(), i: i.clone()};
+                    // Generate code for a warp-local reduction
+                    acc.push(Stmt::Definition {
+                        ty: ty.clone(),
+                        id: temp_id.clone(),
+                        expr: ne
+                    });
+                    let temp_assign = Stmt::Assign {
+                        dst: temp_var.clone(),
+                        expr: Expr::BinOp {
+                            lhs: Box::new(temp_var.clone()),
+                            op: op.clone(), rhs, ty: ty.clone(), i: i.clone()
+                        }
+                    };
+                    acc.push(Stmt::For {
+                        var_ty, var, init, cond, incr, body: vec![temp_assign]
+                    });
+                    generate_warp_sync(&mut acc, opfn, &temp_var.clone(), &i);
+
+                    // If the parallelism includes more than 32 threads, we are using more than one
+                    // warp. In this case, we synchronize across all threads of the block.
+                    if nthreads > 32 {
+                        // Allocate shared memory and write to it
+                        let shared_id = Name::sym_str("stemp");
+                        let shared_var = Expr::Var {id: shared_id.clone(), ty: ty.clone(), i: i.clone()};
+                        acc.push(Stmt::AllocShared {ty: ty.clone(), id: shared_id, sz: 32});
+                        let i64_ty = Type::Scalar {sz: ElemSize::I64};
+                        let thread_warp_idx = Expr::BinOp {
+                            lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()}),
+                            op: BinOp::Rem,
+                            rhs: Box::new(Expr::Int {v: 32, ty: i64_ty.clone(), i: i.clone()}),
+                            ty: i64_ty.clone(),
+                            i: i.clone()
+                        };
+                        acc.push(Stmt::If {
+                            cond: Expr::BinOp {
+                                lhs: Box::new(thread_warp_idx.clone()),
+                                op: BinOp::Eq,
+                                rhs: Box::new(Expr::Int {v: 0, ty: i64_ty.clone(), i: i.clone()}),
+                                ty: Type::Boolean,
+                                i: i.clone()
+                            },
+                            thn: vec![Stmt::Assign {
+                                dst: Expr::ArrayAccess {
+                                    target: Box::new(shared_var.clone()),
+                                    idx: Box::new(Expr::BinOp {
+                                        lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()}),
+                                        op: BinOp::Div,
+                                        rhs: Box::new(Expr::Int {v: 32, ty: i64_ty.clone(), i: i.clone()}),
+                                        ty: i64_ty.clone(),
+                                        i: i.clone()
+                                    }),
+                                    ty: ty.clone(),
+                                    i: i.clone()
+                                },
+                                expr: temp_var.clone()
+                            }],
+                            els: vec![]
+                        });
+                        acc.push(Stmt::Syncthreads {});
+
+                        // Conditionally load data from shared memory, and synchronize across the
+                        // threads of the warp.
+                        acc.push(Stmt::If {
+                            cond: Expr::BinOp {
+                                lhs: Box::new(thread_warp_idx.clone()),
+                                op: BinOp::Lt,
+                                rhs: Box::new(Expr::Int {v: (nthreads + 31) / 32, ty: i64_ty.clone(), i: i.clone()}),
+                                ty: Type::Boolean,
+                                i: i.clone()
+                            },
+                            thn: vec![Stmt::Assign {
+                                dst: temp_var.clone(),
+                                expr: Expr::ArrayAccess {
+                                    target: Box::new(shared_var),
+                                    idx: Box::new(thread_warp_idx),
+                                    ty: ty.clone(),
+                                    i: i.clone()
+                                }}
+                            ],
+                            els: vec![Stmt::Assign {
+                                dst: temp_var.clone(),
+                                expr: Expr::Int {v: 0, ty: i64_ty.clone(), i: i.clone()}
+                            }]
+                        });
+                        generate_warp_sync(&mut acc, opfn, &temp_var.clone(), &i);
+
+                        // Write the result stored in the temporary value to the original target.
+                        // If the target is an array access, only the first thread writes to reduce
+                        // global array contention.
+                        let assign_stmt = Stmt::Assign {
+                            dst: dst.clone(),
+                            expr: Expr::BinOp {
+                                lhs: Box::new(dst.clone()), op,
+                                rhs: Box::new(temp_var.clone()),
+                                ty: ty.clone(), i: i.clone()
+                            },
+                        };
+                        match dst {
+                            Expr::Var {..} => {
+                                acc.push(assign_stmt);
+                                Ok(())
+                            },
+                            Expr::ArrayAccess {..} => {
+                                let is_first_thread = Expr::BinOp {
+                                    lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()}),
+                                    op: BinOp::Eq,
+                                    rhs: Box::new(Expr::Int {v: 0, ty: i64_ty.clone(), i: i.clone()}),
+                                    ty: Type::Boolean,
+                                    i: i.clone()
+                                };
+                                acc.push(Stmt::If {
+                                    cond: is_first_thread,
+                                    thn: vec![assign_stmt],
+                                    els: vec![]
+                                });
+                                Ok(())
+                            },
+                            _ => parir_compile_error!(i, "Invalid destination expression in binary operation")
+                        }?;
+                    };
+                    Ok(acc)
+                } else {
+                    parallel_reduction_error(&i)
+                }
+            },
+            _ => parallel_reduction_error(&i)
+        }
+    } else {
+        parallel_reduction_error(&i)
+    }?;
+    Ok(Stmt::Scope {body: acc})
+}
+
 fn generate_kernel_stmt(
     grid: LaunchArgs,
     map: &[GpuMap],
@@ -244,8 +528,8 @@ fn generate_kernel_stmt(
             let expr = from_ir_expr(expr)?;
             acc.push(Stmt::Assign {dst, expr});
         },
-        ir_ast::Stmt::For {var, lo, hi, body, par, ..} => {
-            let (par, grid, map) = if par.is_parallel() {
+        ir_ast::Stmt::For {var, lo, hi, body, par, i} => {
+            let (p, grid, map) = if par.is_parallel() {
                 let m = map[0].clone();
                 let grid = subtract_from_grid(grid, &m);
                 (Some(m), grid, &map[1..])
@@ -253,12 +537,18 @@ fn generate_kernel_stmt(
                 (None, grid, map)
             };
             let var_ty = from_ir_type(lo.get_type().clone());
-            let (init, cond, incr) = determine_loop_bounds(&grid, lo, hi, par)?;
-            let body = generate_kernel_stmts(grid, map, sync, vec![], body)?;
-            let should_sync = sync.contains(&var);
-            acc.push(Stmt::For {var_ty, var, init, cond, incr, body});
-            if should_sync {
-                acc.push(Stmt::Syncthreads {});
+            let (init, cond, incr) = determine_loop_bounds(&grid, var.clone(), lo, hi, p)?;
+            if par.is_parallel() && par.reduction {
+                acc.push(generate_parallel_reduction(
+                    var_ty, var, init, cond, incr, body, par.nthreads, i)?
+                );
+            } else {
+                let body = generate_kernel_stmts(grid, map, sync, vec![], body)?;
+                let should_sync = sync.contains(&var);
+                acc.push(Stmt::For {var_ty, var, init, cond, incr, body});
+                if should_sync {
+                    acc.push(Stmt::Syncthreads {});
+                };
             };
         },
         ir_ast::Stmt::If {cond, thn, els, ..} => {
@@ -339,7 +629,13 @@ fn from_ir_stmt(
                 None => {
                     let init = from_ir_expr(lo)?;
                     let cond = from_ir_expr(hi)?;
-                    let incr = 1;
+                    let i64_ty = Type::Scalar {sz: ElemSize::I64};
+                    let incr = Expr::BinOp {
+                        lhs: Box::new(Expr::Var {id: var.clone(), ty: i64_ty.clone(), i: i.clone()}),
+                        op: BinOp::Add,
+                        rhs: Box::new(Expr::Int {v: 1, ty: i64_ty.clone(), i: i.clone()}),
+                        ty: i64_ty, i: i.clone()
+                    };
                     let (body, kernels) = from_ir_stmts(env, vec![], kernels, body)?;
                     host_body.push(Stmt::For {
                         var_ty, var, init, cond, incr, body

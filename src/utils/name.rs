@@ -23,6 +23,10 @@ impl Name {
         Name {s, sym: None}
     }
 
+    pub fn sym_str(s: &str) -> Name {
+        Name {s: s.to_string(), sym: Some(gensym())}
+    }
+
     pub fn with_new_sym(self) -> Name {
         let Name {s, ..} = self;
         let sym = Some(gensym());

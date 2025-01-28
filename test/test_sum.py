@@ -35,7 +35,6 @@ def test_sum_outer_parallel_gpu():
     p = { "i" : [ParKind.GpuThreads(N)] }
     compare_sum(N, M, p)
 
-@pytest.mark.skip(reason="Parallel reductions are not supported")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_sum_inner_and_outer_parallel_gpu():
     N = 100

@@ -80,7 +80,7 @@ impl LoopParallelism {
     }
 
     pub fn is_parallel(&self) -> bool {
-        self.nthreads
+        self.nthreads > 1
     }
 }
 

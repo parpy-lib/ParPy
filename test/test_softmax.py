@@ -11,19 +11,19 @@ np.random.seed(1234)
 def softmax(x, N, M, out):
     # We have N independent instances we want to do softmax on
     for i in range(N):
-        m = -parir.inf
-        for j in range(M):
-            m = max(m, x[i, j])
+        m = parir.float32(-parir.inf)
+        for j1 in range(M):
+            m = max(m, x[i, j1])
 
-        for j in range(M):
-            out[i, j] = x[i, j] - m
+        for j2 in range(M):
+            out[i, j2] = parir.exp(x[i, j2] - m)
 
-        s = 0.0
-        for j in range(M):
-            s = s + out[i, j]
+        s = parir.float32(0.0)
+        for j3 in range(M):
+            s = s + out[i, j3]
 
-        for j in range(M):
-            out[i, j] = out[i, j] / s
+        for j4 in range(M):
+            out[i, j4] = out[i, j4] / s
 
 
 def softmax_wrap(x, p=None):
@@ -35,22 +35,22 @@ def softmax_wrap(x, p=None):
 def compare_softmax(p):
     N, M = 256, 512
     x = torch.randn((N, M), dtype=torch.float32, device='cuda')
-    y1 = torch.nn.softmax(x, dim=-1)
+    y1 = torch.softmax(x, 1)
     y2 = softmax_wrap(x, p)
     assert torch.allclose(y1, y2, atol=1e-5)
 
-@pytest.mark.skip(reason="Uses unsupported language features")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_softmax_seq_reduce():
-    p = { "i" : [ParKind.GpuThreads(N)] }
+    p = { "i" : [ParKind.GpuThreads(256)] }
     compare_softmax(p)
 
-@pytest.mark.skip(reason="Uses unsupported language features")
-@pytest.mark.skip(reason="Parallel reductions are not supported")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_softmax_gpu():
     p = {
-        "i" : [ParKind.GpuThreads(N)],
-        "j" : [ParKind.GpuThreads(128)]
+        "i" : [ParKind.GpuThreads(256)],
+        "j1": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
+        "j2": [ParKind.GpuThreads(128)],
+        "j3": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
+        "j4": [ParKind.GpuThreads(128)]
     }
     compare_softmax(p)
