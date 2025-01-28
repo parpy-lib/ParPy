@@ -90,16 +90,20 @@ fn convert_bin_op<'py, 'a>(
     }
 }
 
+fn eval_name<'py>(s: String, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    let globals = types::PyDict::new(py);
+    globals.set_item("math", py.import("math")?)?;
+    globals.set_item("parir", py.import("parir")?)?;
+    py.eval(&CString::new(s)?, Some(&globals), None)
+}
+
 fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
     let py = expr.py();
     let ast = py.import("ast")?;
     let parir = py.import("parir")?;
     let s = ast.call_method1("unparse", types::PyTuple::new(py, vec![expr])?)?
         .extract::<String>()?;
-    let globals = types::PyDict::new(py);
-    globals.set_item("math", py.import("math")?)?;
-    globals.set_item("parir", parir.clone())?;
-    match py.eval(&CString::new(s)?, Some(&globals), None) {
+    match eval_name(s, py) {
         Ok(e) => {
             let func = if e.eq(parir.getattr("exp")?)? {
                 Ok(Builtin::Exp)
@@ -250,16 +254,18 @@ fn convert_stmt<'py, 'a>(
         let range_fn = if iter.is_instance(&env.ast.getattr("Call")?)? {
             let func = iter.getattr("func")?;
             if func.is_instance(&env.ast.getattr("Name")?)? {
-                if func.getattr("id")?.extract::<String>()? == "range" {
-                    Ok(iter)
-                } else {
-                    py_runtime_error!(i, "For-loop must iterate using the range builtin")
+                let fun_id = func.getattr("id")?.extract::<String>()?;
+                let py = stmt.py();
+                let builtins = py.import("builtins")?;
+                match eval_name(fun_id, py) {
+                    Ok(e) if e.eq(builtins.getattr("range")?)? => Ok(iter),
+                    _ => py_runtime_error!(i, "For-loop must iterate using the range builtin")
                 }
             } else {
                 py_runtime_error!(i, "For-loop must iterate using the range builtin")
             }
         } else {
-            py_runtime_error!(i, "For-loops must iterate using the range builtin")
+            py_runtime_error!(i, "For-loop must iterate using the range builtin")
         }?;
 
         // Extract the lower and upper bounds of the range. We currently do not support step sizes.
@@ -374,11 +380,18 @@ mod test {
         ast.getattr("body")
     }
 
+    fn parse_str_stmts<'py>(
+        py: Python<'py>,
+        s: &str
+    ) -> PyResult<Bound<'py, PyAny>> {
+        parse_str(py, s, false)
+    }
+
     fn parse_str_stmt<'py>(
         py: Python<'py>,
         s: &str
     ) -> PyResult<Bound<'py, PyAny>> {
-        parse_str(py, s, false)?.get_item(0)
+        parse_str_stmts(py, s)?.get_item(0)
     }
 
     fn parse_str_expr<'py>(
@@ -446,6 +459,17 @@ mod test {
     fn lookup_builtin_min() -> PyResult<()> {
         lookup_builtin_ok("parir.min", Builtin::Min)?;
         lookup_builtin_ok("min", Builtin::Min)
+    }
+
+    #[test]
+    fn lookup_builtin_conversion() -> PyResult<()> {
+        lookup_builtin_ok("parir.int8", Builtin::Convert {sz: ElemSize::I8})?;
+        lookup_builtin_ok("parir.int16", Builtin::Convert {sz: ElemSize::I16})?;
+        lookup_builtin_ok("parir.int32", Builtin::Convert {sz: ElemSize::I32})?;
+        lookup_builtin_ok("parir.int64", Builtin::Convert {sz: ElemSize::I64})?;
+        lookup_builtin_ok("parir.float16", Builtin::Convert {sz: ElemSize::F16})?;
+        lookup_builtin_ok("parir.float32", Builtin::Convert {sz: ElemSize::F32})?;
+        lookup_builtin_ok("parir.float64", Builtin::Convert {sz: ElemSize::F64})
     }
 
     #[test]
@@ -751,7 +775,7 @@ mod test {
 
     #[test]
     fn convert_stmt_for_in_loop_fail() {
-        let result = convert_stmt_wrap("for x in s:\n  x += 1");
+        let result = convert_stmt_wrap("for x in s:\n  x = x + 1");
         assert!(result.is_err());
     }
 
@@ -788,5 +812,24 @@ mod test {
             ],
             i: mkinfo(1, 0, 4, 7)
         });
+    }
+
+    fn convert_stmts_wrap(s: &str) -> PyResult<Vec<Stmt>> {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let stmt = parse_str_stmts(py, s)?;
+            let env = ConvertEnv {
+                ast : py.import("ast")?,
+                filepath: &String::from("<test>"),
+                fst_line: 0
+            };
+            convert_stmts(stmt, &env)
+        })
+    }
+
+    #[test]
+    fn convert_for_overloaded_range() {
+        let res = convert_stmts_wrap("range = 3\n for x in range(1, 2):\n  x = x + 1");
+        assert!(res.is_err());
     }
 }
