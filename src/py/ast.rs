@@ -204,6 +204,7 @@ impl fmt::Display for BinOp {
 pub enum Expr {
     Var {id: String, ty: Type, i: Info},
     String {v: String, ty: Type, i: Info},
+    Bool {v: bool, ty: Type, i: Info},
     Int {v: i64, ty: Type, i: Info},
     Float {v: f64, ty: Type, i: Info},
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
@@ -220,6 +221,7 @@ impl Expr {
         match self {
             Expr::Var {ty, ..} => ty,
             Expr::String {ty, ..} => ty,
+            Expr::Bool {ty, ..} => ty,
             Expr::Int {ty, ..} => ty,
             Expr::Float {ty, ..} => ty,
             Expr::UnOp {ty, ..} => ty,
@@ -238,6 +240,7 @@ impl fmt::Display for Expr {
         match self {
             Expr::Var {id, ..} => write!(f, "{id}"),
             Expr::String {v, ..} => write!(f, "\"{v}\""),
+            Expr::Bool {v, ..} => write!(f, "{v}"),
             Expr::Int {v, ..} => write!(f, "{v}"),
             Expr::Float {v, ..} => write!(f, "{v}"),
             Expr::UnOp {op, arg, ..} => write!(f, "{op}{arg}"),
@@ -277,6 +280,7 @@ impl InfoNode for Expr {
         match self {
             Expr::Var {i, ..} => i.clone(),
             Expr::String {i, ..} => i.clone(),
+            Expr::Bool {i, ..} => i.clone(),
             Expr::Int {i, ..} => i.clone(),
             Expr::Float {i, ..} => i.clone(),
             Expr::UnOp {i, ..} => i.clone(),

@@ -319,6 +319,7 @@ fn type_check_expr(
             Ok(Expr::Var {id, ty, i})
         },
         Expr::String {v, i, ..} => Ok(Expr::String {v, ty: Type::String, i}),
+        Expr::Bool {v, i, ..} => Ok(Expr::Bool {v, ty: Type::Boolean, i}),
         Expr::Int {v, i, ..} =>
             Ok(Expr::Int {v, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]}, i}),
         Expr::Float {v, i, ..} =>

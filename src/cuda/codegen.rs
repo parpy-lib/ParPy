@@ -91,6 +91,7 @@ fn from_ir_expr(e: ir_ast::Expr) -> CompileResult<Expr> {
     let ty = from_ir_type(e.get_type().clone());
     match e {
         ir_ast::Expr::Var {id, i, ..} => Ok(Expr::Var {id, ty, i}),
+        ir_ast::Expr::Bool {v, i, ..} => Ok(Expr::Bool {v, ty, i}),
         ir_ast::Expr::Int {v, i, ..} => Ok(Expr::Int {v, ty, i}),
         ir_ast::Expr::Float {v, i, ..} => Ok(Expr::Float {v, ty, i}),
         ir_ast::Expr::UnOp {op, arg, i, ..} => {

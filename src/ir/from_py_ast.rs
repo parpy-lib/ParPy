@@ -75,6 +75,10 @@ fn to_ir_expr(
         py_ast::Expr::String {i, ..} => {
             parir_compile_error!(i, "String literal may only be used for dict lookups")
         },
+        py_ast::Expr::Bool {v, ty, i} => {
+            let ty = to_ir_type(env, &i, ty)?;
+            Ok(Expr::Bool {v, ty, i})
+        },
         py_ast::Expr::Int {v, ty, i} => {
             let ty = to_ir_type(env, &i, ty)?;
             Ok(Expr::Int {v, ty, i})

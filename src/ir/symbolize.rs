@@ -94,6 +94,10 @@ impl Symbolize for Expr {
                 let (env, ty) = ty.symbolize(env)?;
                 Ok((env, Expr::Var {id, ty, i}))
             },
+            Expr::Bool {v, ty, i} => {
+                let (env, ty) = ty.symbolize(env)?;
+                Ok((env, Expr::Bool {v, ty, i}))
+            },
             Expr::Int {v, ty, i} => {
                 let (env, ty) = ty.symbolize(env)?;
                 Ok((env, Expr::Int {v, ty, i}))

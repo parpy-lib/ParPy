@@ -150,7 +150,10 @@ fn convert_expr<'py, 'a>(
         }
     } else if expr.is_instance(&env.ast.getattr("Constant")?)? {
         let val = expr.getattr("value")?;
-        if val.is_instance(&types::PyInt::type_object(val.py()))? {
+        if val.is_instance(&types::PyBool::type_object(val.py()))? {
+            let v = val.extract::<bool>()?;
+            Ok(Expr::Bool {v, ty, i})
+        } else if val.is_instance(&types::PyInt::type_object(val.py()))? {
             let v = val.extract::<i64>()?;
             Ok(Expr::Int {v, ty, i})
         } else if val.is_instance(&types::PyFloat::type_object(val.py()))? {
@@ -519,6 +522,12 @@ mod test {
             ty: Type::Unknown,
             i: mkinfo(1, 0, 1, 7)
         });
+    }
+
+    #[test]
+    fn convert_expr_bool_literal() {
+        let expr = convert_expr_wrap("True").unwrap();
+        assert_eq!(expr, Expr::Bool {v: true, ty: Type::Unknown, i: mkinfo(1, 0, 1, 4)});
     }
 
     #[test]
