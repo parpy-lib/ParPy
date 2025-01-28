@@ -10,7 +10,7 @@ pub const DEFAULT_INDENT: usize = 2;
 #[derive(Debug)]
 pub struct PrettyPrintEnv {
     strs: BTreeSet<String>,
-    vars: BTreeMap<String, Name>,
+    vars: BTreeMap<Name, String>,
     indent: usize,
     indent_increment: usize,
 }
@@ -60,28 +60,19 @@ fn alloc_free_string(mut env: PrettyPrintEnv, id: &Name) -> (PrettyPrintEnv, Str
         while env.strs.contains(&s) {
             s = format!("{0}_{1}", id.get_str(), rand_alphanum(5));
         }
-    };
+    }
     env.strs.insert(s.clone());
-    env.vars.insert(s.clone(), id.clone());
+    env.vars.insert(id.clone(), s.clone());
     (env, s)
 }
 
 impl PrettyPrint for Name {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let alloc_new = |env| {
-            let (mut env, s) = alloc_free_string(env, self);
-            env.vars.insert(s.clone(), self.clone());
+        if let Some(s) = env.vars.get(&self) {
+            let s = s.clone();
             (env, s)
-        };
-        if let Some(x) = &env.vars.get(self.get_str()) {
-            if self.eq(x) {
-                let s = x.to_string();
-                (env, s)
-            } else {
-                alloc_new(env)
-            }
         } else {
-            alloc_new(env)
+            alloc_free_string(env, self)
         }
     }
 }
@@ -107,11 +98,11 @@ mod test {
     fn test_distinct_names_print() {
         let n1 = Name::sym_str("x");
         let n2 = n1.clone().with_new_sym();
-        assert!(n1 != n2);
-        let env = PrettyPrintEnv::new();
-        let (env, s1) = n1.pprint(env);
+        let (env, s1) = n1.pprint(PrettyPrintEnv::new());
         let (env, s2) = n2.pprint(env);
         assert_eq!(env.strs.len(), 2);
         assert!(s1 != s2);
+        let (_, s3) = n2.pprint(env);
+        assert_eq!(s2, s3);
     }
 }
