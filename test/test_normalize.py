@@ -39,3 +39,26 @@ def test_normalize_multirow():
     y2 = normalize_wrap(t, p)
     assert torch.allclose(y1, y2, 1e-5)
 
+def normalize_rows_no_annot(t, nrows, ncols):
+    for i in range(nrows):
+        s = parir.float32(0.0)
+        for j1 in range(ncols):
+            s = s + t[i, j1]
+
+        for j2 in range(ncols):
+            t[i, j2] = t[i, j2] / s
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+def test_normalize_print_ast():
+    args = [
+        torch.ones((256, 1024), dtype=torch.float32, device='cuda'),
+        256,
+        1024
+    ]
+    p = {
+        "i": [ParKind.GpuThreads(256)],
+        "j1": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
+        "j2": [ParKind.GpuThreads(128)]
+    }
+    s = parir.print_compiled(normalize_rows_no_annot, args, p)
+    assert s != ""

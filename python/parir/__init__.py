@@ -52,6 +52,15 @@ def compile_function(ir_ast, args, kwargs, fn, key):
 
     return compile.get_cuda_wrapper(fn.__name__, args, key)
 
+def print_compiled(fun, args, par):
+    """
+    Compile the provided Python function with respect to the given function
+    arguments and parallelization arguments. Returns the resulting CUDA C++
+    code.
+    """
+    ir_ast = convert_python_function_to_ir(fun)
+    return parir.compile_ir(ir_ast, args, par)
+
 def jit(fun):
     """
     Prepares the provided function for JIT-compilation. Initially, the Python
