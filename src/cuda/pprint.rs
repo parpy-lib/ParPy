@@ -174,7 +174,9 @@ impl PrettyPrint for Expr {
                         (env, s.to_string())
                     }
                 } else {
-                    (env, v.to_string())
+                    // Debug printing adds a trailing '.0' for floats with no decimal component,
+                    // which is what we want to have to distinguish them.
+                    (env, format!("{v:?}"))
                 }
             },
             Expr::UnOp {op, arg, ty, ..} => {

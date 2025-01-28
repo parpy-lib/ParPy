@@ -39,6 +39,7 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     if len(kwargs) > 0:
         raise RuntimeError(f"Received unknown keyword arguments: {kwargs}")
 
+    # Return the Python function as is if no parallelization was specified.
     if len(par) == 0:
         return fn
 

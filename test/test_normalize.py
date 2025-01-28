@@ -1,0 +1,41 @@
+import parir
+from parir import ParKind
+import pytest
+import torch
+
+@parir.jit
+def normalize_rows(t, nrows, ncols):
+    for i in range(nrows):
+        s = parir.float32(0.0)
+        for j1 in range(ncols):
+            s = s + t[i, j1]
+
+        for j2 in range(ncols):
+            t[i, j2] = t[i, j2] / s
+
+def normalize_wrap(t, p=None):
+    nrows, ncols = t.shape
+    out = t.clone()
+    normalize_rows(out, nrows, ncols, parallelize=p, cache=False)
+    return out
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+def test_normalize_single_row():
+    t = torch.ones((1, 1024), dtype=torch.float32, device='cuda')
+    y1 = torch.nn.functional.normalize(t, p=1, dim=1)
+    p = { "i": [ParKind.GpuThreads(256)] }
+    y2 = normalize_wrap(t, p)
+    assert torch.allclose(y1, y2, 1e-5)
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+def test_normalize_multirow():
+    t = torch.ones((256, 1024), dtype=torch.float32, device='cuda')
+    y1 = torch.nn.functional.normalize(t, p=1, dim=1)
+    p = {
+        "i": [ParKind.GpuThreads(256)],
+        "j1": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
+        "j2": [ParKind.GpuThreads(128)]
+    }
+    y2 = normalize_wrap(t, p)
+    assert torch.allclose(y1, y2, 1e-5)
+
