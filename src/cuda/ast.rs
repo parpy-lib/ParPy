@@ -175,10 +175,6 @@ impl Dim3 {
             Dim::Z => Dim3 {z: n, ..self}
         }
     }
-
-    pub fn product(&self) -> i64 {
-        self.x * self.y * self.z
-    }
 }
 
 impl Default for Dim3 {

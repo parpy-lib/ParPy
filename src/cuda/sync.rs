@@ -121,7 +121,11 @@ fn ensure_no_inter_block_sync_par_stmt(
                         Ok(())
                     },
                     GpuMap::Block {..} | GpuMap::ThreadBlock {..} => {
-                        parir_compile_error!(i, "Parallel for-loop requires inter-block synchronization, which is not supported")
+                        let msg = concat!(
+                            "Parallel for-loop requires inter-block ",
+                            "synchronization, which is not supported"
+                        );
+                        parir_compile_error!(i, "{}", msg)
                     },
                 }?;
                 &pars[1..]
@@ -292,8 +296,8 @@ mod test {
                 .with_blocks_dim(&Dim::X, 24)
                 .with_threads_dim(&Dim::X, 64),
             mapping: vec![
-                GpuMap::Block {n: 24, dim: Dim::X},
-                GpuMap::Thread {n: 64, dim: Dim::X}
+                GpuMap::Block {n: 24, dim: Dim::X, mult: 1},
+                GpuMap::Thread {n: 64, dim: Dim::X, mult: 1}
             ],
             tpb: DEFAULT_TPB
         };

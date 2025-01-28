@@ -134,18 +134,23 @@ fn generate_kernel_name(fun_id: &Name, loop_var_id: &Name) -> Name {
     Name::new(s).with_new_sym()
 }
 
-fn remainder_if_shared_dimension(idx: Expr, dim_tot: i64, v: i64) -> Expr {
+fn remainder_if_shared_dimension(
+    idx: Expr, dim_tot: i64, v: i64, multiplier: i64
+) -> Expr {
     if dim_tot > v {
-        /*let ty = idx.get_type();
+        let ty = idx.get_type().clone();
+        let int_expr = |v| Expr::Int {v, ty: ty.clone(), i: idx.get_info()};
         Expr::BinOp {
-            lhs: idx,
-            op: BinOp::Mod,
-            rhs: Expr::Int {v, ty: ty.clone(), i: idx.get_info()},
-            i: idx.get_info()
-        }*/
-        // NOTE: When we have multiple for-loops sharing the same index, we may need to divide the
-        // index by an offset to ensure they actually use different "parts" of the index...
-        panic!("This case is not handled correctly yet")
+            lhs: Box::new(Expr::BinOp {
+                lhs: Box::new(idx.clone()),
+                op: BinOp::Div,
+                rhs: Box::new(int_expr(multiplier)),
+                ty: ty.clone(), i: idx.get_info()
+            }),
+            op: BinOp::Rem,
+            rhs: Box::new(int_expr(v)),
+            ty: ty.clone(), i: idx.get_info()
+        }
     } else {
         idx
     }
@@ -177,20 +182,20 @@ fn determine_loop_bounds(
         ty: ty.clone(), i: i.clone()
     };
     match par {
-        Some(GpuMap::Thread {n, dim}) => {
+        Some(GpuMap::Thread {n, dim, mult}) => {
             let tot = grid.threads.get_dim(&dim);
             let idx = Expr::ThreadIdx {dim, ty: ty.clone(), i: i.clone()};
-            let rhs = remainder_if_shared_dimension(idx, tot, n);
+            let rhs = remainder_if_shared_dimension(idx, tot, n, mult);
             let init = Expr::BinOp {
                 lhs: Box::new(init), op: BinOp::Add, rhs: Box::new(rhs),
                 ty: ty.clone(), i: i.clone()
             };
             Ok((init, cond, fn_incr(n)))
         },
-        Some(GpuMap::Block {n, dim}) => {
+        Some(GpuMap::Block {n, dim, mult}) => {
             let tot = grid.blocks.get_dim(&dim);
             let idx = Expr::BlockIdx {dim, ty: ty.clone(), i: i.clone()};
-            let rhs = remainder_if_shared_dimension(idx, tot, n);
+            let rhs = remainder_if_shared_dimension(idx, tot, n, mult);
             let init = Expr::BinOp {
                 lhs: Box::new(init), op: BinOp::Add, rhs: Box::new(rhs),
                 ty: ty.clone(), i: i.clone()
@@ -216,7 +221,7 @@ fn determine_loop_bounds(
                 ty: ty.clone(),
                 i: i.clone()
             };
-            let rhs = remainder_if_shared_dimension(idx.clone(), tot_blocks, nblocks);
+            let rhs = remainder_if_shared_dimension(idx.clone(), tot_blocks, nblocks, 1);
             let init = Expr::BinOp {
                 lhs: Box::new(init), op: BinOp::Add, rhs: Box::new(rhs),
                 ty: ty.clone(), i: i.clone()
@@ -249,11 +254,11 @@ fn determine_loop_bounds(
 
 fn subtract_from_grid(grid: LaunchArgs, m: &GpuMap) -> LaunchArgs {
     match m {
-        GpuMap::Thread {n, dim} => {
+        GpuMap::Thread {n, dim, ..} => {
             let threads = grid.threads.get_dim(&dim) / n;
             grid.with_threads_dim(dim, threads)
         },
-        GpuMap::Block {n, dim} => {
+        GpuMap::Block {n, dim, ..} => {
             let blocks = grid.blocks.get_dim(&dim) / n;
             grid.with_blocks_dim(dim, blocks)
         },
