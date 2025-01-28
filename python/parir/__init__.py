@@ -6,9 +6,18 @@ from .parir import ParKind
 def convert_python_function_to_ir(fn):
     import ast as python_ast
     import inspect
+    import textwrap
     filepath = inspect.getfile(fn)
     src, fst_line = inspect.getsourcelines(fn)
-    ast = python_ast.parse("".join(src))
+
+    # The Python AST parser requires properly indented code. Therefore, we make
+    # sure to dedent it properly in case it is a nested function, including
+    # removing any documentation strings that may prevent proper dedentation.
+    src = textwrap.dedent("".join(src))
+    if inspect.getdoc(fn) is not None:
+        src = inspect.cleandoc(src)
+
+    ast = python_ast.parse(src)
     return parir.python_to_ir(ast, filepath, fst_line-1)
 
 def compile_function(ir_ast, args, kwargs, fn, key):
@@ -50,6 +59,8 @@ def compile_function(ir_ast, args, kwargs, fn, key):
         code = parir.compile_ir(ir_ast, args, par)
         compile.build_cuda_shared_library(key, code)
 
+    # Return a CUDA wrapper which ensures the arguments are passed correctly on
+    # to the exposed shared library function.
     return compile.get_cuda_wrapper(fn.__name__, args, key)
 
 def print_compiled(fun, args, par):
