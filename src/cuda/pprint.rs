@@ -303,7 +303,21 @@ impl PrettyPrint for Stmt {
             Stmt::If {cond, thn, els} => {
                 let (env, cond) = cond.pprint(env);
                 let env = env.incr_indent();
-                let (env, thn) = pprint_iter(thn.iter(), env, "\n");
+                let (env, thn_str) = pprint_iter(thn.iter(), env, "\n");
+                let (env, thn, els) = match &els[..] {
+                    [Stmt::If {
+                        cond: elif_cond, thn: elif_thn, els: elif_els
+                    }] if !elif_thn.is_empty() => {
+                        let (env, elif_cond) = elif_cond.pprint(env);
+                        let (env, elif_thn) = pprint_iter(elif_thn.iter(), env, "\n");
+                        let s = format!(
+                            "{0}\n{1}}} else if ({2}) {{\n{3}",
+                            thn_str, indent, elif_cond, elif_thn
+                        );
+                        (env, s, elif_els)
+                    },
+                    _ => (env, thn_str, els)
+                };
                 let (env, s) = if els.is_empty() {
                     let s = format!(
                         "{0}if ({1}) {{\n{2}\n{0}}}",
@@ -638,7 +652,7 @@ mod test {
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
         let expected = format!(
-            "if (x) {{\n{0}y = z;\n}} else {{\n{0}if (y) {{\n{0}{0}x = z;\n{0}}} else {{\n{0}{0}z = x;\n{0}}}\n}}",
+            "if (x) {{\n{0}y = z;\n}} else if (y) {{\n{0}x = z;\n}} else {{\n{0}z = x;\n}}",
             indent
         );
         assert_eq!(cond.pprint_default(), expected);
