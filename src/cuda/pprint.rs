@@ -159,6 +159,7 @@ impl PrettyPrint for Expr {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
             Expr::Var {id, ..} => id.pprint(env),
+            Expr::Bool {v, ..} => (env, v.to_string()),
             Expr::Int {v, ..} => (env, v.to_string()),
             Expr::Float {v, ty, ..} => {
                 if v.is_infinite() {

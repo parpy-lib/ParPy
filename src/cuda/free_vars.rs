@@ -32,7 +32,7 @@ impl FreeVariables<Type> for Expr {
                 };
                 env
             },
-            Expr::Int {..} | Expr::Float {..} => env,
+            Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} => env,
             Expr::UnOp {arg, ..} => arg.fv(env),
             Expr::BinOp {lhs, rhs, ..} => {
                 let env = lhs.fv(env);

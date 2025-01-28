@@ -64,6 +64,7 @@ pub enum Dim {
 #[derive(Clone, Debug)]
 pub enum Expr {
     Var {id: Name, ty: Type, i: Info},
+    Bool {v: bool, ty: Type, i: Info},
     Int {v: i64, ty: Type, i: Info},
     Float {v: f64, ty: Type, i: Info},
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
@@ -83,6 +84,7 @@ impl Expr {
     pub fn get_type<'a>(&'a self) -> &'a Type {
         match self {
             Expr::Var {ty, ..} => ty,
+            Expr::Bool {ty, ..} => ty,
             Expr::Int {ty, ..} => ty,
             Expr::Float {ty, ..} => ty,
             Expr::UnOp {ty, ..} => ty,
@@ -102,6 +104,7 @@ impl InfoNode for Expr {
     fn get_info(&self) -> Info {
         match self {
             Expr::Var {i, ..} => i.clone(),
+            Expr::Bool {i, ..} => i.clone(),
             Expr::Int {i, ..} => i.clone(),
             Expr::Float {i, ..} => i.clone(),
             Expr::UnOp {i, ..} => i.clone(),
@@ -121,6 +124,7 @@ impl PartialEq for Expr {
     fn eq(&self, other: &Expr) -> bool {
         match (self, other) {
             (Expr::Var {id: lid, ..}, Expr::Var {id: rid, ..}) => lid.eq(rid),
+            (Expr::Bool {v: lv, ..}, Expr::Bool {v: rv, ..}) => lv.eq(rv),
             (Expr::Int {v: lv, ..}, Expr::Int {v: rv, ..}) => lv.eq(rv),
             (Expr::Float {v: lv, ..}, Expr::Float {v: rv, ..}) => lv.eq(rv),
             ( Expr::UnOp {op: lop, arg: larg, ..}

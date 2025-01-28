@@ -1,5 +1,6 @@
 mod ast;
 mod codegen;
+mod constant_fold;
 mod free_vars;
 mod pprint;
 mod par;
@@ -20,5 +21,9 @@ pub fn codegen(ast: ir_ast::Ast) -> CompileResult<Ast> {
     // inter-block synchronization (which is not supported).
     let sync = sync::identify_sync_points(&ast, &gpu_mapping)?;
 
-    codegen::from_ir(ast, gpu_mapping, sync)
+    // Translate the IR AST to a CUDA C++ AST based on the information gathered above.
+    let ast = codegen::from_ir(ast, gpu_mapping, sync)?;
+
+    // Perform simple constant folding to produce more readable output.
+    Ok(constant_fold::fold(ast))
 }

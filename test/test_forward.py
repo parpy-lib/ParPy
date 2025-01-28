@@ -182,7 +182,6 @@ def forward(hmm, seqs):
 
     return result
 
-# Tests that we can run the Forward algorithm with dummy values
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_forward():
     device = torch.device('cuda')
