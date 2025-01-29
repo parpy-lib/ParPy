@@ -3,6 +3,8 @@ from .compile import clear_cache
 from .operators import *
 from .parir import ParKind
 
+ir_asts = {}
+
 def convert_python_function_to_ir(fn):
     import ast as python_ast
     import inspect
@@ -69,7 +71,11 @@ def print_compiled(fun, args, par):
     arguments and parallelization arguments. Returns the resulting CUDA C++
     code.
     """
-    ir_ast = convert_python_function_to_ir(fun)
+    if fun in ir_asts:
+        ir_ast = ir_asts[fun]
+    else:
+        print(fun, ir_asts)
+        ir_ast = convert_python_function_to_ir(fun)
     return parir.compile_ir(ir_ast, args, par)
 
 def jit(fun):
@@ -84,5 +90,6 @@ def jit(fun):
     def inner(*args, **kwargs):
         k = key.generate_function_key(fun, args, kwargs)
         compile_function(ir_ast, args, kwargs, fun, k)(*args)
+    ir_asts[inner] = ir_ast
     inner.__name__ = fun.__name__
     return inner
