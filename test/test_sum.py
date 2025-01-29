@@ -17,7 +17,7 @@ def sum_wrap(x, p=None):
     N, M = x.shape
     xflat = x.flatten()
     out = torch.empty(N, dtype=x.dtype, device=x.device)
-    sum_rows(xflat, out, N, M, parallelize=p, cache=False)
+    sum_rows(xflat, out, N, M, parallelize=p)
     return out
 
 def compare_sum(N, M, p):
@@ -41,6 +41,6 @@ def test_sum_inner_and_outer_parallel_gpu():
     M = 50
     p = {
         "i": [ParKind.GpuThreads(N)],
-        "j": [ParKind.GpuThreads(128)]
+        "j": [ParKind.GpuThreads(128), ParKind.GpuReduction()]
     }
     compare_sum(N, M, p)

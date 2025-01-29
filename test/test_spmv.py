@@ -19,7 +19,7 @@ def spmv_row(A_values, A_rows, A_cols, A_nrows, x, y):
 
 def spmv_wrap(A_values, A_rows, A_cols, A_nrows, x, p=None):
     y = torch.empty((A_nrows,), dtype=x.dtype, device=x.device)
-    spmv_row(A_values, A_rows, A_cols, A_nrows, x, y, parallelize=p, cache=False)
+    spmv_row(A_values, A_rows, A_cols, A_nrows, x, y, parallelize=p)
     return y
 
 def uniform_random_csr_f32_i64(N, M, d):
@@ -60,6 +60,6 @@ def test_spmv_gpu():
     M = 4096
     p = {
         "row": [ParKind.GpuThreads(N)],
-        "i": [ParKind.GpuThreads(128)]
+        "i": [ParKind.GpuThreads(128), ParKind.GpuReduction()]
     }
     compare_spmv(N, M, p)
