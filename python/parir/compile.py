@@ -38,7 +38,7 @@ def build_cuda_shared_library(key, source):
         r = subprocess.run(["nvcc", "-O3", "--shared", "-Xcompiler", "-fPIC", f"-arch={arch}", "-x", "cu", tmp.name, "-o", libpath], capture_output=True)
         if r.returncode != 0:
             import uuid
-            temp_file = uuid.uuid4().hex
+            temp_file = f"{uuid.uuid4().hex}.cu"
             with open(temp_file, "w+") as f:
                 f.write(source)
             stdout = r.stdout.decode('ascii')
