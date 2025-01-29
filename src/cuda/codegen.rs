@@ -791,7 +791,8 @@ pub fn from_ir(
     };
 
     let mut tops = vec![
-        Top::Include {header: "<stdint.h>".to_string()}
+        Top::Include {header: "<cmath>".to_string()},
+        Top::Include {header: "<cstdint>".to_string()}
     ];
     tops.append(&mut structs);
     tops.append(&mut from_ir_fun_def(env, ast.fun)?);

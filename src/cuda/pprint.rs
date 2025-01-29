@@ -165,9 +165,9 @@ impl PrettyPrint for Expr {
                 if v.is_infinite() {
                     let s = match ty.get_scalar_elem_size() {
                         Some(ElemSize::F16) => "CUDART_INF_FP16",
-                        Some(ElemSize::F32) => "(1.0f / 0.0f)",
-                        Some(ElemSize::F64) => "(1.0 / 0.0)",
-                        _ => panic!("")
+                        Some(ElemSize::F32) => "HUGE_VALF",
+                        Some(ElemSize::F64) => "HUGE_VAL",
+                        _ => panic!("Invalid type of floating-point literal")
                     };
                     if v.is_sign_negative() {
                         (env, format!("-{s}"))
