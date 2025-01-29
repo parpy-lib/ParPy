@@ -177,6 +177,17 @@ fn fold_expr(e: Expr) -> Expr {
         Expr::BinOp {lhs, op, rhs, ty, i} => {
             constant_fold_binop(*lhs, op, *rhs, ty, i)
         },
+        Expr::Convert {e, ty} => {
+            let e = fold_expr(*e);
+            match e {
+                Expr::Float {v, i, ..} if v.is_infinite() => {
+                    Expr::Float {v, ty, i}
+                },
+                _ => {
+                    Expr::Convert {e: Box::new(e), ty}
+                }
+            }
+        },
         _ => e.smap(fold_expr)
     }
 }
@@ -299,6 +310,26 @@ mod test {
     fn invalid_types_untouched() {
         let e = binop(int(2), BinOp::Add, float(3.0));
         assert_eq!(cf(&e), e);
+    }
+
+    #[test]
+    fn convert_float32_inf() {
+        let float32 = Type::Scalar {sz: ElemSize::F32};
+        let e = Expr::Convert {
+            e: Box::new(float(f64::INFINITY)),
+            ty: float32.clone()
+        };
+        assert_eq!(cf(&e), float_with_ty(f64::INFINITY, Some(float32)));
+    }
+
+    #[test]
+    fn convert_float32_neginf() {
+        let float32 = Type::Scalar {sz: ElemSize::F32};
+        let e = Expr::Convert {
+            e: Box::new(float(-f64::INFINITY)),
+            ty: float32.clone()
+        };
+        assert_eq!(cf(&e), float_with_ty(-f64::INFINITY, Some(float32)));
     }
 
     #[test]
