@@ -348,6 +348,27 @@ impl SMapAccum<Expr> for Stmt {
     }
 }
 
+impl SFold<Expr> for Stmt {
+    fn sfold<A>(&self, f: impl Fn(A, &Expr) -> A, acc: A) -> A {
+        match self {
+            Stmt::Definition {expr, ..} => f(acc, expr),
+            Stmt::Assign {dst, expr} => {
+                let acc = f(acc, dst);
+                f(acc, expr)
+            },
+            Stmt::For {init, cond, incr, ..} => {
+                let acc = f(acc, init);
+                let acc = f(acc, cond);
+                f(acc, incr)
+            },
+            Stmt::If {cond, ..} => f(acc, cond),
+            Stmt::KernelLaunch {args, ..} => args.sfold(&f, acc),
+            Stmt::AllocShared {..} | Stmt::Syncthreads {} |
+            Stmt::Dim3Definition {..} | Stmt::Scope {..} => acc,
+        }
+    }
+}
+
 impl SMapAccum<Stmt> for Stmt {
     fn smap_accum_l<A>(self, f: impl Fn(A, Stmt) -> (A, Stmt), acc: A) -> (A, Self) {
         match self {

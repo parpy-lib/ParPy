@@ -1,5 +1,5 @@
 use super::ast::*;
-use super::free_vars::FreeVariables;
+use super::free_vars;
 use super::par::{GpuMap, GpuMapping};
 use super::pprint;
 use crate::parir_compile_error;
@@ -615,7 +615,7 @@ fn from_ir_stmt(
                     let kernel_body = generate_kernel_stmt(
                         m.grid.clone(), &m.get_mapping()[..], &env.sync, vec![], stmt
                     )?;
-                    let fv = kernel_body.free_variables();
+                    let fv = free_vars::free_variables(&kernel_body);
                     let kernel_params = fv.clone()
                         .into_iter()
                         .map(|(id, ty)| Param {id, ty, i: i.clone()})
