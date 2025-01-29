@@ -1,5 +1,6 @@
 use super::ast::*;
 use crate::utils::info::Info;
+use crate::utils::smap::SMapAccum;
 
 fn constant_fold_unop(
     op: UnOp,
@@ -173,76 +174,19 @@ fn constant_fold_binop(
 fn fold_expr(e: Expr) -> Expr {
     match e {
         Expr::UnOp {op, arg, ty, i} => constant_fold_unop(op, *arg, ty, i),
-        Expr::BinOp {lhs, op, rhs, ty, i} =>
-            constant_fold_binop(*lhs, op, *rhs, ty, i),
-        Expr::StructFieldAccess {target, label, ty, i} => {
-            let target = Box::new(fold_expr(*target));
-            Expr::StructFieldAccess {target, label, ty, i}
+        Expr::BinOp {lhs, op, rhs, ty, i} => {
+            constant_fold_binop(*lhs, op, *rhs, ty, i)
         },
-        Expr::ArrayAccess {target, idx, ty, i} => {
-            let target = Box::new(fold_expr(*target));
-            let idx = Box::new(fold_expr(*idx));
-            Expr::ArrayAccess {target, idx, ty, i}
-        },
-        Expr::Struct {id, fields, ty, i} => {
-            let fields = fields.into_iter()
-                .map(|(id, e)| (id, fold_expr(e)))
-                .collect::<Vec<(String, Expr)>>();
-            Expr::Struct {id, fields, ty, i}
-        },
-        Expr::ShflXorSync {value, idx, ty, i} => {
-            let value = Box::new(fold_expr(*value));
-            let idx = Box::new(fold_expr(*idx));
-            Expr::ShflXorSync {value, idx, ty, i}
-        },
-        _ => e
+        _ => e.smap(fold_expr)
     }
 }
 
 fn fold_stmt(s: Stmt) -> Stmt {
-    match s {
-        Stmt::Definition {ty, id, expr} =>
-            Stmt::Definition {ty, id, expr: fold_expr(expr)},
-        Stmt::Assign {dst, expr} => {
-            let dst = fold_expr(dst);
-            let expr = fold_expr(expr);
-            Stmt::Assign {dst, expr}
-        },
-        Stmt::AllocShared {..} => s,
-        Stmt::For {var_ty, var, init, cond, incr, body} => {
-            let init = fold_expr(init);
-            let cond = fold_expr(cond);
-            let incr = fold_expr(incr);
-            let body = body.into_iter().map(fold_stmt).collect::<Vec<Stmt>>();
-            Stmt::For {var_ty, var, init, cond, incr, body}
-        },
-        Stmt::If {cond, thn, els} => {
-            let cond = fold_expr(cond);
-            let thn = thn.into_iter().map(fold_stmt).collect::<Vec<Stmt>>();
-            let els = els.into_iter().map(fold_stmt).collect::<Vec<Stmt>>();
-            Stmt::If {cond, thn, els}
-        },
-        Stmt::Syncthreads {} => s,
-        Stmt::Dim3Definition {..} => s,
-        Stmt::KernelLaunch {id, blocks, threads, args} => {
-            let args = args.into_iter().map(fold_expr).collect::<Vec<Expr>>();
-            Stmt::KernelLaunch {id, blocks, threads, args}
-        },
-        Stmt::Scope {body} => {
-            let body = body.into_iter().map(fold_stmt).collect::<Vec<Stmt>>();
-            Stmt::Scope {body}
-        },
-    }
+    s.smap(fold_stmt).smap(fold_expr)
 }
 
 fn fold_top(top: Top) -> Top {
-    match top {
-        Top::FunDef {attr, ret_ty, id, params, body} => {
-            let body = body.into_iter().map(fold_stmt).collect::<Vec<Stmt>>();
-            Top::FunDef {attr, ret_ty, id, params, body}
-        },
-        Top::Include {..} | Top::StructDef {..} => top,
-    }
+    top.smap(fold_stmt)
 }
 
 pub fn fold(ast: Ast) -> Ast {

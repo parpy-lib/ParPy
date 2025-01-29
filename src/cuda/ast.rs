@@ -1,5 +1,6 @@
 use crate::utils::info::*;
 use crate::utils::name::Name;
+use crate::utils::smap::{SFold, SMapAccum};
 
 // Re-export nodes from the IR AST that we reuse as is.
 pub use crate::ir::ast::ElemSize;
@@ -165,6 +166,80 @@ impl PartialEq for Expr {
     }
 }
 
+impl SMapAccum<Expr> for Expr {
+    fn smap_accum_l<A>(self, f: impl Fn(A, Expr) -> (A, Expr), acc: A) -> (A, Expr) {
+        match self {
+            Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} => {
+                (acc, self)
+            },
+            Expr::UnOp {op, arg, ty, i} => {
+                let (acc, arg) = f(acc, *arg);
+                (acc, Expr::UnOp {op, arg: Box::new(arg), ty, i})
+            },
+            Expr::BinOp {lhs, op, rhs, ty, i} => {
+                let (acc, lhs) = f(acc, *lhs);
+                let (acc, rhs) = f(acc, *rhs);
+                (acc, Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i})
+            },
+            Expr::StructFieldAccess {target, label, ty, i} => {
+                let (acc, target) = f(acc, *target);
+                (acc, Expr::StructFieldAccess {target: Box::new(target), label, ty, i})
+            },
+            Expr::ArrayAccess {target, idx, ty, i} => {
+                let (acc, target) = f(acc, *target);
+                let (acc, idx) = f(acc, *idx);
+                (acc, Expr::ArrayAccess {target: Box::new(target), idx: Box::new(idx), ty, i})
+            },
+            Expr::Struct {id, fields, ty, i} => {
+                let (acc, fields) = fields.into_iter()
+                    .fold((acc, vec![]), |(acc, mut fields), (id, e)| {
+                        let (acc, e) = f(acc, e);
+                        fields.push((id, e));
+                        (acc, fields)
+                    });
+                (acc, Expr::Struct {id, fields, ty, i})
+            },
+            Expr::Convert {e, ty} => {
+                let (acc, e) = f(acc, *e);
+                (acc, Expr::Convert {e: Box::new(e), ty})
+            },
+            Expr::ShflXorSync {value, idx, ty, i} => {
+                let (acc, value) = f(acc, *value);
+                let (acc, idx) = f(acc, *idx);
+                (acc, Expr::ShflXorSync {value: Box::new(value), idx: Box::new(idx), ty, i})
+            },
+            Expr::ThreadIdx {..} | Expr::BlockIdx {..} => (acc, self),
+        }
+    }
+}
+
+impl SFold<Expr> for Expr {
+    fn sfold<A>(&self, f: impl Fn(A, &Expr) -> A, acc: A) -> A {
+        match self {
+            Expr::UnOp {arg, ..} => f(acc, arg),
+            Expr::BinOp {lhs, rhs, ..} => {
+                let acc = f(acc, lhs);
+                f(acc, rhs)
+            },
+            Expr::StructFieldAccess {target, ..} => f(acc, target),
+            Expr::ArrayAccess {target, idx, ..} => {
+                let acc = f(acc, target);
+                f(acc, idx)
+            },
+            Expr::Struct {fields, ..} => {
+                fields.into_iter().fold(acc, |acc, (_, e)| f(acc, e))
+            },
+            Expr::Convert {e, ..} => f(acc, e),
+            Expr::ShflXorSync {value, idx, ..} => {
+                let acc = f(acc, value);
+                f(acc, idx)
+            },
+            Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
+            Expr::Float {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => acc,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Dim3 {
     pub x: i64,
@@ -236,6 +311,87 @@ pub enum Stmt {
     Scope {body: Vec<Stmt>},
 }
 
+impl SMapAccum<Expr> for Stmt {
+    fn smap_accum_l<A>(self, f: impl Fn(A, Expr) -> (A, Expr), acc: A) -> (A, Self) {
+        match self {
+            Stmt::Definition {ty, id, expr} => {
+                let (acc, expr) = f(acc, expr);
+                (acc, Stmt::Definition {ty, id, expr})
+            },
+            Stmt::Assign {dst, expr} => {
+                let (acc, dst) = f(acc, dst);
+                let (acc, expr) = f(acc, expr);
+                (acc, Stmt::Assign {dst, expr})
+            },
+            Stmt::For {var_ty, var, init, cond, incr, body} => {
+                let (acc, init) = f(acc, init);
+                let (acc, cond) = f(acc, cond);
+                let (acc, incr) = f(acc, incr);
+                (acc, Stmt::For {var_ty, var, init, cond, incr, body})
+            },
+            Stmt::If {cond, thn, els} => {
+                let (acc, cond) = f(acc, cond);
+                (acc, Stmt::If {cond, thn, els})
+            },
+            Stmt::KernelLaunch {id, blocks, threads, args} => {
+                let (acc, args) = args.into_iter()
+                    .fold((acc, vec![]), |(acc, mut args), a| {
+                        let (acc, a) = f(acc, a);
+                        args.push(a);
+                        (acc, args)
+                    });
+                (acc, Stmt::KernelLaunch {id, blocks, threads, args})
+            },
+            Stmt::AllocShared {..} | Stmt::Syncthreads {..} |
+            Stmt::Dim3Definition {..} | Stmt::Scope {..} => (acc, self),
+        }
+    }
+}
+
+impl SMapAccum<Stmt> for Stmt {
+    fn smap_accum_l<A>(self, f: impl Fn(A, Stmt) -> (A, Stmt), acc: A) -> (A, Self) {
+        match self {
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
+            Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
+            Stmt::KernelLaunch {..} => (acc, self),
+            Stmt::For {var_ty, var, init, cond, incr, body} => {
+                let (acc, body) = body.into_iter()
+                    .fold((acc, vec![]), |(acc, mut body), s| {
+                        let (acc, s) = f(acc, s);
+                        body.push(s);
+                        (acc, body)
+                    });
+                (acc, Stmt::For {var_ty, var, init, cond, incr, body})
+            },
+            Stmt::If {cond, thn, els} => {
+                let (acc, thn) = thn.smap_accum_l(&f, acc);
+                let (acc, els) = els.smap_accum_l(&f, acc);
+                (acc, Stmt::If {cond, thn, els})
+            },
+            Stmt::Scope {body} => {
+                let (acc, body) = body.smap_accum_l(&f, acc);
+                (acc, Stmt::Scope {body})
+            },
+        }
+    }
+}
+
+impl SFold<Stmt> for Stmt {
+    fn sfold<A>(&self, f: impl Fn(A, &Stmt) -> A, acc: A) -> A {
+        match self {
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
+            Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
+            Stmt::KernelLaunch {..} => acc,
+            Stmt::For {body, ..} => body.sfold(&f, acc),
+            Stmt::If {thn, els, ..} => {
+                let acc = thn.sfold(&f, acc);
+                els.sfold(&f, acc)
+            },
+            Stmt::Scope {body} => body.sfold(&f, acc),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Attribute {
     Global, Entry
@@ -263,6 +419,23 @@ pub enum Top {
         attr: Attribute, ret_ty: Type, id: Name, params: Vec<Param>,
         body: Vec<Stmt>
     },
+}
+
+impl SMapAccum<Stmt> for Top {
+    fn smap_accum_l<A>(self, f: impl Fn(A, Stmt) -> (A, Stmt), acc: A) -> (A, Self) {
+        match self {
+            Top::Include {..} | Top::StructDef {..} => (acc, self),
+            Top::FunDef {attr, ret_ty, id, params, body} => {
+                let (acc, body) = body.into_iter()
+                    .fold((acc, vec![]), |(acc, mut stmts), s| {
+                        let (acc, s) = f(acc, s);
+                        stmts.push(s);
+                        (acc, stmts)
+                    });
+                (acc, Top::FunDef {attr, ret_ty, id, params, body})
+            },
+        }
+    }
 }
 
 pub type Ast = Vec<Top>;

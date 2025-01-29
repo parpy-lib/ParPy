@@ -1,5 +1,6 @@
 use super::ast::*;
 use crate::utils::name::Name;
+use crate::utils::smap::SFold;
 
 use std::collections::BTreeMap;
 
@@ -32,28 +33,13 @@ impl FreeVariables<Type> for Expr {
                 };
                 env
             },
-            Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} => env,
-            Expr::UnOp {arg, ..} => arg.fv(env),
-            Expr::BinOp {lhs, rhs, ..} => {
-                let env = lhs.fv(env);
-                rhs.fv(env)
-            },
-            Expr::StructFieldAccess {target, ..} => target.fv(env),
-            Expr::ArrayAccess {target, idx, ..} => {
-                let env = target.fv(env);
-                idx.fv(env)
-            },
-            Expr::Struct {fields, ..} => {
-                fields.iter().fold(env, |env, (_, e)| e.fv(env))
-            },
-            Expr::Convert {e, ..} => {
-                e.fv(env)
-            },
-            Expr::ShflXorSync {value, idx, ..} => {
-                let env = value.fv(env);
-                idx.fv(env)
-            },
-            Expr::ThreadIdx {..} | Expr::BlockIdx {..} => env,
+            Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
+            Expr::UnOp {..} | Expr::BinOp {..} | Expr::StructFieldAccess {..} |
+            Expr::ArrayAccess {..} | Expr::Struct {..} | Expr::Convert {..} |
+            Expr::ShflXorSync {..} | Expr::ThreadIdx {..} |
+            Expr::BlockIdx {..} => {
+                self.sfold(|env, e| e.fv(env), env)
+            }
         }
     }
 }
@@ -66,10 +52,6 @@ impl FreeVariables<Type> for Stmt {
                 env.bound.insert(id.clone(), expr.get_type().clone());
                 env
             },
-            Stmt::Assign {dst, expr, ..} => {
-                let env = dst.fv(env);
-                expr.fv(env)
-            },
             Stmt::AllocShared {ty, id, ..} => {
                 env.bound.insert(id.clone(), ty.clone());
                 env
@@ -80,22 +62,14 @@ impl FreeVariables<Type> for Stmt {
                 let env = cond.fv(env);
                 body.fv(env)
             },
-            Stmt::If {cond, thn, els, ..} => {
-                let env = cond.fv(env);
-                let env = thn.fv(env);
-                els.fv(env)
-            },
-            Stmt::Syncthreads {..} => env,
             Stmt::Dim3Definition {id, ..} => {
                 env.bound.insert(id.clone(), Type::Void);
                 env
             },
-            Stmt::KernelLaunch {args, ..} => {
-                args.fv(env)
-            },
-            Stmt::Scope {body, ..} => {
-                body.fv(env)
-            },
+            Stmt::Assign {..} | Stmt::If {..} | Stmt::Syncthreads {..} |
+            Stmt::KernelLaunch {..} | Stmt::Scope {..} => {
+                self.sfold(|env, s| s.fv(env), env)
+            }
         }
     }
 }
