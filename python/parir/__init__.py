@@ -74,7 +74,6 @@ def print_compiled(fun, args, par):
     if fun in ir_asts:
         ir_ast = ir_asts[fun]
     else:
-        print(fun, ir_asts)
         ir_ast = convert_python_function_to_ir(fun)
     return parir.compile_ir(ir_ast, args, par)
 
