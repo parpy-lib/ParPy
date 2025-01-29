@@ -98,6 +98,15 @@ impl Expr {
             Expr::BlockIdx {ty, ..} => ty,
         }
     }
+
+    pub fn is_leaf_node(&self) -> bool {
+        match self {
+            Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
+            Expr::Float {..} | Expr::ThreadIdx {..} |
+            Expr::BlockIdx {..} => true,
+            _ => false
+        }
+    }
 }
 
 impl InfoNode for Expr {

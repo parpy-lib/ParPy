@@ -227,9 +227,14 @@ impl PrettyPrint for Expr {
                 (env, format!("{id} {{\n{indent}{fields}\n{outer_indent}}}"))
             },
             Expr::Convert {e, ty} => {
-                let (env, e) = e.pprint(env);
+                let (env, e_str) = e.pprint(env);
                 let (env, ty) = ty.pprint(env);
-                (env, format!("({ty}){e}"))
+                let s = if e.is_leaf_node() {
+                    format!("({ty}){e_str}")
+                } else {
+                    format!("({ty})({e_str})")
+                };
+                (env, s)
             },
             Expr::ShflXorSync {value, idx, ..} => {
                 let (env, value) = value.pprint(env);
@@ -581,6 +586,28 @@ mod test {
             i: Info::default()
         };
         assert_eq!(&s.pprint_default(), "id {\n  x: 5,\n  y: 25,\n  z: q\n}");
+    }
+
+    fn convert(e: Expr, ty: Type) -> Expr {
+        Expr::Convert {e: Box::new(e), ty}
+    }
+
+    #[test]
+    fn pprint_var_conversion() {
+        let s = convert(var("x"), scalar_ty(ElemSize::F32));
+        assert_eq!(&s.pprint_default(), "(float)x");
+    }
+
+    #[test]
+    fn pprint_literal_conversion() {
+        let s = convert(int(5), scalar_ty(ElemSize::I16));
+        assert_eq!(&s.pprint_default(), "(int16_t)5");
+    }
+
+    #[test]
+    fn pprint_add_conversion() {
+        let s = convert(add(var("x"), var("y")), scalar_ty(ElemSize::I16));
+        assert_eq!(&s.pprint_default(), "(int16_t)(x + y)");
     }
 
     #[test]
