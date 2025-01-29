@@ -136,8 +136,6 @@ fn is_float_neutral_elem(op: &BinOp, v: f64, rhs: bool) -> bool {
         BinOp::Sub if rhs => v == 0.0,
         BinOp::Mul => v == 1.0,
         BinOp::Div if rhs => v == 1.0,
-        BinOp::Max => v == f64::NEG_INFINITY,
-        BinOp::Min => v == f64::INFINITY,
         _ => false
     }
 }
