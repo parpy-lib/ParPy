@@ -100,10 +100,10 @@ def forward_steps(hmm, seqs, alpha1, alpha2):
                     # Transitively inlined version of forward_prob_predecessors.
                     num_kmers = hmm["num_states"] // 16
 
-                    pred1 = (state // 4) % (hmm["num_states"] // 64)
-                    pred2 = hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64)
-                    pred3 = 2 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64)
-                    pred4 = 3 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64)
+                    pred1 = parir.int16((state // 4) % (hmm["num_states"] // 64))
+                    pred2 = parir.int16(hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
+                    pred3 = parir.int16(2 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
+                    pred4 = parir.int16(3 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
                     t11 = hmm["trans1"][pred1 % num_kmers, state % 4]
                     t12 = hmm["trans1"][pred2 % num_kmers, state % 4]
                     t13 = hmm["trans1"][pred3 % num_kmers, state % 4]
@@ -114,8 +114,8 @@ def forward_steps(hmm, seqs, alpha1, alpha2):
                     p3 = t13 + t2 + alpha_src[inst, pred3]
                     p4 = t14 + t2 + alpha_src[inst, pred4]
 
-                    pred5 = 0
-                    p5 = 0.0
+                    pred5 = parir.int16(0)
+                    p5 = parir.float32(0.0)
                     if state // num_kmers == 15:
                         pred5 = state
                         p5 = hmm["gamma"]
@@ -124,7 +124,7 @@ def forward_steps(hmm, seqs, alpha1, alpha2):
                         p5 = hmm["synthetic_248"]
                     else:
                         pred5 = ((state // num_kmers) + 1) * num_kmers + state % num_kmers
-                        p5 = 0.0
+                        p5 = parir.float32(0.0)
                     p5 = p5 + alpha_src[inst, pred5]
 
                     # Inlined version of log_sum_exp.
@@ -133,7 +133,7 @@ def forward_steps(hmm, seqs, alpha1, alpha2):
                     maxp = max(maxp, p4)
                     maxp = max(maxp, p5)
                     lsexp = maxp + parir.log(parir.exp(p1 - maxp) + parir.exp(p2 - maxp) + parir.exp(p3 - maxp) + parir.exp(p4 - maxp) + parir.exp(p5 - maxp))
-                    lsexp = max(lsexp, -parir.inf)
+                    lsexp = max(lsexp, parir.float32(-parir.inf))
 
                     alpha_dst[inst, state] = lsexp + hmm["output_prob"][o, state % num_kmers]
                 elif t == seqs["lens"][inst]:
@@ -147,11 +147,11 @@ def forward_lse(hmm, seqs, result, alpha1, alpha2):
         if seqs["maxlen"] & 1:
             alpha = alpha1
 
-        maxp = -parir.inf
+        maxp = parir.float32(-parir.inf)
         for state in range(hmm["num_states"]):
             maxp = max(maxp, alpha[inst, state])
 
-        psum = 0.0
+        psum = parir.float32(0.0)
         for state in range(hmm["num_states"]):
             psum = psum + parir.exp(alpha[inst, state] - maxp)
 
