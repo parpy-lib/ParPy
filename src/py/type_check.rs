@@ -1,6 +1,7 @@
 use crate::py_type_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
+use crate::utils::name::Name;
 use super::ast::*;
 
 use pyo3::PyTypeInfo;
@@ -76,12 +77,12 @@ fn convert_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
 }
 
 fn add_param_types<'py>(
-    id: &String,
+    id: &Name,
     params: Vec<Param>,
-    args: Vec<Bound<'py, PyAny>>
+    args: &Vec<Bound<'py, PyAny>>
 ) -> PyResult<Vec<Param>> {
     if args.len() == params.len() {
-        args.into_iter()
+        args.iter()
             .zip(params.into_iter())
             .map(|(arg, Param {id, i, ..})| Ok(Param {id, ty: convert_type(&arg)?, i}))
             .collect::<PyResult<Vec<Param>>>()
@@ -307,7 +308,7 @@ fn type_check_binop(
 }
 
 fn type_check_expr(
-    vars: &BTreeMap<String, Type>,
+    vars: &BTreeMap<Name, Type>,
     e: Expr
 ) -> PyResult<Expr> {
     match e {
@@ -418,7 +419,7 @@ fn type_check_expr(
 }
 
 fn type_check_exprs(
-    vars: &BTreeMap<String, Type>,
+    vars: &BTreeMap<Name, Type>,
     exprs: Vec<Expr>
 ) -> PyResult<Vec<Expr>> {
     exprs.into_iter()
@@ -427,36 +428,21 @@ fn type_check_exprs(
 }
 
 fn type_check_stmt(
-    mut vars: BTreeMap<String, Type>,
+    mut vars: BTreeMap<Name, Type>,
     stmt: Stmt
-) -> PyResult<(BTreeMap<String, Type>, Stmt)> {
+) -> PyResult<(BTreeMap<Name, Type>, Stmt)> {
     match stmt {
+        Stmt::Definition {id, expr, i, ..} => {
+            let expr = type_check_expr(&vars, expr)?;
+            let ty = expr.get_type().clone();
+            vars.insert(id.clone(), ty.clone());
+            Ok((vars, Stmt::Definition {ty, id, expr, i}))
+        },
         Stmt::Assign {dst, expr, i} => {
-            let def_id = if let Expr::Var {id, ..} = &dst {
-                if vars.contains_key(id) {
-                    None
-                } else {
-                    Some(id)
-                }
-            } else {
-                None
-            };
-            if let Some(id) = def_id {
-                // The variable is being assigned and defined. In this case, we type-check
-                // the expression first, to be able to determine the type of the variable.
-                let expr = type_check_expr(&vars, expr)?;
-                vars.insert(id.clone(), expr.get_type().clone());
-                let dst = type_check_expr(&vars, dst)?;
-                Ok((vars, Stmt::Assign {dst, expr, i}))
-            } else {
-                // The target is being assigned a value, but it is not being defined. In
-                // this case, we type-check the target first, and use its inferred type to
-                // determine whether the assigned expression needs to be converted.
-                let dst = type_check_expr(&vars, dst)?;
-                let expr = type_check_expr(&vars, expr)?;
-                let expr = coerce_type(expr, dst.get_type())?;
-                Ok((vars, Stmt::Assign {dst, expr, i}))
-            }
+            let dst = type_check_expr(&vars, dst)?;
+            let expr = type_check_expr(&vars, expr)?;
+            let expr = coerce_type(expr, dst.get_type())?;
+            Ok((vars, Stmt::Assign {dst, expr, i}))
         },
         Stmt::For {var, lo, hi, body, i} => {
             let lo = type_check_expr(&vars, lo)?;
@@ -494,9 +480,9 @@ fn type_check_stmt(
 }
 
 fn type_check_stmts(
-    vars: BTreeMap<String, Type>,
+    vars: BTreeMap<Name, Type>,
     stmts: Vec<Stmt>
-) -> PyResult<(BTreeMap<String, Type>, Vec<Stmt>)> {
+) -> PyResult<(BTreeMap<Name, Type>, Vec<Stmt>)> {
     stmts.into_iter()
         .fold(Ok((vars, vec![])), |acc: PyResult<_>, stmt| {
             let (vars, mut stmts) = acc?;
@@ -512,14 +498,14 @@ fn type_check_body(
 ) -> PyResult<Vec<Stmt>> {
     let vars = params.iter()
         .map(|Param {id, ty, ..}| (id.clone(), ty.clone()))
-        .collect::<BTreeMap<String, Type>>();
+        .collect::<BTreeMap<Name, Type>>();
     let (_, body) = type_check_stmts(vars, body)?;
     Ok(body)
 }
 
 pub fn type_check<'py>(
     def: FunDef,
-    args: Vec<Bound<'py, PyAny>>
+    args: &Vec<Bound<'py, PyAny>>
 ) -> PyResult<FunDef> {
     let FunDef {id, params, body, i} = def;
     let params = add_param_types(&id, params, args)?;
@@ -662,8 +648,8 @@ mod test {
         test_lub_type_ok(ty.clone(), ty.clone(), ty.clone())
     }
 
-    fn var(s: &str) -> String {
-        s.to_string()
+    fn var(s: &str) -> Name {
+        Name::new(s.to_string())
     }
 
     fn test_tc_unop(op: UnOp, arg: Expr) -> PyResult<Type> {
@@ -723,10 +709,10 @@ mod test {
         assert_eq!(r.unwrap(), ty);
     }
 
-    fn make_map<'a>(entries: Vec<(&'a str, Type)>) -> BTreeMap<String, Type> {
+    fn make_map<'a>(entries: Vec<(&'a str, Type)>) -> BTreeMap<Name, Type> {
         entries.into_iter()
-            .map(|(id, ty)| (id.to_string(), ty))
-            .collect::<BTreeMap<String, Type>>()
+            .map(|(id, ty)| (Name::new(id.to_string()), ty))
+            .collect::<BTreeMap<Name, Type>>()
     }
 
     #[test]
@@ -774,7 +760,9 @@ mod test {
 
     #[test]
     fn type_check_expr_dict_lookup() {
-        let fields = make_map(vec![("a", Type::Boolean)]);
+        let fields = vec![("a", Type::Boolean)].into_iter()
+            .map(|(id, ty)| (id.to_string(), ty))
+            .collect::<BTreeMap<String, Type>>();
         let dict_ty = Type::Dict {fields};
         let vars = make_map(vec![("x", dict_ty.clone())]);
         let v = Expr::Subscript {

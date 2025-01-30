@@ -1,10 +1,8 @@
 pub mod ast;
 mod from_py_ast;
 mod struct_types;
-mod symbolize;
 
 use ast::*;
-use symbolize::Symbolize;
 use crate::par::ParKind;
 use crate::py::ast as py_ast;
 use crate::utils::err::*;
@@ -22,9 +20,4 @@ pub fn from_python(
         .collect::<CompileResult<Vec<StructDef>>>()?;
     let fun = from_py_ast::to_ir_def(&env, def)?;
     Ok(Ast {structs, fun})
-}
-
-pub fn symbolize(ast: Ast) -> CompileResult<Ast> {
-    let (_, ast) = ast.symbolize_default()?;
-    Ok(ast)
 }

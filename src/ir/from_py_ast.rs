@@ -70,7 +70,7 @@ fn to_ir_expr(
     match e {
         py_ast::Expr::Var {id, ty, i} => {
             let ty = to_ir_type(env, &i, ty)?;
-            Ok(Expr::Var {id: Name::new(id), ty, i})
+            Ok(Expr::Var {id, ty, i})
         },
         py_ast::Expr::String {i, ..} => {
             parir_compile_error!(i, "String literal may only be used for dict lookups")
@@ -201,6 +201,11 @@ fn to_ir_stmt(
     stmt: py_ast::Stmt
 ) -> CompileResult<Stmt> {
     match stmt {
+        py_ast::Stmt::Definition {ty, id, expr, i} => {
+            let ty = to_ir_type(env, &i, ty)?;
+            let expr = to_ir_expr(env, expr)?;
+            Ok(Stmt::Definition {ty, id, expr, i})
+        },
         py_ast::Stmt::Assign {dst, expr, i} => {
             let dst = to_ir_expr(env, dst)?;
             let expr = to_ir_expr(env, expr)?;
@@ -210,8 +215,7 @@ fn to_ir_stmt(
             let lo = to_ir_expr(env, lo)?;
             let hi = to_ir_expr(env, hi)?;
             let body = to_ir_stmts(env, body)?;
-            let par = convert_par_spec(env.par.get(&var));
-            let var = Name::new(var);
+            let par = convert_par_spec(env.par.get(var.get_str()));
             Ok(Stmt::For {var, lo, hi, body, par, i})
         },
         py_ast::Stmt::If {cond, thn, els, i} => {
@@ -237,7 +241,6 @@ fn to_ir_param(
     p: py_ast::Param
 ) -> CompileResult<Param> {
     let py_ast::Param {id, ty, i} = p;
-    let id = Name::new(id);
     let ty = to_ir_type(env, &i, ty)?;
     Ok(Param {id, ty, i})
 }
@@ -247,7 +250,6 @@ pub fn to_ir_def(
     def: py_ast::FunDef
 ) -> CompileResult<FunDef> {
     let py_ast::FunDef {id, params, body, i} = def;
-    let id = Name::new(id);
     let params = params.into_iter()
         .map(|p| to_ir_param(env, p))
         .collect::<CompileResult<Vec<Param>>>()?;

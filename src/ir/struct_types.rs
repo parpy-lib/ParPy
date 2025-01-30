@@ -90,6 +90,7 @@ fn find_dict_types_stmt(
     stmt: &Stmt
 ) -> DictTypes {
     match stmt {
+        Stmt::Definition {expr, ..} => find_dict_types_expr(types, expr),
         Stmt::Assign {dst, expr, ..} => {
             let types = find_dict_types_expr(types, dst);
             find_dict_types_expr(types, expr)
@@ -114,7 +115,7 @@ fn find_dict_types_def(
     let types = def.params
         .iter()
         .fold(types, |types, Param {id, ty, ..}| {
-            find_dict_types_type(types, ty, Some(id))
+            find_dict_types_type(types, ty, Some(id.get_str()))
         });
     def.body
         .iter()

@@ -1,4 +1,5 @@
 use crate::utils::info::*;
+use crate::utils::name::Name;
 
 use strum_macros::EnumIter;
 use itertools::Itertools;
@@ -202,7 +203,7 @@ impl fmt::Display for BinOp {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
-    Var {id: String, ty: Type, i: Info},
+    Var {id: Name, ty: Type, i: Info},
     String {v: String, ty: Type, i: Info},
     Bool {v: bool, ty: Type, i: Info},
     Int {v: i64, ty: Type, i: Info},
@@ -238,7 +239,7 @@ impl Expr {
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Expr::Var {id, ..} => write!(f, "{id}"),
+            Expr::Var {id, ..} => write!(f, "{0}", id.get_str()),
             Expr::String {v, ..} => write!(f, "\"{v}\""),
             Expr::Bool {v, ..} => write!(f, "{v}"),
             Expr::Int {v, ..} => write!(f, "{v}"),
@@ -296,14 +297,16 @@ impl InfoNode for Expr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
+    Definition {ty: Type, id: Name, expr: Expr, i: Info},
     Assign {dst: Expr, expr: Expr, i: Info},
-    For {var: String, lo: Expr, hi: Expr, body: Vec<Stmt>, i: Info},
+    For {var: Name, lo: Expr, hi: Expr, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
 }
 
 impl InfoNode for Stmt {
     fn get_info(&self) -> Info {
         match self {
+            Stmt::Definition {i, ..} => i.clone(),
             Stmt::Assign {i, ..} => i.clone(),
             Stmt::For {i, ..} => i.clone(),
             Stmt::If {i, ..} => i.clone(),
@@ -313,14 +316,14 @@ impl InfoNode for Stmt {
 
 #[derive(Clone, Debug)]
 pub struct Param {
-    pub id: String,
+    pub id: Name,
     pub ty: Type,
     pub i: Info
 }
 
 #[derive(Clone, Debug)]
 pub struct FunDef {
-    pub id: String,
+    pub id: Name,
     pub params: Vec<Param>,
     pub body: Vec<Stmt>,
     pub i: Info

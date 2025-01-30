@@ -22,7 +22,7 @@ fn python_to_ir<'py>(
 
     // Convert the provided Python AST (parsed by the 'ast' module of Python) to a similar
     // representation of the Python AST using Rust data types.
-    let def = py::to_untyped_ir(py_ast, filepath, fst_line)?;
+    let def = py::parse_untyped_ast(py_ast, filepath, fst_line)?;
 
     // Wrap the intermediate AST in a capsule that we return to Python.
     let name = CString::new("Parir untyped Python AST")?;
@@ -41,7 +41,7 @@ fn compile_ir<'py>(
     };
 
     // Type-check the AST with respect to the provided arguments.
-    let py_ir_ast = py::type_check(untyped_ir_def.clone(), args)?;
+    let py_ir_ast = py::type_check(untyped_ir_def.clone(), &args)?;
 
     // Converts the Python-like AST to an IR by removing or simplifying concepts from Python. For
     // example, this transformation
@@ -49,7 +49,6 @@ fn compile_ir<'py>(
     // * Replaces uses of tuples for indexing with an integer expression.
     // * Adds the parallelization arguments directly to the AST.
     let ir_ast = ir::from_python(py_ir_ast, par)?;
-    let ir_ast = ir::symbolize(ir_ast)?;
 
     // Convert the IR AST to CUDA code, based on the parallel annotations on for-loops.
     let ast = cuda::codegen(ir_ast)?;

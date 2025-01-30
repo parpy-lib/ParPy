@@ -1,6 +1,7 @@
 use crate::py_runtime_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
+use crate::utils::name::Name;
 use super::ast::*;
 
 use pyo3::PyTypeInfo;
@@ -149,7 +150,7 @@ fn convert_expr<'py, 'a>(
         if let Ok(e) = lookup_builtin(&expr, &i) {
             Ok(e)
         } else {
-            let id = expr.getattr("id")?.extract::<String>()?;
+            let id = Name::new(expr.getattr("id")?.extract::<String>()?);
             Ok(Expr::Var {id, ty, i})
         }
     } else if expr.is_instance(&env.ast.getattr("Constant")?)? {
@@ -244,7 +245,8 @@ fn convert_stmt<'py, 'a>(
         // Ensure that the for-loop only assigns to a single variable
         let target = stmt.getattr("target")?;
         let var = if target.is_instance(&env.ast.getattr("Name")?)? {
-            Ok(target.getattr("id")?.extract::<String>()?)
+            let s = target.getattr("id")?.extract::<String>()?;
+            Ok(Name::new(s))
         } else {
             py_runtime_error!(i, "For-loops must assign to a single variable")
         }?;
@@ -346,13 +348,13 @@ pub fn to_untyped_ir<'py>(
     let body = ast.getattr("body")?.get_item(0)?;
     let untyped_args = body.getattr("args")?.getattr("args")?.try_iter()?
         .map(|arg| {
-            let id = arg?.getattr("arg")?.extract::<String>()?;
+            let id = Name::new(arg?.getattr("arg")?.extract::<String>()?);
             let i = Info::default();
             let ty = Type::Unknown;
             Ok(Param {id, ty, i})
         })
         .collect::<PyResult<Vec<Param>>>()?;
-    let id = body.getattr("name")?.extract::<String>()?;
+    let id = Name::new(body.getattr("name")?.extract::<String>()?);
     let ir_body = convert_stmts(body.getattr("body")?, &env)?;
     let i = merge_body_infos(&ir_body);
     Ok(FunDef {id, params: untyped_args, body: ir_body, i})
@@ -504,8 +506,8 @@ mod test {
         Info::new("<test>", FilePos::new(line1, col1), FilePos::new(line2, col2))
     }
 
-    fn var(s: &str) -> String {
-        s.to_string()
+    fn var(s: &str) -> Name {
+        Name::new(s.to_string())
     }
 
     #[test]
