@@ -50,7 +50,7 @@ def normalize_rows_no_annot(t, nrows, ncols):
 
 def test_normalize_print_ast():
     args = [
-        torch.ones((256, 1024), dtype=torch.float32, device='cuda'),
+        torch.ones((256, 1024), dtype=torch.float32),
         256,
         1024
     ]
@@ -60,4 +60,4 @@ def test_normalize_print_ast():
         "j2": [ParKind.GpuThreads(128)]
     }
     s = parir.print_compiled(normalize_rows_no_annot, args, p)
-    assert s != ""
+    assert len(s) != 0

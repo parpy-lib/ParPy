@@ -10,16 +10,22 @@ torch.manual_seed(1234)
 np.random.seed(1234)
 
 @parir.jit
-def spmv_row(A_values, A_rows, A_cols, A_nrows, x, y):
-    for row in range(A_nrows):
+def spmv_row(A, x, y):
+    for row in range(A["nrows"]):
         s = 0.0
-        for i in range(A_rows[row], A_rows[row+1]):
-            s = s + A_values[i] * x[A_cols[i]]
+        for i in range(A["rows"][row], A["rows"][row+1]):
+            s = s + A["values"][i] * x[A["cols"][i]]
         y[row] = s
 
-def spmv_wrap(A_values, A_rows, A_cols, A_nrows, x, p=None):
-    y = torch.empty((A_nrows,), dtype=x.dtype, device=x.device)
-    spmv_row(A_values, A_rows, A_cols, A_nrows, x, y, parallelize=p)
+def spmv_wrap(A, x, N, p=None):
+    A = {
+        'values': A.values(),
+        'rows': A.crow_indices(),
+        'cols': A.col_indices(),
+        'nrows': N
+    }
+    y = torch.empty((A["nrows"],), dtype=x.dtype, device=x.device)
+    spmv_row(A, x, y, parallelize=p)
     return y
 
 def uniform_random_csr_f32_i64(N, M, d):
@@ -43,23 +49,40 @@ def compare_spmv(N, M, p=None):
     x = torch.randn(M, dtype=torch.float32, device='cuda')
     # Compare result using PyTorch against parallelized code
     y1 = A.matmul(x)
-    y2 = spmv_wrap(A.values(), A.crow_indices(), A.col_indices(), N, x, p)
+    y2 = spmv_wrap(A, x, N, p)
     torch.cuda.synchronize()
     assert torch.allclose(y1, y2, atol=1e-5)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_spmv_seq_reduce():
-    N = 256
-    M = 4096
+    N, M = 256, 4096
     p = { "row": [ParKind.GpuThreads(N)] }
     compare_spmv(N, M, p)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_spmv_gpu():
-    N = 256
-    M = 4096
+    N, M = 256, 4096
     p = {
         "row": [ParKind.GpuThreads(N)],
         "i": [ParKind.GpuThreads(128), ParKind.GpuReduction()]
     }
     compare_spmv(N, M, p)
+
+def test_spmv_compiles():
+    N, M = 256, 4096
+    sparsity = 0.01
+    A = uniform_random_csr_f32_i64(N, M, sparsity)
+    x = torch.randn(M, dtype=torch.float32, device='cuda')
+    A = {
+        'values': A.values(),
+        'rows': A.crow_indices(),
+        'cols': A.col_indices(),
+        'nrows': N
+    }
+    y = torch.empty((A["nrows"],), dtype=x.dtype, device=x.device)
+    p = {
+        "row": [ParKind.GpuThreads(N)],
+        "i": [ParKind.GpuThreads(128), ParKind.GpuReduction()]
+    }
+    s = parir.print_compiled(spmv_row, [A, x, y], p)
+    assert len(s) != 0

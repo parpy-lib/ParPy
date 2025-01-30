@@ -20,7 +20,14 @@ def copy_wrap(x, p=None):
 def test_copy_gpu():
     x = torch.randn(10, dtype=torch.float32)
     y1 = copy_wrap(x)
-    p = { "i" : [ParKind.GpuThreads(1024)] }
+    p = {'i': [ParKind.GpuThreads(1024)]}
     y2 = copy_wrap(x.cuda(), p).cpu()
     torch.cuda.synchronize()
     assert torch.allclose(y1, y2, atol=1e-5)
+
+def test_copy_compiles():
+    x = torch.randn(10, dtype=torch.float32, device='cuda')
+    y = torch.empty_like(x)
+    p = {'i': [ParKind.GpuThreads(1024)]}
+    s = parir.print_compiled(copy, [x, y, 10], p)
+    assert len(s) != 0

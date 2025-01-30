@@ -54,3 +54,17 @@ def test_softmax_gpu():
         "j4": [ParKind.GpuThreads(128)]
     }
     compare_softmax(p)
+
+def test_softmax_compiles():
+    N, M = 256, 512
+    x = torch.randn((N, M), dtype=torch.float32, device='cuda')
+    out = torch.empty_like(x)
+    p = {
+        "i" : [ParKind.GpuThreads(256)],
+        "j1": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
+        "j2": [ParKind.GpuThreads(128)],
+        "j3": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
+        "j4": [ParKind.GpuThreads(128)]
+    }
+    s = parir.print_compiled(softmax, [x, N, M, out], p)
+    assert len(s) != 0

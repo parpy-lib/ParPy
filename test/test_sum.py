@@ -8,16 +8,14 @@ torch.manual_seed(1234)
 @parir.jit
 def sum_rows(x, out, N, M):
     for i in range(N):
-        s = 0.0
+        out[i] = 0.0
         for j in range(M):
-            s = s + x[i * M + j]
-        out[i] = s
+            out[i] = out[i] + x[i, j]
 
 def sum_wrap(x, p=None):
     N, M = x.shape
-    xflat = x.flatten()
     out = torch.empty(N, dtype=x.dtype, device=x.device)
-    sum_rows(xflat, out, N, M, parallelize=p)
+    sum_rows(x, out, N, M, parallelize=p)
     return out
 
 def compare_sum(N, M, p):
@@ -32,7 +30,7 @@ def compare_sum(N, M, p):
 def test_sum_outer_parallel_gpu():
     N = 100
     M = 50
-    p = { "i" : [ParKind.GpuThreads(N)] }
+    p = {'i': [ParKind.GpuThreads(N)]}
     compare_sum(N, M, p)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -44,3 +42,19 @@ def test_sum_inner_and_outer_parallel_gpu():
         "j": [ParKind.GpuThreads(128), ParKind.GpuReduction()]
     }
     compare_sum(N, M, p)
+
+def test_sum_compiles():
+    N = 100
+    M = 50
+    x = torch.randn((N, M), dtype=torch.float32, device='cuda')
+    out = torch.empty(N, dtype=torch.float32, device='cuda')
+    p = {'i': [ParKind.GpuThreads(N)]}
+    s1 = parir.print_compiled(sum_rows, [x, out, N, M], p)
+    assert len(s1) != 0
+
+    p = {
+        'i': [ParKind.GpuThreads(N)],
+        'j': [ParKind.GpuThreads(128), ParKind.GpuReduction()]
+    }
+    s2 = parir.print_compiled(sum_rows, [x, out, N, M], p)
+    assert len(s2) != 0

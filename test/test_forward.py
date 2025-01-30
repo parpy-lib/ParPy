@@ -182,10 +182,37 @@ def forward(hmm, seqs):
 
     return result
 
+def read_test_data():
+    model = "test/data/3mer-model.hdf5"
+    signals = "test/data/signals.hdf5"
+    hmm, seqs = read_trellis_inputs(model, signals)
+    expected = read_expected_output("test/data/3mer-expected.txt")
+    return hmm, seqs, expected
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_forward():
-    device = torch.device('cuda')
-    hmm, seqs = read_trellis_inputs("test/data/3mer-model.hdf5", "test/data/signals.hdf5")
+    hmm, seqs, expected = read_test_data()
     probs = forward(hmm, seqs)
-    expected = read_expected_output("test/data/3mer-expected.txt")
     assert torch.allclose(probs, expected), f"{probs}\n{expected}"
+
+def test_forward_compiles():
+    hmm, seqs, _ = read_test_data()
+    result = torch.empty(seqs["num_instances"], dtype=torch.float32, device='cuda')
+    alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32, device='cuda')
+    alpha2 = torch.empty_like(alpha1)
+    p = {
+        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
+        'state': [ParKind.GpuThreads(hmm["num_states"])]
+    }
+    s = parir.print_compiled(forward_init, [hmm, seqs, alpha1], p)
+    assert len(s) != 0
+
+    s = parir.print_compiled(forward_steps, [hmm, seqs, alpha1, alpha2], p)
+    assert len(s) != 0
+
+    p = {
+        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
+        'state': [ParKind.GpuThreads(hmm["num_states"]), ParKind.GpuReduction()]
+    }
+    s = parir.print_compiled(forward_lse, [hmm, seqs, result, alpha1, alpha2], p)
+    assert len(s) != 0
