@@ -57,7 +57,7 @@ def test_softmax_gpu():
 
 def test_softmax_compiles():
     N, M = 256, 512
-    x = torch.randn((N, M), dtype=torch.float32, device='cuda')
+    x = torch.randn((N, M), dtype=torch.float32)
     out = torch.empty_like(x)
     p = {
         "i" : [ParKind.GpuThreads(256)],

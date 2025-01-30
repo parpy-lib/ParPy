@@ -35,13 +35,13 @@ def test_axpy_gpu():
 
 def test_axpy_compile_fails_no_parallelism():
     N, a, x, y = axpy_test_data()
-    out = torch.empty_like(x).cuda()
+    out = torch.empty_like(x)
     with pytest.raises(RuntimeError):
-        parir.print_compiled(axpy, [a.cuda(), x.cuda(), y.cuda(), out, N], None)
+        parir.print_compiled(axpy, [a, x, y, out, N], None)
 
 def test_axpy_compiles_with_parallelism():
     N, a, x, y = axpy_test_data()
-    out = torch.empty_like(x).cuda()
+    out = torch.empty_like(x)
     p = {'i': [ParKind.GpuThreads(128)]}
-    s = parir.print_compiled(axpy, [a.cuda(), x.cuda(), y.cuda(), out, N], p)
+    s = parir.print_compiled(axpy, [a, x, y, out, N], p)
     assert len(s) != 0

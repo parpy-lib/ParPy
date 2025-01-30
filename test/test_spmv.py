@@ -28,16 +28,16 @@ def spmv_wrap(A, x, N, p=None):
     spmv_row(A, x, y, parallelize=p)
     return y
 
-def uniform_random_csr_f32_i64(N, M, d):
+def uniform_random_csr_f32_i64(N, M, d, device):
     nnz = int(N * M * d)
     s = set()
     while len(s) < nnz:
         s.update(np.random.randint(0, N*M, nnz - len(s)))
     flat_idxs = np.array(list(s), dtype=np.int64)
     rows, cols = np.divmod(flat_idxs, M)
-    values = torch.randn(nnz, dtype=torch.float32, device='cuda')
+    values = torch.randn(nnz, dtype=torch.float32, device=device)
     idxs = np.array((rows, cols))
-    A = torch.sparse_coo_tensor(idxs, values, device='cuda')
+    A = torch.sparse_coo_tensor(idxs, values, device=device)
     # Ignore warning about sparse CSR support being in beta state
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -45,7 +45,7 @@ def uniform_random_csr_f32_i64(N, M, d):
 
 def compare_spmv(N, M, p=None):
     sparsity = 0.01
-    A = uniform_random_csr_f32_i64(N, M, sparsity)
+    A = uniform_random_csr_f32_i64(N, M, sparsity, 'cuda')
     x = torch.randn(M, dtype=torch.float32, device='cuda')
     # Compare result using PyTorch against parallelized code
     y1 = A.matmul(x)
@@ -71,15 +71,15 @@ def test_spmv_gpu():
 def test_spmv_compiles():
     N, M = 256, 4096
     sparsity = 0.01
-    A = uniform_random_csr_f32_i64(N, M, sparsity)
-    x = torch.randn(M, dtype=torch.float32, device='cuda')
+    A = uniform_random_csr_f32_i64(N, M, sparsity, 'cpu')
+    x = torch.randn(M, dtype=torch.float32)
     A = {
         'values': A.values(),
         'rows': A.crow_indices(),
         'cols': A.col_indices(),
         'nrows': N
     }
-    y = torch.empty((A["nrows"],), dtype=x.dtype, device=x.device)
+    y = torch.empty((A["nrows"],), dtype=x.dtype)
     p = {
         "row": [ParKind.GpuThreads(N)],
         "i": [ParKind.GpuThreads(128), ParKind.GpuReduction()]

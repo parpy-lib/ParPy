@@ -46,8 +46,8 @@ def test_sum_inner_and_outer_parallel_gpu():
 def test_sum_compiles():
     N = 100
     M = 50
-    x = torch.randn((N, M), dtype=torch.float32, device='cuda')
-    out = torch.empty(N, dtype=torch.float32, device='cuda')
+    x = torch.randn((N, M), dtype=torch.float32)
+    out = torch.empty(N, dtype=torch.float32)
     p = {'i': [ParKind.GpuThreads(N)]}
     s1 = parir.print_compiled(sum_rows, [x, out, N, M], p)
     assert len(s1) != 0

@@ -27,7 +27,7 @@ def transform_output_probs(obs, k):
             output_probs[i][j] = obs[j][idx]
     return output_probs.transpose()
 
-def read_trellis_inputs(model_path, signals_path):
+def read_trellis_inputs(model_path, signals_path, device):
     with h5py.File(model_path, "r") as f:
         with np.errstate(divide="ignore"):
             obs = np.log(f['Tables']['ObservationProbabilities'][:])
@@ -44,39 +44,39 @@ def read_trellis_inputs(model_path, signals_path):
     synthetic_248 = np.log(np.exp(0.) - np.exp(tail_factor))
     num_states = 16 * 4**k
 
-    # Convert data to torch compatible format allocated on the GPU.
-    trans1 = torch.tensor(trans1, dtype=torch.float32, device='cuda')
-    trans2 = torch.tensor(duration, dtype=torch.float32, device='cuda')
-    out_prob = torch.tensor(out_prob, dtype=torch.float32, device='cuda')
-    init_prob = torch.tensor(init_probs, dtype=torch.float32, device='cuda')
+    # Convert data to torch compatible format allocated on the selected device.
+    trans1 = torch.tensor(trans1, dtype=torch.float32, device=device)
+    trans2 = torch.tensor(duration, dtype=torch.float32, device=device)
+    out_prob = torch.tensor(out_prob, dtype=torch.float32, device=device)
+    init_prob = torch.tensor(init_probs, dtype=torch.float32, device=device)
     hmm = {
-        'gamma': torch.tensor(tail_factor, dtype=torch.float32, device='cuda'),
+        'gamma': torch.tensor(tail_factor, dtype=torch.float32, device=device),
         'trans1': trans1,
         'trans2': trans2,
         'output_prob': out_prob,
         'initial_prob': init_prob.flatten(),
-        'synthetic_248': torch.tensor(synthetic_248, dtype=torch.float32, device='cuda'),
-        'num_states': torch.tensor(num_states, dtype=torch.int64, device='cuda')
+        'synthetic_248': torch.tensor(synthetic_248, dtype=torch.float32, device=device),
+        'num_states': torch.tensor(num_states, dtype=torch.int64, device=device)
     }
 
     signal_lengths = [len(s) for s in signals]
     maxlen = max(signal_lengths)
-    torch_signals = torch.empty((len(signals), maxlen), dtype=torch.int8, device='cuda')
+    torch_signals = torch.empty((len(signals), maxlen), dtype=torch.int8, device=device)
     for i, s in enumerate(signals):
-        torch_signals[i, 0:len(s)] = torch.tensor(s, dtype=torch.int8, device='cuda')
-    lens = torch.tensor(signal_lengths, dtype=torch.int64, device='cuda')
+        torch_signals[i, 0:len(s)] = torch.tensor(s, dtype=torch.int8, device=device)
+    lens = torch.tensor(signal_lengths, dtype=torch.int64, device=device)
     num_instances = len(lens)
     seqs = {
         'data': torch_signals,
         'lens': lens,
-        'maxlen': torch.tensor(maxlen, dtype=torch.int64, device='cuda'),
-        'num_instances': torch.tensor(num_instances, dtype=torch.int64, device='cuda')
+        'maxlen': torch.tensor(maxlen, dtype=torch.int64, device=device),
+        'num_instances': torch.tensor(num_instances, dtype=torch.int64, device=device)
     }
     return hmm, seqs
 
-def read_expected_output(fname):
+def read_expected_output(fname, device):
   with open(fname) as f:
-    return torch.tensor([float(l) for l in f.readlines()], dtype=torch.float32, device='cuda')
+    return torch.tensor([float(l) for l in f.readlines()], dtype=torch.float32, device=device)
 
 @parir.jit
 def forward_init(hmm, seqs, alpha_src):
@@ -182,23 +182,24 @@ def forward(hmm, seqs):
 
     return result
 
-def read_test_data():
+def read_test_data(device):
     model = "test/data/3mer-model.hdf5"
     signals = "test/data/signals.hdf5"
-    hmm, seqs = read_trellis_inputs(model, signals)
-    expected = read_expected_output("test/data/3mer-expected.txt")
+    hmm, seqs = read_trellis_inputs(model, signals, device)
+    expected = read_expected_output("test/data/3mer-expected.txt", device)
     return hmm, seqs, expected
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_forward():
-    hmm, seqs, expected = read_test_data()
+    hmm, seqs, expected = read_test_data('cuda')
     probs = forward(hmm, seqs)
     assert torch.allclose(probs, expected), f"{probs}\n{expected}"
 
 def test_forward_compiles():
-    hmm, seqs, _ = read_test_data()
-    result = torch.empty(seqs["num_instances"], dtype=torch.float32, device='cuda')
-    alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32, device='cuda')
+    # Load data on the CPU since these tests should run without a GPU.
+    hmm, seqs, _ = read_test_data('cpu')
+    result = torch.empty(seqs["num_instances"], dtype=torch.float32)
+    alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
     alpha2 = torch.empty_like(alpha1)
     p = {
         'inst': [ParKind.GpuThreads(seqs["num_instances"])],
