@@ -158,11 +158,10 @@ fn remainder_if_shared_dimension(
 }
 
 fn determine_loop_bounds(
-    grid: &LaunchArgs,
+    par: Option<(LaunchArgs, GpuMap)>,
     var: Name,
     lo: ir_ast::Expr,
-    hi: ir_ast::Expr,
-    par: Option<GpuMap>
+    hi: ir_ast::Expr
 ) -> CompileResult<(Expr, Expr, Expr)> {
     let init = from_ir_expr(lo)?;
     let ty = init.get_type().clone();
@@ -183,7 +182,7 @@ fn determine_loop_bounds(
         ty: ty.clone(), i: i.clone()
     };
     match par {
-        Some(GpuMap::Thread {n, dim, mult}) => {
+        Some((grid, GpuMap::Thread {n, dim, mult})) => {
             let tot = grid.threads.get_dim(&dim);
             let idx = Expr::ThreadIdx {dim, ty: ty.clone(), i: i.clone()};
             let rhs = remainder_if_shared_dimension(idx, tot, n, mult);
@@ -193,7 +192,7 @@ fn determine_loop_bounds(
             };
             Ok((init, cond, fn_incr(n)))
         },
-        Some(GpuMap::Block {n, dim, mult}) => {
+        Some((grid, GpuMap::Block {n, dim, mult})) => {
             let tot = grid.blocks.get_dim(&dim);
             let idx = Expr::BlockIdx {dim, ty: ty.clone(), i: i.clone()};
             let rhs = remainder_if_shared_dimension(idx, tot, n, mult);
@@ -203,7 +202,7 @@ fn determine_loop_bounds(
             };
             Ok((init, cond, fn_incr(n)))
         },
-        Some(GpuMap::ThreadBlock {n, nthreads, nblocks, dim}) => {
+        Some((grid, GpuMap::ThreadBlock {n, nthreads, nblocks, dim})) => {
             let tot_blocks = grid.blocks.get_dim(&dim);
             let idx = Expr::BinOp {
                 lhs: Box::new(Expr::BinOp {
@@ -538,12 +537,12 @@ fn generate_kernel_stmt(
             let (p, grid, map) = if par.is_parallel() {
                 let m = map[0].clone();
                 let grid = subtract_from_grid(grid, &m);
-                (Some(m), grid, &map[1..])
+                (Some((grid.clone(), m)), grid, &map[1..])
             } else {
                 (None, grid, map)
             };
             let var_ty = from_ir_type(lo.get_type().clone());
-            let (init, cond, incr) = determine_loop_bounds(&grid, var.clone(), lo, hi, p)?;
+            let (init, cond, incr) = determine_loop_bounds(p, var.clone(), lo, hi)?;
             if par.is_parallel() && par.reduction {
                 acc.push(generate_parallel_reduction(
                     var_ty, var, init, cond, incr, body, par.nthreads, i)?
@@ -633,15 +632,7 @@ fn from_ir_stmt(
                     Ok(kernels)
                 },
                 None => {
-                    let init = from_ir_expr(lo)?;
-                    let cond = from_ir_expr(hi)?;
-                    let i64_ty = Type::Scalar {sz: ElemSize::I64};
-                    let incr = Expr::BinOp {
-                        lhs: Box::new(Expr::Var {id: var.clone(), ty: i64_ty.clone(), i: i.clone()}),
-                        op: BinOp::Add,
-                        rhs: Box::new(Expr::Int {v: 1, ty: i64_ty.clone(), i: i.clone()}),
-                        ty: i64_ty, i: i.clone()
-                    };
+                    let (init, cond, incr) = determine_loop_bounds(None, var.clone(), lo, hi)?;
                     let (body, kernels) = from_ir_stmts(env, vec![], kernels, body)?;
                     host_body.push(Stmt::For {
                         var_ty, var, init, cond, incr, body
