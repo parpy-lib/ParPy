@@ -11,10 +11,13 @@ import torch
 
 def arg_to_string(arg):
     if isinstance(arg, torch.Tensor):
-        dims = ",".join([str(n) for n in arg.shape])
-        return f"<{arg.dtype},{dims}>"
+        if arg.ndim == 0:
+            return f"<{arg.dtype},{arg.item()}>"
+        else:
+            dims = ",".join([str(n) for n in arg.shape])
+            return f"<{arg.dtype},|{dims}|>"
     elif isinstance(arg, int) or isinstance(arg, float):
-        return f"<{type(arg)}>"
+        return f"<{type(arg)},{arg}>"
     elif isinstance(arg, dict):
         return ",".join([f"{k}:{arg_to_string(v)}" for k, v in arg.items()])
     else:
@@ -31,7 +34,8 @@ def print_par_kwargs(kwargs):
 
 def generate_function_key(fn, args, kwargs):
     code = inspect.getsource(fn)
-    key_str = f"{code}+{print_type_signature(args)}+{print_par_kwargs(kwargs)}"
+    mtime = os.path.getmtime(inspect.getfile(fn))
+    key_str = f"{mtime}+{print_type_signature(args)}+{print_par_kwargs(kwargs)}"
     h = hashlib.new("sha256")
     h.update(key_str.encode('ascii'))
     return h.hexdigest()

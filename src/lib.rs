@@ -40,8 +40,10 @@ fn compile_ir<'py>(
         ir_ast_cap.reference()
     };
 
-    // Type-check the AST with respect to the provided arguments.
+    // Specialize the Python-like AST based on the provided arguments, inferring the types of all
+    // expressions and inlining scalar argument values in the AST.
     let py_ir_ast = py::type_check(untyped_ir_def.clone(), &args)?;
+    let py_ir_ast = py::inline_scalar_values(py_ir_ast, &args)?;
 
     // Converts the Python-like AST to an IR by removing or simplifying concepts from Python. For
     // example, this transformation

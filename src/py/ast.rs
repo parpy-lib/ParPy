@@ -146,7 +146,7 @@ impl fmt::Display for Type {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Builtin {
     Exp, Inf, Log, Max, Min,
     Convert {sz: ElemSize}
@@ -165,7 +165,7 @@ impl fmt::Display for Builtin {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UnOp {
     Sub
 }
@@ -178,7 +178,7 @@ impl fmt::Display for UnOp {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BinOp {
     Add, Sub, Mul, FloorDiv, Div, Mod, BitAnd, Eq, Neq, Lt, Gt
 }
@@ -234,7 +234,62 @@ impl Expr {
             Expr::Convert {ty, ..} => ty,
         }
     }
+
+    pub fn discriminator(&self) -> u8 {
+        match self {
+            Expr::Var {..} => 0,
+            Expr::String {..} => 1,
+            Expr::Bool {..} => 2,
+            Expr::Int {..} => 3,
+            Expr::Float {..} => 4,
+            Expr::UnOp {..} => 5,
+            Expr::BinOp {..} => 6,
+            Expr::Subscript {..} => 7,
+            Expr::Tuple {..} => 8,
+            Expr::Dict {..} => 9,
+            Expr::Builtin {..} => 10,
+            Expr::Convert {..} => 11
+        }
+    }
 }
+
+impl Ord for Expr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Expr::Var {id: lid, ..}, Expr::Var {id: rid, ..}) => lid.cmp(rid),
+            (Expr::String {v: lv, ..}, Expr::String {v: rv, ..}) => lv.cmp(rv),
+            (Expr::Bool {v: lv, ..}, Expr::Bool {v: rv, ..}) => lv.cmp(rv),
+            (Expr::Int {v: lv, ..}, Expr::Int {v: rv, ..}) => lv.cmp(rv),
+            (Expr::Float {v: lv, ..}, Expr::Float {v: rv, ..}) => f64::total_cmp(lv, rv),
+            (Expr::UnOp {op: lop, arg: larg, ..}, Expr::UnOp {op: rop, arg: rarg, ..}) =>
+                lop.cmp(rop).then(larg.cmp(rarg)),
+            ( Expr::BinOp {lhs: llhs, op: lop, rhs: lrhs, ..}
+            , Expr::BinOp {lhs: rlhs, op: rop, rhs: rrhs, ..} ) =>
+                llhs.cmp(rlhs).then(lop.cmp(rop)).then(lrhs.cmp(rrhs)),
+            ( Expr::Subscript {target: ltarget, idx: lidx, ..}
+            , Expr::Subscript {target: rtarget, idx: ridx, ..} ) =>
+                ltarget.cmp(rtarget).then(lidx.cmp(ridx)),
+            (Expr::Tuple {elems: lelems, ..}, Expr::Tuple {elems: relems, ..}) =>
+                lelems.cmp(relems),
+            (Expr::Dict {fields: lfields, ..}, Expr::Dict {fields: rfields, ..}) =>
+                lfields.cmp(rfields),
+            ( Expr::Builtin {func: lfunc, args: largs, ..}
+            , Expr::Builtin {func: rfunc, args: rargs, ..} ) =>
+                lfunc.cmp(rfunc).then(largs.cmp(rargs)),
+            (Expr::Convert {e: le, ty: lty}, Expr::Convert {e: re, ty: rty}) =>
+                le.cmp(re).then(lty.cmp(rty)),
+            (lhs, rhs) => lhs.discriminator().cmp(&rhs.discriminator())
+        }
+    }
+}
+
+impl PartialOrd for Expr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for Expr {}
 
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

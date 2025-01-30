@@ -1,5 +1,6 @@
 pub mod ast;
 mod from_py;
+mod inline_const;
 mod symbolize;
 mod type_check;
 
@@ -8,6 +9,7 @@ use symbolize::Symbolize;
 use pyo3::prelude::*;
 
 pub use type_check::type_check;
+pub use inline_const::inline_scalar_values;
 
 pub fn parse_untyped_ast<'py>(
     ast: Bound<'py, PyAny>,
