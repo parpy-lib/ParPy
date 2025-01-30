@@ -75,6 +75,8 @@ def print_compiled(fun, args, par):
         ir_ast = ir_asts[fun]
     else:
         ir_ast = convert_python_function_to_ir(fun)
+    if par is None:
+        raise RuntimeError("Parallel specification must be provided")
     return parir.compile_ir(ir_ast, args, par)
 
 def jit(fun):
