@@ -186,12 +186,38 @@ fn fold_expr(e: Expr) -> Expr {
                 }
             }
         },
-        _ => e.smap(fold_expr)
+        Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
+        Expr::StructFieldAccess {..} | Expr::ArrayAccess {..} |
+        Expr::Struct {..} | Expr::ShflXorSync {..} | Expr::ThreadIdx {..} |
+        Expr::BlockIdx {..} => e.smap(fold_expr)
     }
 }
 
 fn fold_stmt(s: Stmt) -> Stmt {
-    s.smap(fold_stmt).smap(fold_expr)
+    match s {
+        Stmt::If {cond, thn, els} => {
+            match fold_expr(cond) {
+                Expr::Bool {v, ..} => {
+                    let body = if v {
+                        thn.smap(fold_stmt)
+                    } else {
+                        els.smap(fold_stmt)
+                    };
+                    Stmt::Scope {body}
+                },
+                cond => {
+                    let thn = thn.smap(fold_stmt);
+                    let els = els.smap(fold_stmt);
+                    Stmt::If {cond, thn, els}
+                },
+            }
+        },
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
+        Stmt::For {..} | Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
+        Stmt::KernelLaunch {..} | Stmt::Scope {..} => {
+            s.smap(fold_stmt).smap(fold_expr)
+        }
+    }
 }
 
 fn fold_top(top: Top) -> Top {
@@ -379,5 +405,25 @@ mod test {
     fn div_identity() {
         test_identity(BinOp::Div, float(1.0), true);
         test_identity(BinOp::Div, int(1), true);
+    }
+
+    fn if_stmt(cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>) -> Stmt {
+        Stmt::If {cond, thn, els}
+    }
+
+    fn assign(dst: Expr, expr: Expr) -> Stmt {
+        Stmt::Assign {dst, expr}
+    }
+
+    fn cfs(stmt: &Stmt) -> Stmt {
+        fold_stmt(stmt.clone())
+    }
+
+    #[test]
+    fn eliminate_if_false() {
+        let thn = vec![assign(var("x"), int(1))];
+        let els = vec![assign(var("x"), int(2))];
+        let s = if_stmt(binop(int(1), BinOp::Eq, int(2)), thn.clone(), els.clone());
+        assert_eq!(cfs(&s), Stmt::Scope {body: els});
     }
 }

@@ -5,7 +5,7 @@ use crate::utils::smap::{SFold, SMapAccum};
 // Re-export nodes from the IR AST that we reuse as is.
 pub use crate::ir::ast::ElemSize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Void,
     Boolean,
@@ -295,7 +295,7 @@ impl Default for LaunchArgs {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr},
     Assign {dst: Expr, expr: Expr},
