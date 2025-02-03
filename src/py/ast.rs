@@ -251,6 +251,23 @@ impl Expr {
             Expr::Convert {..} => 11
         }
     }
+
+    pub fn with_info(self, i: Info) -> Self {
+        match self {
+            Expr::Var {id, ty, ..} => Expr::Var {id, ty, i},
+            Expr::String {v, ty, ..} => Expr::String {v, ty, i},
+            Expr::Bool {v, ty, ..} => Expr::Bool {v, ty, i},
+            Expr::Int {v, ty, ..} => Expr::Int {v, ty, i},
+            Expr::Float {v, ty, ..} => Expr::Float {v, ty, i},
+            Expr::UnOp {op, arg, ty, ..} => Expr::UnOp {op, arg, ty, i},
+            Expr::BinOp {lhs, op, rhs, ty, ..} => Expr::BinOp {lhs, op, rhs, ty, i},
+            Expr::Subscript {target, idx, ty, ..} => Expr::Subscript {target, idx, ty, i},
+            Expr::Tuple {elems, ty, ..} => Expr::Tuple {elems, ty, i},
+            Expr::Dict {fields, ty, ..} => Expr::Dict {fields, ty, i},
+            Expr::Builtin {func, args, ty, ..} => Expr::Builtin {func, args, ty, i},
+            Expr::Convert {e, ty} => Expr::Convert {e: Box::new(e.with_info(i)), ty}
+        }
+    }
 }
 
 impl Ord for Expr {

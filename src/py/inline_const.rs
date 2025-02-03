@@ -16,8 +16,11 @@ fn replace_constants_expr(
     e: Expr
 ) -> Expr {
     match e {
-        Expr::Var {..} => {
-            consts.get(&e).unwrap_or(&e).clone()
+        Expr::Var {ref i, ..} => {
+            match consts.get(&e) {
+                Some(e) => e.clone().with_info(i.clone()),
+                None => e.clone(),
+            }
         },
         Expr::Subscript {ref target, ref idx, ref ty, ref i} => {
             if let Some(v) = consts.get(&e) {
