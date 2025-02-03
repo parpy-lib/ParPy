@@ -92,8 +92,7 @@ fn remove_redundant_sync_stmt(
             let is_par = sync.contains(var);
             if is_par {
                 sync.remove(var);
-                let sync = remove_redundant_sync_par_stmts(sync, body, true);
-                sync
+                remove_redundant_sync_par_stmts(sync, body, true)
             } else {
                 remove_redundant_sync_stmts(sync, body)
             }
@@ -102,9 +101,7 @@ fn remove_redundant_sync_stmt(
             let sync = remove_redundant_sync_stmts(sync, thn);
             remove_redundant_sync_stmts(sync, els)
         },
-        Stmt::While {body, ..} => {
-            remove_redundant_sync_stmts(sync, body)
-        },
+        Stmt::While {body, ..} => remove_redundant_sync_stmts(sync, body),
     }
 }
 
@@ -123,7 +120,7 @@ fn ensure_no_inter_block_sync_par_stmt(
 ) -> CompileResult<()> {
     match stmt {
         Stmt::Definition {..} | Stmt::Assign {..} => Ok(()),
-        Stmt::For {var, body, i, ..} => {
+        Stmt::For {var, body, par, i, ..} => {
             let pars = if sync.contains(var) {
                 let hd = &pars[0];
                 match hd {
@@ -138,6 +135,8 @@ fn ensure_no_inter_block_sync_par_stmt(
                         parir_compile_error!(i, "{}", msg)
                     },
                 }?;
+                &pars[1..]
+            } else if par.is_parallel() {
                 &pars[1..]
             } else {
                 pars
