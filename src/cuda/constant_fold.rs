@@ -213,8 +213,8 @@ fn fold_stmt(s: Stmt) -> Stmt {
             }
         },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
-        Stmt::For {..} | Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
-        Stmt::KernelLaunch {..} | Stmt::Scope {..} => {
+        Stmt::For {..} | Stmt::While {..} | Stmt::Syncthreads {} |
+        Stmt::Dim3Definition {..} | Stmt::KernelLaunch {..} | Stmt::Scope {..} => {
             s.smap(fold_stmt).smap(fold_expr)
         }
     }

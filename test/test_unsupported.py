@@ -11,7 +11,7 @@ def test_slicing_rejected():
         def add_slice(x, y, out, N):
             out[:N] = x[:N] + y[:N]
 
-def test_while_rejected():
+def test_while_else_rejected():
     with pytest.raises(RuntimeError):
         @parir.jit
         def while_fun(x, y, N):
@@ -19,6 +19,8 @@ def test_while_rejected():
             while i < N:
                 y[i] = x[i]
                 i += 1
+            else:
+                y[i] = 0.0
 
 def test_for_steps_rejected():
     with pytest.raises(RuntimeError):

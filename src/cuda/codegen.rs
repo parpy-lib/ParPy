@@ -579,7 +579,12 @@ fn generate_kernel_stmt(
             let thn = generate_kernel_stmts(grid.clone(), map, sync, vec![], thn)?;
             let els = generate_kernel_stmts(grid, map, sync, vec![], els)?;
             acc.push(Stmt::If {cond, thn, els});
-        }
+        },
+        ir_ast::Stmt::While {cond, body, ..} => {
+            let cond = from_ir_expr(cond)?;
+            let body = generate_kernel_stmts(grid, map, sync, vec![], body)?;
+            acc.push(Stmt::While {cond, body});
+        },
     };
     Ok(acc)
 }
@@ -664,6 +669,12 @@ fn from_ir_stmt(
             let (thn, kernels) = from_ir_stmts(env, vec![], kernels, thn)?;
             let (els, kernels) = from_ir_stmts(env, vec![], kernels, els)?;
             host_body.push(Stmt::If {cond, thn, els});
+            Ok(kernels)
+        },
+        ir_ast::Stmt::While {cond, body, ..} => {
+            let cond = from_ir_expr(cond)?;
+            let (body, kernels) = from_ir_stmts(env, vec![], kernels, body)?;
+            host_body.push(Stmt::While {cond, body});
             Ok(kernels)
         },
     }?;

@@ -22,7 +22,8 @@ fn collect_sync_points_stmt(
         Stmt::If {thn, els, ..} => {
             let acc = collect_sync_points_stmts(acc, thn);
             collect_sync_points_stmts(acc, els)
-        }
+        },
+        Stmt::While {body, ..} => collect_sync_points_stmts(acc, body),
     }
 }
 
@@ -46,7 +47,10 @@ fn remove_redundant_sync_par_stmt(
         Stmt::If {thn, els, ..} => {
             let sync = remove_redundant_sync_par_stmts(sync, thn, false);
             remove_redundant_sync_par_stmts(sync, els, false)
-        }
+        },
+        Stmt::While {body, ..} => {
+            remove_redundant_sync_par_stmts(sync, body, false)
+        },
     }
 }
 
@@ -67,7 +71,10 @@ fn remove_redundant_sync_par_stmts(
         Some(Stmt::If {thn, els, ..}) => {
             let sync = remove_redundant_sync_par_stmts(sync, &thn, in_par);
             remove_redundant_sync_par_stmts(sync, &els, in_par)
-        }
+        },
+        Some(Stmt::While {body, ..}) => {
+            remove_redundant_sync_par_stmts(sync, &body, in_par)
+        },
     };
     stmts.iter()
         .rev()
@@ -94,6 +101,9 @@ fn remove_redundant_sync_stmt(
         Stmt::If {thn, els, ..} => {
             let sync = remove_redundant_sync_stmts(sync, thn);
             remove_redundant_sync_stmts(sync, els)
+        },
+        Stmt::While {body, ..} => {
+            remove_redundant_sync_stmts(sync, body)
         },
     }
 }
@@ -138,6 +148,9 @@ fn ensure_no_inter_block_sync_par_stmt(
             ensure_no_inter_block_sync_par_stmts(thn, sync, pars)?;
             ensure_no_inter_block_sync_par_stmts(els, sync, pars)
         },
+        Stmt::While {body, ..} => {
+            ensure_no_inter_block_sync_par_stmts(body, sync, pars)
+        },
     }
 }
 
@@ -171,6 +184,9 @@ fn ensure_no_inter_block_sync_stmt(
         Stmt::If {thn, els, ..} => {
             ensure_no_inter_block_sync_stmts(thn, sync, gpu_mapping)?;
             ensure_no_inter_block_sync_stmts(els, sync, gpu_mapping)
+        },
+        Stmt::While {body, ..} => {
+            ensure_no_inter_block_sync_stmts(body, sync, gpu_mapping)
         }
     }
 }

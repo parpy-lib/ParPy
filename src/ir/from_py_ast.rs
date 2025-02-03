@@ -224,6 +224,11 @@ fn to_ir_stmt(
             let els = to_ir_stmts(env, els)?;
             Ok(Stmt::If {cond, thn, els, i})
         },
+        py_ast::Stmt::While {cond, body, i} => {
+            let cond = to_ir_expr(env, cond)?;
+            let body = to_ir_stmts(env, body)?;
+            Ok(Stmt::While {cond, body, i})
+        },
     }
 }
 

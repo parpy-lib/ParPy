@@ -305,6 +305,7 @@ pub enum Stmt {
         incr: Expr, body: Vec<Stmt>
     },
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>},
+    While {cond: Expr, body: Vec<Stmt>},
     Syncthreads {},
     Dim3Definition {id: Name, args: Dim3},
     KernelLaunch {id: Name, blocks: Name, threads: Name, args: Vec<Expr>},
@@ -332,6 +333,10 @@ impl SMapAccum<Expr> for Stmt {
             Stmt::If {cond, thn, els} => {
                 let (acc, cond) = f(acc, cond);
                 (acc, Stmt::If {cond, thn, els})
+            },
+            Stmt::While {cond, body} => {
+                let (acc, cond) = f(acc, cond);
+                (acc, Stmt::While {cond, body})
             },
             Stmt::KernelLaunch {id, blocks, threads, args} => {
                 let (acc, args) = args.into_iter()
@@ -362,6 +367,7 @@ impl SFold<Expr> for Stmt {
                 f(acc, incr)
             },
             Stmt::If {cond, ..} => f(acc, cond),
+            Stmt::While {cond, ..} => f(acc, cond),
             Stmt::KernelLaunch {args, ..} => args.sfold(&f, acc),
             Stmt::AllocShared {..} | Stmt::Syncthreads {} |
             Stmt::Dim3Definition {..} | Stmt::Scope {..} => acc,
@@ -389,6 +395,10 @@ impl SMapAccum<Stmt> for Stmt {
                 let (acc, els) = els.smap_accum_l(&f, acc);
                 (acc, Stmt::If {cond, thn, els})
             },
+            Stmt::While {cond, body} => {
+                let (acc, body) = body.smap_accum_l(&f, acc);
+                (acc, Stmt::While {cond, body})
+            },
             Stmt::Scope {body} => {
                 let (acc, body) = body.smap_accum_l(&f, acc);
                 (acc, Stmt::Scope {body})
@@ -408,6 +418,7 @@ impl SFold<Stmt> for Stmt {
                 let acc = thn.sfold(&f, acc);
                 els.sfold(&f, acc)
             },
+            Stmt::While {body, ..} => body.sfold(&f, acc),
             Stmt::Scope {body} => body.sfold(&f, acc),
         }
     }

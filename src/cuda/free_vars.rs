@@ -53,8 +53,8 @@ fn fv_stmt(mut env: FVEnv, s: &Stmt) -> FVEnv {
             env.bound.insert(id.clone(), Type::Void);
             env
         },
-        Stmt::Assign {..} | Stmt::If {..} | Stmt::Syncthreads {..} |
-        Stmt::KernelLaunch {..} | Stmt::Scope {..} => {
+        Stmt::Assign {..} | Stmt::If {..} | Stmt::While {..} |
+        Stmt::Syncthreads {..} | Stmt::KernelLaunch {..} | Stmt::Scope {..} => {
             let env = s.sfold(fv_expr, env);
             s.sfold(fv_stmt, env)
         }

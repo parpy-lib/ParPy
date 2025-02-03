@@ -105,6 +105,10 @@ fn find_dict_types_stmt(
             let types = thn.iter().fold(types, find_dict_types_stmt);
             els.iter().fold(types, find_dict_types_stmt)
         },
+        Stmt::While {cond, body, ..} => {
+            let types = find_dict_types_expr(types, cond);
+            body.iter().fold(types, find_dict_types_stmt)
+        },
     }
 }
 

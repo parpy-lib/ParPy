@@ -356,6 +356,7 @@ pub enum Stmt {
     Assign {dst: Expr, expr: Expr, i: Info},
     For {var: Name, lo: Expr, hi: Expr, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
+    While {cond: Expr, body: Vec<Stmt>, i: Info},
 }
 
 impl InfoNode for Stmt {
@@ -365,6 +366,7 @@ impl InfoNode for Stmt {
             Stmt::Assign {i, ..} => i.clone(),
             Stmt::For {i, ..} => i.clone(),
             Stmt::If {i, ..} => i.clone(),
+            Stmt::While {i, ..} => i.clone(),
         }
     }
 }

@@ -289,9 +289,7 @@ fn convert_stmt<'py, 'a>(
         let body = convert_stmts(stmt.getattr("body")?, env)?;
 
         if stmt.getattr("orelse")?.len()? == 0 {
-            Ok(Stmt::For {
-                var, lo, hi, body, i
-            })
+            Ok(Stmt::For {var, lo, hi, body, i})
         } else {
             py_runtime_error!(i, "For-loops with an else-clause are not supported")
         }
@@ -313,6 +311,14 @@ fn convert_stmt<'py, 'a>(
                 },
                 _ => py_runtime_error!(i, "Unsupported form of assignment")
             }
+        }
+    } else if stmt.is_instance(&env.ast.getattr("While")?)? {
+        let cond = convert_expr(stmt.getattr("test")?, env)?;
+        let body = convert_stmts(stmt.getattr("body")?, env)?;
+        if stmt.getattr("orelse")?.len()? == 0 {
+            Ok(Stmt::While {cond, body, i})
+        } else {
+            py_runtime_error!(i, "While-loops with an else-clause are not supported")
         }
     } else {
         py_runtime_error!(i, "Unsupported statement: {stmt}")
@@ -813,6 +819,26 @@ mod test {
                 }
             ],
             i: mkinfo(1, 0, 4, 7)
+        });
+    }
+
+    #[test]
+    fn convert_while_stmt() {
+        let stmt = convert_stmt_wrap("while True:\n  y = 1").unwrap();
+        assert_eq!(stmt, Stmt::While {
+            cond: Expr::Bool {v: true, ty: Type::Unknown, i: mkinfo(1, 6, 1, 10)},
+            body: vec![
+                Stmt::Assign {
+                    dst: Expr::Var {
+                        id: var("y"),
+                        ty: Type::Unknown,
+                        i: mkinfo(2, 2, 2, 3)
+                    },
+                    expr: Expr::Int {v: 1, ty: Type::Unknown, i: mkinfo(2, 6, 2, 7)},
+                    i: mkinfo(2, 2, 2, 7)
+                }
+            ],
+            i: mkinfo(1, 0, 2, 7)
         });
     }
 

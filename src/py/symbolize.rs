@@ -164,6 +164,11 @@ impl Symbolize for Stmt {
                 let (_, els) = els.symbolize(env.clone())?;
                 Ok((env, Stmt::If {cond, thn, els, i}))
             }
+            Stmt::While {cond, body, i} => {
+                let (env, cond) = cond.symbolize(env)?;
+                let (_, body) = body.symbolize(env.clone())?;
+                Ok((env, Stmt::While {cond, body, i}))
+            },
         }
     }
 }

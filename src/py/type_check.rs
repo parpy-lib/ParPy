@@ -427,6 +427,26 @@ fn type_check_exprs(
         .collect()
 }
 
+fn validate_condition_type(cond: Expr, i: &Info) -> PyResult<Expr> {
+    let ty = cond.get_type();
+    match ty {
+        Type::Boolean => Ok(cond),
+        Type::Tensor {..} if ty.is_signed_integer() => {
+            // Convert a condition on an integer value to an explicit comparison against zero.
+            let cond_info = cond.get_info();
+            let zero = Expr::Int {v: 0, ty: ty.clone(), i: cond_info.clone()};
+            Ok(Expr::BinOp {
+                lhs: Box::new(cond),
+                op: BinOp::Neq,
+                rhs: Box::new(zero),
+                ty: Type::Boolean,
+                i: cond_info
+            })
+        },
+        _ => py_type_error!(i, "Unsupported type {ty} of conditional expression")
+    }
+}
+
 fn type_check_stmt(
     mut vars: BTreeMap<Name, Type>,
     stmt: Stmt
@@ -455,26 +475,15 @@ fn type_check_stmt(
             Ok((vars, Stmt::For {var, lo, hi, body, i}))
         },
         Stmt::If {cond, thn, els, i} => {
-            let cond = type_check_expr(&vars, cond)?;
-            let ty = cond.get_type();
-            let cond = match &ty {
-                Type::Boolean => Ok(cond),
-                Type::Tensor {..} if ty.is_signed_integer() => {
-                    let cond_info = cond.get_info();
-                    let zero = Expr::Int {v: 0, ty: ty.clone(), i: cond_info.clone()};
-                    Ok(Expr::BinOp {
-                        lhs: Box::new(cond),
-                        op: BinOp::Neq,
-                        rhs: Box::new(zero),
-                        ty: Type::Boolean,
-                        i: cond_info
-                    })
-                },
-                _ => py_type_error!(i, "Unsupported type {ty} of conditional expression")
-            }?;
+            let cond = validate_condition_type(type_check_expr(&vars, cond)?, &i)?;
             let (_, thn) = type_check_stmts(vars.clone(), thn)?;
             let (_, els) = type_check_stmts(vars.clone(), els)?;
             Ok((vars, Stmt::If {cond, thn, els, i}))
+        },
+        Stmt::While {cond, body, i} => {
+            let cond = validate_condition_type(type_check_expr(&vars, cond)?, &i)?;
+            let (_, body) = type_check_stmts(vars.clone(), body)?;
+            Ok((vars, Stmt::While {cond, body, i}))
         },
     }
 }

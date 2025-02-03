@@ -344,6 +344,14 @@ impl PrettyPrint for Stmt {
                 let env = env.decr_indent();
                 (env, s)
             },
+            Stmt::While {cond, body} => {
+                let (env, cond) = cond.pprint(env);
+                let env = env.incr_indent();
+                let (env, body) = pprint_iter(body.iter(), env, "\n");
+                let env = env.decr_indent();
+                let s = format!("{0}while ({1}) {{\n{2}\n{0}}}", indent, cond, body);
+                (env, s)
+            },
             Stmt::Syncthreads {} => {
                 (env, format!("{indent}__syncthreads();"))
             },
@@ -702,6 +710,17 @@ mod test {
             indent
         );
         assert_eq!(cond.pprint_default(), expected);
+    }
+
+    #[test]
+    fn pprint_while() {
+        let wh = Stmt::While {
+            cond: var("x"),
+            body: vec![Stmt::Assign {dst: var("y"), expr: var("z")}]
+        };
+        let indent = " ".repeat(pprint::DEFAULT_INDENT);
+        let expected = format!("while (x) {{\n{indent}y = z;\n}}");
+        assert_eq!(wh.pprint_default(), expected);
     }
 
     #[test]

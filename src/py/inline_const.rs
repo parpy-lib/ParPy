@@ -93,7 +93,12 @@ fn replace_constants_stmt(
             let thn = replace_constants_stmts(consts, thn);
             let els = replace_constants_stmts(consts, els);
             Stmt::If {cond, thn, els, i}
-        }
+        },
+        Stmt::While {cond, body, i} => {
+            let cond = replace_constants_expr(consts, cond);
+            let body = replace_constants_stmts(consts, body);
+            Stmt::While {cond, body, i}
+        },
     }
 }
 
