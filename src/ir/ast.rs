@@ -1,5 +1,6 @@
 use crate::utils::info::*;
 use crate::utils::name::Name;
+use crate::utils::smap::{SFold, SMapAccum};
 
 // Reuse the definition of element sizes from the Python AST.
 pub use crate::py::ast::ElemSize;
@@ -67,6 +68,68 @@ impl InfoNode for Expr {
     }
 }
 
+impl SMapAccum<Expr> for Expr {
+    fn smap_accum_l<A>(self, f: impl Fn(A, Expr) -> (A, Expr), acc: A) -> (A, Expr) {
+        match self {
+            Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} => {
+                (acc, self)
+            },
+            Expr::UnOp {op, arg, ty, i} => {
+                let (acc, arg) = f(acc, *arg);
+                (acc, Expr::UnOp {op, arg: Box::new(arg), ty, i})
+            },
+            Expr::BinOp {lhs, op, rhs, ty, i} => {
+                let (acc, lhs) = f(acc, *lhs);
+                let (acc, rhs) = f(acc, *rhs);
+                (acc, Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i})
+            }
+            Expr::StructFieldAccess {target, label, ty, i} => {
+                let (acc, target) = f(acc, *target);
+                (acc, Expr::StructFieldAccess {target: Box::new(target), label, ty, i})
+            },
+            Expr::TensorAccess {target, idx, ty, i} => {
+                let (acc, target) = f(acc, *target);
+                let (acc, idx) = f(acc, *idx);
+                (acc, Expr::TensorAccess {target: Box::new(target), idx: Box::new(idx), ty, i})
+            },
+            Expr::Struct {id, fields, ty, i} => {
+                let (acc, fields) = fields.into_iter()
+                    .fold((acc, vec![]), |(acc, mut fields), (id, e)| {
+                        let (acc, e) = f(acc, e);
+                        fields.push((id, e));
+                        (acc, fields)
+                    });
+                (acc, Expr::Struct {id, fields, ty, i})
+            },
+            Expr::Builtin {func, args, ty, i} => {
+                let (acc, args) = args.smap_accum_l(&f, acc);
+                (acc, Expr::Builtin {func, args, ty, i})
+            },
+            Expr::Convert {e, ty} => {
+                let (acc, e) = f(acc, *e);
+                (acc, Expr::Convert {e: Box::new(e), ty})
+            },
+        }
+    }
+}
+
+impl SFold<Expr> for Expr {
+    fn sfold<A>(&self, f: impl Fn(A, &Expr) -> A, acc: A) -> A {
+        match self {
+            Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} => acc,
+            Expr::UnOp {arg, ..} => f(acc, arg),
+            Expr::BinOp {lhs, rhs, ..} => f(f(acc, lhs), rhs),
+            Expr::StructFieldAccess {target, ..} => f(acc, target),
+            Expr::TensorAccess {target, idx, ..} => f(f(acc, target), idx),
+            Expr::Struct {fields, ..} => {
+                fields.into_iter().fold(acc, |acc, (_, e)| f(acc, e))
+            },
+            Expr::Builtin {args, ..} => args.sfold(&f, acc),
+            Expr::Convert {e, ..} => f(acc, e),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct LoopParallelism {
     pub nthreads : i64,
@@ -110,6 +173,68 @@ impl InfoNode for Stmt {
             Stmt::For {i, ..} => i.clone(),
             Stmt::If {i, ..} => i.clone(),
             Stmt::While {i, ..} => i.clone(),
+        }
+    }
+}
+
+impl SMapAccum<Expr> for Stmt {
+    fn smap_accum_l<A>(self, f: impl Fn(A, Expr) -> (A, Expr), acc: A) -> (A, Stmt) {
+        match self {
+            Stmt::Definition {ty, id, expr, i} => {
+                let (acc, expr) = f(acc, expr);
+                (acc, Stmt::Definition {ty, id, expr, i})
+            },
+            Stmt::Assign {dst, expr, i} => {
+                let (acc, dst) = f(acc, dst);
+                let (acc, expr) = f(acc, expr);
+                (acc, Stmt::Assign {dst, expr, i})
+            },
+            Stmt::For {var, lo, hi, body, par, i} => {
+                let (acc, lo) = f(acc, lo);
+                let (acc, hi) = f(acc, hi);
+                (acc, Stmt::For {var, lo, hi, body, par, i})
+            },
+            Stmt::If {cond, thn, els, i} => {
+                let (acc, cond) = f(acc, cond);
+                (acc, Stmt::If {cond, thn, els, i})
+            },
+            Stmt::While {cond, body, i} => {
+                let (acc, cond) = f(acc, cond);
+                (acc, Stmt::While {cond, body, i})
+            },
+        }
+    }
+}
+
+impl SFold<Expr> for Stmt {
+    fn sfold<A>(&self, f: impl Fn(A, &Expr) -> A, acc: A) -> A {
+        match self {
+            Stmt::Definition {expr, ..} => f(acc, expr),
+            Stmt::Assign {dst, expr, ..} => f(f(acc, dst), expr),
+            Stmt::For {lo, hi, ..} => f(f(acc, lo), hi),
+            Stmt::If {cond, ..} => f(acc, cond),
+            Stmt::While {cond, ..} => f(acc, cond),
+        }
+    }
+}
+
+impl SMapAccum<Stmt> for Stmt {
+    fn smap_accum_l<A>(self, f: impl Fn(A, Stmt) -> (A, Stmt), acc: A) -> (A, Stmt) {
+        match self {
+            Stmt::Definition {..} | Stmt::Assign {..} => (acc, self),
+            Stmt::For {var, lo, hi, body, par, i} => {
+                let (acc, body) = body.smap_accum_l(&f, acc);
+                (acc, Stmt::For {var, lo, hi, body, par, i})
+            },
+            Stmt::If {cond, thn, els, i} => {
+                let (acc, thn) = thn.smap_accum_l(&f, acc);
+                let (acc, els) = els.smap_accum_l(&f, acc);
+                (acc, Stmt::If {cond, thn, els, i})
+            },
+            Stmt::While {cond, body, i} => {
+                let (acc, body) = body.smap_accum_l(&f, acc);
+                (acc, Stmt::While {cond, body, i})
+            },
         }
     }
 }

@@ -382,12 +382,7 @@ impl SMapAccum<Stmt> for Stmt {
             Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
             Stmt::KernelLaunch {..} => (acc, self),
             Stmt::For {var_ty, var, init, cond, incr, body} => {
-                let (acc, body) = body.into_iter()
-                    .fold((acc, vec![]), |(acc, mut body), s| {
-                        let (acc, s) = f(acc, s);
-                        body.push(s);
-                        (acc, body)
-                    });
+                let (acc, body) = body.smap_accum_l(&f, acc);
                 (acc, Stmt::For {var_ty, var, init, cond, incr, body})
             },
             Stmt::If {cond, thn, els} => {
