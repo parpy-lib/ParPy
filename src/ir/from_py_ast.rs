@@ -46,6 +46,7 @@ fn to_ir_type(
         py_ast::Type::String => {
             parir_compile_error!(i, "Encountered standalone string type when translating to IR AST")
         },
+        py_ast::Type::Tensor {sz, shape} if shape.is_empty() => Ok(Type::Scalar {sz}),
         py_ast::Type::Tensor {sz, shape} => Ok(Type::Tensor {sz, shape}),
         py_ast::Type::Tuple {..} => {
             parir_compile_error!(i, "Encountered standalone tuple type when translating to IR AST")
