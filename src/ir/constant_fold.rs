@@ -382,16 +382,4 @@ mod test {
         test_identity(BinOp::Div, float(1.0), true);
         test_identity(BinOp::Div, int(1), true);
     }
-
-    fn if_stmt(cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>) -> Stmt {
-        Stmt::If {cond, thn, els, i: Info::default()}
-    }
-
-    fn assign(dst: Expr, expr: Expr) -> Stmt {
-        Stmt::Assign {dst, expr, i: Info::default()}
-    }
-
-    fn cfs(stmt: &Stmt) -> Stmt {
-        fold_stmt(stmt.clone())
-    }
 }
