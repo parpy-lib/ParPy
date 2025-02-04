@@ -1,4 +1,5 @@
 pub mod ast;
+mod constant_fold;
 mod from_py_ast;
 mod struct_types;
 
@@ -19,5 +20,7 @@ pub fn from_python(
         .map(|(ty, id)| from_py_ast::to_struct_def(&env, id, ty))
         .collect::<CompileResult<Vec<StructDef>>>()?;
     let fun = from_py_ast::to_ir_def(&env, def)?;
-    Ok(Ast {structs, fun})
+    let ast = Ast {structs, fun};
+    let ast = constant_fold::fold(ast);
+    Ok(ast)
 }
