@@ -23,39 +23,9 @@ impl Type {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum UnOp {
-    Sub, Exp, Log
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum BinOp {
-    Add, Sub, Mul, Div, Rem, BoolAnd, BitAnd, Eq, Neq, Lt, Gt,
-    Max, Min
-}
-
-impl BinOp {
-    pub fn is_infix(&self) -> bool {
-        match self {
-            BinOp::Max | BinOp::Min => false,
-            _ => true
-        }
-    }
-}
-
-impl BinOp {
-    pub fn precedence(&self) -> usize {
-        match self {
-            BinOp::BoolAnd => 0,
-            BinOp::BitAnd => 1,
-            BinOp::Eq | BinOp::Neq => 2,
-            BinOp::Lt | BinOp::Gt => 3,
-            BinOp::Add | BinOp::Sub => 4,
-            BinOp::Mul | BinOp::Div | BinOp::Rem => 5,
-            BinOp::Max | BinOp::Min => 6,
-        }
-    }
-}
+// Reuse the unary and binary operators defined in the IR AST
+pub use crate::ir::ast::UnOp;
+pub use crate::ir::ast::BinOp;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Dim {

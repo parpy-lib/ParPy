@@ -12,10 +12,39 @@ pub enum Type {
     Struct {id: Name},
 }
 
-// Reuse the below enums from the Python AST.
-pub use crate::py::ast::Builtin;
-pub use crate::py::ast::UnOp;
-pub use crate::py::ast::BinOp;
+#[derive(Clone, Debug, PartialEq)]
+pub enum UnOp {
+    Sub, Exp, Log
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BinOp {
+    Add, Sub, Mul, Div, Rem, BoolAnd, BitAnd, Eq, Neq, Lt, Gt,
+    Max, Min
+}
+
+impl BinOp {
+    pub fn is_infix(&self) -> bool {
+        match self {
+            BinOp::Max | BinOp::Min => false,
+            _ => true
+        }
+    }
+}
+
+impl BinOp {
+    pub fn precedence(&self) -> usize {
+        match self {
+            BinOp::BoolAnd => 0,
+            BinOp::BitAnd => 1,
+            BinOp::Eq | BinOp::Neq => 2,
+            BinOp::Lt | BinOp::Gt => 3,
+            BinOp::Add | BinOp::Sub => 4,
+            BinOp::Mul | BinOp::Div | BinOp::Rem => 5,
+            BinOp::Max | BinOp::Min => 6,
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
@@ -28,7 +57,6 @@ pub enum Expr {
     StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     TensorAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Struct {id: Name, fields: Vec<(String, Expr)>, ty: Type, i: Info},
-    Builtin {func: Builtin, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 }
 
@@ -44,7 +72,6 @@ impl Expr {
             Expr::StructFieldAccess {ty, ..} => ty,
             Expr::TensorAccess {ty, ..} => ty,
             Expr::Struct {ty, ..} => ty,
-            Expr::Builtin {ty, ..} => ty,
             Expr::Convert {ty, ..} => ty,
         }
     }
@@ -62,7 +89,6 @@ impl InfoNode for Expr {
             Expr::StructFieldAccess {i, ..} => i.clone(),
             Expr::TensorAccess {i, ..} => i.clone(),
             Expr::Struct {i, ..} => i.clone(),
-            Expr::Builtin {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
         }
     }
@@ -101,10 +127,6 @@ impl SMapAccum<Expr> for Expr {
                     });
                 (acc, Expr::Struct {id, fields, ty, i})
             },
-            Expr::Builtin {func, args, ty, i} => {
-                let (acc, args) = args.smap_accum_l(&f, acc);
-                (acc, Expr::Builtin {func, args, ty, i})
-            },
             Expr::Convert {e, ty} => {
                 let (acc, e) = f(acc, *e);
                 (acc, Expr::Convert {e: Box::new(e), ty})
@@ -124,7 +146,6 @@ impl SFold<Expr> for Expr {
             Expr::Struct {fields, ..} => {
                 fields.into_iter().fold(acc, |acc, (_, e)| f(acc, e))
             },
-            Expr::Builtin {args, ..} => args.sfold(&f, acc),
             Expr::Convert {e, ..} => f(acc, e),
         }
     }

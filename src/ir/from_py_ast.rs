@@ -63,6 +63,59 @@ fn to_ir_type(
     }
 }
 
+fn to_builtin(
+    func: py_ast::Builtin,
+    mut args: Vec<Expr>,
+    ty: Type,
+    i: Info
+) -> CompileResult<Expr> {
+    match func {
+        py_ast::Builtin::Inf if args.is_empty() => {
+            Ok(Expr::Float {v: f64::INFINITY, ty, i})
+        },
+        py_ast::Builtin::Exp if args.len() == 1 => {
+            let arg = Box::new(args.remove(0));
+            Ok(Expr::UnOp {op: UnOp::Exp, arg, ty, i})
+        },
+        py_ast::Builtin::Log if args.len() == 1 => {
+            let arg = Box::new(args.remove(0));
+            Ok(Expr::UnOp {op: UnOp::Log, arg, ty, i})
+        },
+        py_ast::Builtin::Max if args.len() == 2 => {
+            let lhs = Box::new(args.remove(0));
+            let rhs = Box::new(args.remove(0));
+            Ok(Expr::BinOp {lhs, op: BinOp::Max, rhs, ty, i})
+        },
+        py_ast::Builtin::Min if args.len() == 2 => {
+            let lhs = Box::new(args.remove(0));
+            let rhs = Box::new(args.remove(0));
+            Ok(Expr::BinOp {lhs, op: BinOp::Min, rhs, ty, i})
+        },
+        _ => parir_compile_error!(i, "Invalid use of builtin")
+    }
+}
+
+fn to_ir_unop(unop: py_ast::UnOp) -> UnOp {
+    match unop {
+        py_ast::UnOp::Sub => UnOp::Sub,
+    }
+}
+
+fn to_ir_binop(binop: py_ast::BinOp) -> BinOp {
+    match binop {
+        py_ast::BinOp::Add => BinOp::Add,
+        py_ast::BinOp::Sub => BinOp::Sub,
+        py_ast::BinOp::Mul => BinOp::Mul,
+        py_ast::BinOp::FloorDiv | py_ast::BinOp::Div => BinOp::Div,
+        py_ast::BinOp::Mod => BinOp::Rem,
+        py_ast::BinOp::BitAnd => BinOp::BitAnd,
+        py_ast::BinOp::Eq => BinOp::Eq,
+        py_ast::BinOp::Neq => BinOp::Neq,
+        py_ast::BinOp::Lt => BinOp::Lt,
+        py_ast::BinOp::Gt => BinOp::Gt,
+    }
+}
+
 fn to_ir_expr(
     env: &IREnv,
     e: py_ast::Expr
@@ -88,12 +141,14 @@ fn to_ir_expr(
             Ok(Expr::Float {v, ty, i})
         },
         py_ast::Expr::UnOp {op, arg, ty, i} => {
+            let op = to_ir_unop(op);
             let arg = Box::new(to_ir_expr(env, *arg)?);
             let ty = to_ir_type(env, &i, ty)?;
             Ok(Expr::UnOp {op, arg, ty, i})
         },
         py_ast::Expr::BinOp {lhs, op, rhs, ty, i} => {
             let lhs = Box::new(to_ir_expr(env, *lhs)?);
+            let op = to_ir_binop(op);
             let rhs = Box::new(to_ir_expr(env, *rhs)?);
             let ty = to_ir_type(env, &i, ty)?;
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})
@@ -175,7 +230,7 @@ fn to_ir_expr(
                 .map(|e| to_ir_expr(env, e))
                 .collect::<CompileResult<Vec<Expr>>>()?;
             let ty = to_ir_type(env, &i, ty)?;
-            Ok(Expr::Builtin {func, args, ty, i})
+            to_builtin(func, args, ty, i)
         },
         py_ast::Expr::Convert {e, ty} => {
             let i = e.get_info();

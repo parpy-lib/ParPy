@@ -32,61 +32,6 @@ fn from_ir_type(ty: ir_ast::Type) -> Type {
     }
 }
 
-fn to_builtin(
-    func: ir_ast::Builtin,
-    args: Vec<ir_ast::Expr>,
-    ty: Type,
-    i: Info
-) -> CompileResult<Expr> {
-    let mut args = args.into_iter()
-        .map(from_ir_expr)
-        .collect::<CompileResult<Vec<Expr>>>()?;
-    match func {
-        ir_ast::Builtin::Exp if args.len() == 1 => {
-            let arg = Box::new(args.remove(0));
-            Ok(Expr::UnOp {op: UnOp::Exp, arg, ty, i})
-        },
-        ir_ast::Builtin::Inf if args.is_empty() =>
-            Ok(Expr::Float {v: f64::INFINITY, ty, i}),
-        ir_ast::Builtin::Log if args.len() == 1 => {
-            let arg = Box::new(args.remove(0));
-            Ok(Expr::UnOp {op: UnOp::Log, arg, ty, i})
-        },
-        ir_ast::Builtin::Max if args.len() == 2 => {
-            let lhs = Box::new(args.remove(0));
-            let rhs = Box::new(args.remove(0));
-            Ok(Expr::BinOp {lhs, op: BinOp::Max, rhs, ty, i})
-        },
-        ir_ast::Builtin::Min => {
-            let lhs = Box::new(args.remove(0));
-            let rhs = Box::new(args.remove(0));
-            Ok(Expr::BinOp {lhs, op: BinOp::Min, rhs, ty, i})
-        },
-        _ => parir_compile_error!(i, "Invalid use of builtin")
-    }
-}
-
-fn from_ir_unop(op: ir_ast::UnOp) -> UnOp {
-    match op {
-        ir_ast::UnOp::Sub => UnOp::Sub,
-    }
-}
-
-fn from_ir_binop(op: ir_ast::BinOp) -> BinOp {
-    match op {
-        ir_ast::BinOp::Add => BinOp::Add,
-        ir_ast::BinOp::Sub => BinOp::Sub,
-        ir_ast::BinOp::Mul => BinOp::Mul,
-        ir_ast::BinOp::FloorDiv | ir_ast::BinOp::Div => BinOp::Div,
-        ir_ast::BinOp::Mod => BinOp::Rem,
-        ir_ast::BinOp::BitAnd => BinOp::BitAnd,
-        ir_ast::BinOp::Eq => BinOp::Eq,
-        ir_ast::BinOp::Neq => BinOp::Neq,
-        ir_ast::BinOp::Lt => BinOp::Lt,
-        ir_ast::BinOp::Gt => BinOp::Gt,
-    }
-}
-
 fn from_ir_expr(e: ir_ast::Expr) -> CompileResult<Expr> {
     let ty = from_ir_type(e.get_type().clone());
     match e {
@@ -96,12 +41,10 @@ fn from_ir_expr(e: ir_ast::Expr) -> CompileResult<Expr> {
         ir_ast::Expr::Float {v, i, ..} => Ok(Expr::Float {v, ty, i}),
         ir_ast::Expr::UnOp {op, arg, i, ..} => {
             let arg = Box::new(from_ir_expr(*arg)?);
-            let op = from_ir_unop(op);
             Ok(Expr::UnOp {op, arg, ty, i})
         },
         ir_ast::Expr::BinOp {lhs, op, rhs, i, ..} => {
             let lhs = Box::new(from_ir_expr(*lhs)?);
-            let op = from_ir_binop(op);
             let rhs = Box::new(from_ir_expr(*rhs)?);
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})
         },
@@ -119,9 +62,6 @@ fn from_ir_expr(e: ir_ast::Expr) -> CompileResult<Expr> {
                 .map(|(id, e)| Ok((id, from_ir_expr(e)?)))
                 .collect::<CompileResult<Vec<(String, Expr)>>>()?;
             Ok(Expr::Struct {id, fields, ty, i})
-        },
-        ir_ast::Expr::Builtin {func, args, i, ..} => {
-            to_builtin(func, args, ty, i)
         },
         ir_ast::Expr::Convert {e, ..} => {
             let e = Box::new(from_ir_expr(*e)?);
