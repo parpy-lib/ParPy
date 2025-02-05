@@ -33,7 +33,6 @@ def test_copy_two_dims():
 
     assert torch.allclose(y, y_cu.cpu())
 
-@pytest.mark.skip("Indexing is currently broken when using more than two dimensions")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_copy_three_dims():
     N, M, K = 20, 30, 40

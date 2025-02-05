@@ -171,27 +171,30 @@ fn to_ir_expr(
                         // NOTE: We want to multiply each value by all lower dimensions, so we skip
                         // the most significant one and add a trailing one at the end of the
                         // sequence (to prevent the zip from excluding the final argument).
-                        let idx = shape.clone()
+                        let (idx, _) = shape.clone()
                             .into_iter()
-                            .skip(1)
-                            .chain([1].into_iter())
-                            .zip(elems.clone().into_iter())
-                            .fold(Ok(zero), |acc, (n, idx)| {
-                                let n = Expr::Int {v: n, ty: int_ty.clone(), i: i_tuple.clone()};
+                            .rev()
+                            .zip(elems.clone().into_iter().rev())
+                            .fold(Ok((zero, 1)), |acc, (n, idx)| {
+                                let (expr, mult) = acc?;
+                                let nexpr = Expr::Int {
+                                    v: mult, ty: int_ty.clone(), i: i_tuple.clone()
+                                };
                                 let idx = to_ir_expr(env, idx)?;
-                                Ok(Expr::BinOp {
-                                    lhs: Box::new(acc?),
-                                    op: BinOp::Add,
-                                    rhs: Box::new(Expr::BinOp {
-                                        lhs: Box::new(n),
+                                let idx_expr = Expr::BinOp {
+                                    lhs: Box::new(Expr::BinOp {
+                                        lhs: Box::new(nexpr),
                                         op: BinOp::Mul,
                                         rhs: Box::new(idx),
                                         ty: int_ty.clone(),
                                         i: i_tuple.clone()
                                     }),
+                                    op: BinOp::Add,
+                                    rhs: Box::new(expr),
                                     ty: int_ty.clone(),
                                     i: i_tuple.clone()
-                                })
+                                };
+                                Ok((idx_expr, mult * n))
                             })?;
                         let idx = Box::new(idx.clone());
                         let res_shape = shape.clone()
