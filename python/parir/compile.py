@@ -65,57 +65,57 @@ def torch_to_ctype(dtype):
     else:
         raise RuntimeError(f"Unknown torch dtype: {dtype}")
 
-def get_cuda_wrapper(name, args, key):
+def get_cuda_wrapper(name, key):
     libpath = get_library_path(key)
     lib = ctypes.cdll.LoadLibrary(libpath)
 
-    # Ensure all tensor arguments have data allocated on the GPU
-    def check_arg(arg, i):
-        if isinstance(arg, torch.Tensor) and arg.get_device() != torch.cuda.current_device():
-            raise RuntimeError(f"Data of tensor in argument {i+1} is not on current device")
-        elif isinstance(arg, dict):
-            for v in arg.values():
-                check_arg(v, i)
-    for (i, arg) in enumerate(args):
-        check_arg(arg, i)
+    def wrapper(*args):
+        # Ensure all tensor arguments have data allocated on the GPU
+        def check_arg(arg, i):
+            if isinstance(arg, torch.Tensor) and arg.get_device() != torch.cuda.current_device():
+                raise RuntimeError(f"Data of tensor in argument {i+1} is not on current device")
+            elif isinstance(arg, dict):
+                for v in arg.values():
+                    check_arg(v, i)
+        for (i, arg) in enumerate(args):
+            check_arg(arg, i)
 
-    # Expand the arguments by making each field of a dictionary a separate argument
-    def expand_arg(arg):
-        if isinstance(arg, dict):
-            return [v for (_, v) in sorted(arg.items())]
-        else:
-            return [arg]
-    args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
+        # Expand the arguments by making each field of a dictionary a separate argument
+        def expand_arg(arg):
+            if isinstance(arg, dict):
+                return [v for (_, v) in sorted(arg.items())]
+            else:
+                return [arg]
+        args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
 
-    # Extract the C type of each argument
-    def get_ctype(arg):
-        # We treat int and floats from Python as 64-bit values
-        if isinstance(arg, int):
-            return ctypes.c_int64
-        elif isinstance(arg, float):
-            return ctypes.c_double
-        elif isinstance(arg, torch.Tensor):
-            if arg.ndim == 0:
-                return torch_to_ctype(arg.dtype)
+        # Extract the C type of each argument
+        def get_ctype(arg):
+            # We treat int and floats from Python as 64-bit values
+            if isinstance(arg, int):
+                return ctypes.c_int64
+            elif isinstance(arg, float):
+                return ctypes.c_double
+            elif isinstance(arg, torch.Tensor):
+                if arg.ndim == 0:
+                    return torch_to_ctype(arg.dtype)
+                else:
+                    return ctypes.c_void_p
             else:
                 return ctypes.c_void_p
-        else:
-            return ctypes.c_void_p
-    getattr(lib, name).argtypes = [get_ctype(arg) for arg in args]
+        getattr(lib, name).argtypes = [get_ctype(arg) for arg in args]
 
-    # Extract the pointers or values of tensor arguments before passing to CUDA
-    def value_or_ptr(arg):
-        if isinstance(arg, torch.Tensor):
-            if arg.ndim == 0:
-                return arg.item()
+        # Extract the pointers or values of tensor arguments before passing to CUDA
+        def value_or_ptr(arg):
+            if isinstance(arg, torch.Tensor):
+                if arg.ndim == 0:
+                    return arg.item()
+                else:
+                    return arg.contiguous().data_ptr()
             else:
-                return arg.contiguous().data_ptr()
-        else:
-            return arg
-    def extract_args(args):
-        args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
-        return [value_or_ptr(arg) for arg in args]
-    def wrapper(*args):
+                return arg
+        def extract_args(args):
+            args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
+            return [value_or_ptr(arg) for arg in args]
         ptr_args = extract_args(args)
         getattr(lib, name)(*ptr_args)
     wrapper.__name__ = name

@@ -63,7 +63,12 @@ def compile_function(ir_ast, args, kwargs, fn, key):
 
     # Return a CUDA wrapper which ensures the arguments are passed correctly on
     # to the exposed shared library function.
-    return compile.get_cuda_wrapper(fn.__name__, args, key)
+    return compile.get_cuda_wrapper(fn.__name__, key)
+
+def compile_string(fun_name, code):
+    key = "compiled_from_string"
+    compile.build_cuda_shared_library(key, code)
+    return compile.get_cuda_wrapper(fun_name, key)
 
 def print_compiled(fun, args, par):
     """
