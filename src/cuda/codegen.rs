@@ -351,6 +351,7 @@ fn generate_parallel_reduction(
                 acc.push(Stmt::For {
                     var_ty, var, init, cond, incr, body: vec![temp_assign]
                 });
+                acc.push(Stmt::Syncthreads {});
                 generate_warp_sync(&mut acc, opfn, &temp_var.clone(), &i);
 
                 // If the parallelism includes more than 32 threads, we are using more than one
@@ -368,6 +369,39 @@ fn generate_parallel_reduction(
                         ty: i64_ty.clone(),
                         i: i.clone()
                     };
+                    let var_id = Name::sym_str("i");
+                    let var = Expr::Var {id: var_id.clone(), ty: ty.clone(), i: i.clone()};
+                    acc.push(Stmt::For {
+                        var_ty: i64_ty.clone(),
+                        var: var_id.clone(),
+                        init: Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()},
+                        cond: Expr::BinOp {
+                            lhs: Box::new(var.clone()),
+                            op: BinOp::Lt,
+                            rhs: Box::new(Expr::Int {v: 32, ty: i64_ty.clone(), i: i.clone()}),
+                            ty: i64_ty.clone(),
+                            i: i.clone()
+                        },
+                        incr: Expr::BinOp {
+                            lhs: Box::new(var.clone()),
+                            op: BinOp::Add,
+                            rhs: Box::new(Expr::Int {
+                                v: nthreads, ty: i64_ty.clone(), i: i.clone()
+                            }),
+                            ty: i64_ty.clone(),
+                            i: i.clone()
+                        },
+                        body: vec![Stmt::Assign {
+                            dst: Expr::ArrayAccess {
+                                target: Box::new(shared_var.clone()),
+                                idx: Box::new(var.clone()),
+                                ty: ty.clone(),
+                                i: i.clone()
+                            },
+                            expr: ne.clone()
+                        }]
+                    });
+                    acc.push(Stmt::Syncthreads {});
                     acc.push(Stmt::If {
                         cond: Expr::BinOp {
                             lhs: Box::new(thread_warp_idx.clone()),
@@ -395,26 +429,16 @@ fn generate_parallel_reduction(
                     });
                     acc.push(Stmt::Syncthreads {});
 
-                    // Conditionally load data from shared memory, and synchronize across the
-                    // threads of the warp.
-                    acc.push(Stmt::If {
-                        cond: Expr::BinOp {
-                            lhs: Box::new(thread_warp_idx.clone()),
-                            op: BinOp::Lt,
-                            rhs: Box::new(Expr::Int {v: (nthreads + 31) / 32, ty: i64_ty.clone(), i: i.clone()}),
-                            ty: Type::Boolean,
+                    // Load data from shared memory, and synchronize across the threads of the
+                    // warp.
+                    acc.push(Stmt::Assign {
+                        dst: temp_var.clone(),
+                        expr: Expr::ArrayAccess {
+                            target: Box::new(shared_var),
+                            idx: Box::new(thread_warp_idx),
+                            ty: ty.clone(),
                             i: i.clone()
-                        },
-                        thn: vec![Stmt::Assign {
-                            dst: temp_var.clone(),
-                            expr: Expr::ArrayAccess {
-                                target: Box::new(shared_var),
-                                idx: Box::new(thread_warp_idx),
-                                ty: ty.clone(),
-                                i: i.clone()
-                            }}
-                        ],
-                        els: vec![Stmt::Assign {dst: temp_var.clone(), expr: ne}]
+                        }
                     });
                     generate_warp_sync(&mut acc, opfn, &temp_var.clone(), &i);
                 } else {
