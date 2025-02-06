@@ -66,9 +66,10 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     return compile.get_cuda_wrapper(fn.__name__, key)
 
 def compile_string(fun_name, code):
-    key = "compiled_from_string"
-    compile.build_cuda_shared_library(key, code)
-    return compile.get_cuda_wrapper(fun_name, key)
+    k = "string_" + key.generate_code_key(code)
+    if not compile.is_cached(k):
+        compile.build_cuda_shared_library(k, code)
+    return compile.get_cuda_wrapper(fun_name, k)
 
 def print_compiled(fun, args, par):
     """
