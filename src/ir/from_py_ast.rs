@@ -75,8 +75,12 @@ fn to_unary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<UnOp> {
     match func {
         py_ast::Builtin::Exp => Ok(UnOp::Exp),
         py_ast::Builtin::Log => Ok(UnOp::Log),
+        py_ast::Builtin::Cos => Ok(UnOp::Cos),
+        py_ast::Builtin::Sin => Ok(UnOp::Sin),
+        py_ast::Builtin::Sqrt => Ok(UnOp::Sqrt),
+        py_ast::Builtin::Tanh => Ok(UnOp::Tanh),
         py_ast::Builtin::Inf | py_ast::Builtin::Max | py_ast::Builtin::Min |
-        py_ast::Builtin::Convert {..} => {
+        py_ast::Builtin::Atan2 | py_ast::Builtin::Convert {..} => {
             parir_compile_error!(i, "Invalid builtin unary operator: {func}")
         }
     }
@@ -86,8 +90,10 @@ fn to_binary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<BinOp> {
     match func {
         py_ast::Builtin::Max => Ok(BinOp::Max),
         py_ast::Builtin::Min => Ok(BinOp::Min),
-        py_ast::Builtin::Inf | py_ast::Builtin::Exp | py_ast::Builtin::Log |
-        py_ast::Builtin::Convert {..} => {
+        py_ast::Builtin::Atan2 => Ok(BinOp::Atan2),
+        py_ast::Builtin::Exp | py_ast::Builtin::Inf | py_ast::Builtin::Log |
+        py_ast::Builtin::Cos | py_ast::Builtin::Sin | py_ast::Builtin::Sqrt |
+        py_ast::Builtin::Tanh | py_ast::Builtin::Convert {..} => {
             parir_compile_error!(i, "Invalid builtin binary operator: {func}")
         }
     }
@@ -132,6 +138,7 @@ fn to_ir_binop(binop: py_ast::BinOp) -> BinOp {
         py_ast::BinOp::Mul => BinOp::Mul,
         py_ast::BinOp::FloorDiv | py_ast::BinOp::Div => BinOp::Div,
         py_ast::BinOp::Mod => BinOp::Rem,
+        py_ast::BinOp::Pow => BinOp::Pow,
         py_ast::BinOp::BitAnd => BinOp::BitAnd,
         py_ast::BinOp::Eq => BinOp::Eq,
         py_ast::BinOp::Neq => BinOp::Neq,

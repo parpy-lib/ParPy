@@ -68,23 +68,77 @@ pub fn print_unop(op: &UnOp, ty: &Type) -> String {
             Some(ElemSize::F64) => "log",
             _ => panic!("Invalid type of log")
         },
+        UnOp::Cos => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "hcos",
+            Some(ElemSize::F32) => "__cosf",
+            Some(ElemSize::F64) => "cos",
+            _ => panic!("Invalid type of cos")
+        },
+        UnOp::Sin => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "hsin",
+            Some(ElemSize::F32) => "__sinf",
+            Some(ElemSize::F64) => "sin",
+            _ => panic!("Invalid type of sin")
+        },
+        UnOp::Sqrt => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "hsqrt",
+            Some(ElemSize::F32) => "sqrtf",
+            Some(ElemSize::F64) => "sqrt",
+            _ => panic!("Invalid type of sqrt")
+        },
+        UnOp::Tanh => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "htanh",
+            Some(ElemSize::F32) => "tanhf",
+            Some(ElemSize::F64) => "tanh",
+            _ => panic!("Invalid type of tanh")
+        }
     };
     s.to_string()
 }
 
 pub fn print_binop(op: &BinOp, ty: &Type) -> String {
     let s = match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::Div => "/",
+        BinOp::Add => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "__hadd",
+            _ => "+"
+        },
+        BinOp::Sub => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "__hsub",
+            _ => "-"
+        },
+        BinOp::Mul => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "__hmul",
+            _ => "*"
+        },
+        BinOp::Div => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "__hdiv",
+            _ => "/"
+        },
         BinOp::Rem => "%",
+        BinOp::Pow => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "hpow",
+            Some(ElemSize::F32) => "__powf",
+            Some(ElemSize::F64) => "pow",
+            _ => panic!("Invalid type of **")
+        },
         BinOp::BoolAnd => "&&",
         BinOp::BitAnd => "&",
-        BinOp::Eq => "==",
-        BinOp::Neq => "!=",
-        BinOp::Lt => "<",
-        BinOp::Gt => ">",
+        BinOp::Eq => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "__heq",
+            _ => "=="
+        },
+        BinOp::Neq => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "__hne",
+            _ => "!="
+        },
+        BinOp::Lt => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "__hlt",
+            _ => "<"
+        },
+        BinOp::Gt => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "__hgt",
+            _ => ">"
+        },
         BinOp::Max => match ty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "__hmax",
             Some(ElemSize::F32) => "fmaxf",
@@ -98,7 +152,8 @@ pub fn print_binop(op: &BinOp, ty: &Type) -> String {
             Some(ElemSize::F64) => "fmin",
             Some(_) => "min",
             None => panic!("Invalid type of min")
-        }
+        },
+        BinOp::Atan2 => "atan2",
     };
     s.to_string()
 }
@@ -155,6 +210,19 @@ impl PrettyPrint for Dim {
     }
 }
 
+fn is_infix(op: &BinOp, ty: &Type) -> bool {
+    let is_f16 = match ty.get_scalar_elem_size() {
+        Some(ElemSize::F16) => true,
+        _ => false
+    };
+    match op {
+        BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => false,
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Eq |
+        BinOp::Neq | BinOp::Lt | BinOp::Gt if is_f16 => false,
+        _ => true
+    }
+}
+
 impl PrettyPrint for Expr {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
@@ -192,7 +260,7 @@ impl PrettyPrint for Expr {
 
                 // We consider the precedence of the left- and right-hand side operands and use
                 // this to omit parentheses when they are unnecessary.
-                if op.is_infix() {
+                if is_infix(&op, lhs.get_type()) {
                     let lhs_op = try_get_binop(lhs);
                     let rhs_op = try_get_binop(rhs);
                     let lhs_str = parenthesize_if_lower_precedence(lhs_op, &op, lhs_str);

@@ -15,22 +15,13 @@ pub enum Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UnOp {
-    Sub, Exp, Log
+    Sub, Exp, Log, Cos, Sin, Sqrt, Tanh
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BinOp {
-    Add, Sub, Mul, Div, Rem, BoolAnd, BitAnd, Eq, Neq, Lt, Gt,
-    Max, Min
-}
-
-impl BinOp {
-    pub fn is_infix(&self) -> bool {
-        match self {
-            BinOp::Max | BinOp::Min => false,
-            _ => true
-        }
-    }
+    Add, Sub, Mul, Div, Rem, Pow, BoolAnd, BitAnd, Eq, Neq, Lt, Gt,
+    Max, Min, Atan2
 }
 
 impl BinOp {
@@ -42,7 +33,7 @@ impl BinOp {
             BinOp::Lt | BinOp::Gt => 3,
             BinOp::Add | BinOp::Sub => 4,
             BinOp::Mul | BinOp::Div | BinOp::Rem => 5,
-            BinOp::Max | BinOp::Min => 6,
+            BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => 6,
         }
     }
 }

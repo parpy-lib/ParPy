@@ -1,5 +1,5 @@
 from builtins import min, max, sum
-from math import exp, inf, log
+from math import atan2, cos, exp, inf, log, sin, sqrt, tanh
 
 def float16(x):
     return float(x)

@@ -750,7 +750,8 @@ pub fn from_ir(
 
     let mut tops = vec![
         Top::Include {header: "<cmath>".to_string()},
-        Top::Include {header: "<cstdint>".to_string()}
+        Top::Include {header: "<cstdint>".to_string()},
+        Top::Include {header: "<cuda_fp16.h>".to_string()},
     ];
     tops.append(&mut structs);
     tops.append(&mut from_ir_fun_def(env, ast.fun)?);

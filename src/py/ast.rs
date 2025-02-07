@@ -148,7 +148,7 @@ impl fmt::Display for Type {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Builtin {
-    Exp, Inf, Log, Max, Min,
+    Exp, Inf, Log, Max, Min, Cos, Sin, Sqrt, Tanh, Atan2,
     Convert {sz: ElemSize}
 }
 
@@ -160,6 +160,11 @@ impl fmt::Display for Builtin {
             Builtin::Log => write!(f, "log"),
             Builtin::Max => write!(f, "max"),
             Builtin::Min => write!(f, "min"),
+            Builtin::Cos => write!(f, "cos"),
+            Builtin::Sin => write!(f, "sin"),
+            Builtin::Sqrt => write!(f, "sqrt"),
+            Builtin::Tanh => write!(f, "tanh"),
+            Builtin::Atan2 => write!(f, "atan2"),
             Builtin::Convert {sz} => write!(f, "convert({sz})"),
         }
     }
@@ -180,7 +185,7 @@ impl fmt::Display for UnOp {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BinOp {
-    Add, Sub, Mul, FloorDiv, Div, Mod, BitAnd, Eq, Neq, Lt, Gt
+    Add, Sub, Mul, FloorDiv, Div, Mod, Pow, BitAnd, Eq, Neq, Lt, Gt
 }
 
 impl fmt::Display for BinOp {
@@ -192,6 +197,7 @@ impl fmt::Display for BinOp {
             BinOp::FloorDiv => write!(f, "//"),
             BinOp::Div => write!(f, "/"),
             BinOp::Mod => write!(f, "%"),
+            BinOp::Pow => write!(f, "**"),
             BinOp::BitAnd => write!(f, "&"),
             BinOp::Eq => write!(f, "=="),
             BinOp::Neq => write!(f, "!="),

@@ -206,12 +206,22 @@ fn type_check_builtin(
             Ok(Expr::Builtin {func, args, ty: Type::Tensor {sz: ElemSize::F64, shape: vec![]}, i})
         },
         // Unary operations on (floating-point) scalar values
-        Builtin::Exp | Builtin::Log if args.len() == 1 => {
+        Builtin::Exp | Builtin::Log | Builtin::Cos | Builtin::Sin |
+        Builtin::Sqrt if args.len() == 1 => {
             let ty = args[0].get_type().clone();
             if ty.is_floating_point() {
                 Ok(Expr::Builtin {func, args, ty, i})
             } else {
-                py_type_error!(i, "Unexpected type {ty} of unary builtin (expected scalar)")
+                py_type_error!(i, "Unexpected type {ty} of unary builtin (expected float)")
+            }
+        },
+        Builtin::Tanh if args.len() == 1 => {
+            let ty = args[0].get_type().clone();
+            match ty.get_scalar_elem_size() {
+                Some(ElemSize::F16) =>
+                    py_type_error!(i, "Operation tanh not supporteed for 16-bit floats"),
+                Some(ElemSize::F32 | ElemSize::F64) => Ok(Expr::Builtin {func, args, ty, i}),
+                _ => py_type_error!(i, "Unexpected type {ty} of tanh builtin (expected float)")
             }
         },
         // Unary cast operations on scalar values
@@ -228,17 +238,24 @@ fn type_check_builtin(
             }
         },
         // Binary operations on scalar values
-        Builtin::Max | Builtin::Min if args.len() == 2 => {
-            let snd = args.pop().unwrap();
-            let fst = args.pop().unwrap();
-            let ty = lub_type(fst.get_type().clone(), snd.get_type().clone(), &i)?;
-            if let Some(_) = ty.get_scalar_elem_size() {
+        Builtin::Max | Builtin::Min | Builtin::Atan2 if args.len() == 2 => {
+            let mk_builtin = |func, fst, snd, ty, i| {
                 let fst = coerce_type(fst, &ty)?;
                 let snd = coerce_type(snd, &ty)?;
                 let args = vec![fst, snd];
                 Ok(Expr::Builtin {func, args, ty, i})
-            } else {
-                py_type_error!(i, "Unexpected type {ty} of binary builtin (expected scalar)")
+            };
+            let snd = args.pop().unwrap();
+            let fst = args.pop().unwrap();
+            let ty = lub_type(fst.get_type().clone(), snd.get_type().clone(), &i)?;
+            match ty.get_scalar_elem_size() {
+                Some(_) if func != Builtin::Atan2 => mk_builtin(func, fst, snd, ty, i),
+                Some(ElemSize::F64) if func == Builtin::Atan2 => {
+                    mk_builtin(func, fst, snd, ty, i)
+                },
+                _ => {
+                    py_type_error!(i, "Unexpected type {ty} of binary builtin (expected scalar)")
+                }
             }
         },
         _ => py_type_error!(i, "Unexpected number of arguments of builtin {func}")
@@ -263,16 +280,18 @@ fn type_check_unop(
 }
 
 fn type_check_binop(
-    lhs: &Expr,
+    lhs: Expr,
     op: &BinOp,
-    rhs: &Expr,
+    rhs: Expr,
     i: &Info
-) -> PyResult<Type> {
+) -> PyResult<(Box<Expr>, Type, Box<Expr>)> {
     let lty = lhs.get_type().clone();
     let rty = rhs.get_type().clone();
     let ty = lub_type(lty, rty, i)?;
-    match op {
-        // Arithmetic operations supporting both integers and floating point numbers
+    let lhs = coerce_type(lhs, &ty)?;
+    let rhs = coerce_type(rhs, &ty)?;
+    let ty = match op {
+        // Arithmetic operations supporting either integers or floating point numbers
         BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
             if ty.is_signed_integer() || ty.is_floating_point() {
                 Ok(ty)
@@ -286,6 +305,14 @@ fn type_check_binop(
                 Ok(ty)
             } else {
                 py_type_error!(i, "Invalid type {ty} of integer arithmetic operation")
+            }
+        },
+        // Arithmetic operations only supported for floating-point numbers
+        BinOp::Pow => {
+            if ty.is_floating_point() {
+                Ok(ty)
+            } else {
+                py_type_error!(i, "Invalid type {ty} of floating-point arithmetic operation")
             }
         },
         // Bitwise operations
@@ -304,7 +331,8 @@ fn type_check_binop(
                 py_type_error!(i, "Invalid type {ty} of boolean comparison operation")
             }
         },
-    }
+    }?;
+    Ok((Box::new(lhs), ty, Box::new(rhs)))
 }
 
 fn type_check_expr(
@@ -331,9 +359,9 @@ fn type_check_expr(
             Ok(Expr::UnOp {op, arg, ty, i})
         },
         Expr::BinOp {lhs, op, rhs, i, ..} => {
-            let lhs = Box::new(type_check_expr(vars, *lhs)?);
-            let rhs = Box::new(type_check_expr(vars, *rhs)?);
-            let ty = type_check_binop(&lhs, &op, &rhs, &i)?;
+            let lhs = type_check_expr(vars, *lhs)?;
+            let rhs = type_check_expr(vars, *rhs)?;
+            let (lhs, ty, rhs) = type_check_binop(lhs, &op, rhs, &i)?;
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})
         },
         Expr::Subscript {target, idx, i, ..} => {
@@ -684,7 +712,8 @@ mod test {
     }
 
     fn test_tc_binop(lhs: Expr, op: BinOp, rhs: Expr) -> PyResult<Type> {
-        type_check_binop(&lhs, &op, &rhs, &Info::default())
+        let (_, ty, _) = type_check_binop(lhs, &op, rhs, &Info::default())?;
+        Ok(ty)
     }
 
     #[test]

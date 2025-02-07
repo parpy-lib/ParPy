@@ -78,6 +78,8 @@ fn convert_bin_op<'py, 'a>(
         Ok(BinOp::FloorDiv)
     } else if binop.is_instance(&env.ast.getattr("Mod")?)? {
         Ok(BinOp::Mod)
+    } else if binop.is_instance(&env.ast.getattr("Pow")?)? {
+        Ok(BinOp::Pow)
     } else if binop.is_instance(&env.ast.getattr("BitAnd")?)? {
         Ok(BinOp::BitAnd)
     } else if binop.is_instance(&env.ast.getattr("Eq")?)? {
@@ -116,6 +118,16 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
                 Ok(Builtin::Min)
             } else if e.eq(parir.getattr("max")?)? {
                 Ok(Builtin::Max)
+            } else if e.eq(parir.getattr("cos")?)? {
+                Ok(Builtin::Cos)
+            } else if e.eq(parir.getattr("sin")?)? {
+                Ok(Builtin::Sin)
+            } else if e.eq(parir.getattr("sqrt")?)? {
+                Ok(Builtin::Sqrt)
+            } else if e.eq(parir.getattr("tanh")?)? {
+                Ok(Builtin::Tanh)
+            } else if e.eq(parir.getattr("atan2")?)? {
+                Ok(Builtin::Atan2)
             } else if e.eq(parir.getattr("float16")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::F16})
             } else if e.eq(parir.getattr("float32")?)? {
@@ -481,6 +493,24 @@ mod test {
     }
 
     #[test]
+    fn lookup_builtin_sqrt() -> PyResult<()> {
+        lookup_builtin_ok("parir.sqrt", Builtin::Sqrt)?;
+        lookup_builtin_ok("math.sqrt", Builtin::Sqrt)
+    }
+
+    #[test]
+    fn lookup_builtin_trigonometry() -> PyResult<()> {
+        lookup_builtin_ok("parir.cos", Builtin::Cos)?;
+        lookup_builtin_ok("math.cos", Builtin::Cos)?;
+        lookup_builtin_ok("parir.sin", Builtin::Sin)?;
+        lookup_builtin_ok("math.sin", Builtin::Sin)?;
+        lookup_builtin_ok("parir.tanh", Builtin::Tanh)?;
+        lookup_builtin_ok("math.tanh", Builtin::Tanh)?;
+        lookup_builtin_ok("parir.atan2", Builtin::Atan2)?;
+        lookup_builtin_ok("math.atan2", Builtin::Atan2)
+    }
+
+    #[test]
     fn lookup_builtin_torch_prefix_fail() -> PyResult<()> {
         lookup_builtin_fail("torch.log")
     }
@@ -598,7 +628,7 @@ mod test {
         assert_eq!(expr, Expr::BinOp {
             lhs: Box::new(Expr::Int {
                 v: 1,
-                ty : Type::Unknown,
+                ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
             op: BinOp::Add,
@@ -613,9 +643,23 @@ mod test {
     }
 
     #[test]
-    fn convert_expr_binop_pow_fail() {
-        let result = convert_expr_wrap("2 ** 4");
-        assert!(result.is_err());
+    fn convert_expr_binop_pow() {
+        let expr = convert_expr_wrap("2 ** 4").unwrap();
+        assert_eq!(expr, Expr::BinOp {
+            lhs: Box::new(Expr::Int {
+                v: 2,
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            op: BinOp::Pow,
+            rhs: Box::new(Expr::Int {
+                v: 4,
+                ty: Type::Unknown,
+                i: mkinfo(1, 5, 1, 6)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 6)
+        });
     }
 
     #[test]
