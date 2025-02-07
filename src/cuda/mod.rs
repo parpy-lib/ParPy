@@ -2,6 +2,7 @@ mod ast;
 mod codegen;
 mod constant_fold;
 mod free_vars;
+mod global_mem;
 mod pprint;
 mod par;
 mod sync;
@@ -23,6 +24,11 @@ pub fn codegen(ast: ir_ast::Ast) -> CompileResult<Ast> {
 
     // Translate the IR AST to a CUDA C++ AST based on the information gathered above.
     let ast = codegen::from_ir(ast, gpu_mapping, sync)?;
+
+    // Eliminates all block-wide memory writes to the same memory address by having only one thread
+    // write the value, and then synchronizing to ensure all threads have a consistent view of the
+    // memory afterward.
+    let ast = global_mem::eliminate_block_wide_memory_writes(ast)?;
 
     // Perform simple constant folding to produce more readable output.
     Ok(constant_fold::fold(ast))

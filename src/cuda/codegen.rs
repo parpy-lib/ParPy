@@ -456,28 +456,7 @@ fn generate_parallel_reduction(
                         ty: ty.clone(), i: i.clone()
                     },
                 };
-                match dst {
-                    Expr::Var {..} => {
-                        acc.push(assign_stmt);
-                        Ok(())
-                    },
-                    Expr::ArrayAccess {..} => {
-                        let is_first_thread = Expr::BinOp {
-                            lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()}),
-                            op: BinOp::Eq,
-                            rhs: Box::new(Expr::Int {v: 0, ty: i64_ty.clone(), i: i.clone()}),
-                            ty: Type::Boolean,
-                            i: i.clone()
-                        };
-                        acc.push(Stmt::If {
-                            cond: is_first_thread,
-                            thn: vec![assign_stmt],
-                            els: vec![]
-                        });
-                        Ok(())
-                    },
-                    _ => parir_compile_error!(i, "Invalid destination expression in binary operation")
-                }?;
+                acc.push(assign_stmt);
                 Ok(acc)
             } else {
                 println!("dst != lhs");

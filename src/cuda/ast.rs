@@ -389,7 +389,7 @@ impl SFold<Stmt> for Stmt {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Attribute {
     Global, Entry
 }

@@ -62,12 +62,10 @@ def test_syrk_parallel_128():
 def test_syrk_parallel_256():
     syrk_run_par(256)
 
-@pytest.mark.skip("Fails due to bug in code generation")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_syrk_parallel_512():
     syrk_run_par(512)
 
-@pytest.mark.skip("Fails due to bug in code generation")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_syrk_parallel_1024():
     syrk_run_par(1024)
