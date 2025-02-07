@@ -64,35 +64,58 @@ fn to_ir_type(
     }
 }
 
+fn to_float_literal_value(func: py_ast::Builtin, i: &Info) -> CompileResult<f64> {
+    match func {
+        py_ast::Builtin::Inf => Ok(f64::INFINITY),
+        _ => parir_compile_error!(i, "Invalid builtin literal value: {func}")
+    }
+}
+
+fn to_unary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<UnOp> {
+    match func {
+        py_ast::Builtin::Exp => Ok(UnOp::Exp),
+        py_ast::Builtin::Log => Ok(UnOp::Log),
+        py_ast::Builtin::Inf | py_ast::Builtin::Max | py_ast::Builtin::Min |
+        py_ast::Builtin::Convert {..} => {
+            parir_compile_error!(i, "Invalid builtin unary operator: {func}")
+        }
+    }
+}
+
+fn to_binary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<BinOp> {
+    match func {
+        py_ast::Builtin::Max => Ok(BinOp::Max),
+        py_ast::Builtin::Min => Ok(BinOp::Min),
+        py_ast::Builtin::Inf | py_ast::Builtin::Exp | py_ast::Builtin::Log |
+        py_ast::Builtin::Convert {..} => {
+            parir_compile_error!(i, "Invalid builtin binary operator: {func}")
+        }
+    }
+}
+
 fn to_builtin(
     func: py_ast::Builtin,
     mut args: Vec<Expr>,
     ty: Type,
     i: Info
 ) -> CompileResult<Expr> {
-    match func {
-        py_ast::Builtin::Inf if args.is_empty() => {
-            Ok(Expr::Float {v: f64::INFINITY, ty, i})
+    match args.len() {
+        0 => {
+            let v = to_float_literal_value(func, &i)?;
+            Ok(Expr::Float {v, ty, i})
         },
-        py_ast::Builtin::Exp if args.len() == 1 => {
+        1 => {
+            let op = to_unary_op(func, &i)?;
             let arg = Box::new(args.remove(0));
-            Ok(Expr::UnOp {op: UnOp::Exp, arg, ty, i})
+            Ok(Expr::UnOp {op, arg, ty, i})
         },
-        py_ast::Builtin::Log if args.len() == 1 => {
-            let arg = Box::new(args.remove(0));
-            Ok(Expr::UnOp {op: UnOp::Log, arg, ty, i})
-        },
-        py_ast::Builtin::Max if args.len() == 2 => {
+        2 => {
+            let op = to_binary_op(func, &i)?;
             let lhs = Box::new(args.remove(0));
             let rhs = Box::new(args.remove(0));
-            Ok(Expr::BinOp {lhs, op: BinOp::Max, rhs, ty, i})
+            Ok(Expr::BinOp {lhs, op, rhs, ty, i})
         },
-        py_ast::Builtin::Min if args.len() == 2 => {
-            let lhs = Box::new(args.remove(0));
-            let rhs = Box::new(args.remove(0));
-            Ok(Expr::BinOp {lhs, op: BinOp::Min, rhs, ty, i})
-        },
-        _ => parir_compile_error!(i, "Invalid use of builtin")
+        n => parir_compile_error!(i, "Builtin {func} does not expect {n} arguments")
     }
 }
 

@@ -1,179 +1,81 @@
 use super::ast::*;
+use crate::utils::constant_fold::*;
 use crate::utils::info::Info;
 use crate::utils::smap::SMapAccum;
 
-fn constant_fold_unop(
-    op: UnOp,
-    arg: Expr,
-    ty: Type,
-    i: Info
-) -> Expr {
-    let reconstruct = |op, arg, ty, i| {
+impl CFExpr<Type> for Expr {
+    fn mk_unop(op: UnOp, arg: Expr, ty: Type, i: Info) -> Expr {
         Expr::UnOp {op, arg: Box::new(arg), ty, i}
-    };
-    let arg = fold_expr(arg);
-    match op {
-        UnOp::Sub => match arg {
-            Expr::Int {v, ..} => Expr::Int {v: -v, ty, i},
-            Expr::Float {v, ..} => Expr::Float {v: -v, ty, i},
-            _ => reconstruct(op, arg, ty, i)
-        },
-        UnOp::Exp => match arg {
-            Expr::Float {v, ..} => Expr::Float {v: v.exp(), ty, i},
-            _ => reconstruct(op, arg, ty, i)
-        },
-        UnOp::Log => match arg {
-            Expr::Float {v, ..} if v > 0.0 => Expr::Float {v: v.ln(), ty, i},
-            _ => reconstruct(op, arg, ty, i)
+    }
+
+    fn mk_binop(lhs: Expr, op: BinOp, rhs: Expr, ty: Type, i: Info) -> Expr {
+        Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i}
+    }
+
+    fn bool_expr(v: bool, ty: Type, i: Info) -> Expr {
+        Expr::Bool {v, ty, i}
+    }
+
+    fn int_expr(v: i64, ty: Type, i: Info) -> Expr {
+        Expr::Int {v, ty, i}
+    }
+
+    fn float_expr(v: f64, ty: Type, i: Info) -> Expr {
+        Expr::Float {v, ty, i}
+    }
+
+    fn get_bool_value(&self) -> Option<bool> {
+        match self {
+            Expr::Bool {v, ..} => Some(*v),
+            _ => None
+        }
+    }
+
+    fn get_int_value(&self) -> Option<i64> {
+        match self {
+            Expr::Int {v, ..} => Some(*v),
+            _ => None
+        }
+    }
+
+    fn get_float_value(&self) -> Option<f64> {
+        match self {
+            Expr::Float {v, ..} => Some(*v),
+            _ => None
         }
     }
 }
 
-fn apply_bool_op(
-    op: BinOp,
-    lhs: bool,
-    rhs: bool,
-    ty: Type,
-    i: Info
-) -> Expr {
-    let bool_expr = |v| Expr::Bool {v, ty: Type::Boolean, i: i.clone()};
-    let reconstruct = |lhs, op, rhs| {
-        let lhs = Box::new(bool_expr(lhs));
-        let rhs = Box::new(bool_expr(rhs));
-        Expr::BinOp {lhs, op, rhs, ty: ty.clone(), i: i.clone()}
-    };
-    match op {
-        BinOp::BoolAnd => bool_expr(lhs && rhs),
-        _ => reconstruct(lhs, op, rhs)
+impl CFType for Type {
+    fn is_bool(&self) -> bool {
+        *self == Type::Boolean
     }
-}
 
-fn is_bool_neutral_elem(op: &BinOp, v: bool) -> bool {
-    match op {
-        BinOp::BoolAnd => v == true,
-        _ => false
+    fn is_int(&self) -> bool {
+        match self {
+            Type::Scalar {sz} if sz.is_signed_integer() => true,
+            _ => false
+        }
     }
-}
 
-fn apply_int_op(
-    op: BinOp,
-    lhs: i64,
-    rhs: i64,
-    ty: Type,
-    i: Info
-) -> Expr {
-    let int_expr = |v| Expr::Int {v, ty: ty.clone(), i: i.clone()};
-    let reconstruct = |lhs, op, rhs| {
-        let lhs = Box::new(int_expr(lhs));
-        let rhs = Box::new(int_expr(rhs));
-        Expr::BinOp {lhs, op, rhs, ty: ty.clone(), i: i.clone()}
-    };
-    let bool_expr = |v| Expr::Bool {v, ty: Type::Boolean, i: i.clone()};
-    match op {
-        BinOp::Add => int_expr(lhs + rhs),
-        BinOp::Sub => int_expr(lhs - rhs),
-        BinOp::Mul => int_expr(lhs * rhs),
-        BinOp::Div if rhs != 0 => int_expr(lhs / rhs),
-        BinOp::Rem if rhs != 0 => int_expr(lhs % rhs),
-        BinOp::BitAnd => int_expr(lhs & rhs),
-        BinOp::Eq => bool_expr(lhs == rhs),
-        BinOp::Neq => bool_expr(lhs != rhs),
-        BinOp::Lt => bool_expr(lhs < rhs),
-        BinOp::Gt => bool_expr(lhs > rhs),
-        BinOp::Max => int_expr(i64::max(lhs, rhs)),
-        BinOp::Min => int_expr(i64::min(lhs, rhs)),
-        _ => reconstruct(lhs, op, rhs)
-    }
-}
-
-fn is_int_neutral_elem(op: &BinOp, v: i64, rhs: bool) -> bool {
-    match op {
-        BinOp::Add => v == 0,
-        BinOp::Sub if rhs => v == 0,
-        BinOp::Mul => v == 1,
-        BinOp::Div if rhs => v == 1,
-        BinOp::BitAnd => v == 0,
-        // NOTE: We can simplify 'x != 0' as 'x' in C++
-        BinOp::Neq if rhs => v == 0,
-        BinOp::Max => v == i64::MIN,
-        BinOp::Min => v == i64::MAX,
-        _ => false
-    }
-}
-
-fn apply_float_op(
-    op: BinOp,
-    lhs: f64,
-    rhs: f64,
-    ty: Type,
-    i: Info
-) -> Expr {
-    let float_expr = |v| Expr::Float {v, ty: ty.clone(), i: i.clone()};
-    let reconstruct = |lhs, op, rhs| {
-        let lhs = Box::new(float_expr(lhs));
-        let rhs = Box::new(float_expr(rhs));
-        Expr::BinOp {lhs, op, rhs, ty: ty.clone(), i: i.clone()}
-    };
-    let bool_expr = |v| Expr::Bool {v, ty: Type::Boolean, i: i.clone()};
-    match op {
-        BinOp::Add => float_expr(lhs + rhs),
-        BinOp::Sub => float_expr(lhs - rhs),
-        BinOp::Mul => float_expr(lhs * rhs),
-        BinOp::Div => float_expr(lhs / rhs),
-        BinOp::Eq => bool_expr(lhs == rhs),
-        BinOp::Neq => bool_expr(lhs != rhs),
-        BinOp::Lt => bool_expr(lhs < rhs),
-        BinOp::Gt => bool_expr(lhs > rhs),
-        BinOp::Max => float_expr(f64::max(lhs, rhs)),
-        BinOp::Min => float_expr(f64::min(lhs, rhs)),
-        _ => reconstruct(lhs, op, rhs)
-    }
-}
-
-fn is_float_neutral_elem(op: &BinOp, v: f64, rhs: bool) -> bool {
-    match op {
-        BinOp::Add => v == 0.0,
-        BinOp::Sub if rhs => v == 0.0,
-        BinOp::Mul => v == 1.0,
-        BinOp::Div if rhs => v == 1.0,
-        _ => false
-    }
-}
-
-fn constant_fold_binop(
-    lhs: Expr,
-    op: BinOp,
-    rhs: Expr,
-    ty: Type,
-    i: Info
-) -> Expr {
-    let reconstruct = |lhs, op, rhs, ty, i| {
-        Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i}
-    };
-    let lhs = fold_expr(lhs);
-    let rhs = fold_expr(rhs);
-    match (lhs, rhs) {
-        (Expr::Bool {v: lv, ..}, Expr::Bool {v: rv, ..}) =>
-            apply_bool_op(op, lv, rv, ty, i),
-        (lhs, Expr::Bool {v: rv, ..}) if is_bool_neutral_elem(&op, rv) => lhs,
-        (Expr::Bool {v: lv, ..}, rhs) if is_bool_neutral_elem(&op, lv) => rhs,
-        (Expr::Int {v: lv, ..}, Expr::Int {v: rv, ..}) =>
-            apply_int_op(op, lv, rv, ty, i),
-        (lhs, Expr::Int {v: rv, ..}) if is_int_neutral_elem(&op, rv, true) => lhs,
-        (Expr::Int {v: lv, ..}, rhs) if is_int_neutral_elem(&op, lv, false) => rhs,
-        (Expr::Float {v: lv, ..}, Expr::Float {v: rv, ..}) =>
-            apply_float_op(op, lv, rv, ty, i),
-        (lhs, Expr::Float {v: rv, ..}) if is_float_neutral_elem(&op, rv, true) => lhs,
-        (Expr::Float {v: lv, ..}, rhs) if is_float_neutral_elem(&op, lv, false) => rhs,
-        (lhs, rhs) => reconstruct(lhs, op, rhs, ty, i)
+    fn is_float(&self) -> bool {
+        match self {
+            Type::Scalar {sz} if sz.is_floating_point() => true,
+            _ => false
+        }
     }
 }
 
 fn fold_expr(e: Expr) -> Expr {
     match e {
-        Expr::UnOp {op, arg, ty, i} => constant_fold_unop(op, *arg, ty, i),
+        Expr::UnOp {op, arg, ty, i} => {
+            let arg = fold_expr(*arg);
+            constant_fold_unop(op, arg, ty, i)
+        },
         Expr::BinOp {lhs, op, rhs, ty, i} => {
-            constant_fold_binop(*lhs, op, *rhs, ty, i)
+            let lhs = fold_expr(*lhs);
+            let rhs = fold_expr(*rhs);
+            constant_fold_binop(lhs, op, rhs, ty, i)
         },
         Expr::Convert {e, ty} => {
             let e = fold_expr(*e);
@@ -263,13 +165,16 @@ mod test {
     fn unop(op: UnOp, arg: Expr) -> Expr {
         let ty = arg.get_type().clone();
         let i = arg.get_info();
-        Expr::UnOp {op, arg: Box::new(arg), ty, i}
+        Expr::mk_unop(op, arg, ty, i)
     }
 
-    fn binop(lhs: Expr, op: BinOp, rhs: Expr) -> Expr {
-        let ty = lhs.get_type().clone();
+    fn binop(lhs: Expr, op: BinOp, rhs: Expr, ty: Option<Type>) -> Expr {
+        let ty = match ty {
+            Some(ty) => ty,
+            None => lhs.get_type().clone()
+        };
         let i = lhs.get_info();
-        Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i}
+        Expr::mk_binop(lhs, op, rhs, ty, i)
     }
 
     fn cf(e: &Expr) -> Expr {
@@ -278,19 +183,19 @@ mod test {
 
     #[test]
     fn add() {
-        let e = binop(int(2), BinOp::Add, int(3));
+        let e = binop(int(2), BinOp::Add, int(3), None);
         assert_eq!(cf(&e), int(5));
     }
 
     #[test]
     fn nested_sub_mul() {
-        let e = binop(binop(int(4), BinOp::Sub, int(1)), BinOp::Mul, int(2));
+        let e = binop(binop(int(4), BinOp::Sub, int(1), None), BinOp::Mul, int(2), None);
         assert_eq!(cf(&e), int(6));
     }
 
     #[test]
     fn float_sub() {
-        let e = binop(float(2.5), BinOp::Sub, float(1.5));
+        let e = binop(float(2.5), BinOp::Sub, float(1.5), None);
         assert_eq!(cf(&e), float(1.0));
     }
 
@@ -302,25 +207,25 @@ mod test {
 
     #[test]
     fn exp_sub() {
-        let e = unop(UnOp::Exp, binop(float(2.5), BinOp::Sub, float(2.5)));
+        let e = unop(UnOp::Exp, binop(float(2.5), BinOp::Sub, float(2.5), None));
         assert_eq!(cf(&e), float(1.0));
     }
 
     #[test]
     fn int_equality() {
-        let e = binop(int(2), BinOp::Eq, int(3));
+        let e = binop(int(2), BinOp::Eq, int(3), Some(Type::Boolean));
         assert_eq!(cf(&e), bool_expr(false));
     }
 
     #[test]
     fn float_lt() {
-        let e = binop(float(1.5), BinOp::Lt, float(2.5));
+        let e = binop(float(1.5), BinOp::Lt, float(2.5), Some(Type::Boolean));
         assert_eq!(cf(&e), bool_expr(true));
     }
 
     #[test]
     fn div_by_zero_untouched() {
-        let e = binop(int(3), BinOp::Div, int(0));
+        let e = binop(int(3), BinOp::Div, int(0), None);
         assert_eq!(cf(&e), e);
     }
 
@@ -332,7 +237,7 @@ mod test {
 
     #[test]
     fn invalid_types_untouched() {
-        let e = binop(int(2), BinOp::Add, float(3.0));
+        let e = binop(int(2), BinOp::Add, float(3.0), None);
         assert_eq!(cf(&e), e);
     }
 
@@ -360,16 +265,16 @@ mod test {
     fn complicated_constant_fold_not_supported() {
         // Could be simplified to 2x + 2
         let x = var("x");
-        let e = binop(binop(x.clone(), BinOp::Add, int(1)), BinOp::Mul, int(2));
+        let e = binop(binop(x.clone(), BinOp::Add, int(1), None), BinOp::Mul, int(2), None);
         assert_eq!(cf(&e), e);
     }
 
     fn test_identity(op: BinOp, id: Expr, rhs: bool) {
         let x = var("x");
         let e = if rhs {
-            binop(x.clone(), op, id)
+            binop(x.clone(), op, id, None)
         } else {
-            binop(id, op, x.clone())
+            binop(id, op, x.clone(), None)
         };
         assert_eq!(cf(&e), x);
     }
@@ -423,7 +328,10 @@ mod test {
     fn eliminate_if_false() {
         let thn = vec![assign(var("x"), int(1))];
         let els = vec![assign(var("x"), int(2))];
-        let s = if_stmt(binop(int(1), BinOp::Eq, int(2)), thn.clone(), els.clone());
+        let s = if_stmt(
+            binop(int(1), BinOp::Eq, int(2), Some(Type::Boolean)),
+            thn.clone(), els.clone()
+        );
         assert_eq!(cfs(&s), Stmt::Scope {body: els});
     }
 }
