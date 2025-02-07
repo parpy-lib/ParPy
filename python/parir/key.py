@@ -34,7 +34,7 @@ def print_par_kwargs(kwargs):
 
 def generate_function_key(fn, args, kwargs):
     mtime = os.path.getmtime(inspect.getfile(fn))
-    key_str = f"{mtime}+{print_type_signature(args)}+{print_par_kwargs(kwargs)}"
+    key_str = f"{mtime}+{fn.__name__}+{print_type_signature(args)}+{print_par_kwargs(kwargs)}"
     h = hashlib.new("sha256")
     h.update(key_str.encode('ascii'))
     return h.hexdigest()
