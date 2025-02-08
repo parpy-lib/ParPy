@@ -333,7 +333,7 @@ fn type_check_binop(
         // Boolean comparison operations, allowing comparison between elementary types
         BinOp::Eq | BinOp::Neq | BinOp::Leq | BinOp::Geq | BinOp::Lt | BinOp::Gt => {
             if let Some(_) = ty.get_scalar_elem_size() {
-                Ok(ty)
+                Ok(Type::Boolean)
             } else {
                 py_type_error!(i, "Invalid type {ty} of boolean comparison operation")
             }
@@ -693,18 +693,16 @@ mod test {
     fn type_check_unop_signed_int_negation() {
         let ty = scalar_type(ElemSize::I64);
         let arg = Expr::Int {v: 1, ty: ty.clone(), i: Info::default()};
-        let r = test_tc_unop(UnOp::Sub, arg);
-        assert!(r.is_ok());
-        assert_eq!(r.unwrap(), ty);
+        let res = test_tc_unop(UnOp::Sub, arg).unwrap();
+        assert_eq!(res, ty);
     }
 
     #[test]
     fn type_check_unop_float_negation() {
         let ty = scalar_type(ElemSize::F32);
         let arg = Expr::Var {id: var("x"), ty: ty.clone(), i: Info::default()};
-        let r = test_tc_unop(UnOp::Sub, arg);
-        assert!(r.is_ok());
-        assert_eq!(r.unwrap(), ty);
+        let res = test_tc_unop(UnOp::Sub, arg).unwrap();
+        assert_eq!(res, ty);
     }
 
     fn test_tc_binop(lhs: Expr, op: BinOp, rhs: Expr) -> PyResult<Type> {
@@ -717,9 +715,8 @@ mod test {
         let ty = scalar_type(ElemSize::I64);
         let lhs = Expr::Int {v: 1, ty: ty.clone(), i: Info::default()};
         let rhs = Expr::Int {v: 2, ty: ty.clone(), i: Info::default()};
-        let r = test_tc_binop(lhs, BinOp::Add, rhs);
-        assert!(r.is_ok());
-        assert_eq!(r.unwrap(), ty);
+        let res = test_tc_binop(lhs, BinOp::Add, rhs).unwrap();
+        assert_eq!(res, ty);
     }
 
     #[test]
@@ -728,9 +725,8 @@ mod test {
         let lhs = Expr::Var {id: var("x"), ty: lty.clone(), i: Info::default()};
         let rty = scalar_type(ElemSize::I16);
         let rhs = Expr::Var {id: var("y"), ty: rty, i: Info::default()};
-        let r = test_tc_binop(lhs, BinOp::Mul, rhs);
-        assert!(r.is_ok());
-        assert_eq!(r.unwrap(), lty);
+        let res = test_tc_binop(lhs, BinOp::Mul, rhs).unwrap();
+        assert_eq!(res, lty);
     }
 
     #[test]
@@ -738,9 +734,26 @@ mod test {
         let ty = scalar_type(ElemSize::F32);
         let lhs = Expr::Float {v: 3.14, ty: ty.clone(), i: Info::default()};
         let rhs = Expr::Var {id: var("x"), ty: ty.clone(), i: Info::default()};
-        let r = test_tc_binop(lhs, BinOp::Sub, rhs);
-        assert!(r.is_ok());
-        assert_eq!(r.unwrap(), ty);
+        let res = test_tc_binop(lhs, BinOp::Sub, rhs).unwrap();
+        assert_eq!(res, ty);
+    }
+
+    #[test]
+    fn type_check_int_equality() {
+        let ty = scalar_type(ElemSize::I16);
+        let lhs = Expr::Int {v: 1, ty: ty.clone(), i: Info::default()};
+        let rhs = Expr::Int {v: 2, ty: ty.clone(), i: Info::default()};
+        let res = test_tc_binop(lhs, BinOp::Eq, rhs).unwrap();
+        assert_eq!(res, Type::Boolean);
+    }
+
+    #[test]
+    fn type_check_float_lt() {
+        let ty = scalar_type(ElemSize::F32);
+        let lhs = Expr::Float {v: 2.718, ty: ty.clone(), i: Info::default()};
+        let rhs = Expr::Var {id: var("x"), ty: ty.clone(), i: Info::default()};
+        let res = test_tc_binop(lhs, BinOp::Lt, rhs).unwrap();
+        assert_eq!(res, Type::Boolean);
     }
 
     fn make_map<'a>(entries: Vec<(&'a str, Type)>) -> BTreeMap<Name, Type> {
