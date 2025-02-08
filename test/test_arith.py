@@ -7,6 +7,87 @@ import torch
 torch.manual_seed(1234)
 
 @parir.jit
+def parir_add(dst, a, b):
+    for i in range(1):
+        dst[i] = a[i] + b[i]
+
+@parir.jit
+def parir_sub(dst, a, b):
+    for i in range(1):
+        dst[i] = a[i] - b[i]
+
+@parir.jit
+def parir_mul(dst, a, b):
+    for i in range(1):
+        dst[i] = a[i] * b[i]
+
+@parir.jit
+def parir_div_int(dst, a, b):
+    for i in range(1):
+        dst[i] = a[i] // b[i]
+
+@parir.jit
+def parir_div(dst, a, b):
+    for i in range(1):
+        dst[i] = a[i] / b[i]
+
+@parir.jit
+def parir_rem(dst, a, b):
+    for i in range(1):
+        dst[i] = a[i] % b[i]
+
+@parir.jit
+def parir_pow(dst, a, b):
+    for i in range(1):
+        dst[i] = a[i] ** b[i]
+
+def arith_binop_dtype(fn, dtype, compile_only):
+    a = torch.randint(1, 10, (1,), dtype=dtype)
+    b = torch.randint(1, 10, (1,), dtype=dtype)
+    dst = torch.empty((1,), dtype=dtype)
+    p = {'i': [ParKind.GpuThreads(32)]}
+    if compile_only:
+        s = parir.print_compiled(fn, [dst, a, b], p)
+        assert len(s) != 0
+    else:
+        fn(dst, a, b)
+        dst_cu = torch.empty_like(dst).cuda()
+        fn(dst_cu, a.cuda(), b.cuda(), parallelize=p)
+        assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
+
+arith_funs = [
+    parir_add, parir_sub, parir_mul, parir_div_int, parir_div, parir_rem, parir_pow
+]
+arith_tys = [
+    torch.int8, torch.int16, torch.int32, torch.int64, torch.float16,
+    torch.float32, torch.float64
+]
+
+def is_float_dtype(dtype):
+    return dtype == torch.float16 or dtype == torch.float32 or dtype == torch.float64
+
+def bin_arith_helper(fn, dtype, compile_only):
+    if (((fn.__name__ == "parir_div_int" or fn.__name__ == "parir_rem")
+             and is_float_dtype(dtype)) or
+         (fn.__name__ == "parir_pow" and
+             not (dtype == torch.float32 or dtype == torch.float64))):
+        with pytest.raises(TypeError):
+            arith_binop_dtype(fn, dtype, compile_only)
+    else:
+        arith_binop_dtype(fn, dtype, compile_only)
+
+@pytest.mark.parametrize('fn', arith_funs)
+@pytest.mark.parametrize('dtype', arith_tys)
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+def test_bin_arith(fn, dtype):
+    bin_arith_helper(fn, dtype, False)
+
+@pytest.mark.parametrize('fn', arith_funs)
+@pytest.mark.parametrize('dtype', arith_tys)
+def test_bin_arith_compile(fn, dtype):
+    bin_arith_helper(fn, dtype, True)
+
+@parir.jit
 def parir_cos(dst, src):
     for i in range(1):
         dst[i] = parir.cos(src[i])
@@ -36,7 +117,7 @@ def parir_pow(dst, src):
     for i in range(1):
         dst[i] = src[i] ** 2.0
 
-def arith_dtype(fn, dtype, compile_only):
+def arith_unop_dtype(fn, dtype, compile_only):
     src = torch.tensor([0.5], dtype=dtype)
     dst = torch.empty_like(src)
     p = {'i': [ParKind.GpuThreads(32)]}
@@ -51,126 +132,23 @@ def arith_dtype(fn, dtype, compile_only):
         fn(dst_cu, src.cuda(), parallelize=p)
         assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
 
+float_funs = [parir_cos, parir_sin, parir_tanh, parir_atan2, parir_sqrt, parir_pow]
+float_tys = [torch.float16, torch.float32, torch.float64]
+
+def float_unop_helper(fn, dtype, compile_only):
+    if fn.__name__ == "parir_tanh" and dtype == torch.float16:
+        with pytest.raises(TypeError):
+            arith_unop_dtype(fn, dtype, compile_only)
+    else:
+        arith_unop_dtype(fn, dtype, compile_only)
+
+@pytest.mark.parametrize('fn', float_funs)
+@pytest.mark.parametrize('dtype', float_tys)
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_cos_f16():
-    arith_dtype(parir_cos, torch.float16, False)
+def test_float_unop_arith(fn, dtype):
+    float_unop_helper(fn, dtype, False)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_cos_f32():
-    arith_dtype(parir_cos, torch.float32, False)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_cos_f64():
-    arith_dtype(parir_cos, torch.float64, False)
-
-def test_cos_compiles_f16():
-    arith_dtype(parir_cos, torch.float16, True)
-
-def test_cos_compiles_f32():
-    arith_dtype(parir_cos, torch.float32, True)
-
-def test_cos_compiles_f64():
-    arith_dtype(parir_cos, torch.float64, True)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_sin_f16():
-    arith_dtype(parir_sin, torch.float16, False)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_sin_f32():
-    arith_dtype(parir_sin, torch.float32, False)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_sin_f64():
-    arith_dtype(parir_sin, torch.float64, False)
-
-def test_sin_compiles_f16():
-    arith_dtype(parir_sin, torch.float16, True)
-
-def test_sin_compiles_f32():
-    arith_dtype(parir_sin, torch.float32, True)
-
-def test_sin_compiles_f64():
-    arith_dtype(parir_sin, torch.float64, True)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_tanh_f32():
-    arith_dtype(parir_tanh, torch.float32, False)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_tanh_f64():
-    arith_dtype(parir_tanh, torch.float64, False)
-
-def test_tanh_compiles_f16():
-    with pytest.raises(TypeError):
-        arith_dtype(parir_tanh, torch.float16, True)
-
-def test_tanh_compiles_f32():
-    arith_dtype(parir_tanh, torch.float32, True)
-
-def test_tanh_compiles_f64():
-    arith_dtype(parir_tanh, torch.float64, True)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_atan2_f16():
-    arith_dtype(parir_atan2, torch.float16, False)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_atan2_f32():
-    arith_dtype(parir_atan2, torch.float32, False)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_atan2_f64():
-    arith_dtype(parir_atan2, torch.float64, False)
-
-def test_atan2_compiles_f16():
-    arith_dtype(parir_atan2, torch.float16, True)
-
-def test_atan2_compiles_f32():
-    arith_dtype(parir_atan2, torch.float32, True)
-
-def test_atan2_compiles_f64():
-    arith_dtype(parir_atan2, torch.float64, True)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_sqrt_f16():
-    arith_dtype(parir_sqrt, torch.float16, False)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_sqrt_f32():
-    arith_dtype(parir_sqrt, torch.float32, False)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_sqrt_f64():
-    arith_dtype(parir_sqrt, torch.float64, False)
-
-def test_sqrt_compiles_f16():
-    arith_dtype(parir_sqrt, torch.float16, True)
-
-def test_sqrt_compiles_f32():
-    arith_dtype(parir_sqrt, torch.float32, True)
-
-def test_sqrt_compiles_f64():
-    arith_dtype(parir_sqrt, torch.float64, True)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_pow_f16():
-    arith_dtype(parir_pow, torch.float16, False)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_pow_f32():
-    arith_dtype(parir_pow, torch.float32, False)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_pow_f64():
-    arith_dtype(parir_pow, torch.float64, False)
-
-def test_pow_compiles_f16():
-    arith_dtype(parir_pow, torch.float16, True)
-
-def test_pow_compiles_f32():
-    arith_dtype(parir_pow, torch.float32, True)
-
-def test_pow_compiles_f64():
-    arith_dtype(parir_pow, torch.float64, True)
-
+@pytest.mark.parametrize('fn', float_funs)
+@pytest.mark.parametrize('dtype', float_tys)
+def test_float_unop_arith_compile(fn, dtype):
+    float_unop_helper(fn, dtype, True)
