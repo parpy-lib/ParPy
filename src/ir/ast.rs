@@ -20,17 +20,17 @@ pub enum UnOp {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BinOp {
-    Add, Sub, Mul, Div, Rem, Pow, BoolAnd, BitAnd, Eq, Neq, Lt, Gt,
+    Add, Sub, Mul, Div, Rem, Pow, And, Or, BitAnd, Eq, Neq, Leq, Geq, Lt, Gt,
     Max, Min, Atan2
 }
 
 impl BinOp {
     pub fn precedence(&self) -> usize {
         match self {
-            BinOp::BoolAnd => 0,
+            BinOp::And | BinOp::Or => 0,
             BinOp::BitAnd => 1,
-            BinOp::Eq | BinOp::Neq => 2,
-            BinOp::Lt | BinOp::Gt => 3,
+            BinOp::Leq | BinOp::Geq | BinOp::Lt | BinOp::Gt => 2,
+            BinOp::Eq | BinOp::Neq => 3,
             BinOp::Add | BinOp::Sub => 4,
             BinOp::Mul | BinOp::Div | BinOp::Rem => 5,
             BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => 6,

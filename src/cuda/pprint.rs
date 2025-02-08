@@ -121,7 +121,8 @@ pub fn print_binop(op: &BinOp, ty: &Type) -> String {
             Some(ElemSize::F64) => "pow",
             _ => panic!("Invalid type of **")
         },
-        BinOp::BoolAnd => "&&",
+        BinOp::And => "&&",
+        BinOp::Or => "||",
         BinOp::BitAnd => "&",
         BinOp::Eq => match ty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "__heq",
@@ -130,6 +131,14 @@ pub fn print_binop(op: &BinOp, ty: &Type) -> String {
         BinOp::Neq => match ty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "__hne",
             _ => "!="
+        },
+        BinOp::Leq => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "__hle",
+            _ => "<="
+        }
+        BinOp::Geq => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "__hge",
+            _ => ">="
         },
         BinOp::Lt => match ty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "__hlt",
@@ -218,7 +227,8 @@ fn is_infix(op: &BinOp, ty: &Type) -> bool {
     match op {
         BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => false,
         BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Eq |
-        BinOp::Neq | BinOp::Lt | BinOp::Gt if is_f16 => false,
+        BinOp::Neq | BinOp::Leq | BinOp::Geq | BinOp::Lt |
+        BinOp::Gt if is_f16 => false,
         _ => true
     }
 }

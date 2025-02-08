@@ -139,9 +139,13 @@ fn to_ir_binop(binop: py_ast::BinOp) -> BinOp {
         py_ast::BinOp::FloorDiv | py_ast::BinOp::Div => BinOp::Div,
         py_ast::BinOp::Mod => BinOp::Rem,
         py_ast::BinOp::Pow => BinOp::Pow,
+        py_ast::BinOp::And => BinOp::And,
+        py_ast::BinOp::Or => BinOp::Or,
         py_ast::BinOp::BitAnd => BinOp::BitAnd,
         py_ast::BinOp::Eq => BinOp::Eq,
         py_ast::BinOp::Neq => BinOp::Neq,
+        py_ast::BinOp::Leq => BinOp::Leq,
+        py_ast::BinOp::Geq => BinOp::Geq,
         py_ast::BinOp::Lt => BinOp::Lt,
         py_ast::BinOp::Gt => BinOp::Gt,
     }

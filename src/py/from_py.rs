@@ -62,9 +62,9 @@ fn convert_unary_op<'py, 'a>(
 }
 
 fn convert_bin_op<'py, 'a>(
-    binop : Bound<'py, PyAny>,
-    env : &'py ConvertEnv<'py, 'a>,
-    i : &'a Info
+    binop: Bound<'py, PyAny>,
+    env: &'py ConvertEnv<'py, 'a>,
+    i: &'a Info
 ) -> PyResult<BinOp> {
     if binop.is_instance(&env.ast.getattr("Add")?)? {
         Ok(BinOp::Add)
@@ -84,12 +84,32 @@ fn convert_bin_op<'py, 'a>(
         Ok(BinOp::BitAnd)
     } else if binop.is_instance(&env.ast.getattr("Eq")?)? {
         Ok(BinOp::Eq)
+    } else if binop.is_instance(&env.ast.getattr("NotEq")?)? {
+        Ok(BinOp::Neq)
+    } else if binop.is_instance(&env.ast.getattr("LtE")?)? {
+        Ok(BinOp::Leq)
+    } else if binop.is_instance(&env.ast.getattr("GtE")?)? {
+        Ok(BinOp::Geq)
     } else if binop.is_instance(&env.ast.getattr("Lt")?)? {
         Ok(BinOp::Lt)
     } else if binop.is_instance(&env.ast.getattr("Gt")?)? {
         Ok(BinOp::Gt)
     } else {
         py_runtime_error!(i, "Unsupported binary operation: {binop:?}")
+    }
+}
+
+fn convert_bool_op<'py, 'a>(
+    boolop: Bound<'py, PyAny>,
+    env: &'py ConvertEnv<'py, 'a>,
+    i: &'a Info
+) -> PyResult<BinOp> {
+    if boolop.is_instance(&env.ast.getattr("And")?)? {
+        Ok(BinOp::And)
+    } else if boolop.is_instance(&env.ast.getattr("Or")?)? {
+        Ok(BinOp::Or)
+    } else {
+        py_runtime_error!(i, "Unsupported boolean operator: {boolop:?}")
     }
 }
 
@@ -192,6 +212,19 @@ fn convert_expr<'py, 'a>(
         let op = convert_bin_op(expr.getattr("op")?, env, &i)?;
         let rhs = convert_expr(expr.getattr("right")?, env)?;
         Ok(Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i})
+    } else if expr.is_instance(&env.ast.getattr("BoolOp")?)? {
+        let op = convert_bool_op(expr.getattr("op")?, env, &i)?;
+        let mut values = expr.getattr("values")?
+            .try_iter()?
+            .map(|v| convert_expr(v?, env))
+            .collect::<PyResult<Vec<Expr>>>()?;
+        let tail = values.split_off(1);
+        let head = values.remove(0);
+        Ok(tail.into_iter()
+            .fold(head, |acc, v| Expr::BinOp {
+                lhs: Box::new(acc), op: op.clone(), rhs: Box::new(v),
+                ty: Type::Unknown, i: i.clone()
+            }))
     } else if expr.is_instance(&env.ast.getattr("Compare")?)? {
         let lhs = convert_expr(expr.getattr("left")?, env)?;
         let ops = expr.getattr("ops")?;

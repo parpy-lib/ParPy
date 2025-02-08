@@ -89,7 +89,8 @@ pub fn constant_fold_unop<T, E: CFExpr<T>>(
 fn is_bool_neutral_elem<T, E: CFExpr<T>>(op: &BinOp, e: &E) -> bool {
     let v = e.get_bool_value().unwrap();
     match op {
-        BinOp::BoolAnd => v,
+        BinOp::And => v,
+        BinOp::Or => !v,
         _ => false
     }
 }
@@ -104,7 +105,8 @@ fn apply_bool_binop<T, E: CFExpr<T>>(
     let lv = lhs.get_bool_value().unwrap();
     let rv = rhs.get_bool_value().unwrap();
     match op {
-        BinOp::BoolAnd => CFExpr::bool_expr(lv && rv, ty, i),
+        BinOp::And => CFExpr::bool_expr(lv && rv, ty, i),
+        BinOp::Or => CFExpr::bool_expr(lv || rv, ty, i),
         _ => CFExpr::mk_binop(lhs, op, rhs, ty, i)
     }
 }
@@ -160,6 +162,8 @@ fn apply_int_bool_binop<T, E: CFExpr<T>>(
     let o = match op {
         BinOp::Eq => Some(lv == rv),
         BinOp::Neq => Some(lv != rv),
+        BinOp::Leq => Some(lv <= rv),
+        BinOp::Geq => Some(lv >= rv),
         BinOp::Lt => Some(lv < rv),
         BinOp::Gt => Some(lv > rv),
         _ => None
@@ -217,6 +221,8 @@ fn apply_float_bool_binop<T, E: CFExpr<T>>(
     let o = match op {
         BinOp::Eq => Some(lv == rv),
         BinOp::Neq => Some(lv != rv),
+        BinOp::Leq => Some(lv <= rv),
+        BinOp::Geq => Some(lv >= rv),
         BinOp::Lt => Some(lv < rv),
         BinOp::Gt => Some(lv > rv),
         _ => None

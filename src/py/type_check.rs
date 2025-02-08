@@ -309,10 +309,17 @@ fn type_check_binop(
         },
         // Arithmetic operations only supported for floating-point numbers
         BinOp::Pow => {
-            if ty.is_floating_point() {
+            match ty.get_scalar_elem_size() {
+                Some(ElemSize::F32 | ElemSize::F64) => Ok(ty),
+                _ => py_type_error!(i, "Invalid type {ty} of floating-poont arithmetic operation")
+            }
+        },
+        // Boolean operations
+        BinOp::And | BinOp::Or => {
+            if ty == Type::Boolean {
                 Ok(ty)
             } else {
-                py_type_error!(i, "Invalid type {ty} of floating-point arithmetic operation")
+                py_type_error!(i, "Invalid type {ty} of boolean operation")
             }
         },
         // Bitwise operations
@@ -324,7 +331,7 @@ fn type_check_binop(
             }
         },
         // Boolean comparison operations, allowing comparison between elementary types
-        BinOp::Eq | BinOp::Neq | BinOp::Lt | BinOp::Gt => {
+        BinOp::Eq | BinOp::Neq | BinOp::Leq | BinOp::Geq | BinOp::Lt | BinOp::Gt => {
             if let Some(_) = ty.get_scalar_elem_size() {
                 Ok(ty)
             } else {
@@ -459,18 +466,7 @@ fn validate_condition_type(cond: Expr, i: &Info) -> PyResult<Expr> {
     let ty = cond.get_type();
     match ty {
         Type::Boolean => Ok(cond),
-        Type::Tensor {..} if ty.is_signed_integer() => {
-            // Convert a condition on an integer value to an explicit comparison against zero.
-            let cond_info = cond.get_info();
-            let zero = Expr::Int {v: 0, ty: ty.clone(), i: cond_info.clone()};
-            Ok(Expr::BinOp {
-                lhs: Box::new(cond),
-                op: BinOp::Neq,
-                rhs: Box::new(zero),
-                ty: Type::Boolean,
-                i: cond_info
-            })
-        },
+        Type::Tensor {..} if ty.is_floating_point() || ty.is_signed_integer() => Ok(cond),
         _ => py_type_error!(i, "Unsupported type {ty} of conditional expression")
     }
 }

@@ -167,7 +167,7 @@ fn determine_loop_bounds(
             let cond = if nthreads * nblocks != n {
                 Expr::BinOp {
                     lhs: Box::new(cond),
-                    op: BinOp::BoolAnd,
+                    op: BinOp::And,
                     rhs: Box::new(Expr::BinOp {
                         lhs: Box::new(idx.clone()),
                         op: BinOp::Lt,

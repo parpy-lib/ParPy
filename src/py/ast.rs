@@ -185,7 +185,8 @@ impl fmt::Display for UnOp {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BinOp {
-    Add, Sub, Mul, FloorDiv, Div, Mod, Pow, BitAnd, Eq, Neq, Lt, Gt
+    Add, Sub, Mul, FloorDiv, Div, Mod, Pow, And, Or, BitAnd,
+    Eq, Neq, Leq, Geq, Lt, Gt
 }
 
 impl fmt::Display for BinOp {
@@ -198,9 +199,13 @@ impl fmt::Display for BinOp {
             BinOp::Div => write!(f, "/"),
             BinOp::Mod => write!(f, "%"),
             BinOp::Pow => write!(f, "**"),
+            BinOp::And => write!(f, "&&"),
+            BinOp::Or => write!(f, "||"),
             BinOp::BitAnd => write!(f, "&"),
             BinOp::Eq => write!(f, "=="),
             BinOp::Neq => write!(f, "!="),
+            BinOp::Leq => write!(f, "<="),
+            BinOp::Geq => write!(f, ">="),
             BinOp::Lt => write!(f, "<"),
             BinOp::Gt => write!(f, ">"),
         }
