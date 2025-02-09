@@ -233,9 +233,7 @@ fn is_infix(op: &BinOp, ty: &Type) -> bool {
     };
     match op {
         BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => false,
-        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Eq |
-        BinOp::Neq | BinOp::Leq | BinOp::Geq | BinOp::Lt |
-        BinOp::Gt if is_f16 => false,
+        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div if is_f16 => false,
         _ => true
     }
 }
