@@ -42,7 +42,6 @@ fn to_ir_type(
     ty: py_ast::Type
 ) -> CompileResult<Type> {
     match ty {
-        py_ast::Type::Boolean => Ok(Type::Boolean),
         py_ast::Type::String => {
             parir_compile_error!(i, "Encountered standalone string type when translating to IR AST")
         },

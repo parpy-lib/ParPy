@@ -139,8 +139,9 @@ fn add_scalar_constant<'py>(
     let i = target.get_info();
     match ty {
         Type::Tensor {sz, shape} if shape.is_empty() => {
-            let value = extract_scalar_value(arg, &i, sz.clone())?;
-            acc.insert(target, value);
+            if let Ok(value) = extract_scalar_value(arg, &i, sz.clone()) {
+                acc.insert(target, value);
+            };
             Ok(acc)
         },
         Type::Dict {fields} => {
@@ -255,7 +256,7 @@ mod test {
     #[test]
     fn extract_dict_entry_literals() {
         let keys = ["a".to_string(), "b".to_string(), "c".to_string()];
-        let types = [scalar_ty(ElemSize::I64), Type::Boolean, scalar_ty(ElemSize::F64)];
+        let types = [scalar_ty(ElemSize::I64), scalar_ty(ElemSize::Bool), scalar_ty(ElemSize::F64)];
         let fields = keys.clone()
             .into_iter()
             .zip(types.into_iter())

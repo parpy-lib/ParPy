@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 impl PrettyPrint for ElemSize {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
+            ElemSize::Bool => "bool",
             ElemSize::I8 => "int8_t",
             ElemSize::I16 => "int16_t",
             ElemSize::I32 => "int32_t",

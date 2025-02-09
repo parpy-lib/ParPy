@@ -207,7 +207,10 @@ mod test {
     }
 
     fn nvar(id: &Name) -> Expr {
-        Expr::Var {id: id.clone(), ty: Type::Boolean, i: Info::default()}
+        Expr::Var {
+            id: id.clone(), ty: Type::Tensor {sz: ElemSize::Bool, shape: vec![]},
+            i: Info::default()
+        }
     }
 
     fn var(s: &str) -> Expr {

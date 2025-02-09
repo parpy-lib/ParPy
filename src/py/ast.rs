@@ -10,7 +10,7 @@ use std::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum ElemSize {
-    I8, I16, I32, I64, F16, F32, F64
+    Bool, I8, I16, I32, I64, F16, F32, F64
 }
 
 impl ElemSize {
@@ -32,6 +32,7 @@ impl ElemSize {
 impl fmt::Display for ElemSize {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            ElemSize::Bool => write!(f, "bool"),
             ElemSize::I8 => write!(f, "int8"),
             ElemSize::I16 => write!(f, "int16"),
             ElemSize::I32 => write!(f, "int32"),
@@ -45,7 +46,6 @@ impl fmt::Display for ElemSize {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
-    Boolean,
     String,
     Tensor {sz: ElemSize, shape: Vec<i64>},
     Tuple {elems: Vec<Type>},
@@ -59,6 +59,11 @@ impl Type {
             Type::Tensor {sz, shape} if shape.len() == 0 => Some(sz),
             _ => None
         }
+    }
+
+    pub fn is_boolean(&self) -> bool {
+        self.get_scalar_elem_size()
+            .is_some_and(|sz| sz == &ElemSize::Bool)
     }
 
     pub fn is_signed_integer(&self) -> bool {
@@ -83,12 +88,9 @@ impl Type {
 impl Ord for Type {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (Type::Boolean, Type::Boolean) => Ordering::Equal,
-            (Type::Boolean, _) => Ordering::Less,
-            (Type::String, Type::Boolean) => Ordering::Greater,
             (Type::String, Type::String) => Ordering::Equal,
             (Type::String, _) => Ordering::Less,
-            (Type::Tensor {..}, Type::Boolean | Type::String) =>
+            (Type::Tensor {..}, Type::String) =>
                 Ordering::Greater,
             (Type::Tensor {sz: lsz, shape: lsh}, Type::Tensor {sz: rsz, shape: rsh}) => {
                 lsz.cmp(rsz).then(lsh.cmp(rsh))
@@ -123,7 +125,6 @@ impl Eq for Type {}
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Type::Boolean => write!(f, "boolean"),
             Type::String => write!(f, "string"),
             Type::Tensor {sz, shape} => {
                 let sh = shape.iter().map(|i| i.to_string()).join(",");

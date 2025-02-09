@@ -15,7 +15,9 @@ use itertools::Itertools;
 
 fn compile_elem_size<'py>(dtype: Bound<'py, PyAny>) -> PyResult<ElemSize> {
     let torch = dtype.py().import("torch")?;
-    if dtype.eq(torch.getattr("int8")?)? {
+    if dtype.eq(torch.getattr("bool")?)? {
+        Ok(ElemSize::Bool)
+    } else if dtype.eq(torch.getattr("int8")?)? {
         Ok(ElemSize::I8)
     } else if dtype.eq(torch.getattr("int16")?)? {
         Ok(ElemSize::I16)
@@ -97,6 +99,7 @@ fn lub_elem_size(
     i: &Info
 ) -> PyResult<ElemSize> {
     match (lhs, rhs) {
+        (ElemSize::Bool, ElemSize::Bool) => Ok(rhs.clone()),
         (ElemSize::I8, _) if rhs.is_signed_integer() => Ok(rhs.clone()),
         (ElemSize::I16, ElemSize::I8) => Ok(ElemSize::I16),
         (ElemSize::I16, _) if rhs.is_signed_integer() => Ok(rhs.clone()),
@@ -325,7 +328,7 @@ fn type_check_binop(
         },
         // Boolean operations
         BinOp::And | BinOp::Or => {
-            if ty == Type::Boolean {
+            if ty.is_boolean() {
                 Ok(ty)
             } else {
                 py_type_error!(i, "Invalid type {ty} of boolean operation")
@@ -342,7 +345,7 @@ fn type_check_binop(
         // Boolean comparison operations, allowing comparison between elementary types
         BinOp::Eq | BinOp::Neq | BinOp::Leq | BinOp::Geq | BinOp::Lt | BinOp::Gt => {
             if let Some(_) = ty.get_scalar_elem_size() {
-                Ok(Type::Boolean)
+                Ok(Type::Tensor {sz: ElemSize::Bool, shape: vec![]})
             } else {
                 py_type_error!(i, "Invalid type {ty} of boolean comparison operation")
             }
@@ -364,7 +367,10 @@ fn type_check_expr(
             Ok(Expr::Var {id, ty, i})
         },
         Expr::String {v, i, ..} => Ok(Expr::String {v, ty: Type::String, i}),
-        Expr::Bool {v, i, ..} => Ok(Expr::Bool {v, ty: Type::Boolean, i}),
+        Expr::Bool {v, i, ..} => {
+            let ty = Type::Tensor {sz: ElemSize::Bool, shape: vec![]};
+            Ok(Expr::Bool {v, ty, i})
+        },
         Expr::Int {v, i, ..} =>
             Ok(Expr::Int {v, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]}, i}),
         Expr::Float {v, i, ..} =>
@@ -474,8 +480,7 @@ fn type_check_exprs(
 fn validate_condition_type(cond: Expr, i: &Info) -> PyResult<Expr> {
     let ty = cond.get_type();
     match ty {
-        Type::Boolean => Ok(cond),
-        Type::Tensor {..} if ty.is_floating_point() || ty.is_signed_integer() => Ok(cond),
+        Type::Tensor {..} => Ok(cond),
         _ => py_type_error!(i, "Unsupported type {ty} of conditional expression")
     }
 }
@@ -575,6 +580,10 @@ mod test {
         Type::Tensor {sz, shape: vec![]}
     }
 
+    fn bool_type() -> Type {
+        scalar_type(ElemSize::Bool)
+    }
+
     #[test]
     fn lub_elem_size_equals() {
         for sz in ElemSize::iter() {
@@ -617,11 +626,6 @@ mod test {
         let r = lub_type(lty, rty, &Info::default());
         assert!(r.is_err());
     }
-
-    #[test]
-    fn lub_type_boolean() {
-        test_lub_type_ok(Type::Boolean, Type::Boolean, Type::Boolean)
-    }
     
     #[test]
     fn lub_type_string() {
@@ -649,6 +653,12 @@ mod test {
     }
 
     #[test]
+    fn lub_type_bool_eq() {
+        let ty = scalar_type(ElemSize::Bool);
+        test_lub_type_ok(ty.clone(), ty.clone(), ty.clone())
+    }
+
+    #[test]
     fn lub_type_tensor_equal_ok() {
         let ty = Type::Tensor {sz: ElemSize::I32, shape: vec![5]};
         test_lub_type_ok(ty.clone(), ty.clone(), ty.clone())
@@ -671,7 +681,7 @@ mod test {
     #[test]
     fn lub_type_tuple_eq_elems() {
         let ty = Type::Tuple {elems: vec![
-            Type::Boolean,
+            bool_type(),
             scalar_type(ElemSize::F32)
         ]};
         test_lub_type_ok(ty.clone(), ty.clone(), ty.clone())
@@ -753,7 +763,7 @@ mod test {
         let lhs = Expr::Int {v: 1, ty: ty.clone(), i: Info::default()};
         let rhs = Expr::Int {v: 2, ty: ty.clone(), i: Info::default()};
         let res = test_tc_binop(lhs, BinOp::Eq, rhs).unwrap();
-        assert_eq!(res, Type::Boolean);
+        assert_eq!(res, bool_type());
     }
 
     #[test]
@@ -762,7 +772,7 @@ mod test {
         let lhs = Expr::Float {v: 2.718, ty: ty.clone(), i: Info::default()};
         let rhs = Expr::Var {id: var("x"), ty: ty.clone(), i: Info::default()};
         let res = test_tc_binop(lhs, BinOp::Lt, rhs).unwrap();
-        assert_eq!(res, Type::Boolean);
+        assert_eq!(res, bool_type());
     }
 
     fn make_map<'a>(entries: Vec<(&'a str, Type)>) -> BTreeMap<Name, Type> {
@@ -773,11 +783,11 @@ mod test {
 
     #[test]
     fn type_check_expr_known_var() {
-        let vars = make_map(vec![("x", Type::Boolean)]);
+        let vars = make_map(vec![("x", bool_type())]);
         let v = Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()};
         let r = type_check_expr(&vars, v);
         assert!(r.is_ok());
-        assert_eq!(r.unwrap().get_type().clone(), Type::Boolean);
+        assert_eq!(r.unwrap().get_type().clone(), bool_type());
     }
 
     #[test]
@@ -816,7 +826,7 @@ mod test {
 
     #[test]
     fn type_check_expr_dict_lookup() {
-        let fields = vec![("a", Type::Boolean)].into_iter()
+        let fields = vec![("a", bool_type())].into_iter()
             .map(|(id, ty)| (id.to_string(), ty))
             .collect::<BTreeMap<String, Type>>();
         let dict_ty = Type::Dict {fields};
@@ -830,7 +840,7 @@ mod test {
         let r = type_check_expr(&vars, v);
         assert!(r.is_ok());
         if let Expr::Subscript {target, idx, ty, ..} = r.unwrap() {
-            assert_eq!(ty, Type::Boolean);
+            assert_eq!(ty, bool_type());
             assert_eq!(target.get_type().clone(), dict_ty);
             assert_eq!(idx.get_type().clone(), Type::String);
         } else {
