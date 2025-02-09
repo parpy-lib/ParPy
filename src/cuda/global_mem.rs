@@ -43,12 +43,7 @@ fn thread_index_dependent_expr(
 fn extract_assign_target_id(e: &Expr) -> CompileResult<Name> {
     match e {
         Expr::Var {id, ..} => Ok(id.clone()),
-        Expr::ArrayAccess {target, i, ..} => {
-            match target.as_ref() {
-                Expr::Var {id, ..} => Ok(id.clone()),
-                _ => parir_compile_error!(i, "Unexpected form of tensor access in assignment")
-            }
-        },
+        Expr::ArrayAccess {target, ..} => extract_assign_target_id(&target),
         _ => {
             parir_compile_error!(e.get_info(), "Unexpected target of assignment")
         }
