@@ -148,7 +148,7 @@ impl fmt::Display for Type {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Builtin {
-    Exp, Inf, Log, Max, Min, Cos, Sin, Sqrt, Tanh, Atan2,
+    Exp, Inf, Log, Max, Min, Abs, Cos, Sin, Sqrt, Tanh, Atan2,
     Convert {sz: ElemSize}
 }
 
@@ -160,6 +160,7 @@ impl fmt::Display for Builtin {
             Builtin::Log => write!(f, "log"),
             Builtin::Max => write!(f, "max"),
             Builtin::Min => write!(f, "min"),
+            Builtin::Abs => write!(f, "abs"),
             Builtin::Cos => write!(f, "cos"),
             Builtin::Sin => write!(f, "sin"),
             Builtin::Sqrt => write!(f, "sqrt"),

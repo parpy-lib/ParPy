@@ -41,6 +41,11 @@ def parir_pow(dst, a, b):
     for i in range(1):
         dst[i] = a[i] ** b[i]
 
+@parir.jit
+def parir_abs(dst, a, b):
+    for i in range(1):
+        dst[i] = abs(a[i]) + abs(b[i])
+
 def arith_binop_dtype(fn, dtype, compile_only):
     a = torch.randint(1, 10, (1,), dtype=dtype)
     b = torch.randint(1, 10, (1,), dtype=dtype)
@@ -56,7 +61,8 @@ def arith_binop_dtype(fn, dtype, compile_only):
         assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
 
 arith_funs = [
-    parir_add, parir_sub, parir_mul, parir_div_int, parir_div, parir_rem, parir_pow
+    parir_add, parir_sub, parir_mul, parir_div_int, parir_div, parir_rem,
+    parir_pow, parir_abs
 ]
 arith_tys = [
     torch.int8, torch.int16, torch.int32, torch.int64, torch.float16,
@@ -112,11 +118,6 @@ def parir_sqrt(dst, src):
     for i in range(1):
         dst[i] = parir.sqrt(src[i])
 
-@parir.jit
-def parir_pow(dst, src):
-    for i in range(1):
-        dst[i] = src[i] ** 2.0
-
 def arith_unop_dtype(fn, dtype, compile_only):
     src = torch.tensor([0.5], dtype=dtype)
     dst = torch.empty_like(src)
@@ -132,7 +133,7 @@ def arith_unop_dtype(fn, dtype, compile_only):
         fn(dst_cu, src.cuda(), parallelize=p)
         assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
 
-float_funs = [parir_cos, parir_sin, parir_tanh, parir_atan2, parir_sqrt, parir_pow]
+float_funs = [parir_cos, parir_sin, parir_tanh, parir_atan2, parir_sqrt]
 float_tys = [torch.float16, torch.float32, torch.float64]
 
 def float_unop_helper(fn, dtype, compile_only):

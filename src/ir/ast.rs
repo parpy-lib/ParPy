@@ -15,7 +15,7 @@ pub enum Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UnOp {
-    Sub, Exp, Log, Cos, Sin, Sqrt, Tanh
+    Sub, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -91,7 +91,14 @@ pub fn print_unop(op: &UnOp, ty: &Type) -> String {
             Some(ElemSize::F32) => "tanhf",
             Some(ElemSize::F64) => "tanh",
             _ => panic!("Invalid type of tanh")
-        }
+        },
+        UnOp::Abs => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F16) => "__habs",
+            Some(ElemSize::F32) => "fabsf",
+            Some(ElemSize::F64) => "fabs",
+            Some(_) => "abs",
+            None => panic!("Invalid type of abs")
+        },
     };
     s.to_string()
 }

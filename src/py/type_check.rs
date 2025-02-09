@@ -215,6 +215,7 @@ fn type_check_builtin(
                 py_type_error!(i, "Unexpected type {ty} of unary builtin (expected float)")
             }
         },
+        // CUDA has no built-in tanh for 16-bit floats.
         Builtin::Tanh if args.len() == 1 => {
             let ty = args[0].get_type().clone();
             match ty.get_scalar_elem_size() {
@@ -224,7 +225,15 @@ fn type_check_builtin(
                 _ => py_type_error!(i, "Unexpected type {ty} of tanh builtin (expected float)")
             }
         },
-        // Unary cast operations on scalar values
+        Builtin::Abs if args.len() == 1 => {
+            let ty = args[0].get_type().clone();
+            if ty.is_signed_integer() || ty.is_floating_point() {
+                Ok(Expr::Builtin {func, args, ty, i})
+            } else {
+                py_type_error!(i, "Unexpected type {ty} of abs builtin")
+            }
+        },
+        // Unary cast operation on scalar values
         Builtin::Convert {sz} if args.len() == 1 => {
             let arg = args.remove(0);
             let ty = arg.get_type().clone();
@@ -234,7 +243,7 @@ fn type_check_builtin(
                     ty: Type::Tensor {sz: sz.clone(), shape: vec![]}
                 })
             } else {
-                py_type_error!(i, "Expected scalar argument to type conversion (found {ty})")
+                py_type_error!(i, "Unexpected type {ty} of type conversion")
             }
         },
         // Binary operations on scalar values
@@ -254,11 +263,11 @@ fn type_check_builtin(
                     mk_builtin(func, fst, snd, ty, i)
                 },
                 _ => {
-                    py_type_error!(i, "Unexpected type {ty} of binary builtin (expected scalar)")
+                    py_type_error!(i, "Unexpected type {ty} of binary builtin")
                 }
             }
         },
-        _ => py_type_error!(i, "Unexpected number of arguments of builtin {func}")
+        _ => py_type_error!(i, "Unsupported use of builtin {func}")
     }
 }
 

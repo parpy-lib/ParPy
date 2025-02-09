@@ -138,6 +138,8 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
                 Ok(Builtin::Min)
             } else if e.eq(parir.getattr("max")?)? {
                 Ok(Builtin::Max)
+            } else if e.eq(parir.getattr("abs")?)? {
+                Ok(Builtin::Abs)
             } else if e.eq(parir.getattr("cos")?)? {
                 Ok(Builtin::Cos)
             } else if e.eq(parir.getattr("sin")?)? {
@@ -512,6 +514,12 @@ mod test {
     fn lookup_builtin_min() -> PyResult<()> {
         lookup_builtin_ok("parir.min", Builtin::Min)?;
         lookup_builtin_ok("min", Builtin::Min)
+    }
+
+    #[test]
+    fn lookup_builtin_abs() -> PyResult<()> {
+        lookup_builtin_ok("parir.abs", Builtin::Abs)?;
+        lookup_builtin_ok("abs", Builtin::Abs)
     }
 
     #[test]

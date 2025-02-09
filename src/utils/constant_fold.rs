@@ -48,9 +48,14 @@ fn apply_int_unop<T, E: CFExpr<T>>(
     i: Info
 ) -> E {
     let v = arg.get_int_value().unwrap();
-    match op {
-        UnOp::Sub => CFExpr::int_expr(-v, ty, i),
-        _ => CFExpr::mk_unop(op, arg, ty, i)
+    let o = match op {
+        UnOp::Sub => Some(-v),
+        UnOp::Abs => Some(v.abs()),
+        _ => None
+    };
+    match o {
+        Some(v) => CFExpr::int_expr(v, ty, i),
+        None => CFExpr::mk_unop(op, arg, ty, i)
     }
 }
 
@@ -65,6 +70,7 @@ fn apply_float_unop<T, E: CFExpr<T>>(
         UnOp::Sub => Some(-v),
         UnOp::Exp => Some(v.exp()),
         UnOp::Log if v > 0.0 => Some(v.ln()),
+        UnOp::Abs => Some(v.abs()),
         _ => None
     };
     match o {
