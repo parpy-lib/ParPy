@@ -63,7 +63,6 @@ def compare_dtype(fn, arg_dtype, compile_only):
         s = parir.print_compiled(fn, [dst, a, b], p)
         assert len(s) != 0
     else:
-        print(parir.print_compiled(fn, [dst, a, b], p))
         fn(dst, a, b)
         dst_cu = torch.empty_like(dst).cuda()
         fn(dst_cu, a.cuda(), b.cuda(), parallelize=p)
