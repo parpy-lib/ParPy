@@ -40,6 +40,7 @@ pub enum Expr {
     Float {v: f64, ty: Type, i: Info},
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
+    Ternary {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Struct {id: Name, fields: Vec<(String, Expr)>, ty: Type, i: Info},
@@ -60,6 +61,7 @@ impl Expr {
             Expr::Float {ty, ..} => ty,
             Expr::UnOp {ty, ..} => ty,
             Expr::BinOp {ty, ..} => ty,
+            Expr::Ternary {ty, ..} => ty,
             Expr::StructFieldAccess {ty, ..} => ty,
             Expr::ArrayAccess {ty, ..} => ty,
             Expr::Struct {ty, ..} => ty,
@@ -89,6 +91,7 @@ impl InfoNode for Expr {
             Expr::Float {i, ..} => i.clone(),
             Expr::UnOp {i, ..} => i.clone(),
             Expr::BinOp {i, ..} => i.clone(),
+            Expr::Ternary {i, ..} => i.clone(),
             Expr::StructFieldAccess {i, ..} => i.clone(),
             Expr::ArrayAccess {i, ..} => i.clone(),
             Expr::Struct {i, ..} => i.clone(),
@@ -113,6 +116,9 @@ impl PartialEq for Expr {
             ( Expr::BinOp {lhs: llhs, op: lop, rhs: lrhs, ..}
             , Expr::BinOp {lhs: rlhs, op: rop, rhs: rrhs, ..} ) =>
                 llhs.eq(rlhs) && lop.eq(rop) && lrhs.eq(rrhs),
+            ( Expr::Ternary {cond: lcond, thn: lthn, els: lels, ..}
+            , Expr::Ternary {cond: rcond, thn: rthn, els: rels, ..} ) =>
+                lcond.eq(rcond) && lthn.eq(rthn) && lels.eq(rels),
             ( Expr::StructFieldAccess {target: ltarget, label: llabel, ..}
             , Expr::StructFieldAccess {target: rtarget, label: rlabel, ..} ) =>
                 ltarget.eq(rtarget) && llabel.eq(rlabel),
@@ -151,6 +157,14 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, rhs) = f(acc, *rhs);
                 (acc, Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i})
             },
+            Expr::Ternary {cond, thn, els, ty, i} => {
+                let (acc, cond) = f(acc, *cond);
+                let (acc, thn) = f(acc, *thn);
+                let (acc, els) = f(acc, *els);
+                (acc, Expr::Ternary {
+                    cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
+                })
+            },
             Expr::StructFieldAccess {target, label, ty, i} => {
                 let (acc, target) = f(acc, *target);
                 (acc, Expr::StructFieldAccess {target: Box::new(target), label, ty, i})
@@ -187,23 +201,15 @@ impl SFold<Expr> for Expr {
     fn sfold<A>(&self, f: impl Fn(A, &Expr) -> A, acc: A) -> A {
         match self {
             Expr::UnOp {arg, ..} => f(acc, arg),
-            Expr::BinOp {lhs, rhs, ..} => {
-                let acc = f(acc, lhs);
-                f(acc, rhs)
-            },
+            Expr::BinOp {lhs, rhs, ..} => f(f(acc, lhs), rhs),
+            Expr::Ternary {cond, thn, els, ..} => f(f(f(acc, cond), thn), els),
             Expr::StructFieldAccess {target, ..} => f(acc, target),
-            Expr::ArrayAccess {target, idx, ..} => {
-                let acc = f(acc, target);
-                f(acc, idx)
-            },
+            Expr::ArrayAccess {target, idx, ..} => f(f(acc, target), idx),
             Expr::Struct {fields, ..} => {
                 fields.into_iter().fold(acc, |acc, (_, e)| f(acc, e))
             },
             Expr::Convert {e, ..} => f(acc, e),
-            Expr::ShflXorSync {value, idx, ..} => {
-                let acc = f(acc, value);
-                f(acc, idx)
-            },
+            Expr::ShflXorSync {value, idx, ..} => f(f(acc, value), idx),
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => acc,
         }

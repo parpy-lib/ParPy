@@ -41,6 +41,12 @@ fn replace_constants_expr(
             let rhs = Box::new(replace_constants_expr(consts, *rhs));
             Expr::BinOp {lhs, op, rhs, ty, i}
         },
+        Expr::IfExpr {cond, thn, els, ty, i} => {
+            let cond = Box::new(replace_constants_expr(consts, *cond));
+            let thn = Box::new(replace_constants_expr(consts, *thn));
+            let els = Box::new(replace_constants_expr(consts, *els));
+            Expr::IfExpr {cond, thn, els, ty, i}
+        },
         Expr::Tuple {elems, ty, i} => {
             let elems = replace_constants_exprs(consts, elems);
             Expr::Tuple {elems, ty, i}

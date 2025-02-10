@@ -223,6 +223,7 @@ pub enum Expr {
     Float {v: f64, ty: Type, i: Info},
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
+    IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     Subscript {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Tuple {elems: Vec<Expr>, ty: Type, i: Info},
     Dict {fields: BTreeMap<String, Expr>, ty: Type, i: Info},
@@ -240,6 +241,7 @@ impl Expr {
             Expr::Float {ty, ..} => ty,
             Expr::UnOp {ty, ..} => ty,
             Expr::BinOp {ty, ..} => ty,
+            Expr::IfExpr {ty, ..} => ty,
             Expr::Subscript {ty, ..} => ty,
             Expr::Tuple {ty, ..} => ty,
             Expr::Dict {ty, ..} => ty,
@@ -257,11 +259,12 @@ impl Expr {
             Expr::Float {..} => 4,
             Expr::UnOp {..} => 5,
             Expr::BinOp {..} => 6,
-            Expr::Subscript {..} => 7,
-            Expr::Tuple {..} => 8,
-            Expr::Dict {..} => 9,
-            Expr::Builtin {..} => 10,
-            Expr::Convert {..} => 11
+            Expr::IfExpr {..} => 7,
+            Expr::Subscript {..} => 8,
+            Expr::Tuple {..} => 9,
+            Expr::Dict {..} => 10,
+            Expr::Builtin {..} => 11,
+            Expr::Convert {..} => 12
         }
     }
 
@@ -274,6 +277,7 @@ impl Expr {
             Expr::Float {v, ty, ..} => Expr::Float {v, ty, i},
             Expr::UnOp {op, arg, ty, ..} => Expr::UnOp {op, arg, ty, i},
             Expr::BinOp {lhs, op, rhs, ty, ..} => Expr::BinOp {lhs, op, rhs, ty, i},
+            Expr::IfExpr {cond, thn, els, ty, ..} => Expr::IfExpr {cond, thn, els, ty, i},
             Expr::Subscript {target, idx, ty, ..} => Expr::Subscript {target, idx, ty, i},
             Expr::Tuple {elems, ty, ..} => Expr::Tuple {elems, ty, i},
             Expr::Dict {fields, ty, ..} => Expr::Dict {fields, ty, i},
@@ -296,6 +300,9 @@ impl Ord for Expr {
             ( Expr::BinOp {lhs: llhs, op: lop, rhs: lrhs, ..}
             , Expr::BinOp {lhs: rlhs, op: rop, rhs: rrhs, ..} ) =>
                 llhs.cmp(rlhs).then(lop.cmp(rop)).then(lrhs.cmp(rrhs)),
+            ( Expr::IfExpr {cond: lcond, thn: lthn, els: lels, ..}
+            , Expr::IfExpr {cond: rcond, thn: rthn, els: rels, ..} ) =>
+                lcond.cmp(rcond).then(lthn.cmp(rthn)).then(lels.cmp(rels)),
             ( Expr::Subscript {target: ltarget, idx: lidx, ..}
             , Expr::Subscript {target: rtarget, idx: ridx, ..} ) =>
                 ltarget.cmp(rtarget).then(lidx.cmp(ridx)),
@@ -331,6 +338,7 @@ impl fmt::Display for Expr {
             Expr::Float {v, ..} => write!(f, "{v}"),
             Expr::UnOp {op, arg, ..} => write!(f, "{op}{arg}"),
             Expr::BinOp {lhs, op, rhs, ..} => write!(f, "({lhs} {op} {rhs})"),
+            Expr::IfExpr {cond, thn, els, ..} => write!(f, "({thn} if {cond} else {els})"),
             Expr::Subscript {target, idx, ..} => write!(f, "{target}[{idx}]"),
             Expr::Tuple {elems, ..} => {
                 let elems = elems.iter()
@@ -371,6 +379,7 @@ impl InfoNode for Expr {
             Expr::Float {i, ..} => i.clone(),
             Expr::UnOp {i, ..} => i.clone(),
             Expr::BinOp {i, ..} => i.clone(),
+            Expr::IfExpr {i, ..} => i.clone(),
             Expr::Subscript {i, ..} => i.clone(),
             Expr::Tuple {i, ..} => i.clone(),
             Expr::Dict {i, ..} => i.clone(),

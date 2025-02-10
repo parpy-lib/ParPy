@@ -24,9 +24,9 @@ fn fv_expr(mut env: FVEnv, e: &Expr) -> FVEnv {
             env
         },
         Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
-        Expr::UnOp {..} | Expr::BinOp {..} | Expr::StructFieldAccess {..} |
-        Expr::ArrayAccess {..} | Expr::Struct {..} | Expr::Convert {..} |
-        Expr::ShflXorSync {..} | Expr::ThreadIdx {..} |
+        Expr::UnOp {..} | Expr::BinOp {..} | Expr::Ternary {..} |
+        Expr::StructFieldAccess {..} | Expr::ArrayAccess {..} | Expr::Struct {..} |
+        Expr::Convert {..} | Expr::ShflXorSync {..} | Expr::ThreadIdx {..} |
         Expr::BlockIdx {..} => e.sfold(fv_expr, env),
     }
 }

@@ -46,6 +46,7 @@ pub enum Expr {
     Float {v: f64, ty: Type, i: Info},
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
+    IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     TensorAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Struct {id: Name, fields: Vec<(String, Expr)>, ty: Type, i: Info},
@@ -61,6 +62,7 @@ impl Expr {
             Expr::Float {ty, ..} => ty,
             Expr::UnOp {ty, ..} => ty,
             Expr::BinOp {ty, ..} => ty,
+            Expr::IfExpr {ty, ..} => ty,
             Expr::StructFieldAccess {ty, ..} => ty,
             Expr::TensorAccess {ty, ..} => ty,
             Expr::Struct {ty, ..} => ty,
@@ -78,6 +80,7 @@ impl InfoNode for Expr {
             Expr::Float {i, ..} => i.clone(),
             Expr::UnOp {i, ..} => i.clone(),
             Expr::BinOp {i, ..} => i.clone(),
+            Expr::IfExpr {i, ..} => i.clone(),
             Expr::StructFieldAccess {i, ..} => i.clone(),
             Expr::TensorAccess {i, ..} => i.clone(),
             Expr::Struct {i, ..} => i.clone(),
@@ -100,7 +103,15 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, lhs) = f(acc, *lhs);
                 let (acc, rhs) = f(acc, *rhs);
                 (acc, Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i})
-            }
+            },
+            Expr::IfExpr {cond, thn, els, ty, i} => {
+                let (acc, cond) = f(acc, *cond);
+                let (acc, thn) = f(acc, *thn);
+                let (acc, els) = f(acc, *els);
+                (acc, Expr::IfExpr {
+                    cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
+                })
+            },
             Expr::StructFieldAccess {target, label, ty, i} => {
                 let (acc, target) = f(acc, *target);
                 (acc, Expr::StructFieldAccess {target: Box::new(target), label, ty, i})
@@ -133,6 +144,7 @@ impl SFold<Expr> for Expr {
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} => acc,
             Expr::UnOp {arg, ..} => f(acc, arg),
             Expr::BinOp {lhs, rhs, ..} => f(f(acc, lhs), rhs),
+            Expr::IfExpr {cond, thn, els, ..} => f(f(f(acc, cond), thn), els),
             Expr::StructFieldAccess {target, ..} => f(acc, target),
             Expr::TensorAccess {target, idx, ..} => f(f(acc, target), idx),
             Expr::Struct {fields, ..} => {

@@ -89,7 +89,7 @@ fn fold_expr(e: Expr) -> Expr {
             }
         },
         Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
-        Expr::StructFieldAccess {..} | Expr::ArrayAccess {..} |
+        Expr::Ternary {..} | Expr::StructFieldAccess {..} | Expr::ArrayAccess {..} |
         Expr::Struct {..} | Expr::ShflXorSync {..} | Expr::ThreadIdx {..} |
         Expr::BlockIdx {..} => e.smap(fold_expr)
     }

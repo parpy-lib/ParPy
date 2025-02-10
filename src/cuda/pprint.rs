@@ -286,6 +286,12 @@ impl PrettyPrint for Expr {
                     (env, format!("{op_str}({lhs_str}, {rhs_str})"))
                 }
             },
+            Expr::Ternary {cond, thn, els, ..} => {
+                let (env, cond) = cond.pprint(env);
+                let (env, thn) = thn.pprint(env);
+                let (env, els) = els.pprint(env);
+                (env, format!("{cond} ? {thn} : {els}"))
+            },
             Expr::StructFieldAccess {target, label, ..} => {
                 let (env, target) = target.pprint(env);
                 (env, format!("{target}.{label}"))

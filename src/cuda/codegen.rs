@@ -43,6 +43,12 @@ fn from_ir_expr(e: ir_ast::Expr) -> CompileResult<Expr> {
             let rhs = Box::new(from_ir_expr(*rhs)?);
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})
         },
+        ir_ast::Expr::IfExpr {cond, thn, els, i, ..} => {
+            let cond = Box::new(from_ir_expr(*cond)?);
+            let thn = Box::new(from_ir_expr(*thn)?);
+            let els = Box::new(from_ir_expr(*els)?);
+            Ok(Expr::Ternary {cond, thn, els, ty, i})
+        },
         ir_ast::Expr::StructFieldAccess {target, label, i, ..} => {
             let target = Box::new(from_ir_expr(*target)?);
             Ok(Expr::StructFieldAccess {target, label, ty, i})

@@ -240,6 +240,11 @@ fn convert_expr<'py, 'a>(
         } else {
             py_runtime_error!(i, "Compare nodes with multiple comparisons in sequence are not supported")
         }
+    } else if expr.is_instance(&env.ast.getattr("IfExp")?)? {
+        let cond = Box::new(convert_expr(expr.getattr("test")?, env)?);
+        let thn = Box::new(convert_expr(expr.getattr("body")?, env)?);
+        let els = Box::new(convert_expr(expr.getattr("orelse")?, env)?);
+        Ok(Expr::IfExpr {cond, thn, els, ty, i})
     } else if expr.is_instance(&env.ast.getattr("Subscript")?)? {
         let target = convert_expr(expr.getattr("value")?, env)?;
         let idx = convert_expr(expr.getattr("slice")?, env)?;
@@ -722,6 +727,30 @@ mod test {
             }),
             ty: Type::Unknown,
             i: mkinfo(1, 0, 1, 6)
+        });
+    }
+
+    #[test]
+    fn convert_if_expr() {
+        let expr = convert_expr_wrap("0 if x else 1").unwrap();
+        assert_eq!(expr, Expr::IfExpr {
+            cond: Box::new(Expr::Var {
+                id: var("x"),
+                ty: Type::Unknown,
+                i: mkinfo(1, 5, 1, 6)
+            }),
+            thn: Box::new(Expr::Int {
+                v: 0,
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            els: Box::new(Expr::Int {
+                v: 1,
+                ty: Type::Unknown,
+                i: mkinfo(1, 12, 1, 13)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 13)
         });
     }
 

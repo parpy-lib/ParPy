@@ -386,6 +386,22 @@ fn type_check_expr(
             let (lhs, ty, rhs) = type_check_binop(lhs, &op, rhs, &i)?;
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})
         },
+        Expr::IfExpr {cond, thn, els, i, ..} => {
+            let cond = Box::new(type_check_expr(vars, *cond)?);
+            let ty = cond.get_type();
+            if ty.is_boolean() {
+                let thn = type_check_expr(vars, *thn)?;
+                let els = type_check_expr(vars, *els)?;
+                let thn_ty = thn.get_type().clone();
+                let els_ty = els.get_type().clone();
+                let ty = lub_type(thn_ty, els_ty, &i)?;
+                let thn = Box::new(coerce_type(thn, &ty)?);
+                let els = Box::new(coerce_type(els, &ty)?);
+                Ok(Expr::IfExpr {cond, thn, els, ty, i})
+            } else {
+                py_type_error!(i, "If expression has condition of invalid type {ty}")
+            }
+        },
         Expr::Subscript {target, idx, i, ..} => {
             let target = type_check_expr(vars, *target)?;
             let (ty, idx) = match *idx {

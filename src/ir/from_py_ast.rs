@@ -189,6 +189,13 @@ fn to_ir_expr(
             let ty = to_ir_type(env, &i, ty)?;
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})
         },
+        py_ast::Expr::IfExpr {cond, thn, els, ty, i} => {
+            let cond = Box::new(to_ir_expr(env, *cond)?);
+            let thn = Box::new(to_ir_expr(env, *thn)?);
+            let els = Box::new(to_ir_expr(env, *els)?);
+            let ty = to_ir_type(env, &i, ty)?;
+            Ok(Expr::IfExpr {cond, thn, els, ty, i})
+        },
         py_ast::Expr::Subscript {target, idx, ty, i} => {
             let target = Box::new(to_ir_expr(env, *target)?);
             let ty = to_ir_type(env, &i, ty)?;

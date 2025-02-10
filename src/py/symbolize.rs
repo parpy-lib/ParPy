@@ -92,6 +92,14 @@ impl Symbolize for Expr {
                 let (env, rhs) = rhs.symbolize(env)?;
                 Ok((env, Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i}))
             },
+            Expr::IfExpr {cond, thn, els, ty, i} => {
+                let (env, cond) = cond.symbolize(env)?;
+                let (env, thn) = thn.symbolize(env)?;
+                let (env, els) = els.symbolize(env)?;
+                Ok((env, Expr::IfExpr {
+                    cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
+                }))
+            },
             Expr::Subscript {target, idx, ty, i} => {
                 let (env, target) = target.symbolize(env)?;
                 let (env, idx) = idx.symbolize(env)?;
