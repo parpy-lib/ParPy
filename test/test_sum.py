@@ -38,10 +38,21 @@ def test_sum_inner_and_outer_parallel_gpu():
     N = 100
     M = 50
     p = {
-        "i": [ParKind.GpuThreads(N)],
-        "j": [ParKind.GpuThreads(128), ParKind.GpuReduction()]
+        'i': [ParKind.GpuThreads(N)],
+        'j': [ParKind.GpuThreads(128), ParKind.GpuReduction()]
     }
     compare_sum(N, M, p)
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+def test_sum_multi_block_reduction_fails():
+    N = 100
+    M = 2048
+    p = {
+        'i': [ParKind.GpuThreads(N)],
+        'j': [ParKind.GpuThreads(M), ParKind.GpuReduction()]
+    }
+    with pytest.raises(RuntimeError):
+        compare_sum(N, M, p)
 
 def test_sum_compiles():
     N = 100

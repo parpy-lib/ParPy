@@ -61,12 +61,11 @@ fn remove_redundant_sync_par_stmts(
 ) -> BTreeSet<Name> {
     let sync = match stmts.last() {
         Some(Stmt::Definition {..} | Stmt::Assign {..}) | None => sync,
-        Some(Stmt::For {var, body, ..}) => {
-            let is_par = sync.contains(var);
-            if in_par && is_par {
+        Some(Stmt::For {var, body, par, ..}) => {
+            if in_par && par.is_parallel() && !par.reduction {
                 sync.remove(&var);
             };
-            remove_redundant_sync_par_stmts(sync, &body, is_par)
+            remove_redundant_sync_par_stmts(sync, &body, par.is_parallel())
         },
         Some(Stmt::If {thn, els, ..}) => {
             let sync = remove_redundant_sync_par_stmts(sync, &thn, in_par);
@@ -128,10 +127,17 @@ fn ensure_no_inter_block_sync_par_stmt(
                         Ok(())
                     },
                     GpuMap::Block {..} | GpuMap::ThreadBlock {..} => {
-                        let msg = concat!(
-                            "Parallel for-loop requires inter-block ",
-                            "synchronization, which is not supported"
-                        );
+                        let msg = if par.reduction {
+                            concat!(
+                                "Parallel reductions using more than 1024 ",
+                                "threads require inter-block synchronization, ",
+                                "which is not supported.")
+                        } else {
+                            concat!(
+                                "This parallel for-loop uses more than 1024 ",
+                                "threads and therefore requires inter-block ",
+                                "synchronization, which is not supported.")
+                        };
                         parir_compile_error!(i, "{}", msg)
                     },
                 }?;
