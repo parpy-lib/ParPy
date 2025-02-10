@@ -290,7 +290,7 @@ impl PrettyPrint for Expr {
                 let (env, cond) = cond.pprint(env);
                 let (env, thn) = thn.pprint(env);
                 let (env, els) = els.pprint(env);
-                (env, format!("{cond} ? {thn} : {els}"))
+                (env, format!("({cond} ? {thn} : {els})"))
             },
             Expr::StructFieldAccess {target, label, ..} => {
                 let (env, target) = target.pprint(env);
