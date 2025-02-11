@@ -128,6 +128,8 @@ fn to_builtin(
 fn to_ir_unop(unop: py_ast::UnOp) -> UnOp {
     match unop {
         py_ast::UnOp::Sub => UnOp::Sub,
+        py_ast::UnOp::Not => UnOp::Not,
+        py_ast::UnOp::BitNeg => UnOp::BitNeg
     }
 }
 
@@ -142,6 +144,10 @@ fn to_ir_binop(binop: py_ast::BinOp) -> BinOp {
         py_ast::BinOp::And => BinOp::And,
         py_ast::BinOp::Or => BinOp::Or,
         py_ast::BinOp::BitAnd => BinOp::BitAnd,
+        py_ast::BinOp::BitOr => BinOp::BitOr,
+        py_ast::BinOp::BitXor => BinOp::BitXor,
+        py_ast::BinOp::BitShl => BinOp::BitShl,
+        py_ast::BinOp::BitShr => BinOp::BitShr,
         py_ast::BinOp::Eq => BinOp::Eq,
         py_ast::BinOp::Neq => BinOp::Neq,
         py_ast::BinOp::Leq => BinOp::Leq,

@@ -57,6 +57,8 @@ impl PrettyPrint for Type {
 pub fn print_unop(op: &UnOp, ty: &Type) -> String {
     let s = match op {
         UnOp::Sub => "-",
+        UnOp::Not => "!",
+        UnOp::BitNeg => "~",
         UnOp::Exp => match ty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "hexp",
             Some(ElemSize::F32) => "__expf",
@@ -120,6 +122,10 @@ pub fn print_binop(op: &BinOp, argty: &Type, ty: &Type) -> String {
         BinOp::And => "&&",
         BinOp::Or => "||",
         BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
+        BinOp::BitShl => "<<",
+        BinOp::BitShr => ">>",
         BinOp::Eq => match argty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "__heq",
             _ => "=="

@@ -56,6 +56,10 @@ fn convert_unary_op<'py, 'a>(
 ) -> PyResult<UnOp> {
     if unop.is_instance(&env.ast.getattr("USub")?)? {
         Ok(UnOp::Sub)
+    } else if unop.is_instance(&env.ast.getattr("Not")?)? {
+        Ok(UnOp::Not)
+    } else if unop.is_instance(&env.ast.getattr("Invert")?)? {
+        Ok(UnOp::BitNeg)
     } else {
         py_runtime_error!(i, "Unsupported unary expression {unop:?}")
     }
@@ -82,6 +86,14 @@ fn convert_bin_op<'py, 'a>(
         Ok(BinOp::Pow)
     } else if binop.is_instance(&env.ast.getattr("BitAnd")?)? {
         Ok(BinOp::BitAnd)
+    } else if binop.is_instance(&env.ast.getattr("BitOr")?)? {
+        Ok(BinOp::BitOr)
+    } else if binop.is_instance(&env.ast.getattr("BitXor")?)? {
+        Ok(BinOp::BitXor)
+    } else if binop.is_instance(&env.ast.getattr("LShift")?)? {
+        Ok(BinOp::BitShl)
+    } else if binop.is_instance(&env.ast.getattr("RShift")?)? {
+        Ok(BinOp::BitShr)
     } else if binop.is_instance(&env.ast.getattr("Eq")?)? {
         Ok(BinOp::Eq)
     } else if binop.is_instance(&env.ast.getattr("NotEq")?)? {

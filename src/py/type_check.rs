@@ -285,7 +285,21 @@ fn type_check_unop(
             if ty.is_signed_integer() || ty.is_floating_point() {
                 Ok(ty.clone())
             } else {
-                py_type_error!(i, "Invalid type {ty} of unary minus argument")
+                py_type_error!(i, "Invalid type {ty} of unary minus")
+            }
+        },
+        UnOp::Not => {
+            if ty.is_boolean() {
+                Ok(ty.clone())
+            } else {
+                py_type_error!(i, "Invalid type {ty} of boolean negation")
+            }
+        }
+        UnOp::BitNeg => {
+            if ty.is_signed_integer() {
+                Ok(ty.clone())
+            } else {
+                py_type_error!(i, "Invalid type {ty} of bitwise negation")
             }
         },
     }
@@ -335,7 +349,7 @@ fn type_check_binop(
             }
         },
         // Bitwise operations
-        BinOp::BitAnd => {
+        BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::BitShl | BinOp::BitShr => {
             if ty.is_signed_integer() {
                 Ok(ty)
             } else {

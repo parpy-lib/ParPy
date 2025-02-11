@@ -126,6 +126,7 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Type::String => write!(f, "string"),
+            Type::Tensor {sz, shape} if shape.is_empty() => write!(f, "{sz}"),
             Type::Tensor {sz, shape} => {
                 let sh = shape.iter().map(|i| i.to_string()).join(",");
                 write!(f, "tensor<{sz}>[{sh}]")
@@ -174,21 +175,23 @@ impl fmt::Display for Builtin {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UnOp {
-    Sub
+    Sub, Not, BitNeg
 }
 
 impl fmt::Display for UnOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            UnOp::Sub => write!(f, "-")
+            UnOp::Sub => write!(f, "-"),
+            UnOp::Not => write!(f, "!"),
+            UnOp::BitNeg => write!(f, "~"),
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BinOp {
-    Add, Sub, Mul, FloorDiv, Div, Mod, Pow, And, Or, BitAnd,
-    Eq, Neq, Leq, Geq, Lt, Gt
+    Add, Sub, Mul, FloorDiv, Div, Mod, Pow, And, Or,
+    BitAnd, BitOr, BitXor, BitShl, BitShr, Eq, Neq, Leq, Geq, Lt, Gt
 }
 
 impl fmt::Display for BinOp {
@@ -204,6 +207,10 @@ impl fmt::Display for BinOp {
             BinOp::And => write!(f, "&&"),
             BinOp::Or => write!(f, "||"),
             BinOp::BitAnd => write!(f, "&"),
+            BinOp::BitOr => write!(f, "|"),
+            BinOp::BitXor => write!(f, "^"),
+            BinOp::BitShl => write!(f, "<<"),
+            BinOp::BitShr => write!(f, ">>"),
             BinOp::Eq => write!(f, "=="),
             BinOp::Neq => write!(f, "!="),
             BinOp::Leq => write!(f, "<="),

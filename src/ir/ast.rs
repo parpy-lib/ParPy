@@ -14,25 +14,29 @@ pub enum Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UnOp {
-    Sub, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
+    Sub, Not, BitNeg, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BinOp {
-    Add, Sub, Mul, Div, Rem, Pow, And, Or, BitAnd, Eq, Neq, Leq, Geq, Lt, Gt,
-    Max, Min, Atan2
+    Add, Sub, Mul, Div, Rem, Pow, And, Or, BitAnd, BitOr, BitXor, BitShl, BitShr,
+    Eq, Neq, Leq, Geq, Lt, Gt, Max, Min, Atan2
 }
 
 impl BinOp {
     pub fn precedence(&self) -> usize {
         match self {
-            BinOp::And | BinOp::Or => 0,
-            BinOp::BitAnd => 1,
-            BinOp::Leq | BinOp::Geq | BinOp::Lt | BinOp::Gt => 2,
-            BinOp::Eq | BinOp::Neq => 3,
-            BinOp::Add | BinOp::Sub => 4,
-            BinOp::Mul | BinOp::Div | BinOp::Rem => 5,
-            BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => 6,
+            BinOp::Or => 2,
+            BinOp::And => 3,
+            BinOp::BitOr => 4,
+            BinOp::BitXor => 5,
+            BinOp::BitAnd => 6,
+            BinOp::Eq | BinOp::Neq => 7,
+            BinOp::Leq | BinOp::Geq | BinOp::Lt | BinOp::Gt => 8,
+            BinOp::BitShl | BinOp::BitShr => 10,
+            BinOp::Add | BinOp::Sub => 11,
+            BinOp::Mul | BinOp::Div | BinOp::Rem => 12,
+            BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => 20
         }
     }
 }

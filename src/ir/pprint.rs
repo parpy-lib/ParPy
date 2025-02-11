@@ -29,6 +29,8 @@ impl PrettyPrint for UnOp {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
             UnOp::Sub => "-",
+            UnOp::Not => "!",
+            UnOp::BitNeg => "~",
             UnOp::Exp => "exp",
             UnOp::Log => "log",
             UnOp::Cos => "cos",
@@ -53,6 +55,10 @@ impl PrettyPrint for BinOp {
             BinOp::And => "&&",
             BinOp::Or => "||",
             BinOp::BitAnd => "&",
+            BinOp::BitOr => "|",
+            BinOp::BitXor => "^",
+            BinOp::BitShl => "<<",
+            BinOp::BitShr => ">>",
             BinOp::Eq => "==",
             BinOp::Neq => "!=",
             BinOp::Leq => "<=",
