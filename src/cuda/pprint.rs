@@ -104,24 +104,12 @@ pub fn print_unop(op: &UnOp, ty: &Type) -> String {
     s.to_string()
 }
 
-pub fn print_binop(op: &BinOp, ty: &Type) -> String {
+pub fn print_binop(op: &BinOp, argty: &Type, ty: &Type) -> String {
     let s = match op {
-        BinOp::Add => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__hadd",
-            _ => "+"
-        },
-        BinOp::Sub => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__hsub",
-            _ => "-"
-        },
-        BinOp::Mul => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__hmul",
-            _ => "*"
-        },
-        BinOp::Div => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__hdiv",
-            _ => "/"
-        },
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
         BinOp::Rem => "%",
         BinOp::Pow => match ty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "hpow",
@@ -132,27 +120,27 @@ pub fn print_binop(op: &BinOp, ty: &Type) -> String {
         BinOp::And => "&&",
         BinOp::Or => "||",
         BinOp::BitAnd => "&",
-        BinOp::Eq => match ty.get_scalar_elem_size() {
+        BinOp::Eq => match argty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "__heq",
             _ => "=="
         },
-        BinOp::Neq => match ty.get_scalar_elem_size() {
+        BinOp::Neq => match argty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "__hne",
             _ => "!="
         },
-        BinOp::Leq => match ty.get_scalar_elem_size() {
+        BinOp::Leq => match argty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "__hle",
             _ => "<="
         }
-        BinOp::Geq => match ty.get_scalar_elem_size() {
+        BinOp::Geq => match argty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "__hge",
             _ => ">="
         },
-        BinOp::Lt => match ty.get_scalar_elem_size() {
+        BinOp::Lt => match argty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "__hlt",
             _ => "<"
         },
-        BinOp::Gt => match ty.get_scalar_elem_size() {
+        BinOp::Gt => match argty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "__hgt",
             _ => ">"
         },
@@ -234,7 +222,8 @@ fn is_infix(op: &BinOp, ty: &Type) -> bool {
     };
     match op {
         BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => false,
-        BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div if is_f16 => false,
+        BinOp::Eq | BinOp::Neq | BinOp::Leq | BinOp::Geq | BinOp::Lt |
+        BinOp::Gt if is_f16 => false,
         _ => true
     }
 }
@@ -271,7 +260,7 @@ impl PrettyPrint for Expr {
             },
             Expr::BinOp {lhs, op, rhs, ty, ..} => {
                 let (env, lhs_str) = lhs.pprint(env);
-                let op_str = print_binop(&op, &ty);
+                let op_str = print_binop(&op, lhs.get_type(), &ty);
                 let (env, rhs_str) = rhs.pprint(env);
 
                 // We consider the precedence of the left- and right-hand side operands and use

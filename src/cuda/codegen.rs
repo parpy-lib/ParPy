@@ -224,6 +224,7 @@ fn generate_literal(v: f64, sz: &ElemSize, i: Info) -> Expr {
 
 fn reduction_op_neutral_element(
     op: &BinOp,
+    argty: &Type,
     ty: Type,
     i: Info
 ) -> CompileResult<Expr> {
@@ -236,7 +237,7 @@ fn reduction_op_neutral_element(
             BinOp::And => Ok(generate_literal(1.0, sz, i)),
             BinOp::Or => Ok(generate_literal(0.0, sz, i)),
             _ => {
-                let op = pprint::print_binop(op, &ty);
+                let op = pprint::print_binop(op, argty, &ty);
                 parir_compile_error!(i, "Parallel reductions not supported for operator {op}")
             }
         }
@@ -336,7 +337,7 @@ fn generate_parallel_reduction(
 
     let acc = match expr {
         Expr::BinOp {lhs, op, rhs, ty, i} => {
-            let ne = reduction_op_neutral_element(&op, ty.clone(), i.clone())?;
+            let ne = reduction_op_neutral_element(&op, lhs.get_type(), ty.clone(), i.clone())?;
             let opfn = |lhs, rhs| Expr::BinOp {
                 lhs: Box::new(lhs), op: op.clone(), rhs: Box::new(rhs),
                 ty: ty.clone(), i: i.clone()
