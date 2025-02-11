@@ -45,7 +45,6 @@ fn to_ir_type(
         py_ast::Type::String => {
             parir_compile_error!(i, "Encountered standalone string type when translating to IR AST")
         },
-        py_ast::Type::Tensor {sz, shape} if shape.is_empty() => Ok(Type::Scalar {sz}),
         py_ast::Type::Tensor {sz, shape} => Ok(Type::Tensor {sz, shape}),
         py_ast::Type::Tuple {..} => {
             parir_compile_error!(i, "Encountered standalone tuple type when translating to IR AST")
@@ -188,7 +187,7 @@ fn flatten_indices(
     indices: Vec<Expr>,
     i: &Info
 ) -> CompileResult<Expr> {
-    let int_ty = Type::Scalar {sz: ElemSize::I64};
+    let int_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
     let zero = Expr::Int {v: 0, ty: int_ty.clone(), i: i.clone()};
     let nindices = indices.len();
     let tail = shape.split_off(nindices);
@@ -281,11 +280,7 @@ fn to_ir_expr(
                             .into_iter()
                             .skip(n)
                             .collect::<Vec<i64>>();
-                        let res_ty = if res_shape.is_empty() {
-                            Type::Scalar {sz: sz.clone()}
-                        } else {
-                            Type::Tensor {sz: sz.clone(), shape: res_shape}
-                        };
+                        let res_ty = Type::Tensor {sz: sz.clone(), shape: res_shape};
                         let target = Box::new(target);
                         Ok(Expr::TensorAccess {target, idx, ty: res_ty, i})
                     } else {
@@ -440,7 +435,7 @@ mod test {
                 id: y, ty: Type::Struct {id: y_struct.clone()}, i: i()
             }),
             label: x,
-            ty: Type::Scalar {sz: ElemSize::I64},
+            ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]},
             i: i()
         });
     }
@@ -464,7 +459,7 @@ mod test {
     }
 
     fn ir_int_ty() -> Type {
-        Type::Scalar {sz: ElemSize::I64}
+        ir_tensor_ty(vec![])
     }
 
     fn ir_int(v: i64) -> Expr {

@@ -53,14 +53,14 @@ impl CFType for Type {
 
     fn is_int(&self) -> bool {
         match self {
-            Type::Scalar {sz} if sz.is_signed_integer() => true,
+            Type::Tensor {sz, shape} => shape.is_empty() && sz.is_signed_integer(),
             _ => false
         }
     }
 
     fn is_float(&self) -> bool {
         match self {
-            Type::Scalar {sz} if sz.is_floating_point() => true,
+            Type::Tensor {sz, shape} => shape.is_empty() && sz.is_floating_point(),
             _ => false
         }
     }
@@ -123,7 +123,7 @@ mod test {
     }
 
     fn int_with_ty(v: i64, ty: Option<Type>) -> Expr {
-        let ty = ty.unwrap_or(Type::Scalar {sz: ElemSize::I64});
+        let ty = ty.unwrap_or(Type::Tensor {sz: ElemSize::I64, shape: vec![]});
         Expr::Int {v, ty, i: Info::default()}
     }
 
@@ -132,7 +132,7 @@ mod test {
     }
 
     fn float_with_ty(v: f64, ty: Option<Type>) -> Expr {
-        let ty = ty.unwrap_or(Type::Scalar {sz: ElemSize::F64});
+        let ty = ty.unwrap_or(Type::Tensor {sz: ElemSize::F64, shape: vec![]});
         Expr::Float {v, ty, i: Info::default()}
     }
 
@@ -221,7 +221,7 @@ mod test {
 
     #[test]
     fn convert_float32_inf() {
-        let float32 = Type::Scalar {sz: ElemSize::F32};
+        let float32 = Type::Tensor {sz: ElemSize::F32, shape: vec![]};
         let e = Expr::Convert {
             e: Box::new(float(f64::INFINITY)),
             ty: float32.clone()
@@ -231,7 +231,7 @@ mod test {
 
     #[test]
     fn convert_float32_neginf() {
-        let float32 = Type::Scalar {sz: ElemSize::F32};
+        let float32 = Type::Tensor {sz: ElemSize::F32, shape: vec![]};
         let e = Expr::Convert {
             e: Box::new(float(-f64::INFINITY)),
             ty: float32.clone()

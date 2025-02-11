@@ -8,7 +8,6 @@ pub use crate::py::ast::ElemSize;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Boolean,
-    Scalar {sz: ElemSize},
     Tensor {sz: ElemSize, shape: Vec<i64>},
     Struct {id: Name},
 }

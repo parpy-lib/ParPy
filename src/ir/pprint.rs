@@ -9,7 +9,7 @@ impl PrettyPrint for Type {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
             Type::Boolean => (env, "bool".to_string()),
-            Type::Scalar {sz} => sz.pprint(env),
+            Type::Tensor {sz, shape} if shape.is_empty() => sz.pprint(env),
             Type::Tensor {sz, shape} => {
                 let (env, sz) = sz.pprint(env);
                 let shape_str = shape.iter()
