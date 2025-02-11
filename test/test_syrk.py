@@ -8,10 +8,8 @@ import torch
 def syrk(alpha, beta, C, A, N, M):
     for i in range(N):
         for j in range(i+1):
-            # NOTE: In the generated code, this operation is performed by many
-            # threads in parallel, which results in a reliably reproducible bug
-            # when running certain number of threads. The solution would be to
-            # ensure only one thread writes to this location.
+            # NOTE: In the generated code, only one thread should write to this
+            # memory location to avoid a concurrency bug.
             C[i,j] = C[i,j] * beta
             for k in range(M):
                 C[i,j] = C[i,j] + alpha * A[i,k] * A[j,k]
