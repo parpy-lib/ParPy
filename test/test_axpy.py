@@ -12,7 +12,7 @@ def axpy(a, x, y, out, N):
 
 def axpy_wrap(a, x, y, N, p=None):
     out = torch.empty_like(x)
-    axpy(a, x, y, out, N, parallelize=p)
+    axpy(a, x, y, out, N, parallelize=p, cache=False)
     return out
 
 def axpy_test_data():

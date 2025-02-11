@@ -28,7 +28,7 @@ def spmm_wrap(A, B, target, p=None):
     N = A["nrows"]
     K = B["ncols"]
     C = torch.zeros((N, K), dtype=torch.float32, device='cuda')
-    target(A, B, C, parallelize=p)
+    target(A, B, C, parallelize=p, cache=False)
     return C
 
 def uniform_random_csr_f32_i64(N, M, d, device):

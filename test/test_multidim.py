@@ -29,7 +29,7 @@ def test_copy_two_dims():
         'i': [ParKind.GpuThreads(N)],
         'j': [ParKind.GpuThreads(M)]
     }
-    copy_2d(y_cu, x_cu, N, M, parallelize=p)
+    copy_2d(y_cu, x_cu, N, M, parallelize=p, cache=False)
 
     assert torch.allclose(y, y_cu.cpu())
 
@@ -47,6 +47,6 @@ def test_copy_three_dims():
         'j': [ParKind.GpuThreads(M)],
         'k': [ParKind.GpuThreads(K)]
     }
-    copy_3d(y_cu, x_cu, N, M, K, parallelize=p)
+    copy_3d(y_cu, x_cu, N, M, K, parallelize=p, cache=False)
 
     assert torch.allclose(y, y_cu.cpu())

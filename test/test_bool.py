@@ -23,7 +23,7 @@ def bool_test_data():
 
 def bool_wrap(x, y, N, p=None):
     tmp = torch.empty(N, dtype=torch.bool, device=x.device)
-    store_gt(x, y, tmp, N, parallelize=p)
+    store_gt(x, y, tmp, N, parallelize=p, cache=False)
     out = torch.empty(1, dtype=torch.bool, device=x.device)
     reduce_and(tmp, out, N)
     return out

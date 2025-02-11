@@ -25,7 +25,7 @@ def spmv_wrap(A, x, N, p=None):
         'nrows': N
     }
     y = torch.empty((A["nrows"],), dtype=x.dtype, device=x.device)
-    spmv_row(A, x, y, parallelize=p)
+    spmv_row(A, x, y, parallelize=p, cache=False)
     return y
 
 def uniform_random_csr_f32_i64(N, M, d, device):

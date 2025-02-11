@@ -65,7 +65,7 @@ def compare_dtype(fn, arg_dtype, compile_only):
     else:
         fn(dst, a, b)
         dst_cu = torch.empty_like(dst).cuda()
-        fn(dst_cu, a.cuda(), b.cuda(), parallelize=p)
+        fn(dst_cu, a.cuda(), b.cuda(), parallelize=p, cache=False)
         assert dst == dst_cu.cpu()
 
 functions = [

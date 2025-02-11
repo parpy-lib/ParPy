@@ -18,9 +18,9 @@ def collatz(out, N):
             count = count + 1
         out[i] = count
 
-def collatz_wrap(N, device='cpu', parallelize=None):
+def collatz_wrap(N, device='cpu', p=None):
     out = torch.zeros(N+1, dtype=torch.int32, device=device)
-    collatz(out, N)
+    collatz(out, N, parallelize=p, cache=False)
     return out
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -28,7 +28,7 @@ def test_collatz_gpu():
     N = 1000
     expected = collatz_wrap(N)
     p = {'i': [ParKind.GpuThreads(256)]}
-    actual = collatz_wrap(N, 'cuda', parallelize=p)
+    actual = collatz_wrap(N, 'cuda', p=p)
     assert torch.allclose(expected, actual.cpu())
 
 def test_collatz_compiles_with_parallelism():

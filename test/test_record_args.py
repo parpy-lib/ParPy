@@ -15,5 +15,5 @@ def test_record_args():
     }
     y = torch.tensor([0], dtype=torch.int32, device='cuda')
     p = {'i': [ParKind.GpuThreads(2)]}
-    dummy(x, y, parallelize=p)
+    dummy(x, y, parallelize=p, cache=False)
     assert y[0] == 6

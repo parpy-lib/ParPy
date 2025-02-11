@@ -16,7 +16,7 @@ def normalize_rows(t, nrows, ncols):
 def normalize_wrap(t, p=None):
     nrows, ncols = t.shape
     out = t.clone()
-    normalize_rows(out, nrows, ncols, parallelize=p)
+    normalize_rows(out, nrows, ncols, parallelize=p, cache=False)
     return out
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")

@@ -166,19 +166,19 @@ def forward(hmm, seqs):
         'inst': [ParKind.GpuThreads(seqs["num_instances"])],
         'state': [ParKind.GpuThreads(hmm["num_states"])]
     }
-    forward_init(hmm, seqs, alpha1, parallelize=par)
+    forward_init(hmm, seqs, alpha1, parallelize=par, cache=False)
 
     par = {
         'inst': [ParKind.GpuThreads(seqs["num_instances"])],
         'state': [ParKind.GpuThreads(hmm["num_states"])]
     }
-    forward_steps(hmm, seqs, alpha1, alpha2, parallelize=par)
+    forward_steps(hmm, seqs, alpha1, alpha2, parallelize=par, cache=False)
 
     par = {
         'inst': [ParKind.GpuThreads(seqs["num_instances"])],
         'state': [ParKind.GpuThreads(hmm["num_states"]), ParKind.GpuReduction()]
     }
-    forward_lse(hmm, seqs, result, alpha1, alpha2, parallelize=par)
+    forward_lse(hmm, seqs, result, alpha1, alpha2, parallelize=par, cache=False)
 
     return result
 

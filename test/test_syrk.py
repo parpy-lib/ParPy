@@ -46,7 +46,7 @@ def syrk_run_par(nthreads):
     # result
     p = syrk_par_spec(N, nthreads)
     C_cu = C.clone().cuda()
-    syrk(alpha, beta, C_cu, A.cuda(), N, M, parallelize=p)
+    syrk(alpha, beta, C_cu, A.cuda(), N, M, parallelize=p, cache=False)
 
     assert torch.allclose(C_ref, C_cu.cpu()), f"Run failed using {nthreads} threads"
 

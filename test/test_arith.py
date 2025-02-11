@@ -57,7 +57,7 @@ def arith_binop_dtype(fn, dtype, compile_only):
     else:
         fn(dst, a, b)
         dst_cu = torch.empty_like(dst).cuda()
-        fn(dst_cu, a.cuda(), b.cuda(), parallelize=p)
+        fn(dst_cu, a.cuda(), b.cuda(), parallelize=p, cache=False)
         assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
 
 arith_funs = [
@@ -130,7 +130,7 @@ def arith_unop_dtype(fn, dtype, compile_only):
         # running on the GPU.
         fn(dst, src)
         dst_cu = torch.empty_like(src).cuda()
-        fn(dst_cu, src.cuda(), parallelize=p)
+        fn(dst_cu, src.cuda(), parallelize=p, cache=False)
         assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
 
 float_funs = [parir_cos, parir_sin, parir_tanh, parir_atan2, parir_sqrt]

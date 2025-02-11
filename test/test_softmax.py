@@ -29,7 +29,7 @@ def softmax(x, N, M, out):
 def softmax_wrap(x, p=None):
     N, M = x.shape
     out = torch.empty_like(x)
-    softmax(x, N, M, out, parallelize=p)
+    softmax(x, N, M, out, parallelize=p, cache=False)
     return out
 
 def compare_softmax(p):
