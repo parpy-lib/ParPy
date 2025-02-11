@@ -152,6 +152,73 @@ fn to_ir_binop(binop: py_ast::BinOp) -> BinOp {
     }
 }
 
+fn unwrap_tensor_indices(
+    env: &IREnv,
+    target: py_ast::Expr,
+    idx: py_ast::Expr
+) -> CompileResult<(Expr, Vec<Expr>)> {
+    let mut idx = match idx {
+        py_ast::Expr::Tuple {elems, ..} => {
+            elems.into_iter()
+                .map(|elem| to_ir_expr(env, elem))
+                .collect::<CompileResult<Vec<Expr>>>()
+        },
+        _ => {
+            Ok(vec![to_ir_expr(env, idx)?])
+        }
+    }?;
+    let is_string = |e: &py_ast::Expr| match e {
+        py_ast::Expr::String {..} => true,
+        _ => false
+    };
+    match target {
+        py_ast::Expr::Subscript {target: itarget, idx: iidx, ..} if !is_string(iidx.as_ref()) => {
+            let (target, mut inner_indices) = unwrap_tensor_indices(env, *itarget, *iidx)?;
+            inner_indices.append(&mut idx);
+            Ok((target, inner_indices))
+        },
+        _ => {
+            Ok((to_ir_expr(env, target)?, idx))
+        }
+    }
+}
+
+fn flatten_indices(
+    mut shape: Vec<i64>,
+    indices: Vec<Expr>,
+    i: &Info
+) -> CompileResult<Expr> {
+    let int_ty = Type::Scalar {sz: ElemSize::I64};
+    let zero = Expr::Int {v: 0, ty: int_ty.clone(), i: i.clone()};
+    let nindices = indices.len();
+    let tail = shape.split_off(nindices);
+    let init = tail.into_iter().product();
+    let (idx, _) = shape.clone()
+        .into_iter()
+        .rev()
+        .zip(indices.into_iter().rev())
+        .fold(Ok((zero, init)), |acc, (n, idx)| {
+            let (expr, mult) = acc?;
+            let i = idx.get_info();
+            let nexpr = Expr::Int {v: mult, ty: int_ty.clone(), i: i.clone()};
+            let idx_expr = Expr::BinOp {
+                lhs: Box::new(Expr::BinOp {
+                    lhs: Box::new(idx),
+                    op: BinOp::Mul,
+                    rhs: Box::new(nexpr),
+                    ty: int_ty.clone(),
+                    i: i.clone()
+                }),
+                op: BinOp::Add,
+                rhs: Box::new(expr),
+                ty: int_ty.clone(),
+                i: i.clone()
+            };
+            Ok((idx_expr, mult * n))
+        })?;
+    Ok(idx)
+}
+
 fn to_ir_expr(
     env: &IREnv,
     e: py_ast::Expr
@@ -197,64 +264,41 @@ fn to_ir_expr(
             Ok(Expr::IfExpr {cond, thn, els, ty, i})
         },
         py_ast::Expr::Subscript {target, idx, ty, i} => {
-            let target = Box::new(to_ir_expr(env, *target)?);
             let ty = to_ir_type(env, &i, ty)?;
-            // Three possible uses of a subscript expression:
-            // 1. We use a string to index in a dictionary.
-            // 2. We use a tuple to index into a multi-dimensional tensor.
-            // 3. We use an arbitrary expression (integer) to index into a tensor.
+            // We can use a subscript to index in a dictionary using a string key, or we can use it
+            // as an integer index into a tensor. In the latter case, we collect nested uses of
+            // indexing, as "a[1,2]" should be considered equivalent to "a[1][2]".
             if let py_ast::Expr::String {v: label, ..} = *idx {
+                let target = Box::new(to_ir_expr(env, *target)?);
                 Ok(Expr::StructFieldAccess {target, label, ty, i})
-            } else if let py_ast::Expr::Tuple {elems, i: i_tuple, ..} = *idx {
+            } else {
+                let (target, indices) = unwrap_tensor_indices(env, *target, *idx)?;
                 if let Type::Tensor {sz, shape} = target.get_type() {
-                    if elems.len() <= shape.len() {
-                        let int_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
-                        let zero = Expr::Int {v: 0, ty: int_ty.clone(), i: i_tuple.clone()};
-                        // NOTE: We want to multiply each value by all lower dimensions, so we skip
-                        // the most significant one and add a trailing one at the end of the
-                        // sequence (to prevent the zip from excluding the final argument).
-                        let (idx, _) = shape.clone()
-                            .into_iter()
-                            .rev()
-                            .zip(elems.clone().into_iter().rev())
-                            .fold(Ok((zero, 1)), |acc, (n, idx)| {
-                                let (expr, mult) = acc?;
-                                let nexpr = Expr::Int {
-                                    v: mult, ty: int_ty.clone(), i: i_tuple.clone()
-                                };
-                                let idx = to_ir_expr(env, idx)?;
-                                let idx_expr = Expr::BinOp {
-                                    lhs: Box::new(Expr::BinOp {
-                                        lhs: Box::new(nexpr),
-                                        op: BinOp::Mul,
-                                        rhs: Box::new(idx),
-                                        ty: int_ty.clone(),
-                                        i: i_tuple.clone()
-                                    }),
-                                    op: BinOp::Add,
-                                    rhs: Box::new(expr),
-                                    ty: int_ty.clone(),
-                                    i: i_tuple.clone()
-                                };
-                                Ok((idx_expr, mult * n))
-                            })?;
-                        let idx = Box::new(idx.clone());
+                    let n = indices.len();
+                    if n <= shape.len() {
+                        let idx = Box::new(flatten_indices(shape.clone(), indices, &i)?);
                         let res_shape = shape.clone()
                             .into_iter()
-                            .skip(elems.len())
+                            .skip(n)
                             .collect::<Vec<i64>>();
-                        let res_ty = Type::Tensor {sz: sz.clone(), shape: res_shape};
+                        let res_ty = if res_shape.is_empty() {
+                            Type::Scalar {sz: sz.clone()}
+                        } else {
+                            Type::Tensor {sz: sz.clone(), shape: res_shape}
+                        };
+                        let target = Box::new(target);
                         Ok(Expr::TensorAccess {target, idx, ty: res_ty, i})
                     } else {
-                        let dim = shape.len();
-                        parir_compile_error!(i, "Too many indices for tensor of {dim} dimensions")
+                        let msg = concat!(
+                            "Invalid dimensions. Indexing into tensor of shape ",
+                            "{shape:?} using {n} indices"
+                        );
+                        parir_compile_error!(i, "{msg}")
                     }
                 } else {
-                    parir_compile_error!(i, "Indexing into non-tensor target is not allowed")
+                    let msg = "Indexing into non-tensor target {target} is not supported";
+                    parir_compile_error!(i, "{msg}")
                 }
-            } else {
-                let idx = Box::new(to_ir_expr(env, *idx)?);
-                Ok(Expr::TensorAccess {target, idx, ty, i})
             }
         },
         py_ast::Expr::Tuple {i, ..} => {
@@ -361,4 +405,123 @@ pub fn to_ir_def(
         .collect::<CompileResult<Vec<Param>>>()?;
     let body = to_ir_stmts(env, body)?;
     Ok(FunDef {id, params, body, i})
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn i() -> Info {
+        Info::default()
+    }
+
+    #[test]
+    fn dict_subscript_to_ir() {
+        let x = "x".to_string();
+        let y = Name::sym_str("y");
+        let elem_ty = py_ast::Type::Tensor {sz: ElemSize::I64, shape: vec![]};
+        let mut fields = BTreeMap::new();
+        fields.insert(x.clone(), elem_ty.clone());
+        let ty = py_ast::Type::Dict {fields};
+        let py_expr = py_ast::Expr::Subscript {
+            target: Box::new(py_ast::Expr::Var {id: y.clone(), ty: ty.clone(), i: i()}),
+            idx: Box::new(py_ast::Expr::String {
+                v: x.clone(), ty: py_ast::Type::String, i: i()
+            }),
+            ty: elem_ty.clone(), i: i()
+        };
+        let y_struct = Name::sym_str("dict_y");
+        let mut structs = BTreeMap::new();
+        structs.insert(ty, y_struct.clone());
+        let env = IREnv::new(structs, BTreeMap::new());
+        let res = to_ir_expr(&env, py_expr).unwrap();
+        assert_eq!(res, Expr::StructFieldAccess {
+            target: Box::new(Expr::Var {
+                id: y, ty: Type::Struct {id: y_struct.clone()}, i: i()
+            }),
+            label: x,
+            ty: Type::Scalar {sz: ElemSize::I64},
+            i: i()
+        });
+    }
+
+    fn py_tensor_ty(shape: Vec<i64>) -> py_ast::Type {
+        py_ast::Type::Tensor {sz: ElemSize::I64, shape}
+    }
+
+    fn py_tuple_ty(nelems: usize) -> py_ast::Type {
+        let elems = (0..nelems).map(|_| py_tensor_ty(vec![]))
+            .collect::<Vec<py_ast::Type>>();
+        py_ast::Type::Tuple {elems}
+    }
+
+    fn py_int(v: i64) -> py_ast::Expr {
+        py_ast::Expr::Int {v, ty: py_tensor_ty(vec![]), i: i()}
+    }
+
+    fn ir_tensor_ty(shape: Vec<i64>) -> Type {
+        Type::Tensor {sz: ElemSize::I64, shape}
+    }
+
+    fn ir_int_ty() -> Type {
+        Type::Scalar {sz: ElemSize::I64}
+    }
+
+    fn ir_int(v: i64) -> Expr {
+        Expr::Int {v, ty: ir_int_ty(), i: i()}
+    }
+
+    fn ir_binop(lhs: Expr, op: BinOp, rhs: Expr, ty: Type) -> Expr {
+        Expr::BinOp {
+            lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i: i()
+        }
+    }
+
+    #[test]
+    fn nested_tensor_index_to_ir() {
+        let x = Name::new("x".to_string());
+        let py_expr = py_ast::Expr::Subscript {
+            target: Box::new(py_ast::Expr::Subscript {
+                target: Box::new(py_ast::Expr::Var {
+                    id: x.clone(), ty: py_tensor_ty(vec![3,4,5,6]), i: i()
+                }),
+                idx: Box::new(py_ast::Expr::Tuple {
+                    elems: vec![py_int(1), py_int(2)],
+                    ty: py_tuple_ty(2),
+                    i: i()
+                }),
+                ty: py_tensor_ty(vec![5,6]),
+                i: i()
+            }),
+            idx: Box::new(py_int(3)),
+            ty: py_tensor_ty(vec![6]),
+            i: i()
+        };
+        let env = IREnv::new(BTreeMap::new(), BTreeMap::new());
+        let res = to_ir_expr(&env, py_expr).unwrap();
+        let idx_expr = ir_binop(
+            ir_binop(ir_int(1), BinOp::Mul, ir_int(120), ir_int_ty()),
+            BinOp::Add,
+            ir_binop(
+                ir_binop(ir_int(2), BinOp::Mul, ir_int(30), ir_int_ty()),
+                BinOp::Add,
+                ir_binop(
+                    ir_binop(ir_int(3), BinOp::Mul, ir_int(6), ir_int_ty()),
+                    BinOp::Add,
+                    ir_int(0),
+                    ir_int_ty()
+                ),
+                ir_int_ty()
+            ),
+            ir_int_ty()
+        );
+        assert_eq!(res, Expr::TensorAccess {
+            target: Box::new(Expr::Var {
+                id: x, ty: ir_tensor_ty(vec![3,4,5,6]), i: i()
+            }),
+            idx: Box::new(idx_expr),
+            ty: Type::Tensor {sz: ElemSize::I64, shape: vec![6]},
+            i: i()
+        });
+    }
 }
