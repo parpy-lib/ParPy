@@ -1,6 +1,7 @@
 pub mod ast;
 mod constant_fold;
 mod from_py_ast;
+mod pprint;
 mod struct_types;
 
 use ast::*;

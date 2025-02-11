@@ -157,8 +157,8 @@ impl SFold<Expr> for Expr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LoopParallelism {
-    pub nthreads : i64,
-    pub reduction : bool
+    pub nthreads: i64,
+    pub reduction: bool
 }
 
 impl LoopParallelism {
