@@ -188,7 +188,10 @@ impl Default for LoopParallelism {
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr, i: Info},
     Assign {dst: Expr, expr: Expr, i: Info},
-    For {var: Name, lo: Expr, hi: Expr, body: Vec<Stmt>, par: LoopParallelism, i: Info},
+    For {
+        var: Name, lo: Expr, hi: Expr, step: i64, body: Vec<Stmt>,
+        par: LoopParallelism, i: Info
+    },
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
 }
@@ -217,10 +220,10 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, expr) = f(acc, expr);
                 (acc, Stmt::Assign {dst, expr, i})
             },
-            Stmt::For {var, lo, hi, body, par, i} => {
+            Stmt::For {var, lo, hi, step, body, par, i} => {
                 let (acc, lo) = f(acc, lo);
                 let (acc, hi) = f(acc, hi);
-                (acc, Stmt::For {var, lo, hi, body, par, i})
+                (acc, Stmt::For {var, lo, hi, step, body, par, i})
             },
             Stmt::If {cond, thn, els, i} => {
                 let (acc, cond) = f(acc, cond);
@@ -250,9 +253,9 @@ impl SMapAccum<Stmt> for Stmt {
     fn smap_accum_l<A>(self, f: impl Fn(A, Stmt) -> (A, Stmt), acc: A) -> (A, Stmt) {
         match self {
             Stmt::Definition {..} | Stmt::Assign {..} => (acc, self),
-            Stmt::For {var, lo, hi, body, par, i} => {
+            Stmt::For {var, lo, hi, step, body, par, i} => {
                 let (acc, body) = body.smap_accum_l(&f, acc);
-                (acc, Stmt::For {var, lo, hi, body, par, i})
+                (acc, Stmt::For {var, lo, hi, step, body, par, i})
             },
             Stmt::If {cond, thn, els, i} => {
                 let (acc, thn) = thn.smap_accum_l(&f, acc);

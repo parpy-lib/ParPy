@@ -22,14 +22,6 @@ def test_while_else_rejected():
             else:
                 y[i] = 0.0
 
-def test_for_steps_rejected():
-    with pytest.raises(RuntimeError):
-        @parir.jit
-        def for_steps(x, y, N):
-            for i in range(0, N, 2):
-                y[i] = x[i]
-                y[i+1] = x[i+1]
-
 def test_for_else_rejected():
     with pytest.raises(RuntimeError):
         @parir.jit

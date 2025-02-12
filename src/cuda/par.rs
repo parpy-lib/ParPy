@@ -238,7 +238,7 @@ mod test {
 
     fn for_loop(var: Name, nthreads: i64, body: Vec<Stmt>) -> Stmt {
         let par = LoopParallelism::default().with_threads(nthreads);
-        Stmt::For {var, lo: int(0), hi: int(10), body, par, i: Info::default()}
+        Stmt::For {var, lo: int(0), hi: int(10), step: 1, body, par, i: Info::default()}
     }
 
     fn if_cond(thn: Vec<Stmt>, els: Vec<Stmt>) -> Stmt {

@@ -91,11 +91,11 @@ fn replace_constants_stmt(
             let expr = replace_constants_expr(consts, expr);
             Stmt::Assign {dst, expr, i}
         },
-        Stmt::For {var, lo, hi, body, i} => {
+        Stmt::For {var, lo, hi, step, body, i} => {
             let lo = replace_constants_expr(consts, lo);
             let hi = replace_constants_expr(consts, hi);
             let body = replace_constants_stmts(consts, body);
-            Stmt::For {var, lo, hi, body, i}
+            Stmt::For {var, lo, hi, step, body, i}
         },
         Stmt::If {cond, thn, els, i} => {
             let cond = replace_constants_expr(consts, cond);

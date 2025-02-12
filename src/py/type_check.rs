@@ -532,7 +532,7 @@ fn type_check_stmt(
             let expr = coerce_type(expr, dst.get_type())?;
             Ok((vars, Stmt::Assign {dst, expr, i}))
         },
-        Stmt::For {var, lo, hi, body, i} => {
+        Stmt::For {var, lo, hi, step, body, i} => {
             let lo = type_check_expr(&vars, lo)?;
             let lo = ensure_scalar_type(lo, ElemSize::I64)?;
             let hi = type_check_expr(&vars, hi)?;
@@ -540,7 +540,7 @@ fn type_check_stmt(
             let mut body_vars = vars.clone();
             body_vars.insert(var.clone(), Type::Tensor {sz: ElemSize::I64, shape: vec![]});
             let (_, body) = type_check_stmts(body_vars, body)?;
-            Ok((vars, Stmt::For {var, lo, hi, body, i}))
+            Ok((vars, Stmt::For {var, lo, hi, step, body, i}))
         },
         Stmt::If {cond, thn, els, i} => {
             let cond = validate_condition_type(type_check_expr(&vars, cond)?, &i)?;

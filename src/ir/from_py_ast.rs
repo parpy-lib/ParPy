@@ -357,12 +357,12 @@ fn to_ir_stmt(
             let expr = to_ir_expr(env, expr)?;
             Ok(Stmt::Assign {dst, expr, i})
         },
-        py_ast::Stmt::For {var, lo, hi, body, i} => {
+        py_ast::Stmt::For {var, lo, hi, step, body, i} => {
             let lo = to_ir_expr(env, lo)?;
             let hi = to_ir_expr(env, hi)?;
             let body = to_ir_stmts(env, body)?;
             let par = convert_par_spec(env.par.get(var.get_str()));
-            Ok(Stmt::For {var, lo, hi, body, par, i})
+            Ok(Stmt::For {var, lo, hi, step, body, par, i})
         },
         py_ast::Stmt::If {cond, thn, els, i} => {
             let cond = to_ir_expr(env, cond)?;

@@ -400,7 +400,7 @@ impl InfoNode for Expr {
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr, i: Info},
     Assign {dst: Expr, expr: Expr, i: Info},
-    For {var: Name, lo: Expr, hi: Expr, body: Vec<Stmt>, i: Info},
+    For {var: Name, lo: Expr, hi: Expr, step: i64, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
 }

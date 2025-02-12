@@ -302,6 +302,25 @@ fn convert_expr<'py, 'a>(
     }
 }
 
+fn extract_step(e: Expr) -> PyResult<i64> {
+    let fail = || {
+        py_runtime_error!(e.get_info(), "Range step size must be an integer literal")
+    };
+    let fail_zero = |i: &Info| {
+        py_runtime_error!(i, "Range step size must be non-zero")
+    };
+    match &e {
+        Expr::Int {v, ..} if *v != 0 => Ok(*v),
+        Expr::UnOp {op: UnOp::Sub, arg, ..} => match arg.as_ref() {
+            Expr::Int {v, ..} if *v != 0 => Ok(-*v),
+            Expr::Int {i, ..} => fail_zero(&i),
+            _ => fail()
+        },
+        Expr::Int {i, ..} => fail_zero(&i),
+        _ => fail()
+    }
+}
+
 fn convert_stmt<'py, 'a>(
     stmt: Bound<'py, PyAny>,
     env: &'py ConvertEnv<'py, 'a>
@@ -336,26 +355,32 @@ fn convert_stmt<'py, 'a>(
             py_runtime_error!(i, "For-loop must iterate using the range builtin")
         }?;
 
-        // Extract the lower and upper bounds of the range. We currently do not support step sizes.
+        // Extract the bounds and the step size of the range.
         let range_args = range_fn.getattr("args")?;
-        let (lo, hi) = match range_args.len()? {
+        let (lo, hi, step) = match range_args.len()? {
             1 => {
                 let lo = Expr::Int {v: 0, ty: Type::Unknown, i: i.clone()};
                 let hi = convert_expr(range_args.get_item(0)?, env)?;
-                Ok((lo, hi))
+                Ok((lo, hi, 1))
             },
             2 => {
                 let lo = convert_expr(range_args.get_item(0)?, env)?;
                 let hi = convert_expr(range_args.get_item(1)?, env)?;
-                Ok((lo, hi))
+                Ok((lo, hi, 1))
             },
-            _ => py_runtime_error!(i, "For-loops with a step size are not supported")
+            3 => {
+                let lo = convert_expr(range_args.get_item(0)?, env)?;
+                let hi = convert_expr(range_args.get_item(1)?, env)?;
+                let step = extract_step(convert_expr(range_args.get_item(2)?, env)?)?;
+                Ok((lo, hi, step))
+            }
+            _ => py_runtime_error!(i, "Invalid number of arguments passed to range")
         }?;
 
         let body = convert_stmts(stmt.getattr("body")?, env)?;
 
         if stmt.getattr("orelse")?.len()? == 0 {
-            Ok(Stmt::For {var, lo, hi, body, i})
+            Ok(Stmt::For {var, lo, hi, step, body, i})
         } else {
             py_runtime_error!(i, "For-loops with an else-clause are not supported")
         }
@@ -893,6 +918,7 @@ mod test {
             var: var("i"),
             lo: Expr::Int {v: 1, ty: Type::Unknown, i: mkinfo(1, 15, 1, 16)},
             hi: Expr::Int {v: 10, ty: Type::Unknown, i: mkinfo(1, 18, 1, 20)},
+            step: 1,
             body: vec![
                 Stmt::Assign {
                     dst: Expr::Subscript {
@@ -919,6 +945,42 @@ mod test {
             ],
             i: mkinfo(1, 0, 2, 10)
         })
+    }
+
+    #[test]
+    fn convert_stmt_for_range_negative_step() {
+        let stmt = convert_stmt_wrap("for i in range(10, 1, -2):\n  x[i] = i").unwrap();
+        assert_eq!(stmt, Stmt::For {
+            var: var("i"),
+            lo: Expr::Int {v: 10, ty: Type::Unknown, i: mkinfo(1, 15, 1, 17)},
+            hi: Expr::Int {v: 1, ty: Type::Unknown, i: mkinfo(1, 19, 1, 20)},
+            step: -2,
+            body: vec![
+                Stmt::Assign {
+                    dst: Expr::Subscript {
+                        target: Box::new(Expr::Var {
+                            id: var("x"),
+                            ty: Type::Unknown,
+                            i: mkinfo(2, 2, 2, 3)
+                        }),
+                        idx: Box::new(Expr::Var {
+                            id: var("i"),
+                            ty: Type::Unknown,
+                            i: mkinfo(2, 4, 2, 5)
+                        }),
+                        ty: Type::Unknown,
+                        i: mkinfo(2, 2, 2, 6)
+                    },
+                    expr: Expr::Var {
+                        id: var("i"),
+                        ty: Type::Unknown,
+                        i: mkinfo(2, 9, 2, 10)
+                    },
+                    i: mkinfo(2, 2, 2, 10)
+                }
+            ],
+            i: mkinfo(1, 0, 2, 10)
+        });
     }
 
     #[test]

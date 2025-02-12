@@ -102,23 +102,33 @@ fn determine_loop_bounds(
     par: Option<(LaunchArgs, GpuMap)>,
     var: Name,
     lo: ir_ast::Expr,
-    hi: ir_ast::Expr
+    hi: ir_ast::Expr,
+    step_size: i64
 ) -> CompileResult<(Expr, Expr, Expr)> {
     let init = from_ir_expr(lo)?;
     let ty = init.get_type().clone();
     let i = init.get_info();
     let var_e = Expr::Var {id: var, ty: ty.clone(), i: i.clone()};
+    let cond_op = if step_size > 0 { BinOp::Lt } else { BinOp::Gt };
     let cond = Expr::BinOp {
         lhs: Box::new(var_e.clone()),
-        op: BinOp::Lt,
+        op: cond_op,
         rhs: Box::new(from_ir_expr(hi)?),
         ty: Type::Boolean,
         i: i.clone()
     };
     let fn_incr = |v| Expr::BinOp {
-        lhs: Box::new(var_e), op: BinOp::Add,
-        rhs: Box::new(Expr::Int {
-            v, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
+        lhs: Box::new(var_e),
+        op: BinOp::Add,
+        rhs: Box::new(Expr::BinOp {
+            lhs: Box::new(Expr::Int {
+                v: step_size, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
+            }),
+            op: BinOp::Mul,
+            rhs: Box::new(Expr::Int {
+                v, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
+            }),
+            ty: ty.clone(), i: i.clone()
         }),
         ty: ty.clone(), i: i.clone()
     };
@@ -499,7 +509,7 @@ fn generate_kernel_stmt(
             let expr = from_ir_expr(expr)?;
             acc.push(Stmt::Assign {dst, expr});
         },
-        ir_ast::Stmt::For {var, lo, hi, body, par, i} => {
+        ir_ast::Stmt::For {var, lo, hi, step, body, par, i} => {
             let (p, grid, map) = if par.is_parallel() {
                 let m = map[0].clone();
                 let grid = subtract_from_grid(grid, &m);
@@ -508,7 +518,7 @@ fn generate_kernel_stmt(
                 (None, grid, map)
             };
             let var_ty = from_ir_type(lo.get_type().clone());
-            let (init, cond, incr) = determine_loop_bounds(p, var.clone(), lo, hi)?;
+            let (init, cond, incr) = determine_loop_bounds(p, var.clone(), lo, hi, step)?;
             if par.is_parallel() && par.reduction {
                 acc.push(generate_parallel_reduction(
                     var_ty, var, init, cond, incr, body, par.nthreads, i)?
@@ -573,7 +583,7 @@ fn from_ir_stmt(
         ir_ast::Stmt::Definition {i, ..} | ir_ast::Stmt::Assign {i, ..} => {
             parir_compile_error!(i, "Assignments are not allowed outside parallel code")
         },
-        ir_ast::Stmt::For {var, lo, hi, body, par, i} => {
+        ir_ast::Stmt::For {var, lo, hi, step, body, par, i} => {
             let var_ty = from_ir_type(lo.get_type().clone());
             // If this for-loop has been marked for parallelization, we compile its contents to a
             // GPU kernel and insert a kernel launch into the host code. Otherwise, we generate a
@@ -581,7 +591,7 @@ fn from_ir_stmt(
             match &env.gpu_mapping.get(&var) {
                 Some(m) => {
                     let kernel_id = generate_kernel_name(&env.id, &var);
-                    let stmt = ir_ast::Stmt::For {var, lo, hi, body, par, i: i.clone()};
+                    let stmt = ir_ast::Stmt::For {var, lo, hi, step, body, par, i: i.clone()};
                     let kernel_body = generate_kernel_stmt(
                         m.grid.clone(), &m.get_mapping()[..], &env.sync, vec![], stmt
                     )?;
@@ -603,7 +613,7 @@ fn from_ir_stmt(
                     Ok(kernels)
                 },
                 None => {
-                    let (init, cond, incr) = determine_loop_bounds(None, var.clone(), lo, hi)?;
+                    let (init, cond, incr) = determine_loop_bounds(None, var.clone(), lo, hi, step)?;
                     let (body, kernels) = from_ir_stmts(env, vec![], kernels, body)?;
                     host_body.push(Stmt::For {
                         var_ty, var, init, cond, incr, body
