@@ -1,5 +1,4 @@
 import parir
-from parir import ParKind
 import pytest
 import torch
 
@@ -28,7 +27,7 @@ def negative_step_range(x, N):
 def range_helper(fn, compile_only):
     N = 100
     x = torch.zeros((N,), dtype=torch.int64)
-    p = {'i': [ParKind.GpuThreads(32)]}
+    p = {'i': [parir.threads(32)]}
     if compile_only:
         s = parir.print_compiled(fn, [x, N], p)
         assert len(s) != 0

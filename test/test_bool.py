@@ -1,5 +1,4 @@
 import parir
-from parir import ParKind
 import pytest
 import torch
 
@@ -34,8 +33,8 @@ def test_bool_gpu():
     expected = bool_wrap(x, y, N)
 
     p = {
-        'i': [ParKind.GpuThreads(N)],
-        'j': [ParKind.GpuThreads(64), ParKind.GpuReduction()]
+        'i': [parir.threads(N)],
+        'j': [parir.threads(64), parir.reduce()]
     }
     actual = bool_wrap(x.cuda(), y.cuda(), N, p).cpu()
     assert torch.allclose(expected, actual, atol=1e-5)
@@ -43,11 +42,11 @@ def test_bool_gpu():
 def test_bool_compiles():
     x, y, N = bool_test_data()
     tmp = torch.empty_like(x, dtype=torch.bool)
-    p = {'i': [ParKind.GpuThreads(64)]}
+    p = {'i': [parir.threads(64)]}
     s = parir.print_compiled(store_gt, [x, y, tmp, N], p)
     assert len(s) != 0
 
-    p = {'j': [ParKind.GpuThreads(64), ParKind.GpuReduction()]}
+    p = {'j': [parir.threads(64), parir.reduce()]}
     res = torch.empty(1, dtype=torch.bool)
     s = parir.print_compiled(reduce_and, [tmp, res, N], p)
     assert len(s) != 0

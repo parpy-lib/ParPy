@@ -1,5 +1,4 @@
 import parir
-from parir import ParKind
 import pytest
 import torch
 
@@ -15,7 +14,7 @@ def generate_copy_test_data(device):
     N, M = 100, 100
     x = torch.randn((N, M), dtype=torch.float64, device=device)
     y = torch.empty_like(x)
-    p = {'i': [ParKind.GpuThreads(N)], 'j': [ParKind.GpuThreads(M)]}
+    p = {'i': [parir.threads(N)], 'j': [parir.threads(M)]}
     return y, x, N, M, p
 
 def test_copy_print_compiled():

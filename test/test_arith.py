@@ -1,6 +1,5 @@
 import math
 import parir
-from parir import ParKind
 import pytest
 import torch
 
@@ -81,7 +80,7 @@ def arith_binop_dtype(fn, dtype, compile_only):
     a = torch.randint(1, 10, (1,), dtype=dtype)
     b = torch.randint(1, 10, (1,), dtype=dtype)
     dst = torch.zeros((1,), dtype=dtype)
-    p = {'i': [ParKind.GpuThreads(32)]}
+    p = {'i': [parir.threads(32)]}
     if compile_only:
         s = parir.print_compiled(fn, [dst, a, b], p)
         assert len(s) != 0
@@ -156,7 +155,7 @@ def parir_sqrt(dst, src):
 def arith_unop_dtype(fn, dtype, compile_only):
     src = torch.tensor([0.5], dtype=dtype)
     dst = torch.empty_like(src)
-    p = {'i': [ParKind.GpuThreads(32)]}
+    p = {'i': [parir.threads(32)]}
     if compile_only:
         s = parir.print_compiled(fn, [src, dst], p)
         assert len(s) != 0

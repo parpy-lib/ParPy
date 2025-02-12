@@ -1,6 +1,5 @@
 import numpy as np
 import parir
-from parir import ParKind
 import pytest
 import torch
 
@@ -41,17 +40,17 @@ def compare_softmax(p):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_softmax_seq_reduce():
-    p = { "i" : [ParKind.GpuThreads(256)] }
+    p = { "i" : [parir.threads(256)] }
     compare_softmax(p)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_softmax_gpu():
     p = {
-        "i" : [ParKind.GpuThreads(256)],
-        "j1": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
-        "j2": [ParKind.GpuThreads(128)],
-        "j3": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
-        "j4": [ParKind.GpuThreads(128)]
+        "i" : [parir.threads(256)],
+        "j1": [parir.threads(128), parir.reduce()],
+        "j2": [parir.threads(128)],
+        "j3": [parir.threads(128), parir.reduce()],
+        "j4": [parir.threads(128)]
     }
     compare_softmax(p)
 
@@ -60,11 +59,11 @@ def test_softmax_compiles():
     x = torch.randn((N, M), dtype=torch.float32)
     out = torch.empty_like(x)
     p = {
-        "i" : [ParKind.GpuThreads(256)],
-        "j1": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
-        "j2": [ParKind.GpuThreads(128)],
-        "j3": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
-        "j4": [ParKind.GpuThreads(128)]
+        "i" : [parir.threads(256)],
+        "j1": [parir.threads(128), parir.reduce()],
+        "j2": [parir.threads(128)],
+        "j3": [parir.threads(128), parir.reduce()],
+        "j4": [parir.threads(128)]
     }
     s = parir.print_compiled(softmax, [x, N, M, out], p)
     assert len(s) != 0

@@ -1,5 +1,4 @@
 import parir
-from parir import ParKind
 import pytest
 import torch
 
@@ -26,8 +25,8 @@ def test_copy_two_dims():
     x_cu = x.cuda()
     y_cu = torch.empty_like(x_cu)
     p = {
-        'i': [ParKind.GpuThreads(N)],
-        'j': [ParKind.GpuThreads(M)]
+        'i': [parir.threads(N)],
+        'j': [parir.threads(M)]
     }
     copy_2d(y_cu, x_cu, N, M, parallelize=p, cache=False)
 
@@ -43,9 +42,9 @@ def test_copy_three_dims():
     x_cu = x.cuda()
     y_cu = torch.empty_like(x_cu)
     p = {
-        'i': [ParKind.GpuThreads(N)],
-        'j': [ParKind.GpuThreads(M)],
-        'k': [ParKind.GpuThreads(K)]
+        'i': [parir.threads(N)],
+        'j': [parir.threads(M)],
+        'k': [parir.threads(K)]
     }
     copy_3d(y_cu, x_cu, N, M, K, parallelize=p, cache=False)
 

@@ -1,6 +1,5 @@
 import math
 import parir
-from parir import ParKind
 import pytest
 import torch
 
@@ -58,7 +57,7 @@ def compare_dtype(fn, arg_dtype, compile_only):
     a = torch.randint(1, 10, (1,), dtype=arg_dtype)
     b = torch.randint(1, 10, (1,), dtype=arg_dtype)
     dst = torch.empty((1,), dtype=torch.int32)
-    p = {'i': [ParKind.GpuThreads(32)]}
+    p = {'i': [parir.threads(32)]}
     if compile_only:
         s = parir.print_compiled(fn, [dst, a, b], p)
         assert len(s) != 0

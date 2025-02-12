@@ -1,6 +1,5 @@
 import numpy as np
 import parir
-from parir import ParKind
 import pytest
 import torch
 
@@ -29,8 +28,8 @@ def syrk_data():
 
 def syrk_par_spec(N, nthreads):
     return {
-        'i': [ParKind.GpuThreads(N)],
-        'k': [ParKind.GpuThreads(nthreads), ParKind.GpuReduction()]
+        'i': [parir.threads(N)],
+        'k': [parir.threads(nthreads), parir.reduce()]
     }
 
 def syrk_run_par(nthreads):

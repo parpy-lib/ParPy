@@ -1,9 +1,16 @@
 from . import compile, key, parir
 from .compile import clear_cache
 from .operators import *
-from .parir import ParKind
 
 ir_asts = {}
+
+def threads(n):
+    from .parir import ParKind
+    return ParKind.GpuThreads(n)
+
+def reduce():
+    from .parir import ParKind
+    return ParKind.GpuReduction()
 
 def convert_python_function_to_ir(fn):
     import ast as python_ast

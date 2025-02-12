@@ -2,7 +2,6 @@ import h5py
 import numpy as np
 from math import inf
 import parir
-from parir import ParKind
 import pytest
 import torch
 
@@ -163,20 +162,20 @@ def forward(hmm, seqs):
     alpha2 = torch.empty_like(alpha1)
 
     par = {
-        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
-        'state': [ParKind.GpuThreads(hmm["num_states"])]
+        'inst': [parir.threads(seqs["num_instances"])],
+        'state': [parir.threads(hmm["num_states"])]
     }
     forward_init(hmm, seqs, alpha1, parallelize=par, cache=False)
 
     par = {
-        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
-        'state': [ParKind.GpuThreads(hmm["num_states"])]
+        'inst': [parir.threads(seqs["num_instances"])],
+        'state': [parir.threads(hmm["num_states"])]
     }
     forward_steps(hmm, seqs, alpha1, alpha2, parallelize=par, cache=False)
 
     par = {
-        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
-        'state': [ParKind.GpuThreads(hmm["num_states"]), ParKind.GpuReduction()]
+        'inst': [parir.threads(seqs["num_instances"])],
+        'state': [parir.threads(hmm["num_states"]), parir.reduce()]
     }
     forward_lse(hmm, seqs, result, alpha1, alpha2, parallelize=par, cache=False)
 
@@ -202,8 +201,8 @@ def test_forward_compiles():
     alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
     alpha2 = torch.empty_like(alpha1)
     p = {
-        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
-        'state': [ParKind.GpuThreads(hmm["num_states"])]
+        'inst': [parir.threads(seqs["num_instances"])],
+        'state': [parir.threads(hmm["num_states"])]
     }
     s = parir.print_compiled(forward_init, [hmm, seqs, alpha1], p)
     assert len(s) != 0
@@ -212,8 +211,8 @@ def test_forward_compiles():
     assert len(s) != 0
 
     p = {
-        'inst': [ParKind.GpuThreads(seqs["num_instances"])],
-        'state': [ParKind.GpuThreads(hmm["num_states"]), ParKind.GpuReduction()]
+        'inst': [parir.threads(seqs["num_instances"])],
+        'state': [parir.threads(hmm["num_states"]), parir.reduce()]
     }
     s = parir.print_compiled(forward_lse, [hmm, seqs, result, alpha1, alpha2], p)
     assert len(s) != 0

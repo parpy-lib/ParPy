@@ -1,5 +1,4 @@
 import parir
-from parir import ParKind
 import pytest
 import torch
 
@@ -23,7 +22,7 @@ def normalize_wrap(t, p=None):
 def test_normalize_single_row():
     t = torch.ones((1, 1024), dtype=torch.float32, device='cuda')
     y1 = torch.nn.functional.normalize(t, p=1, dim=1)
-    p = { "i": [ParKind.GpuThreads(256)] }
+    p = { "i": [parir.threads(256)] }
     y2 = normalize_wrap(t, p)
     assert torch.allclose(y1, y2, 1e-5)
 
@@ -32,9 +31,9 @@ def test_normalize_multirow():
     t = torch.ones((256, 1024), dtype=torch.float32, device='cuda')
     y1 = torch.nn.functional.normalize(t, p=1, dim=1)
     p = {
-        "i": [ParKind.GpuThreads(256)],
-        "j1": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
-        "j2": [ParKind.GpuThreads(128)]
+        "i": [parir.threads(256)],
+        "j1": [parir.threads(128), parir.reduce()],
+        "j2": [parir.threads(128)]
     }
     y2 = normalize_wrap(t, p)
     assert torch.allclose(y1, y2, 1e-5)
@@ -55,9 +54,9 @@ def test_normalize_print_ast():
         1024
     ]
     p = {
-        "i": [ParKind.GpuThreads(256)],
-        "j1": [ParKind.GpuThreads(128), ParKind.GpuReduction()],
-        "j2": [ParKind.GpuThreads(128)]
+        "i": [parir.threads(256)],
+        "j1": [parir.threads(128), parir.reduce()],
+        "j2": [parir.threads(128)]
     }
     s = parir.print_compiled(normalize_rows_no_annot, args, p)
     assert len(s) != 0
