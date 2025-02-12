@@ -79,7 +79,8 @@ fn to_unary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<UnOp> {
         py_ast::Builtin::Tanh => Ok(UnOp::Tanh),
         py_ast::Builtin::Abs => Ok(UnOp::Abs),
         py_ast::Builtin::Inf | py_ast::Builtin::Max | py_ast::Builtin::Min |
-        py_ast::Builtin::Atan2 | py_ast::Builtin::Convert {..} => {
+        py_ast::Builtin::Atan2 | py_ast::Builtin::Convert {..} |
+        py_ast::Builtin::Label => {
             parir_compile_error!(i, "Invalid builtin unary operator: {func}")
         }
     }
@@ -93,7 +94,7 @@ fn to_binary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<BinOp> {
         py_ast::Builtin::Exp | py_ast::Builtin::Inf | py_ast::Builtin::Log |
         py_ast::Builtin::Cos | py_ast::Builtin::Sin | py_ast::Builtin::Sqrt |
         py_ast::Builtin::Tanh | py_ast::Builtin::Abs |
-        py_ast::Builtin::Convert {..} => {
+        py_ast::Builtin::Convert {..} | py_ast::Builtin::Label => {
             parir_compile_error!(i, "Invalid builtin binary operator: {func}")
         }
     }
@@ -344,6 +345,7 @@ fn convert_par_spec(p: Option<&Vec<ParKind>>) -> LoopParallelism {
 
 fn to_ir_stmt(
     env: &IREnv,
+    label: Option<String>,
     stmt: py_ast::Stmt
 ) -> CompileResult<Stmt> {
     match stmt {
@@ -361,7 +363,7 @@ fn to_ir_stmt(
             let lo = to_ir_expr(env, lo)?;
             let hi = to_ir_expr(env, hi)?;
             let body = to_ir_stmts(env, body)?;
-            let par = convert_par_spec(env.par.get(var.get_str()));
+            let par = convert_par_spec(label.and_then(|l| env.par.get(&l)));
             Ok(Stmt::For {var, lo, hi, step, body, par, i})
         },
         py_ast::Stmt::If {cond, thn, els, i} => {
@@ -375,6 +377,12 @@ fn to_ir_stmt(
             let body = to_ir_stmts(env, body)?;
             Ok(Stmt::While {cond, body, i})
         },
+        py_ast::Stmt::Label {label, assoc, i} => {
+            match assoc {
+                Some(s) => to_ir_stmt(env, Some(label), *s),
+                None => parir_compile_error!(i, "Found label without associated statement")
+            }
+        }
     }
 }
 
@@ -383,7 +391,7 @@ fn to_ir_stmts(
     stmts: Vec<py_ast::Stmt>
 ) -> CompileResult<Vec<Stmt>> {
     stmts.into_iter()
-        .map(|s| to_ir_stmt(env, s))
+        .map(|s| to_ir_stmt(env, None, s))
         .collect::<_>()
 }
 

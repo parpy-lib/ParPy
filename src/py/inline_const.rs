@@ -108,6 +108,7 @@ fn replace_constants_stmt(
             let body = replace_constants_stmts(consts, body);
             Stmt::While {cond, body, i}
         },
+        Stmt::Label {label, assoc, i} => Stmt::Label {label, assoc, i}
     }
 }
 

@@ -177,6 +177,16 @@ impl Symbolize for Stmt {
                 let (_, body) = body.symbolize(env.clone())?;
                 Ok((env, Stmt::While {cond, body, i}))
             },
+            Stmt::Label {label, assoc, i} => {
+                let (env, assoc) = match assoc {
+                    Some(s) => {
+                        let (env, s) = s.symbolize(env)?;
+                        (env, Some(Box::new(s)))
+                    },
+                    None => (env, None)
+                };
+                Ok((env, Stmt::Label {label, assoc, i}))
+            }
         }
     }
 }

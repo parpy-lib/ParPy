@@ -151,7 +151,7 @@ impl fmt::Display for Type {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Builtin {
     Exp, Inf, Log, Max, Min, Abs, Cos, Sin, Sqrt, Tanh, Atan2,
-    Convert {sz: ElemSize}
+    Convert {sz: ElemSize}, Label
 }
 
 impl fmt::Display for Builtin {
@@ -169,6 +169,7 @@ impl fmt::Display for Builtin {
             Builtin::Tanh => write!(f, "tanh"),
             Builtin::Atan2 => write!(f, "atan2"),
             Builtin::Convert {sz} => write!(f, "convert({sz})"),
+            Builtin::Label => write!(f, "<label>")
         }
     }
 }
@@ -403,6 +404,7 @@ pub enum Stmt {
     For {var: Name, lo: Expr, hi: Expr, step: i64, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
+    Label {label: String, assoc: Option<Box<Stmt>>, i: Info}
 }
 
 impl InfoNode for Stmt {
@@ -413,6 +415,7 @@ impl InfoNode for Stmt {
             Stmt::For {i, ..} => i.clone(),
             Stmt::If {i, ..} => i.clone(),
             Stmt::While {i, ..} => i.clone(),
+            Stmt::Label {i, ..} => i.clone()
         }
     }
 }

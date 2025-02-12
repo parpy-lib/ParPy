@@ -176,6 +176,8 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
                 Ok(Builtin::Convert {sz: ElemSize::I32})
             } else if e.eq(parir.getattr("int64")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::I64})
+            } else if e.eq(parir.getattr("label")?)? {
+                Ok(Builtin::Label)
             } else {
                 py_runtime_error!(i, "Unknown built-in operator {expr}")
             }?;
@@ -319,6 +321,31 @@ fn extract_step(e: Expr) -> PyResult<i64> {
     }
 }
 
+fn construct_label_stmt(
+    value: Expr,
+    i: &Info
+) -> PyResult<Stmt> {
+    let extract_label = |arg| match arg {
+        Expr::String {v, ..} => Ok(v),
+        _ => {
+            let msg = concat!(
+                "First argument of parir.label should be a string literal ",
+                "representing the label name"
+            );
+            py_runtime_error!(i, "{}", msg)
+        }
+    };
+    if let Expr::Builtin {func: Builtin::Label, mut args, ..} = value {
+        let label = match args.len() {
+            1 => extract_label(args.remove(0)),
+            _ => py_runtime_error!(i, "Label expects one argument")
+        }?;
+        Ok(Stmt::Label {label, assoc: None, i: i.clone()})
+    } else {
+        py_runtime_error!(i, "Unsupported expression statement")
+    }
+}
+
 fn convert_stmt<'py, 'a>(
     stmt: Bound<'py, PyAny>,
     env: &'py ConvertEnv<'py, 'a>
@@ -421,6 +448,9 @@ fn convert_stmt<'py, 'a>(
         } else {
             py_runtime_error!(i, "While-loops with an else-clause are not supported")
         }
+    } else if stmt.is_instance(&env.ast.getattr("Expr")?)? {
+        let value = convert_expr(stmt.getattr("value")?, env)?;
+        construct_label_stmt(value, &i)
     } else {
         py_runtime_error!(i, "Unsupported statement: {stmt}")
     }

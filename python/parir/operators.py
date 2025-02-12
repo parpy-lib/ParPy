@@ -21,3 +21,7 @@ def int32(x):
 
 def int64(x):
     return int(x)
+
+def label(x):
+    assert x is not None, "parir.label expects one argument"
+    pass

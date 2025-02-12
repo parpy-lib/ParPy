@@ -79,13 +79,16 @@ def read_expected_output(fname, device):
 
 @parir.jit
 def forward_init(hmm, seqs, alpha_src):
+    parir.label('inst')
     for inst in range(seqs["num_instances"]):
         o = seqs["data"][inst, 0]
+        parir.label('state')
         for state in range(hmm["num_states"]):
             alpha_src[inst, state] = hmm["initial_prob"][state] + hmm["output_prob"][o, state % 64]
 
 @parir.jit
 def forward_steps(hmm, seqs, alpha1, alpha2):
+    parir.label('inst')
     for inst in range(seqs["num_instances"]):
         for t in range(1, seqs["maxlen"]):
             alpha_src = alpha2
@@ -94,6 +97,7 @@ def forward_steps(hmm, seqs, alpha1, alpha2):
                 alpha_src = alpha1
                 alpha_dst = alpha2
             o = seqs["data"][inst, t]
+            parir.label('state')
             for state in range(hmm["num_states"]):
                 if t < seqs["lens"][inst]:
                     # Transitively inlined version of forward_prob_predecessors.
@@ -140,6 +144,7 @@ def forward_steps(hmm, seqs, alpha1, alpha2):
 
 @parir.jit
 def forward_lse(hmm, seqs, result, alpha1, alpha2):
+    parir.label('inst')
     for inst in range(seqs["num_instances"]):
         # Summation of final alpha values
         alpha = alpha2
@@ -147,10 +152,12 @@ def forward_lse(hmm, seqs, result, alpha1, alpha2):
             alpha = alpha1
 
         maxp = parir.float32(-parir.inf)
+        parir.label('state')
         for state in range(hmm["num_states"]):
             maxp = max(maxp, alpha[inst, state])
 
         psum = parir.float32(0.0)
+        parir.label('state')
         for state in range(hmm["num_states"]):
             psum = psum + parir.exp(alpha[inst, state] - maxp)
 

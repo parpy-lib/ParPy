@@ -6,6 +6,7 @@ import torch
 def test_record_args():
     @parir.jit
     def dummy(x, y):
+        parir.label('i')
         for i in range(1):
             y[i] = x["a"][0] + x["b"][0]
     x = {

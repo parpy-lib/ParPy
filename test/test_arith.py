@@ -7,71 +7,85 @@ torch.manual_seed(1234)
 
 @parir.jit
 def parir_add(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] + b[i]
 
 @parir.jit
 def parir_sub(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] - b[i]
 
 @parir.jit
 def parir_mul(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] * b[i]
 
 @parir.jit
 def parir_div_int(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] // b[i]
 
 @parir.jit
 def parir_div(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] / b[i]
 
 @parir.jit
 def parir_rem(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] % b[i]
 
 @parir.jit
 def parir_pow(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] ** b[i]
 
 @parir.jit
 def parir_abs(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = abs(a[i]) + abs(b[i])
 
 @parir.jit
 def parir_bit_and(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] & b[i]
 
 @parir.jit
 def parir_bit_or(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] | b[i]
 
 @parir.jit
 def parir_bit_xor(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] ^ b[i]
 
 @parir.jit
 def parir_bit_shl(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] << b[i]
 
 @parir.jit
 def parir_bit_shr(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] = a[i] >> b[i]
 
 @parir.jit
 def parir_aug_ops(dst, a, b):
+    parir.label('i')
     for i in range(1):
         dst[i] += a[i]
         dst[i] -= b[i]
@@ -129,26 +143,31 @@ def test_bin_arith_compile(fn, dtype):
 
 @parir.jit
 def parir_cos(dst, src):
+    parir.label('i')
     for i in range(1):
         dst[i] = parir.cos(src[i])
 
 @parir.jit
 def parir_sin(dst, src):
+    parir.label('i')
     for i in range(1):
         dst[i] = parir.sin(src[i])
 
 @parir.jit
 def parir_tanh(dst, src):
+    parir.label('i')
     for i in range(1):
         dst[i] = parir.tanh(src[i])
 
 @parir.jit
 def parir_atan2(dst, src):
+    parir.label('i')
     for i in range(1):
         dst[i] = parir.atan2(src[i], 1.0)
 
 @parir.jit
 def parir_sqrt(dst, src):
+    parir.label('i')
     for i in range(1):
         dst[i] = parir.sqrt(src[i])
 

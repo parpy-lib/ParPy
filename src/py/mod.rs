@@ -1,6 +1,7 @@
 pub mod ast;
 mod from_py;
 mod inline_const;
+mod labels;
 mod symbolize;
 mod type_check;
 
@@ -17,7 +18,8 @@ pub fn parse_untyped_ast<'py>(
     fst_line: usize
 ) -> PyResult<ast::FunDef> {
     let ast = from_py::to_untyped_ir(ast, filepath, fst_line)?;
-    ast.symbolize_default()
+    let ast = ast.symbolize_default()?;
+    labels::associate_labels(ast)
 }
 
 #[macro_export]

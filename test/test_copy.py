@@ -6,6 +6,7 @@ torch.manual_seed(1234)
 
 @parir.jit
 def copy(x, y, N):
+    parir.label('i')
     for i in range(N):
         y[i] = x[i]
 

@@ -7,6 +7,7 @@ torch.manual_seed(1234)
 
 @parir.jit
 def parir_eq(dst, a, b):
+    parir.label('i')
     for i in range(1):
         if a[i] == b[i]:
             dst[i] = 1
@@ -15,6 +16,7 @@ def parir_eq(dst, a, b):
 
 @parir.jit
 def parir_neq(dst, a, b):
+    parir.label('i')
     for i in range(1):
         if a[i] != b[i]:
             dst[i] = 1
@@ -23,6 +25,7 @@ def parir_neq(dst, a, b):
 
 @parir.jit
 def parir_leq(dst, a, b):
+    parir.label('i')
     for i in range(1):
         if a[i] <= b[i]:
             dst[i] = 1
@@ -31,6 +34,7 @@ def parir_leq(dst, a, b):
 
 @parir.jit
 def parir_geq(dst, a, b):
+    parir.label('i')
     for i in range(1):
         if a[i] >= b[i]:
             dst[i] = 1
@@ -39,6 +43,7 @@ def parir_geq(dst, a, b):
 
 @parir.jit
 def parir_lt(dst, a, b):
+    parir.label('i')
     for i in range(1):
         if a[i] < b[i]:
             dst[i] = 1
@@ -47,6 +52,7 @@ def parir_lt(dst, a, b):
 
 @parir.jit
 def parir_gt(dst, a, b):
+    parir.label('i')
     for i in range(1):
         if a[i] > b[i]:
             dst[i] = 1

@@ -553,6 +553,16 @@ fn type_check_stmt(
             let (_, body) = type_check_stmts(vars.clone(), body)?;
             Ok((vars, Stmt::While {cond, body, i}))
         },
+        Stmt::Label {label, assoc, i} => {
+            let (vars, assoc) = match assoc {
+                Some(s) => {
+                    let (vars, s) = type_check_stmt(vars, *s)?;
+                    (vars, Some(Box::new(s)))
+                },
+                None => (vars, None)
+            };
+            Ok((vars, Stmt::Label {label, assoc, i}))
+        }
     }
 }
 

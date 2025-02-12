@@ -5,7 +5,9 @@ import torch
 
 @parir.jit
 def syrk(alpha, beta, C, A, N, M):
+    parir.label('i')
     for i in range(N):
+        parir.label('j')
         for j in range(i+1):
             # NOTE: In the generated code, only one thread should write to this
             # memory location to avoid a concurrency bug.

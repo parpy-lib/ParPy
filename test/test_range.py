@@ -6,21 +6,25 @@ torch.manual_seed(1234)
 
 @parir.jit
 def upper_bound_range(x, N):
+    parir.label('i')
     for i in range(N):
         x[i] = i
 
 @parir.jit
 def no_step_range(x, N):
+    parir.label('i')
     for i in range(1, N):
         x[i] = i
 
 @parir.jit
 def step_range(x, N):
+    parir.label('i')
     for i in range(1, N, 2):
         x[i] = i
 
 @parir.jit
 def negative_step_range(x, N):
+    parir.label('i')
     for i in range(N-1, -1, -1):
         x[i] = i
 

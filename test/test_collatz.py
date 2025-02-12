@@ -6,6 +6,7 @@ torch.manual_seed(1234)
 
 @parir.jit
 def collatz(out, N):
+    parir.label('i')
     for i in range(1, N+1):
         v = i
         count = 0

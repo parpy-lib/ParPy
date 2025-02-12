@@ -4,13 +4,16 @@ import torch
 
 @parir.jit
 def normalize_rows(t, nrows, ncols):
+    parir.label('i')
     for i in range(nrows):
         s = parir.float32(0.0)
-        for j1 in range(ncols):
-            s = s + t[i, j1]
+        parir.label('j1')
+        for j in range(ncols):
+            s = s + t[i, j]
 
-        for j2 in range(ncols):
-            t[i, j2] = t[i, j2] / s
+        parir.label('j2')
+        for j in range(ncols):
+            t[i, j] = t[i, j] / s
 
 def normalize_wrap(t, p=None):
     nrows, ncols = t.shape
@@ -39,13 +42,16 @@ def test_normalize_multirow():
     assert torch.allclose(y1, y2, 1e-5)
 
 def normalize_rows_no_annot(t, nrows, ncols):
+    parir.label('i')
     for i in range(nrows):
         s = parir.float32(0.0)
-        for j1 in range(ncols):
-            s = s + t[i, j1]
+        parir.label('j1')
+        for j in range(ncols):
+            s = s + t[i, j]
 
-        for j2 in range(ncols):
-            t[i, j2] = t[i, j2] / s
+        parir.label('j2')
+        for j in range(ncols):
+            t[i, j] = t[i, j] / s
 
 def test_normalize_print_ast():
     args = [

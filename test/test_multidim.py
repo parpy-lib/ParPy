@@ -4,14 +4,19 @@ import torch
 
 @parir.jit
 def copy_2d(dst, src, N, M):
+    parir.label('i')
     for i in range(N):
+        parir.label('j')
         for j in range(M):
             dst[i,j] = src[i,j]
 
 @parir.jit
 def copy_3d(dst, src, N, M, K):
+    parir.label('i')
     for i in range(N):
+        parir.label('j')
         for j in range(M):
+            parir.label('k')
             for k in range(K):
                 dst[i,j,k] = src[i,j,k]
 

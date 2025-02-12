@@ -10,8 +10,10 @@ np.random.seed(1234)
 
 @parir.jit
 def spmv_row(A, x, y):
+    parir.label('row')
     for row in range(A["nrows"]):
         s = 0.0
+        parir.label('i')
         for i in range(A["rows"][row], A["rows"][row+1]):
             s = s + A["values"][i] * x[A["cols"][i]]
         y[row] = s

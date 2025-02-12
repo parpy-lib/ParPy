@@ -6,8 +6,10 @@ torch.manual_seed(1234)
 
 @parir.jit
 def sum_rows(x, out, N, M):
+    parir.label("outer")
     for i in range(N):
         out[i] = 0.0
+        parir.label("inner")
         for j in range(M):
             out[i] = out[i] + x[i, j]
 
@@ -29,7 +31,7 @@ def compare_sum(N, M, p):
 def test_sum_outer_parallel_gpu():
     N = 100
     M = 50
-    p = {'i': [parir.threads(N)]}
+    p = {'outer': [parir.threads(N)]}
     compare_sum(N, M, p)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -37,8 +39,8 @@ def test_sum_inner_and_outer_parallel_gpu():
     N = 100
     M = 50
     p = {
-        'i': [parir.threads(N)],
-        'j': [parir.threads(128), parir.reduce()]
+        'outer': [parir.threads(N)],
+        'inner': [parir.threads(128), parir.reduce()]
     }
     compare_sum(N, M, p)
 
@@ -47,8 +49,8 @@ def test_sum_multi_block_reduction_fails():
     N = 100
     M = 2048
     p = {
-        'i': [parir.threads(N)],
-        'j': [parir.threads(M), parir.reduce()]
+        'outer': [parir.threads(N)],
+        'inner': [parir.threads(M), parir.reduce()]
     }
     with pytest.raises(RuntimeError):
         compare_sum(N, M, p)
@@ -58,13 +60,13 @@ def test_sum_compiles():
     M = 50
     x = torch.randn((N, M), dtype=torch.float32)
     out = torch.empty(N, dtype=torch.float32)
-    p = {'i': [parir.threads(N)]}
+    p = {'outer': [parir.threads(N)]}
     s1 = parir.print_compiled(sum_rows, [x, out, N, M], p)
     assert len(s1) != 0
 
     p = {
-        'i': [parir.threads(N)],
-        'j': [parir.threads(128), parir.reduce()]
+        'outer': [parir.threads(N)],
+        'inner': [parir.threads(128), parir.reduce()]
     }
     s2 = parir.print_compiled(sum_rows, [x, out, N, M], p)
     assert len(s2) != 0

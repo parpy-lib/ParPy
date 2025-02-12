@@ -9,20 +9,25 @@ np.random.seed(1234)
 @parir.jit
 def softmax(x, N, M, out):
     # We have N independent instances we want to do softmax on
+    parir.label('i')
     for i in range(N):
         m = parir.float32(-parir.inf)
-        for j1 in range(M):
-            m = max(m, x[i, j1])
+        parir.label('j1')
+        for j in range(M):
+            m = max(m, x[i, j])
 
-        for j2 in range(M):
-            out[i, j2] = parir.exp(x[i, j2] - m)
+        parir.label('j2')
+        for j in range(M):
+            out[i, j] = parir.exp(x[i, j] - m)
 
         s = parir.float32(0.0)
-        for j3 in range(M):
-            s = s + out[i, j3]
+        parir.label('j3')
+        for j in range(M):
+            s = s + out[i, j]
 
-        for j4 in range(M):
-            out[i, j4] = out[i, j4] / s
+        parir.label('j4')
+        for j in range(M):
+            out[i, j] = out[i, j] / s
 
 
 def softmax_wrap(x, p=None):
