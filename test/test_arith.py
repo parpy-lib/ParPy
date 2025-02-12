@@ -71,16 +71,22 @@ def parir_bit_shr(dst, a, b):
     for i in range(1):
         dst[i] = a[i] >> b[i]
 
+@parir.jit
+def parir_aug_ops(dst, a, b):
+    for i in range(1):
+        dst[i] += a[i]
+        dst[i] -= b[i]
+
 def arith_binop_dtype(fn, dtype, compile_only):
     a = torch.randint(1, 10, (1,), dtype=dtype)
     b = torch.randint(1, 10, (1,), dtype=dtype)
-    dst = torch.empty((1,), dtype=dtype)
+    dst = torch.zeros((1,), dtype=dtype)
     p = {'i': [ParKind.GpuThreads(32)]}
     if compile_only:
         s = parir.print_compiled(fn, [dst, a, b], p)
         assert len(s) != 0
     else:
-        dst_cu = torch.empty_like(dst).cuda()
+        dst_cu = torch.zeros_like(dst).cuda()
         fn(dst_cu, a.cuda(), b.cuda(), parallelize=p, cache=False)
         fn(dst, a, b)
         assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
@@ -90,7 +96,7 @@ bitwise_funs = [
 ]
 arith_funs = [
     parir_add, parir_sub, parir_mul, parir_div_int, parir_div, parir_rem,
-    parir_pow, parir_abs,
+    parir_pow, parir_abs, parir_aug_ops
 ] + bitwise_funs
 arith_tys = [
     torch.int8, torch.int16, torch.int32, torch.int64, torch.float16,

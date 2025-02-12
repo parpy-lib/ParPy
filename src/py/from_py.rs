@@ -378,6 +378,18 @@ fn convert_stmt<'py, 'a>(
                 _ => py_runtime_error!(i, "Unsupported form of assignment")
             }
         }
+    } else if stmt.is_instance(&env.ast.getattr("AugAssign")?)? {
+        let dst = convert_expr(stmt.getattr("target")?, env)?;
+        let op = convert_bin_op(stmt.getattr("op")?, env, &i)?;
+        let value = convert_expr(stmt.getattr("value")?, env)?;
+        let expr = Expr::BinOp {
+            lhs: Box::new(dst.clone()),
+            op,
+            rhs: Box::new(value),
+            ty: Type::Unknown,
+            i: i.clone()
+        };
+        Ok(Stmt::Assign {dst, expr, i})
     } else if stmt.is_instance(&env.ast.getattr("While")?)? {
         let cond = convert_expr(stmt.getattr("test")?, env)?;
         let body = convert_stmts(stmt.getattr("body")?, env)?;
