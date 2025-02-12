@@ -176,8 +176,6 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
                 Ok(Builtin::Convert {sz: ElemSize::I32})
             } else if e.eq(parir.getattr("int64")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::I64})
-            } else if e.eq(parir.getattr("bool")?)? {
-                Ok(Builtin::Convert {sz: ElemSize::Bool})
             } else {
                 py_runtime_error!(i, "Unknown built-in operator {expr}")
             }?;
