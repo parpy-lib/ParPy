@@ -18,7 +18,7 @@ with its Python dependencies using
 pip install .
 ```
 
-### Manual install
+### Manual Install
 
 The Parir compiler is implemented in [Rust](https://www.rust-lang.org/), so it
 depends on the Rust compiler `rustc` to be available in the path. Parir also
@@ -35,55 +35,53 @@ two-dimensional Torch tensor `x` and storing the result in `out`:
 ```
 def sum_rows(x, out, N, M):
   for i in range(N):
-    out[i] = 0.0
     for j in range(M):
-      out[i] = out[i] + x[i,j]
+      out[i] += x[i,j]
 ```
 
 Note that the iterations of the outer for-loop over `i` are independent.
 Therefore, we can parallelize this function using Parir. Paralellization using
-Parir is performed in two steps. First, we annotate the function to indicate
-that we want to parallelize it:
+Parir is performed in two steps. First, we annotate the function and label the
+statements we want to parallelize:
 ```
 import parir
 
 @parir.jit
 def sum_rows(x, out, N, M):
-  ... (as before)
+  parir.label('i')
+  for i in range(N):
+     parir.label('j')
+     for j in range(M):
+       out[i] += x[i,j]
 ```
 
 When the Python interpreter reaches this function, the Parir compiler will
 attempt to translate the Python code to an untyped, Python-like representation.
 The second step occurs when we call the function. At this point, the compiler
-will add types to its representation based on the provided arguments. If the
-function is called like
+will add types to its representation based on the provided arguments. We need
+to provide an extra keyword argument `parallelize` to specify how the labeled
+statements should be parallelized. Assume we want to parallelize the outer
+loop, and have the inner loop execute as a parallel [reduction](https://en.wikipedia.org/wiki/Fold_%28higher-order_function%29).
+In this case, we could call the function as (assuming `x` and `out` are
+allocated on the GPU) follows, where we parallelize by referring to the labels
+in the function as
 ```
-sum_rows(x, out, N, M)
-```
-
-it will be executed by the Python interpreter. We need to provide an additional
-argument `parallelize` to specify how to parallelize the for-loops of the
-function. When we perform parallelization, the user must ensure the
-tensor arguments are allocated on the GPU. Assuming `x` and `out` are on the
-GPU, we can adjust the call to parallelize the outer for-loop as
-```
-sum_rows(x, out, N, M, parallelize={'i': [Threads(N)]})
-```
-
-where we indicate that each iteration of the `i` loop should run in parallel.
-To further improve performance, we note that the inner loop over `j` performs a
-summation which we can also parallelize. However, in this case we also need to
-indicate that we are performing a [reduction](https://en.wikipedia.org/wiki/Fold_%28higher-order_function%29)
-or the compiler will generate incorrect code. The resulting call becomes
-```
-p = {'i': [Threads(N)], 'j': [Threads(128), Reduction()]}
+p = {'i': [parir.threads(32)], 'j': [parir.threads(128), parir.reduce()]}
 sum_rows(x, out, N, M, parallelize=p)
 ```
+
+In this case, the outer loop will execute across 32 CUDA blocks, while the
+reduction of the inner loop will run among 128 CUDA threads. We discuss the
+approach to mapping parallelism to CUDA threads and blocks later.
+
+If we, for debugging reasons, want to run the code in the Python interpreter,
+we can set the `seq` keyword argument to `True` when calling the function,
+without having to remove the annotation on the function.
 
 See the `test` directory for complete examples using Parir. The example
 discussed above is based on `test/test_sum.py`.
 
-## Argument types
+## Types
 
 The main way to control the types of arguments is via the `dtype` assigned to
 the Torch tensor. A tensor containing a single value, with empty shape, is
@@ -100,13 +98,46 @@ structures across multiple functions. The `test/test_record_args.py` file
 contains a simple example use of a record, while `test/test_forward.py` also
 shows how records can be reused across multiple functions.
 
+## Argument Specialization
+
+Parir will automatically specialize the compilation based on the provided
+arguments, by inlining the values of all scalar parameter values. For instance,
+if we call a decorated function `f` as
+```
+f(t, 10)
+```
+
+any uses of the second argument in `f` will be replaced by the literal `10`.
+A Torch scalar `torch.tensor(10, dtype=torch.int16)` is considered equivalent
+to a Python integer literal, except that it allows us to explicitly specify the
+type of the integer. Python literals are treated as 64-bit values. For Torch
+tensors with one or more dimensions, the shape of the tensor is used for
+specialization.
+
+
+The overhead of JIT compilation can be significant when called in a loop as
+```
+for i in range(N):
+  f(t, i)
+```
+
+because the updated value of `i` triggers a JIT compilation in each iteration.
+To work around this, we can wrap the value in a tensor as
+```
+for i in range(N):
+  ix = torch.tensor([i], dtype=torch.int64)
+  f(t, ix)
+```
+
+and update all uses of `i` with `i[0]` in the definition of `f`.
+
 ## Parallelization
 
 The approach used to map parallelism to CUDA is fairly straightforward. The
 innermost level of parallelism is mapped to CUDA threads, while any
 parallelized outer for-loops are mapped to CUDA blocks. Importantly, we require
 that all statements on the same level of nesting in a parallel for-loop have
-the same amount of parallelism (or are sequential). This means that, we cannot
+the same amount of parallelism (or are sequential). This means that we cannot
 have subsequent nested for-loops, such as
 ```
 for i in range(N):
@@ -130,18 +161,49 @@ for i in range(N):
 ```
 
 This results in two separate kernels where half the threads do not need to be
-idle in the `j2` loop.
+idle in the `j2` loop, which is supported in Parir.
 
-If we have a function where multiple for-loops iterate over a variable with the
-same name (say, `i`), any properties specified on `i` apply to all loops using
-a variable `i`. We can use this to reduce the number of entries in the
-parallelization dictionary. However, a drawback is that we may need to rename
-loop variables when we need two loops to parallelize differently (e.g., if one
-of them performs a reduction). This design is intentional, as it avoids the
-need to add the parallel annotations inline in the function, which would lock
-us in to use a particular parallelization strategy.
+### Sequential Code
 
-## Working around limitations
+As running sequential code on the GPU is significantly slower than on the CPU,
+any sequential code (outside parallel loops) in a decorated function runs on
+the CPU. All parameter data is allocated on the GPU, so an assignment in
+sequential code (which runs on the CPU) may require expensive copying of data
+and book-keeping to make sure data on the CPU and the GPU remains consistent.
+For this reason, assignments outside parallel code (which run on the CPU) are
+not allowed.
+
+However, in certain situations, we may be willing to pay this extra cost.
+Consider, for instance, the below function for computing the sum. Even if we
+parallelize the reduction loop, the assignment to `out[0]` ends up outside the
+parallel code, which results in an error.
+```
+import parir
+@parir.jit
+def sum(x, out, N):
+  out[0] = 0.0
+  parir.label('i')
+  for i in range(N):
+    out[0] += x[i]
+```
+
+To work around this, we can use the `parir.gpu` context. All code within this
+context runs on the GPU. The fixed code looks like
+```
+import parir
+@parir.jit
+def sum(x, out, N):
+  with parir.jit:
+    out[0] = 0.0
+    parir.label('i')
+    for i in range(N):
+      out[0] += x[i]
+```
+
+Under the hood, this introduces a for-loop with a single iteration, which is
+marked as running in parallel using `1` thread.
+
+## Working Around Limitations
 
 Many parts of a typical Python program is inherently sequential or includes
 code that is difficult to parallelize efficiently. For this reason, Parir
@@ -159,18 +221,30 @@ manually modify the code, and pass the updated code to Parir to produce a
 function useable from Python. The Parir API exposes two functions for this
 purpose.
 
-The `print_compiled` expects three arguments
-1. The function that is being compiled
-2. A list of the arguments that should be passed to the function
-3. The parallelization dictionary
+For instance, consider the `sum_rows` function presented as an example above.
+To print the resulting CUDA code from compiling this function, we can use
+```
+p = {'i': [parir.threads(32)], 'j': [parir.threads(128), parir.reduce()]}
+print(parir.print_compiled(sum_rows, [x, out, N, M], p))
+```
 
-and it compiles the provided function based on the arguments to CUDA C++ code,
-and returns the resulting code as a string. An advanced user can store the
-output from this function in a file and modify the file to use unsupported
-features of CUDA C++. The `compile_string` function generates a Python wrapper
-calling the low-level CUDA code, given the name of the function and the CUDA
-C++ code (both provided as strings).
+We pass a function to be compiled (this function does _not_ have to be
+decorated with `@parir.jit`), a list of the arguments to be passed to the
+function, and the parallelization dictionary (which we would pass to the
+`parallelize` keyword argument in a regular function call). The resulting
+string is printed to stdout using `print`.
 
-When modifying the generated code, it is critical that the exposed C API of
-functions marked with `extern "C"` is not changed, or the Python wrapper will
-make invalid calls to the resulting shared library.
+An advanced user could store the output code to a file and modify it manually.
+This is useful for performing operations not supported by the Parir compiler
+(as discussed above), or to debug the generated code. Assuming the modified
+code of the function `sum_rows` is loaded to a string `s`, we compile it as
+```
+fn = parir.compile_string("sum_rows", s, includes=[], libs=[])
+```
+
+where the resulting function `fn` is a callable Python function expecting the
+same arguments as the original `sum_rows` function. The two required arguments
+is the name of the function and the CUDA C++ code. The `includes` and `libs`
+keyword arguments specify include paths (`-I`) and library paths (`-L`) to be
+passed to the `nvcc` compiler (e.g., if the modified code depends on external
+libraries).
