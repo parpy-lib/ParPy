@@ -28,6 +28,6 @@ def test_copy_print_compiled():
 def test_copy_run_compiled_string():
     y, x, N, M, p = generate_copy_test_data('cuda')
     s = parir.print_compiled(copy, [y, x, N, M], p)
-    fn = parir.compile_string(copy.__name__, s, cache=False)
+    fn = parir.compile_string(copy.__name__, s)
     fn(y, x, N, M)
     assert torch.allclose(x, y)

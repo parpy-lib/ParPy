@@ -20,7 +20,7 @@ def is_cached(key):
     libpath = get_library_path(key)
     return os.path.isfile(libpath)
 
-def build_cuda_shared_library(key, source):
+def build_cuda_shared_library(key, source, includes=[], libs=[]):
     libpath = get_library_path(key)
     if not torch.cuda.is_available():
         raise RuntimeError(f"Torch was not built with CUDA support")
@@ -30,12 +30,21 @@ def build_cuda_shared_library(key, source):
     # Get the version of the current GPU and generate specialized code for it.
     # TODO: In the future, we should collect the versions of all GPUs on the
     # system and compile with all of these in mind.
+    def flatten(xss):
+        return [x for xs in xss for x in xs]
     major, minor = torch.cuda.get_device_capability()
     arch = f"sm_{major}{minor}"
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
-        r = subprocess.run(["nvcc", "-O3", "--shared", "-Xcompiler", "-fPIC", f"-arch={arch}", "-x", "cu", tmp.name, "-o", libpath], capture_output=True)
+        include_cmd = [["-I", include] for include in includes]
+        lib_cmd = [["-L", lib] for lib in libs]
+        commands = [
+            "-O3", "--shared", "-Xcompiler", "-fPIC", f"-arch={arch}",
+            "-x", "cu", f"{tmp.name}", "-o", f"{libpath}"
+        ]
+        cmd = flatten([["nvcc"], include_cmd, lib_cmd, commands])
+        r = subprocess.run(cmd, capture_output=True)
         if r.returncode != 0:
             import uuid
             temp_file = f"{uuid.uuid4().hex}.cu"
