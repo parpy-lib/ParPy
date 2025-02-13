@@ -32,7 +32,7 @@ def convert_python_function_to_ir(fn):
 def compile_function(ir_ast, args, kwargs, fn, key):
     def check_kwarg(key, default_value, expected_ty):
         if key not in kwargs or kwargs[key] is None:
-            return {}
+            return default_value
         elif isinstance(kwargs[key], expected_ty):
             v = kwargs[key]
             del kwargs[key]
@@ -67,13 +67,13 @@ def compile_function(ir_ast, args, kwargs, fn, key):
 
     # Return a CUDA wrapper which ensures the arguments are passed correctly on
     # to the exposed shared library function.
-    return compile.get_cuda_wrapper(fn.__name__, key)
+    return compile.get_cuda_wrapper(fn.__name__, key, cache)
 
 def compile_string(fun_name, code, cache=True):
     k = "string_" + key.generate_code_key(code)
     if not cache or not compile.is_cached(k):
         compile.build_cuda_shared_library(k, code)
-    return compile.get_cuda_wrapper(fun_name, k)
+    return compile.get_cuda_wrapper(fun_name, k, cache)
 
 def print_compiled(fun, args, par=None):
     """

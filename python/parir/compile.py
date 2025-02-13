@@ -65,9 +65,16 @@ def torch_to_ctype(dtype):
     else:
         raise RuntimeError(f"Unknown torch dtype: {dtype}")
 
-def get_cuda_wrapper(name, key):
+def get_cuda_wrapper(name, key, cache):
     libpath = get_library_path(key)
     lib = ctypes.cdll.LoadLibrary(libpath)
+
+    # Remove the shared library if caching is not enabled
+    if not cache:
+        try:
+            os.remove(libpath)
+        except:
+            pass
 
     def wrapper(*args):
         # Ensure all tensor arguments have data allocated on the GPU
