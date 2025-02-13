@@ -24,6 +24,7 @@ fn assert_contains_labels_stmt(acc: bool, stmt: &Stmt) -> bool {
         },
         Stmt::While {body, ..} =>
             body.iter().fold(acc, assert_contains_labels_stmt),
+        Stmt::WithGpuContext {..} => true,
         Stmt::Label {..} => true,
     }
 }
@@ -32,12 +33,9 @@ fn assert_contains_labels(fun: &FunDef) -> PyResult<()> {
     let res = fun.body.iter().fold(false, assert_contains_labels_stmt);
     if !res {
         let msg = concat!(
-            "This function does not contain any labels - this is an error. ",
-            "Labels are associated with statements, and based on these we ",
-            "specify how a function is parallelized.\n",
-            "Add a statement parir.label('x') in front of a parallelizable ",
-            "statement, and refer to the label 'x' in the paralellization ",
-            "parameter when calling the function."
+            "This function contains no code that runs or could be configured ",
+            "to run on the GPU, due to missing labels on parallelizable ",
+            "statements.\n",
         );
         py_runtime_error!(fun.i, "{}", msg)
     } else {
@@ -62,6 +60,10 @@ fn associate_labels_stmt(
         Stmt::While {cond, body, i} => {
             let body = associate_labels_stmts(vec![], body)?;
             Stmt::While {cond, body, i}
+        },
+        Stmt::WithGpuContext {body, i} => {
+            let body = associate_labels_stmts(vec![], body)?;
+            Stmt::WithGpuContext {body, i}
         },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Label {..} => {
             stmt

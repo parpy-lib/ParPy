@@ -109,6 +109,9 @@ fn find_dict_types_stmt(
             let types = find_dict_types_expr(types, cond);
             body.iter().fold(types, find_dict_types_stmt)
         },
+        Stmt::WithGpuContext {body, ..} => {
+            body.iter().fold(types, find_dict_types_stmt)
+        },
         Stmt::Label {..} => types
     }
 }

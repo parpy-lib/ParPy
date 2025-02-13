@@ -177,6 +177,10 @@ impl Symbolize for Stmt {
                 let (_, body) = body.symbolize(env.clone())?;
                 Ok((env, Stmt::While {cond, body, i}))
             },
+            Stmt::WithGpuContext {body, i} => {
+                let (_, body) = body.symbolize(env.clone())?;
+                Ok((env, Stmt::WithGpuContext {body, i}))
+            },
             Stmt::Label {label, assoc, i} => {
                 let (env, assoc) = match assoc {
                     Some(s) => {

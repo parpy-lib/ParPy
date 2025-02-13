@@ -132,7 +132,7 @@ fn eval_name<'py>(s: String, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
     py.eval(&CString::new(s)?, Some(&globals), None)
 }
 
-fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
+fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Builtin> {
     let py = expr.py();
     let ast = py.import("ast")?;
     let parir = py.import("parir")?;
@@ -140,7 +140,7 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
         .extract::<String>()?;
     match eval_name(s, py) {
         Ok(e) => {
-            let func = if e.eq(parir.getattr("exp")?)? {
+            if e.eq(parir.getattr("exp")?)? {
                 Ok(Builtin::Exp)
             } else if e.eq(parir.getattr("inf")?)? {
                 Ok(Builtin::Inf)
@@ -178,15 +178,21 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
                 Ok(Builtin::Convert {sz: ElemSize::I64})
             } else if e.eq(parir.getattr("label")?)? {
                 Ok(Builtin::Label)
+            } else if e.eq(parir.getattr("gpu")?)? {
+                Ok(Builtin::GpuContext)
             } else {
                 py_runtime_error!(i, "Unknown built-in operator {expr}")
-            }?;
-            Ok(Expr::Builtin {func, args: vec![], ty: Type::Unknown, i: i.clone()})
+            }
         },
         Err(_) => {
             py_runtime_error!(i, "Failed to identify built-in operator {expr}")
         },
     }
+}
+
+fn lookup_builtin_expr<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
+    let func = lookup_builtin(expr, &i)?;
+    Ok(Expr::Builtin {func, args: vec![], ty: Type::Unknown, i: i.clone()})
 }
 
 fn convert_expr<'py, 'a>(
@@ -195,7 +201,7 @@ fn convert_expr<'py, 'a>(
     let i = extract_info(&expr, env);
     let ty = Type::Unknown;
     if expr.is_instance(&env.ast.getattr("Name")?)? {
-        if let Ok(e) = lookup_builtin(&expr, &i) {
+        if let Ok(e) = lookup_builtin_expr(&expr, &i) {
             Ok(e)
         } else {
             let id = Name::new(expr.getattr("id")?.extract::<String>()?);
@@ -262,7 +268,7 @@ fn convert_expr<'py, 'a>(
         let idx = convert_expr(expr.getattr("slice")?, env)?;
         Ok(Expr::Subscript {target: Box::new(target), idx: Box::new(idx), ty, i})
     } else if expr.is_instance(&env.ast.getattr("Attribute")?)? {
-        lookup_builtin(&expr, &i)
+        lookup_builtin_expr(&expr, &i)
     } else if expr.is_instance(&env.ast.getattr("Tuple")?)? {
         let elts = expr.getattr("elts")?
             .try_iter()?
@@ -451,6 +457,33 @@ fn convert_stmt<'py, 'a>(
     } else if stmt.is_instance(&env.ast.getattr("Expr")?)? {
         let value = convert_expr(stmt.getattr("value")?, env)?;
         construct_label_stmt(value, &i)
+    } else if stmt.is_instance(&env.ast.getattr("With")?)? {
+        let items = stmt.getattr("items")?;
+        if items.len()? == 1 {
+            let fst = items.get_item(0)?;
+            if fst.is_instance(&env.ast.getattr("withitem")?)? {
+                if !fst.getattr("optional_vars")?.is_none() {
+                    py_runtime_error!(i, "With statements using the 'as' keyword are not supported")?
+                }
+                match lookup_builtin(&fst.getattr("context_expr")?, &i) {
+                    Ok(Builtin::GpuContext) => {
+                        let body = convert_stmts(stmt.getattr("body")?, env)?;
+                        Ok(Stmt::WithGpuContext {body, i})
+                    },
+                    _ => py_runtime_error!(i, "With statements are only supported for 'parir.gpu'")
+                }
+            } else {
+                let msg = concat!(
+                    "Unexpected shape of the AST definition.\n",
+                    "This issue may arise because the AST format used by the ",
+                    "'ast' module of Python is different from what the Parir ",
+                    "compiler expects. Try using Python version 3.10."
+                );
+                py_runtime_error!(i, "{}", msg)
+            }
+        } else {
+            py_runtime_error!(i, "With statements using multiple items is not supported")
+        }
     } else {
         py_runtime_error!(i, "Unsupported statement: {stmt}")
     }
@@ -547,7 +580,7 @@ mod test {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let ast = parse_str_expr(py, s)?;
-            let e = lookup_builtin(&ast, &Info::default())?;
+            let e = lookup_builtin_expr(&ast, &Info::default())?;
             if let Expr::Builtin {func, ..} = e {
                 assert_eq!(func, expected_func);
             } else {
@@ -561,7 +594,7 @@ mod test {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let ast = parse_str_expr(py, s)?;
-            assert!(lookup_builtin(&ast, &Info::default()).is_err());
+            assert!(lookup_builtin_expr(&ast, &Info::default()).is_err());
             Ok(())
         })
     }

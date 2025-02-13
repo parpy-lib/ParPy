@@ -6,14 +6,12 @@ import torch
 def test_record_args():
     @parir.jit
     def dummy(x, y):
-        parir.label('i')
-        for i in range(1):
-            y[i] = x["a"][0] + x["b"][0]
+        with parir.gpu:
+            y[0] = x["a"][0] + x["b"][0]
     x = {
         'a': torch.tensor([4], dtype=torch.int64, device='cuda'),
         'b': torch.tensor([2], dtype=torch.int64, device='cuda')
     }
     y = torch.tensor([0], dtype=torch.int32, device='cuda')
-    p = {'i': [parir.threads(2)]}
-    dummy(x, y, parallelize=p, cache=False)
+    dummy(x, y, cache=False)
     assert y[0] == 6

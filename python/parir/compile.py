@@ -73,7 +73,7 @@ def get_cuda_wrapper(name, key):
         # Ensure all tensor arguments have data allocated on the GPU
         def check_arg(arg, i):
             if isinstance(arg, torch.Tensor) and arg.get_device() != torch.cuda.current_device():
-                raise RuntimeError(f"Data of tensor in argument {i+1} is not on current device")
+                raise RuntimeError(f"Data of tensor in argument {i+1} is not on the GPU")
             elif isinstance(arg, dict):
                 for v in arg.values():
                     check_arg(v, i)

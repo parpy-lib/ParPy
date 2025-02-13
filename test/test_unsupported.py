@@ -30,3 +30,17 @@ def test_for_else_rejected():
                 y[i] = x[i]
             else:
                 y[0] += 1
+
+def test_with_unsupported_context():
+    with pytest.raises(RuntimeError):
+        @parir.jit
+        def with_context():
+            with 5:
+                pass
+
+def test_with_as():
+    with pytest.raises(RuntimeError):
+        @parir.jit
+        def with_as():
+            with parir.gpu as x:
+                a = x + 1

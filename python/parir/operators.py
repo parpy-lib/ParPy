@@ -1,5 +1,8 @@
 from builtins import min, max, abs
 from math import atan2, cos, exp, inf, log, sin, sqrt, tanh
+import contextlib
+
+gpu = contextlib.nullcontext()
 
 def float16(x):
     return float(x)
@@ -24,4 +27,3 @@ def int64(x):
 
 def label(x):
     assert x is not None, "parir.label expects one argument"
-    pass

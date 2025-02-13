@@ -16,7 +16,10 @@ def sum_rows(x, out, N, M):
 def sum_wrap(x, p=None):
     N, M = x.shape
     out = torch.empty(N, dtype=x.dtype, device=x.device)
-    sum_rows(x, out, N, M, parallelize=p, cache=False)
+    if p is None:
+        sum_rows(x, out, N, M, seq=True)
+    else:
+        sum_rows(x, out, N, M, parallelize=p, cache=False)
     return out
 
 def compare_sum(N, M, p):

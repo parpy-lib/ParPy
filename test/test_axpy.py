@@ -12,7 +12,10 @@ def axpy(a, x, y, out, N):
 
 def axpy_wrap(a, x, y, N, p=None):
     out = torch.empty_like(x)
-    axpy(a, x, y, out, N, parallelize=p, cache=False)
+    if p is None:
+        axpy(a, x, y, out, N, seq=True)
+    else:
+        axpy(a, x, y, out, N, parallelize=p, cache=False)
     return out
 
 def axpy_test_data():
@@ -37,7 +40,7 @@ def test_axpy_compile_fails_no_parallelism():
     N, a, x, y = axpy_test_data()
     out = torch.empty_like(x)
     with pytest.raises(RuntimeError):
-        parir.print_compiled(axpy, [a, x, y, out, N], None)
+        parir.print_compiled(axpy, [a, x, y, out, N])
 
 def test_axpy_compiles_with_parallelism():
     N, a, x, y = axpy_test_data()

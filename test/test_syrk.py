@@ -39,7 +39,7 @@ def syrk_run_par(nthreads):
 
     # Run sequentially to produce a reference solution
     C_ref = C.clone()
-    syrk(alpha, beta, C_ref, A, N, M)
+    syrk(alpha, beta, C_ref, A, N, M, seq=True)
 
     # Run in parallel using the specified number of threads and validate the
     # result

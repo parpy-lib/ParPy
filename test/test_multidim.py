@@ -25,7 +25,7 @@ def test_copy_two_dims():
     N, M = 20, 30
     x = torch.randn((N, M), dtype=torch.float32)
     y = torch.empty_like(x)
-    copy_2d(y, x, N, M)
+    copy_2d(y, x, N, M, seq=True)
 
     x_cu = x.cuda()
     y_cu = torch.empty_like(x_cu)
@@ -42,7 +42,7 @@ def test_copy_three_dims():
     N, M, K = 20, 30, 40
     x = torch.randn((N, M, K), dtype=torch.float32)
     y = torch.empty_like(x)
-    copy_3d(y, x, N, M, K)
+    copy_3d(y, x, N, M, K, seq=True)
 
     x_cu = x.cuda()
     y_cu = torch.empty_like(x_cu)

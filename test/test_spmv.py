@@ -18,7 +18,7 @@ def spmv_row(A, x, y):
             s = s + A["values"][i] * x[A["cols"][i]]
         y[row] = s
 
-def spmv_wrap(A, x, N, p=None):
+def spmv_wrap(A, x, N, p):
     A = {
         'values': A.values(),
         'rows': A.crow_indices(),

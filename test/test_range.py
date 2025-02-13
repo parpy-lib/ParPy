@@ -38,7 +38,7 @@ def range_helper(fn, compile_only):
     else:
         x_cu = x.detach().clone().cuda()
         upper_bound_range(x_cu, N, parallelize=p, cache=False)
-        upper_bound_range(x, N)
+        upper_bound_range(x, N, seq=True)
         assert torch.allclose(x, x_cu.cpu())
 
 range_funs = [upper_bound_range, no_step_range, step_range, negative_step_range]

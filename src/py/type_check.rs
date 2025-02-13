@@ -553,6 +553,10 @@ fn type_check_stmt(
             let (_, body) = type_check_stmts(vars.clone(), body)?;
             Ok((vars, Stmt::While {cond, body, i}))
         },
+        Stmt::WithGpuContext {body, i} => {
+            let (_, body) = type_check_stmts(vars.clone(), body)?;
+            Ok((vars, Stmt::WithGpuContext {body, i}))
+        },
         Stmt::Label {label, assoc, i} => {
             let (vars, assoc) = match assoc {
                 Some(s) => {

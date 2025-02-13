@@ -174,13 +174,13 @@ impl LoopParallelism {
     }
 
     pub fn is_parallel(&self) -> bool {
-        self.nthreads > 1
+        self.nthreads > 0
     }
 }
 
 impl Default for LoopParallelism {
     fn default() -> Self {
-        LoopParallelism {nthreads: 1, reduction: false}
+        LoopParallelism {nthreads: 0, reduction: false}
     }
 }
 

@@ -20,7 +20,10 @@ def collatz(out, N):
 
 def collatz_wrap(N, device='cpu', p=None):
     out = torch.zeros(N+1, dtype=torch.int32, device=device)
-    collatz(out, N, parallelize=p, cache=False)
+    if p is None:
+        collatz(out, N, seq=True)
+    else:
+        collatz(out, N, parallelize=p, cache=False)
     return out
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")

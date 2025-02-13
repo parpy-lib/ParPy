@@ -7,101 +7,86 @@ torch.manual_seed(1234)
 
 @parir.jit
 def parir_add(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] + b[i]
+    with parir.gpu:
+        dst[0] = a[0] + b[0]
 
 @parir.jit
 def parir_sub(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] - b[i]
+    with parir.gpu:
+        dst[0] = a[0] - b[0]
 
 @parir.jit
 def parir_mul(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] * b[i]
+    with parir.gpu:
+        dst[0] = a[0] * b[0]
 
 @parir.jit
 def parir_div_int(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] // b[i]
+    with parir.gpu:
+        dst[0] = a[0] // b[0]
 
 @parir.jit
 def parir_div(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] / b[i]
+    with parir.gpu:
+        dst[0] = a[0] / b[0]
 
 @parir.jit
 def parir_rem(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] % b[i]
+    with parir.gpu:
+        dst[0] = a[0] % b[0]
 
 @parir.jit
 def parir_pow(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] ** b[i]
+    with parir.gpu:
+        dst[0] = a[0] ** b[0]
 
 @parir.jit
 def parir_abs(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = abs(a[i]) + abs(b[i])
+    with parir.gpu:
+        dst[0] = abs(a[0]) + abs(b[0])
 
 @parir.jit
 def parir_bit_and(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] & b[i]
+    with parir.gpu:
+        dst[0] = a[0] & b[0]
 
 @parir.jit
 def parir_bit_or(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] | b[i]
+    with parir.gpu:
+        dst[0] = a[0] | b[0]
 
 @parir.jit
 def parir_bit_xor(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] ^ b[i]
+    with parir.gpu:
+        dst[0] = a[0] ^ b[0]
 
 @parir.jit
 def parir_bit_shl(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] << b[i]
+    with parir.gpu:
+        dst[0] = a[0] << b[0]
 
 @parir.jit
 def parir_bit_shr(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = a[i] >> b[i]
+    with parir.gpu:
+        dst[0] = a[0] >> b[0]
 
 @parir.jit
 def parir_aug_ops(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        dst[i] += a[i]
-        dst[i] -= b[i]
+    with parir.gpu:
+        dst[0] += a[0]
+        dst[0] -= b[0]
 
 def arith_binop_dtype(fn, dtype, compile_only):
     a = torch.randint(1, 10, (1,), dtype=dtype)
     b = torch.randint(1, 10, (1,), dtype=dtype)
     dst = torch.zeros((1,), dtype=dtype)
-    p = {'i': [parir.threads(32)]}
     if compile_only:
-        s = parir.print_compiled(fn, [dst, a, b], p)
+        s = parir.print_compiled(fn, [dst, a, b])
         assert len(s) != 0
     else:
         dst_cu = torch.zeros_like(dst).cuda()
-        fn(dst_cu, a.cuda(), b.cuda(), parallelize=p, cache=False)
-        fn(dst, a, b)
+        fn(dst_cu, a.cuda(), b.cuda(), cache=False)
+        fn(dst, a, b, seq=True)
         assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
 
 bitwise_funs = [
@@ -143,47 +128,39 @@ def test_bin_arith_compile(fn, dtype):
 
 @parir.jit
 def parir_cos(dst, src):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = parir.cos(src[i])
+    with parir.gpu:
+        dst[0] = parir.cos(src[0])
 
 @parir.jit
 def parir_sin(dst, src):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = parir.sin(src[i])
+    with parir.gpu:
+        dst[0] = parir.sin(src[0])
 
 @parir.jit
 def parir_tanh(dst, src):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = parir.tanh(src[i])
+    with parir.gpu:
+        dst[0] = parir.tanh(src[0])
 
 @parir.jit
 def parir_atan2(dst, src):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = parir.atan2(src[i], 1.0)
+    with parir.gpu:
+        dst[0] = parir.atan2(src[0], 1.0)
 
 @parir.jit
 def parir_sqrt(dst, src):
-    parir.label('i')
-    for i in range(1):
-        dst[i] = parir.sqrt(src[i])
+    with parir.gpu:
+        dst[0] = parir.sqrt(src[0])
 
 def arith_unop_dtype(fn, dtype, compile_only):
     src = torch.tensor([0.5], dtype=dtype)
     dst = torch.empty_like(src)
-    p = {'i': [parir.threads(32)]}
     if compile_only:
-        s = parir.print_compiled(fn, [src, dst], p)
+        s = parir.print_compiled(fn, [src, dst])
         assert len(s) != 0
     else:
-        # Compare result running sequentially in Python to parallelized version
-        # running on the GPU.
-        fn(dst, src)
-        dst_cu = torch.empty_like(src).cuda()
-        fn(dst_cu, src.cuda(), parallelize=p, cache=False)
+        dst_cu = torch.empty_like(dst).cuda()
+        fn(dst_cu, src.cuda(), cache=False)
+        fn(dst, src, seq=True)
         assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
 
 float_funs = [parir_cos, parir_sin, parir_tanh, parir_atan2, parir_sqrt]

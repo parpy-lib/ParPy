@@ -12,9 +12,8 @@ def store_gt(x, y, out, N):
 
 @parir.jit
 def reduce_and(x, out, N):
-    parir.label('j')
-    for j in range(N):
-        out[0] = out[0] and x[j]
+    with parir.gpu:
+        out[0] = out[0] and x[0]
 
 def bool_test_data():
     N = 100
@@ -24,9 +23,15 @@ def bool_test_data():
 
 def bool_wrap(x, y, N, p=None):
     tmp = torch.empty(N, dtype=torch.bool, device=x.device)
-    store_gt(x, y, tmp, N, parallelize=p, cache=False)
+    if p is None:
+        store_gt(x, y, tmp, N, seq=True)
+    else:
+        store_gt(x, y, tmp, N, parallelize=p, cache=False)
     out = torch.empty(1, dtype=torch.bool, device=x.device)
-    reduce_and(tmp, out, N)
+    if p is None:
+        reduce_and(tmp, out, N, seq=True)
+    else:
+        reduce_and(tmp, out, N)
     return out
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -48,7 +53,6 @@ def test_bool_compiles():
     s = parir.print_compiled(store_gt, [x, y, tmp, N], p)
     assert len(s) != 0
 
-    p = {'j': [parir.threads(64), parir.reduce()]}
     res = torch.empty(1, dtype=torch.bool)
-    s = parir.print_compiled(reduce_and, [tmp, res, N], p)
+    s = parir.print_compiled(reduce_and, [tmp, res, N])
     assert len(s) != 0

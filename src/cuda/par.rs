@@ -259,7 +259,7 @@ mod test {
 
     #[test]
     fn seq_loops() {
-        let def = fun_def(vec![for_loop(id("x"), 1, vec![for_loop(id("y"), 1, vec![])])]);
+        let def = fun_def(vec![for_loop(id("x"), 0, vec![for_loop(id("y"), 0, vec![])])]);
         assert_eq!(find_structure(def), BTreeMap::new());
     }
 
@@ -276,7 +276,7 @@ mod test {
         let x = id("x");
         let def = fun_def(vec![for_loop(x.clone(), 2, vec![if_cond(
             vec![for_loop(id("y"), 3, vec![])],
-            vec![for_loop(id("z"), 3, vec![for_loop(id("w"), 1, vec![])])],
+            vec![for_loop(id("z"), 3, vec![for_loop(id("w"), 0, vec![])])],
         )])]);
         let expected = to_map(vec![
             (x, vec![2, 3])
@@ -308,7 +308,7 @@ mod test {
     fn nested_parallelism() {
         let x = id("x");
         let def = fun_def(vec![
-            for_loop(x.clone(), 10, vec![for_loop(id("y"), 15, vec![for_loop(id("z"), 1, vec![])])])
+            for_loop(x.clone(), 10, vec![for_loop(id("y"), 15, vec![for_loop(id("z"), 0, vec![])])])
         ]);
         let expected = to_map(vec![
             (x, vec![10, 15])
@@ -322,7 +322,7 @@ mod test {
         let def = fun_def(vec![
             for_loop(x.clone(), 10, vec![if_cond(
                 vec![for_loop(id("y"), 15, vec![])],
-                vec![for_loop(id("y"), 1, vec![for_loop(id("z"), 15, vec![])])]
+                vec![for_loop(id("y"), 0, vec![for_loop(id("z"), 15, vec![])])]
             )])
         ]);
         let expected = to_map(vec![
@@ -365,7 +365,7 @@ mod test {
             for_loop(x1.clone(), 5, vec![
                 if_cond(
                     vec![for_loop(id("y"), 6, vec![])],
-                    vec![for_loop(id("y"), 1, vec![for_loop(id("z"), 6, vec![])])]
+                    vec![for_loop(id("y"), 0, vec![for_loop(id("z"), 6, vec![])])]
                 )
             ]),
             for_loop(x2.clone(), 7, vec![for_loop(id("w"), 12, vec![])])

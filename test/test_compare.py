@@ -7,70 +7,63 @@ torch.manual_seed(1234)
 
 @parir.jit
 def parir_eq(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        if a[i] == b[i]:
-            dst[i] = 1
+    with parir.gpu:
+        if a[0] == b[0]:
+            dst[0] = 1
         else:
-            dst[i] = 0
+            dst[0] = 0
 
 @parir.jit
 def parir_neq(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        if a[i] != b[i]:
-            dst[i] = 1
+    with parir.gpu:
+        if a[0] != b[0]:
+            dst[0] = 1
         else:
-            dst[i] = 0
+            dst[0] = 0
 
 @parir.jit
 def parir_leq(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        if a[i] <= b[i]:
-            dst[i] = 1
+    with parir.gpu:
+        if a[0] <= b[0]:
+            dst[0] = 1
         else:
-            dst[i] = 0
+            dst[0] = 0
 
 @parir.jit
 def parir_geq(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        if a[i] >= b[i]:
-            dst[i] = 1
+    with parir.gpu:
+        if a[0] >= b[0]:
+            dst[0] = 1
         else:
-            dst[i] = 0
+            dst[0] = 0
 
 @parir.jit
 def parir_lt(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        if a[i] < b[i]:
-            dst[i] = 1
+    with parir.gpu:
+        if a[0] < b[0]:
+            dst[0] = 1
         else:
-            dst[i] = 0
+            dst[0] = 0
 
 @parir.jit
 def parir_gt(dst, a, b):
-    parir.label('i')
-    for i in range(1):
-        if a[i] > b[i]:
-            dst[i] = 1
+    with parir.gpu:
+        if a[0] > b[0]:
+            dst[0] = 1
         else:
-            dst[i] = 0
+            dst[0] = 0
 
 def compare_dtype(fn, arg_dtype, compile_only):
     a = torch.randint(1, 10, (1,), dtype=arg_dtype)
     b = torch.randint(1, 10, (1,), dtype=arg_dtype)
     dst = torch.empty((1,), dtype=torch.int32)
-    p = {'i': [parir.threads(32)]}
     if compile_only:
-        s = parir.print_compiled(fn, [dst, a, b], p)
+        s = parir.print_compiled(fn, [dst, a, b])
         assert len(s) != 0
     else:
-        fn(dst, a, b)
         dst_cu = torch.empty_like(dst).cuda()
-        fn(dst_cu, a.cuda(), b.cuda(), parallelize=p, cache=False)
+        fn(dst_cu, a.cuda(), b.cuda(), cache=False)
+        fn(dst, a, b, seq=True)
         assert dst == dst_cu.cpu()
 
 functions = [

@@ -30,35 +30,32 @@ def convert_python_function_to_ir(fn):
     return parir.python_to_ir(ast, filepath, fst_line-1)
 
 def compile_function(ir_ast, args, kwargs, fn, key):
-    # Look for the parallelize keyword argument, which is used to control how
-    # the for-loops of the function should be parallelized. If it is not
-    # specified, we return the original function without performing any extra
-    # work.
-    if "parallelize" not in kwargs or kwargs["parallelize"] is None:
-        return fn
-    elif isinstance(kwargs["parallelize"], dict):
-        par = kwargs["parallelize"]
-        del kwargs["parallelize"]
-    else:
-        raise RuntimeError("The parallelization argument must be a dictionary")
+    def check_kwarg(key, default_value, expected_ty):
+        if key not in kwargs or kwargs[key] is None:
+            return {}
+        elif isinstance(kwargs[key], expected_ty):
+            v = kwargs[key]
+            del kwargs[key]
+            return v
+        else:
+            raise RuntimeError(f"The keyword argument {key} should be of type {ty}")
 
-    # The cache argument is used to specify whether the compiled shared library
-    # should be cached or not. By default, we cache the result.
-    if "cache" not in kwargs or kwargs["cache"] is None:
-        cache = True
-    elif isinstance(kwargs["cache"], bool):
-        cache = kwargs["cache"]
-        del kwargs["cache"]
-    else:
-        raise RuntimeError("The cache argument must be a boolean")
+    # Extract provided keyword arguments if available and ensure they have the
+    # correct types.
+    par = check_kwarg("parallelize", {}, dict)
+    cache = check_kwarg("cache", True, bool)
+    seq = check_kwarg("seq", False, bool)
 
     # Any keyword arguments remaining after processing the known ones above are
     # considered unknown.
     if len(kwargs) > 0:
         raise RuntimeError(f"Received unknown keyword arguments: {kwargs}")
 
-    # Return the Python function as is if no parallelization was specified.
-    if len(par) == 0:
+    # If the user explicitly requests sequential execution by setting the 'seq'
+    # keyword argument to True, we return the original Python function. This is
+    # useful for debugging, as it avoids the need to remove the function
+    # decorator.
+    if seq:
         return fn
 
     # Compiles the IR AST using type information of the provided arguments and
@@ -78,7 +75,7 @@ def compile_string(fun_name, code, cache=True):
         compile.build_cuda_shared_library(k, code)
     return compile.get_cuda_wrapper(fun_name, k)
 
-def print_compiled(fun, args, par):
+def print_compiled(fun, args, par=None):
     """
     Compile the provided Python function with respect to the given function
     arguments and parallelization arguments. Returns the resulting CUDA C++
@@ -89,7 +86,7 @@ def print_compiled(fun, args, par):
     else:
         ir_ast = convert_python_function_to_ir(fun)
     if par is None:
-        raise RuntimeError("Parallel specification must be provided")
+        par = {}
     return parir.compile_ir(ir_ast, args, par)
 
 def jit(fun):
