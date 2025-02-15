@@ -63,8 +63,6 @@ def torch_to_ctype(dtype):
         return ctypes.c_int32
     elif dtype == torch.int64:
         return ctypes.c_int64
-    elif dtype == torch.uint8:
-        return ctypes.c_uint8
     elif dtype == torch.float16:
         return ctypes.c_int16
     elif dtype == torch.float32:
@@ -86,16 +84,6 @@ def get_cuda_wrapper(name, key, cache):
             pass
 
     def wrapper(*args):
-        # Ensure all tensor arguments have data allocated on the GPU
-        def check_arg(arg, i):
-            if isinstance(arg, torch.Tensor) and arg.get_device() != torch.cuda.current_device():
-                raise RuntimeError(f"Data of tensor in argument {i+1} is not on the GPU")
-            elif isinstance(arg, dict):
-                for v in arg.values():
-                    check_arg(v, i)
-        for (i, arg) in enumerate(args):
-            check_arg(arg, i)
-
         # Expand the arguments by making each field of a dictionary a separate argument
         def expand_arg(arg):
             if isinstance(arg, dict):

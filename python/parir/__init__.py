@@ -58,6 +58,20 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     if seq:
         return fn
 
+    # Ensure all tensor arguments have data allocated on the GPU
+    def check_arg(arg, i):
+        import torch
+        if isinstance(arg, torch.Tensor) and arg.get_device() != torch.cuda.current_device():
+            raise RuntimeError(f"Data of tensor in argument {i+1} is not on the GPU")
+        elif isinstance(arg, dict):
+            for k, v in arg.items():
+                if isinstance(k, str):
+                    check_arg(v, i)
+                else:
+                    raise RuntimeError(f"Dictionary of argument {i+1} has non-string key")
+    for (i, arg) in enumerate(args):
+        check_arg(arg, i)
+
     # Compiles the IR AST using type information of the provided arguments and
     # the parallelization settings to determine how to generate parallel
     # low-level code.

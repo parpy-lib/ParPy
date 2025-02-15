@@ -44,3 +44,18 @@ def test_with_as():
         def with_as():
             with parir.gpu as x:
                 a = x + 1
+
+def test_dict_with_non_string_keys():
+    @parir.jit
+    def dict_arg(a):
+        with parir.gpu:
+            a["x"] = a["y"]
+
+    with pytest.raises(RuntimeError):
+        dict_arg({'x': 2, 'y': 4, 3: 5})
+
+def test_dict_with_int_key():
+    with pytest.raises(RuntimeError):
+        @parir.jit
+        def dict_arg(a):
+            a["x"] = a[2]
