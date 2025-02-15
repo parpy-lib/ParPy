@@ -1,8 +1,9 @@
+use super::ast::*;
 use crate::py_type_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use super::ast::*;
+use crate::utils::smap::SMapAccum;
 
 use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
@@ -502,9 +503,7 @@ fn type_check_exprs(
     vars: &BTreeMap<Name, Type>,
     exprs: Vec<Expr>
 ) -> PyResult<Vec<Expr>> {
-    exprs.into_iter()
-        .map(|e| type_check_expr(vars, e))
-        .collect()
+    exprs.smap_result(|e| type_check_expr(vars, e))
 }
 
 fn validate_condition_type(cond: Expr, i: &Info) -> PyResult<Expr> {
@@ -553,20 +552,9 @@ fn type_check_stmt(
             let (_, els) = type_check_stmts(vars.clone(), els)?;
             Ok((vars, Stmt::If {cond, thn, els, i}))
         },
-        Stmt::WithGpuContext {body, i} => {
-            let (_, body) = type_check_stmts(vars.clone(), body)?;
-            Ok((vars, Stmt::WithGpuContext {body, i}))
+        Stmt::WithGpuContext {..} | Stmt::Label {..} => {
+            stmt.smap_accum_l_result(Ok(vars), type_check_stmt)
         },
-        Stmt::Label {label, assoc, i} => {
-            let (vars, assoc) = match assoc {
-                Some(s) => {
-                    let (vars, s) = type_check_stmt(vars, *s)?;
-                    (vars, Some(Box::new(s)))
-                },
-                None => (vars, None)
-            };
-            Ok((vars, Stmt::Label {label, assoc, i}))
-        }
     }
 }
 
@@ -574,13 +562,7 @@ fn type_check_stmts(
     vars: BTreeMap<Name, Type>,
     stmts: Vec<Stmt>
 ) -> PyResult<(BTreeMap<Name, Type>, Vec<Stmt>)> {
-    stmts.into_iter()
-        .fold(Ok((vars, vec![])), |acc: PyResult<_>, stmt| {
-            let (vars, mut stmts) = acc?;
-            let (vars, stmt) = type_check_stmt(vars, stmt)?;
-            stmts.push(stmt);
-            Ok((vars, stmts))
-        })
+    stmts.smap_accum_l_result(Ok(vars), type_check_stmt)
 }
 
 fn type_check_body(

@@ -19,7 +19,7 @@ fn assert_contains_labels_stmt(acc: bool, stmt: &Stmt) -> bool {
         Stmt::Label {..} => true,
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::For {..} |
         Stmt::While {..} | Stmt::If {..} =>
-            stmt.sfold(assert_contains_labels_stmt, acc)
+            stmt.sfold(acc, assert_contains_labels_stmt)
     }
 }
 
@@ -38,7 +38,7 @@ fn assert_contains_labels(fun: &FunDef) -> PyResult<()> {
 }
 
 fn associate_labels_stmt(
-    mut acc: Vec<Stmt>,
+    acc: PyResult<Vec<Stmt>>,
     stmt: Stmt
 ) -> PyResult<Vec<Stmt>> {
     let stmt = match stmt {
@@ -63,6 +63,7 @@ fn associate_labels_stmt(
             stmt
         }
     };
+    let mut acc = acc?;
     match acc.pop() {
         Some(Stmt::Label {label, assoc: None, i}) => {
             match stmt {
@@ -89,7 +90,7 @@ fn associate_labels_stmts(
     acc: Vec<Stmt>,
     body: Vec<Stmt>
 ) -> PyResult<Vec<Stmt>> {
-    body.into_iter().fold(Ok(acc), |acc, stmt| associate_labels_stmt(acc?, stmt))
+    body.into_iter().fold(Ok(acc), associate_labels_stmt)
 }
 
 pub fn associate_labels(fun: FunDef) -> PyResult<FunDef> {

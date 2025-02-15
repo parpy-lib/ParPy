@@ -143,73 +143,80 @@ impl PartialEq for Expr {
 }
 
 impl SMapAccum<Expr> for Expr {
-    fn smap_accum_l<A>(self, f: impl Fn(A, Expr) -> (A, Expr), acc: A) -> (A, Expr) {
+    fn smap_accum_l_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, Expr) -> Result<(A, Expr), E>
+    ) -> Result<(A, Expr), E> {
         match self {
-            Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} => {
-                (acc, self)
-            },
             Expr::UnOp {op, arg, ty, i} => {
-                let (acc, arg) = f(acc, *arg);
-                (acc, Expr::UnOp {op, arg: Box::new(arg), ty, i})
+                let (acc, arg) = f(acc?, *arg)?;
+                Ok((acc, Expr::UnOp {op, arg: Box::new(arg), ty, i}))
             },
             Expr::BinOp {lhs, op, rhs, ty, i} => {
-                let (acc, lhs) = f(acc, *lhs);
-                let (acc, rhs) = f(acc, *rhs);
-                (acc, Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i})
+                let (acc, lhs) = f(acc?, *lhs)?;
+                let (acc, rhs) = f(acc, *rhs)?;
+                Ok((acc, Expr::BinOp {
+                    lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i
+                }))
             },
             Expr::Ternary {cond, thn, els, ty, i} => {
-                let (acc, cond) = f(acc, *cond);
-                let (acc, thn) = f(acc, *thn);
-                let (acc, els) = f(acc, *els);
-                (acc, Expr::Ternary {
+                let (acc, cond) = f(acc?, *cond)?;
+                let (acc, thn) = f(acc, *thn)?;
+                let (acc, els) = f(acc, *els)?;
+                Ok((acc, Expr::Ternary {
                     cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
-                })
+                }))
             },
             Expr::StructFieldAccess {target, label, ty, i} => {
-                let (acc, target) = f(acc, *target);
-                (acc, Expr::StructFieldAccess {target: Box::new(target), label, ty, i})
+                let (acc, target) = f(acc?, *target)?;
+                Ok((acc, Expr::StructFieldAccess {
+                    target: Box::new(target), label, ty, i
+                }))
             },
             Expr::ArrayAccess {target, idx, ty, i} => {
-                let (acc, target) = f(acc, *target);
-                let (acc, idx) = f(acc, *idx);
-                (acc, Expr::ArrayAccess {target: Box::new(target), idx: Box::new(idx), ty, i})
+                let (acc, target) = f(acc?, *target)?;
+                let (acc, idx) = f(acc, *idx)?;
+                Ok((acc, Expr::ArrayAccess {
+                    target: Box::new(target), idx: Box::new(idx), ty, i
+                }))
             },
             Expr::Struct {id, fields, ty, i} => {
-                let (acc, fields) = fields.into_iter()
-                    .fold((acc, vec![]), |(acc, mut fields), (id, e)| {
-                        let (acc, e) = f(acc, e);
-                        fields.push((id, e));
-                        (acc, fields)
-                    });
-                (acc, Expr::Struct {id, fields, ty, i})
+                let (acc, fields) = fields.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::Struct {id, fields, ty, i}))
             },
             Expr::Convert {e, ty} => {
-                let (acc, e) = f(acc, *e);
-                (acc, Expr::Convert {e: Box::new(e), ty})
+                let (acc, e) = f(acc?, *e)?;
+                Ok((acc, Expr::Convert {e: Box::new(e), ty}))
             },
             Expr::ShflXorSync {value, idx, ty, i} => {
-                let (acc, value) = f(acc, *value);
-                let (acc, idx) = f(acc, *idx);
-                (acc, Expr::ShflXorSync {value: Box::new(value), idx: Box::new(idx), ty, i})
+                let (acc, value) = f(acc?, *value)?;
+                let (acc, idx) = f(acc, *idx)?;
+                Ok((acc, Expr::ShflXorSync {
+                    value: Box::new(value), idx: Box::new(idx), ty, i
+                }))
             },
-            Expr::ThreadIdx {..} | Expr::BlockIdx {..} => (acc, self),
+            Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
+            Expr::ThreadIdx {..} | Expr::BlockIdx {..} => Ok((acc?, self)),
         }
     }
 }
 
 impl SFold<Expr> for Expr {
-    fn sfold<A>(&self, f: impl Fn(A, &Expr) -> A, acc: A) -> A {
+    fn sfold_result<A, E>(
+        &self,
+        acc: Result<A, E>,
+        f: impl Fn(A, &Expr) -> Result<A, E>
+    ) -> Result<A, E> {
         match self {
-            Expr::UnOp {arg, ..} => f(acc, arg),
-            Expr::BinOp {lhs, rhs, ..} => f(f(acc, lhs), rhs),
-            Expr::Ternary {cond, thn, els, ..} => f(f(f(acc, cond), thn), els),
-            Expr::StructFieldAccess {target, ..} => f(acc, target),
-            Expr::ArrayAccess {target, idx, ..} => f(f(acc, target), idx),
-            Expr::Struct {fields, ..} => {
-                fields.into_iter().fold(acc, |acc, (_, e)| f(acc, e))
-            },
-            Expr::Convert {e, ..} => f(acc, e),
-            Expr::ShflXorSync {value, idx, ..} => f(f(acc, value), idx),
+            Expr::UnOp {arg, ..} => f(acc?, arg),
+            Expr::BinOp {lhs, rhs, ..} => f(f(acc?, lhs)?, rhs),
+            Expr::Ternary {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
+            Expr::StructFieldAccess {target, ..} => f(acc?, target),
+            Expr::ArrayAccess {target, idx, ..} => f(f(acc?, target)?, idx),
+            Expr::Struct {fields, ..} => fields.sfold_result(acc, &f),
+            Expr::Convert {e, ..} => f(acc?, e),
+            Expr::ShflXorSync {value, idx, ..} => f(f(acc?, value)?, idx),
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => acc,
         }
@@ -289,62 +296,58 @@ pub enum Stmt {
 }
 
 impl SMapAccum<Expr> for Stmt {
-    fn smap_accum_l<A>(self, f: impl Fn(A, Expr) -> (A, Expr), acc: A) -> (A, Self) {
+    fn smap_accum_l_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, Expr) -> Result<(A, Expr), E>
+    ) -> Result<(A, Self), E> {
         match self {
             Stmt::Definition {ty, id, expr} => {
-                let (acc, expr) = f(acc, expr);
-                (acc, Stmt::Definition {ty, id, expr})
+                let (acc, expr) = f(acc?, expr)?;
+                Ok((acc, Stmt::Definition {ty, id, expr}))
             },
             Stmt::Assign {dst, expr} => {
-                let (acc, dst) = f(acc, dst);
-                let (acc, expr) = f(acc, expr);
-                (acc, Stmt::Assign {dst, expr})
+                let (acc, dst) = f(acc?, dst)?;
+                let (acc, expr) = f(acc, expr)?;
+                Ok((acc, Stmt::Assign {dst, expr}))
             },
             Stmt::For {var_ty, var, init, cond, incr, body} => {
-                let (acc, init) = f(acc, init);
-                let (acc, cond) = f(acc, cond);
-                let (acc, incr) = f(acc, incr);
-                (acc, Stmt::For {var_ty, var, init, cond, incr, body})
+                let (acc, init) = f(acc?, init)?;
+                let (acc, cond) = f(acc, cond)?;
+                let (acc, incr) = f(acc, incr)?;
+                Ok((acc, Stmt::For {var_ty, var, init, cond, incr, body}))
             },
             Stmt::If {cond, thn, els} => {
-                let (acc, cond) = f(acc, cond);
-                (acc, Stmt::If {cond, thn, els})
+                let (acc, cond) = f(acc?, cond)?;
+                Ok((acc, Stmt::If {cond, thn, els}))
             },
             Stmt::While {cond, body} => {
-                let (acc, cond) = f(acc, cond);
-                (acc, Stmt::While {cond, body})
+                let (acc, cond) = f(acc?, cond)?;
+                Ok((acc, Stmt::While {cond, body}))
             },
             Stmt::KernelLaunch {id, blocks, threads, args} => {
-                let (acc, args) = args.into_iter()
-                    .fold((acc, vec![]), |(acc, mut args), a| {
-                        let (acc, a) = f(acc, a);
-                        args.push(a);
-                        (acc, args)
-                    });
-                (acc, Stmt::KernelLaunch {id, blocks, threads, args})
+                let (acc, args) = args.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Stmt::KernelLaunch {id, blocks, threads, args}))
             },
             Stmt::AllocShared {..} | Stmt::Syncthreads {..} |
-            Stmt::Dim3Definition {..} | Stmt::Scope {..} => (acc, self),
+            Stmt::Dim3Definition {..} | Stmt::Scope {..} => Ok((acc?, self)),
         }
     }
 }
 
 impl SFold<Expr> for Stmt {
-    fn sfold<A>(&self, f: impl Fn(A, &Expr) -> A, acc: A) -> A {
+    fn sfold_result<A, E>(
+        &self,
+        acc: Result<A, E>,
+        f: impl Fn(A, &Expr) -> Result<A, E>
+    ) -> Result<A, E> {
         match self {
-            Stmt::Definition {expr, ..} => f(acc, expr),
-            Stmt::Assign {dst, expr} => {
-                let acc = f(acc, dst);
-                f(acc, expr)
-            },
-            Stmt::For {init, cond, incr, ..} => {
-                let acc = f(acc, init);
-                let acc = f(acc, cond);
-                f(acc, incr)
-            },
-            Stmt::If {cond, ..} => f(acc, cond),
-            Stmt::While {cond, ..} => f(acc, cond),
-            Stmt::KernelLaunch {args, ..} => args.sfold(&f, acc),
+            Stmt::Definition {expr, ..} => f(acc?, expr),
+            Stmt::Assign {dst, expr} => f(f(acc?, dst)?, expr),
+            Stmt::For {init, cond, incr, ..} => f(f(f(acc?, init)?, cond)?, incr),
+            Stmt::If {cond, ..} => f(acc?, cond),
+            Stmt::While {cond, ..} => f(acc?, cond),
+            Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
             Stmt::AllocShared {..} | Stmt::Syncthreads {} |
             Stmt::Dim3Definition {..} | Stmt::Scope {..} => acc,
         }
@@ -352,45 +355,50 @@ impl SFold<Expr> for Stmt {
 }
 
 impl SMapAccum<Stmt> for Stmt {
-    fn smap_accum_l<A>(self, f: impl Fn(A, Stmt) -> (A, Stmt), acc: A) -> (A, Self) {
+    fn smap_accum_l_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
+    ) -> Result<(A, Self), E> {
         match self {
-            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
-            Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
-            Stmt::KernelLaunch {..} => (acc, self),
             Stmt::For {var_ty, var, init, cond, incr, body} => {
-                let (acc, body) = body.smap_accum_l(&f, acc);
-                (acc, Stmt::For {var_ty, var, init, cond, incr, body})
+                let (acc, body) = body.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Stmt::For {var_ty, var, init, cond, incr, body}))
             },
             Stmt::If {cond, thn, els} => {
-                let (acc, thn) = thn.smap_accum_l(&f, acc);
-                let (acc, els) = els.smap_accum_l(&f, acc);
-                (acc, Stmt::If {cond, thn, els})
+                let (acc, thn) = thn.smap_accum_l_result(acc, &f)?;
+                let (acc, els) = els.smap_accum_l_result(Ok(acc), &f)?;
+                Ok((acc, Stmt::If {cond, thn, els}))
             },
             Stmt::While {cond, body} => {
-                let (acc, body) = body.smap_accum_l(&f, acc);
-                (acc, Stmt::While {cond, body})
+                let (acc, body) = body.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Stmt::While {cond, body}))
             },
             Stmt::Scope {body} => {
-                let (acc, body) = body.smap_accum_l(&f, acc);
-                (acc, Stmt::Scope {body})
+                let (acc, body) = body.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Stmt::Scope {body}))
             },
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
+            Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
+            Stmt::KernelLaunch {..} => Ok((acc?, self))
         }
     }
 }
 
 impl SFold<Stmt> for Stmt {
-    fn sfold<A>(&self, f: impl Fn(A, &Stmt) -> A, acc: A) -> A {
+    fn sfold_result<A, E>(
+        &self,
+        acc: Result<A, E>,
+        f: impl Fn(A, &Stmt) -> Result<A, E>
+    ) -> Result<A, E> {
         match self {
+            Stmt::For {body, ..} => body.sfold_result(acc, &f),
+            Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
+            Stmt::While {body, ..} => body.sfold_result(acc, &f),
+            Stmt::Scope {body} => body.sfold_result(acc, &f),
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
             Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
             Stmt::KernelLaunch {..} => acc,
-            Stmt::For {body, ..} => body.sfold(&f, acc),
-            Stmt::If {thn, els, ..} => {
-                let acc = thn.sfold(&f, acc);
-                els.sfold(&f, acc)
-            },
-            Stmt::While {body, ..} => body.sfold(&f, acc),
-            Stmt::Scope {body} => body.sfold(&f, acc),
         }
     }
 }
@@ -425,17 +433,16 @@ pub enum Top {
 }
 
 impl SMapAccum<Stmt> for Top {
-    fn smap_accum_l<A>(self, f: impl Fn(A, Stmt) -> (A, Stmt), acc: A) -> (A, Self) {
+    fn smap_accum_l_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
+    ) -> Result<(A, Self), E> {
         match self {
-            Top::Include {..} | Top::StructDef {..} => (acc, self),
+            Top::Include {..} | Top::StructDef {..} => Ok((acc?, self)),
             Top::FunDef {attr, ret_ty, id, params, body} => {
-                let (acc, body) = body.into_iter()
-                    .fold((acc, vec![]), |(acc, mut stmts), s| {
-                        let (acc, s) = f(acc, s);
-                        stmts.push(s);
-                        (acc, stmts)
-                    });
-                (acc, Top::FunDef {attr, ret_ty, id, params, body})
+                let (acc, body) = body.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Top::FunDef {attr, ret_ty, id, params, body}))
             },
         }
     }

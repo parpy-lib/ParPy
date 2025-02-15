@@ -177,33 +177,34 @@ impl fmt::Display for Builtin {
 }
 
 impl SMapAccum<Type> for Type {
-    fn smap_accum_l<A>(self, f: impl Fn(A, Type) -> (A, Type), acc: A) -> (A, Type) {
+    fn smap_accum_l_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, Type) -> Result<(A, Type), E>
+    ) -> Result<(A, Type), E> {
         match self {
             Type::Tuple {elems} => {
-                let (acc, elems) = elems.smap_accum_l(&f, acc);
-                (acc, Type::Tuple {elems})
+                let (acc, elems) = elems.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Type::Tuple {elems}))
             },
             Type::Dict {fields} => {
-                let (acc, fields) = fields.into_iter()
-                    .fold((acc, BTreeMap::new()), |(acc, mut fields), (id, ty)| {
-                        let (acc, ty) = f(acc, ty);
-                        fields.insert(id, ty);
-                        (acc, fields)
-                    });
-                (acc, Type::Dict {fields})
+                let (acc, fields) = fields.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Type::Dict {fields}))
             },
-            Type::String | Type::Tensor {..} | Type::Unknown => (acc, self)
+            Type::String | Type::Tensor {..} | Type::Unknown => Ok((acc?, self))
         }
     }
 }
 
 impl SFold<Type> for Type {
-    fn sfold<A>(&self, f: impl Fn(A, &Type) -> A, acc: A) -> A {
+    fn sfold_result<A, E>(
+        &self,
+        acc: Result<A, E>,
+        f: impl Fn(A, &Type) -> Result<A, E>
+    ) -> Result<A, E> {
         match self {
-            Type::Tuple {elems} => elems.sfold(f, acc),
-            Type::Dict {fields} => {
-                fields.iter().fold(acc, |acc, (_, ty)| f(acc, ty))
-            },
+            Type::Tuple {elems} => elems.sfold_result(acc, f),
+            Type::Dict {fields} => fields.sfold_result(acc, f),
             Type::String | Type::Tensor {..} | Type::Unknown => acc
         }
     }
@@ -433,74 +434,79 @@ impl InfoNode for Expr {
 }
 
 impl SMapAccum<Expr> for Expr {
-    fn smap_accum_l<A>(self, f: impl Fn(A, Expr) -> (A, Expr), acc: A) -> (A, Expr) {
+    fn smap_accum_l_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, Expr) -> Result<(A, Expr), E>
+    ) -> Result<(A, Expr), E> {
         match self {
             Expr::Var {..} | Expr::String {..} | Expr::Bool {..} |
             Expr::Int {..} | Expr::Float {..} => {
-                (acc, self)
+                Ok((acc?, self))
             },
             Expr::UnOp {op, arg, ty, i} => {
-                let (acc, arg) = f(acc, *arg);
-                (acc, Expr::UnOp {op, arg: Box::new(arg), ty, i})
+                let (acc, arg) = f(acc?, *arg)?;
+                Ok((acc, Expr::UnOp {op, arg: Box::new(arg), ty, i}))
             },
             Expr::BinOp {lhs, op, rhs, ty, i} => {
-                let (acc, lhs) = f(acc, *lhs);
-                let (acc, rhs) = f(acc, *rhs);
-                (acc, Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i})
+                let (acc, lhs) = f(acc?, *lhs)?;
+                let (acc, rhs) = f(acc, *rhs)?;
+                Ok((acc, Expr::BinOp {
+                    lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i
+                }))
             },
             Expr::IfExpr {cond, thn, els, ty, i} => {
-                let (acc, cond) = f(acc, *cond);
-                let (acc, thn) = f(acc, *thn);
-                let (acc, els) = f(acc, *els);
-                (acc, Expr::IfExpr {
+                let (acc, cond) = f(acc?, *cond)?;
+                let (acc, thn) = f(acc, *thn)?;
+                let (acc, els) = f(acc, *els)?;
+                Ok((acc, Expr::IfExpr {
                     cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
-                })
+                }))
             },
             Expr::Subscript {target, idx, ty, i} => {
-                let (acc, target) = f(acc, *target);
-                let (acc, idx) = f(acc, *idx);
-                (acc, Expr::Subscript {target: Box::new(target), idx: Box::new(idx), ty, i})
+                let (acc, target) = f(acc?, *target)?;
+                let (acc, idx) = f(acc, *idx)?;
+                Ok((acc, Expr::Subscript {
+                    target: Box::new(target), idx: Box::new(idx), ty, i
+                }))
             },
             Expr::Tuple {elems, ty, i} => {
-                let (acc, elems) = elems.smap_accum_l(&f, acc);
-                (acc, Expr::Tuple {elems, ty, i})
+                let (acc, elems) = elems.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::Tuple {elems, ty, i}))
             },
             Expr::Dict {fields, ty, i} => {
-                let (acc, fields) = fields.into_iter()
-                    .fold((acc, BTreeMap::new()), |(acc, mut fields), (id, e)| {
-                        let (acc, e) = f(acc, e);
-                        fields.insert(id, e);
-                        (acc, fields)
-                    });
-                (acc, Expr::Dict {fields, ty, i})
+                let (acc, fields) = fields.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::Dict {fields, ty, i}))
             },
             Expr::Builtin {func, args, ty, i} => {
-                let (acc, args) = args.smap_accum_l(&f, acc);
-                (acc, Expr::Builtin {func, args, ty, i})
+                let (acc, args) = args.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::Builtin {func, args, ty, i}))
             },
             Expr::Convert {e, ty} => {
-                let (acc, e) = f(acc, *e);
-                (acc, Expr::Convert {e: Box::new(e), ty})
+                let (acc, e) = f(acc?, *e)?;
+                Ok((acc, Expr::Convert {e: Box::new(e), ty}))
             }
         }
     }
 }
 
 impl SFold<Expr> for Expr {
-    fn sfold<A>(&self, f: impl Fn(A, &Expr) -> A, acc: A) -> A {
+    fn sfold_result<A, E>(
+        &self,
+        acc: Result<A, E>,
+        f: impl Fn(A, &Expr) -> Result<A, E>
+    ) -> Result<A, E> {
         match self {
             Expr::Var {..} | Expr::String {..} | Expr::Bool {..} |
             Expr::Int {..} | Expr::Float {..} => acc,
-            Expr::UnOp {arg, ..} => f(acc, arg),
-            Expr::BinOp {lhs, rhs, ..} => f(f(acc, lhs), rhs),
-            Expr::IfExpr {cond, thn, els, ..} => f(f(f(acc, cond), thn), els),
-            Expr::Subscript {target, idx, ..} => f(f(acc, target), idx),
-            Expr::Tuple {elems, ..} => elems.sfold(&f, acc),
-            Expr::Dict {fields, ..} => {
-                fields.into_iter().fold(acc, |acc, (_, e)| f(acc, e))
-            },
-            Expr::Builtin {args, ..} => args.sfold(&f, acc),
-            Expr::Convert {e, ..} => f(acc, e),
+            Expr::UnOp {arg, ..} => f(acc?, arg),
+            Expr::BinOp {lhs, rhs, ..} => f(f(acc?, lhs)?, rhs),
+            Expr::IfExpr {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
+            Expr::Subscript {target, idx, ..} => f(f(acc?, target)?, idx),
+            Expr::Tuple {elems, ..} => elems.sfold_result(acc, &f),
+            Expr::Dict {fields, ..} => fields.sfold_result(acc, &f),
+            Expr::Builtin {args, ..} => args.sfold_result(acc, &f),
+            Expr::Convert {e, ..} => f(acc?, e),
         }
     }
 }
@@ -531,93 +537,109 @@ impl InfoNode for Stmt {
 }
 
 impl SMapAccum<Expr> for Stmt {
-    fn smap_accum_l<A>(self, f: impl Fn(A, Expr) -> (A, Expr), acc: A) -> (A, Stmt) {
+    fn smap_accum_l_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, Expr) -> Result<(A, Expr), E>
+    ) -> Result<(A, Stmt), E> {
         match self {
             Stmt::Definition {ty, id, expr, i} => {
-                let (acc, expr) = f(acc, expr);
-                (acc, Stmt::Definition {ty, id, expr, i})
+                let (acc, expr) = f(acc?, expr)?;
+                Ok((acc, Stmt::Definition {ty, id, expr, i}))
             },
             Stmt::Assign {dst, expr, i} => {
-                let (acc, dst) = f(acc, dst);
-                let (acc, expr) = f(acc, expr);
-                (acc, Stmt::Assign {dst, expr, i})
+                let (acc, dst) = f(acc?, dst)?;
+                let (acc, expr) = f(acc, expr)?;
+                Ok((acc, Stmt::Assign {dst, expr, i}))
             },
             Stmt::For {var, lo, hi, step, body, i} => {
-                let (acc, lo) = f(acc, lo);
-                let (acc, hi) = f(acc, hi);
-                (acc, Stmt::For {var, lo, hi, step, body, i})
+                let (acc, lo) = f(acc?, lo)?;
+                let (acc, hi) = f(acc, hi)?;
+                Ok((acc, Stmt::For {var, lo, hi, step, body, i}))
             },
             Stmt::While {cond, body, i} => {
-                let (acc, cond) = f(acc, cond);
-                (acc, Stmt::While {cond, body, i})
+                let (acc, cond) = f(acc?, cond)?;
+                Ok((acc, Stmt::While {cond, body, i}))
             },
             Stmt::If {cond, thn, els, i} => {
-                let (acc, cond) = f(acc, cond);
-                (acc, Stmt::If {cond, thn, els, i})
+                let (acc, cond) = f(acc?, cond)?;
+                Ok((acc, Stmt::If {cond, thn, els, i}))
             },
-            Stmt::WithGpuContext {..} | Stmt::Label {..} => (acc, self),
+            Stmt::WithGpuContext {..} | Stmt::Label {..} => Ok((acc?, self)),
         }
     }
 }
 
 impl SFold<Expr> for Stmt {
-    fn sfold<A>(&self, f: impl Fn(A, &Expr) -> A, acc: A) -> A {
+    fn sfold_result<A, E>(
+        &self,
+        acc: Result<A, E>,
+        f: impl Fn(A, &Expr) -> Result<A, E>
+    ) -> Result<A, E> {
         match self {
-            Stmt::Definition {expr, ..} => f(acc, expr),
-            Stmt::Assign {dst, expr, ..} => f(f(acc, dst), expr),
-            Stmt::For {lo, hi, ..} => f(f(acc, lo), hi),
-            Stmt::While {cond, ..} => f(acc, cond),
-            Stmt::If {cond, ..} => f(acc, cond),
+            Stmt::Definition {expr, ..} => f(acc?, expr),
+            Stmt::Assign {dst, expr, ..} => f(f(acc?, dst)?, expr),
+            Stmt::For {lo, hi, ..} => f(f(acc?, lo)?, hi),
+            Stmt::While {cond, ..} => f(acc?, cond),
+            Stmt::If {cond, ..} => f(acc?, cond),
             Stmt::WithGpuContext {..} | Stmt::Label {..} => acc,
         }
     }
 }
 
 impl SMapAccum<Stmt> for Stmt {
-    fn smap_accum_l<A>(self, f: impl Fn(A, Stmt) -> (A, Stmt), acc: A) -> (A, Stmt) {
+    fn smap_accum_l_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
+    ) -> Result<(A, Stmt), E> {
         match self {
-            Stmt::Definition {..} | Stmt::Assign {..} => (acc, self),
+            Stmt::Definition {..} | Stmt::Assign {..} => Ok((acc?, self)),
             Stmt::For {var, lo, hi, step, body, i} => {
-                let (acc, body) = body.smap_accum_l(&f, acc);
-                (acc, Stmt::For {var, lo, hi, step, body, i})
+                let (acc, body) = body.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Stmt::For {var, lo, hi, step, body, i}))
             },
             Stmt::While {cond, body, i} => {
-                let (acc, body) = body.smap_accum_l(&f, acc);
-                (acc, Stmt::While {cond, body, i})
+                let (acc, body) = body.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Stmt::While {cond, body, i}))
             },
             Stmt::If {cond, thn, els, i} => {
-                let (acc, thn) = thn.smap_accum_l(&f, acc);
-                let (acc, els) = els.smap_accum_l(&f, acc);
-                (acc, Stmt::If {cond, thn, els, i})
+                let (acc, thn) = thn.smap_accum_l_result(acc, &f)?;
+                let (acc, els) = els.smap_accum_l_result(Ok(acc), &f)?;
+                Ok((acc, Stmt::If {cond, thn, els, i}))
             },
             Stmt::WithGpuContext {body, i} => {
-                let (acc, body) = body.smap_accum_l(&f, acc);
-                (acc, Stmt::WithGpuContext {body, i})
+                let (acc, body) = body.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Stmt::WithGpuContext {body, i}))
             },
             Stmt::Label {label, assoc, i} => {
                 let (acc, assoc) = match assoc {
                     Some(a) => {
-                        let (acc, a) = f(acc, *a);
+                        let (acc, a) = f(acc?, *a)?;
                         (acc, Some(Box::new(a)))
                     },
-                    None => (acc, None)
+                    None => (acc?, None)
                 };
-                (acc, Stmt::Label {label, assoc, i})
+                Ok((acc, Stmt::Label {label, assoc, i}))
             },
         }
     }
 }
 
 impl SFold<Stmt> for Stmt {
-    fn sfold<A>(&self, f: impl Fn(A, &Stmt) -> A, acc: A) -> A {
+    fn sfold_result<A, E>(
+        &self,
+        acc: Result<A, E>,
+        f: impl Fn(A, &Stmt) -> Result<A, E>
+    ) -> Result<A, E> {
         match self {
             Stmt::Definition {..} | Stmt::Assign {..} => acc,
-            Stmt::For {body, ..} => body.sfold(&f, acc),
-            Stmt::While {body, ..} => body.sfold(&f, acc),
-            Stmt::If {thn, els, ..} => els.sfold(&f, thn.sfold(&f, acc)),
-            Stmt::WithGpuContext {body, ..} => body.sfold(&f, acc),
+            Stmt::For {body, ..} => body.sfold_result(acc, &f),
+            Stmt::While {body, ..} => body.sfold_result(acc, &f),
+            Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
+            Stmt::WithGpuContext {body, ..} => body.sfold_result(acc, &f),
             Stmt::Label {assoc, ..} => match assoc {
-                Some(a) => f(acc, &a),
+                Some(a) => f(acc?, &a),
                 None => acc
             }
         }

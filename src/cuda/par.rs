@@ -7,6 +7,7 @@ use crate::ir::ast::*;
 use crate::utils::err::*;
 use crate::utils::info::Info;
 use crate::utils::name::Name;
+use crate::utils::smap::SFold;
 
 use std::collections::BTreeMap;
 
@@ -86,11 +87,6 @@ fn find_parallel_structure_stmt_seq(
     stmt: &Stmt
 ) -> ParResult {
     match stmt {
-        Stmt::Definition {..} | Stmt::Assign {..} => Ok(acc),
-        Stmt::If {thn, els, ..} => {
-            let acc = find_parallel_structure_stmts_seq(acc, thn)?;
-            find_parallel_structure_stmts_seq(acc, els)
-        },
         Stmt::For {var, body, par, ..} => {
             if par.is_parallel() {
                 let mut p = find_parallel_structure_stmts_par(body)?;
@@ -101,7 +97,9 @@ fn find_parallel_structure_stmt_seq(
                 find_parallel_structure_stmts_seq(acc, body)
             }
         },
-        Stmt::While {body, ..} => find_parallel_structure_stmts_seq(acc, body),
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} | Stmt::If {..} => {
+            stmt.sfold_result(Ok(acc), find_parallel_structure_stmt_seq)
+        }
     }
 }
 
@@ -109,8 +107,7 @@ fn find_parallel_structure_stmts_seq(
     acc: BTreeMap<Name, Vec<i64>>,
     stmts: &Vec<Stmt>
 ) -> ParResult {
-    stmts.iter()
-        .fold(Ok(acc), |acc, stmt| find_parallel_structure_stmt_seq(acc?, stmt))
+    stmts.sfold_result(Ok(acc), find_parallel_structure_stmt_seq)
 }
 
 fn find_parallel_structure_fun_def(fun_def: &FunDef) -> ParResult {

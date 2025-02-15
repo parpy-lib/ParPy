@@ -27,7 +27,7 @@ fn fv_expr(mut env: FVEnv, e: &Expr) -> FVEnv {
         Expr::UnOp {..} | Expr::BinOp {..} | Expr::Ternary {..} |
         Expr::StructFieldAccess {..} | Expr::ArrayAccess {..} | Expr::Struct {..} |
         Expr::Convert {..} | Expr::ShflXorSync {..} | Expr::ThreadIdx {..} |
-        Expr::BlockIdx {..} => e.sfold(fv_expr, env),
+        Expr::BlockIdx {..} => e.sfold(env, fv_expr),
     }
 }
 
@@ -55,8 +55,8 @@ fn fv_stmt(mut env: FVEnv, s: &Stmt) -> FVEnv {
         },
         Stmt::Assign {..} | Stmt::If {..} | Stmt::While {..} |
         Stmt::Syncthreads {..} | Stmt::KernelLaunch {..} | Stmt::Scope {..} => {
-            let env = s.sfold(fv_expr, env);
-            s.sfold(fv_stmt, env)
+            let env = s.sfold(env, fv_expr);
+            s.sfold(env, fv_stmt)
         }
     }
 }

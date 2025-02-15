@@ -28,7 +28,7 @@ fn thread_index_dependent_expr_helper(
         match expr {
             Expr::Var {id, ..} if vars.contains(&id) => true,
             Expr::ThreadIdx {..} => true,
-            _ => expr.sfold(|acc, e| thread_index_dependent_expr_helper(acc, vars, e), acc)
+            _ => expr.sfold(acc, |acc, e| thread_index_dependent_expr_helper(acc, vars, e))
         }
     }
 }
@@ -69,11 +69,13 @@ fn find_thread_index_dependent_variables_stmt(
             if thread_index_dependent_expr(&acc, init) {
                 acc.insert(var.clone());
             }
-            body.sfold(find_thread_index_dependent_variables_stmt, Ok(acc))
+            body.sfold(Ok(acc), find_thread_index_dependent_variables_stmt)
         },
-        Stmt::AllocShared {..} | Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
-        Stmt::KernelLaunch {..} => Ok(acc),
-        _ => stmt.sfold(find_thread_index_dependent_variables_stmt, Ok(acc))
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
+        Stmt::If {..} | Stmt::Scope {..} | Stmt::AllocShared {..} |
+        Stmt::Syncthreads {} | Stmt::Dim3Definition {..} | Stmt::KernelLaunch {..} => {
+            stmt.sfold(Ok(acc), find_thread_index_dependent_variables_stmt)
+        }
     }
 }
 
@@ -83,7 +85,7 @@ fn find_thread_index_dependent_variables_top(
 ) -> CompileResult<BTreeSet<Name>> {
     match top {
         Top::FunDef {attr, body, ..} if *attr == Attribute::Global => {
-            body.sfold(find_thread_index_dependent_variables_stmt, acc)
+            body.sfold(acc, find_thread_index_dependent_variables_stmt)
         },
         Top::FunDef {..} | Top::Include {..} | Top::StructDef {..} => acc
     }
@@ -298,7 +300,8 @@ mod test {
             ]),
         ];
         let vars = stmts.sfold(
-            find_thread_index_dependent_variables_stmt, Ok(BTreeSet::new())
+            Ok(BTreeSet::new()),
+            find_thread_index_dependent_variables_stmt
         ).unwrap();
         assert_eq!(vars.len(), 3);
         assert!(vars.contains(&a_id));

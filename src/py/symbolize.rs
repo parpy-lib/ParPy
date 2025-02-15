@@ -3,6 +3,7 @@ use crate::py_name_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
+use crate::utils::smap::SMapAccum;
 
 use std::collections::BTreeMap;
 
@@ -83,53 +84,12 @@ impl Symbolize for Expr {
                 let id = env.get_symbol(id)?;
                 Ok((env, Expr::Var {id, ty, i}))
             },
-            Expr::UnOp {op, arg, ty, i} => {
-                let (env, arg) = arg.symbolize(env)?;
-                Ok((env, Expr::UnOp {op, arg: Box::new(arg), ty, i}))
-            },
-            Expr::BinOp {lhs, op, rhs, ty, i} => {
-                let (env, lhs) = lhs.symbolize(env)?;
-                let (env, rhs) = rhs.symbolize(env)?;
-                Ok((env, Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i}))
-            },
-            Expr::IfExpr {cond, thn, els, ty, i} => {
-                let (env, cond) = cond.symbolize(env)?;
-                let (env, thn) = thn.symbolize(env)?;
-                let (env, els) = els.symbolize(env)?;
-                Ok((env, Expr::IfExpr {
-                    cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
-                }))
-            },
-            Expr::Subscript {target, idx, ty, i} => {
-                let (env, target) = target.symbolize(env)?;
-                let (env, idx) = idx.symbolize(env)?;
-                Ok((env, Expr::Subscript {target: Box::new(target), idx: Box::new(idx), ty, i}))
-            },
-            Expr::Tuple {elems, ty, i} => {
-                let (env, elems) = elems.symbolize(env)?;
-                Ok((env, Expr::Tuple {elems, ty, i}))
-            },
-            Expr::Dict {fields, ty, i} => {
-                let f = |acc: SymbolizeResult<BTreeMap<String, Expr>>, (k, v): (String, Expr)| {
-                    let (env, mut fields) = acc?;
-                    let (env, v) = v.symbolize(env)?;
-                    fields.insert(k, v);
-                    Ok((env, fields))
-                };
-                let (env, fields) = fields.into_iter()
-                    .fold(Ok((env, BTreeMap::new())), f)?;
-                Ok((env, Expr::Dict {fields, ty, i}))
-            },
-            Expr::Builtin {func, args, ty, i} => {
-                let (env, args) = args.symbolize(env)?;
-                Ok((env, Expr::Builtin {func, args, ty, i}))
-            },
-            Expr::Convert {e, ty} => {
-                let (env, e) = e.symbolize(env)?;
-                Ok((env, Expr::Convert {e: Box::new(e), ty}))
-            },
             Expr::String {..} | Expr::Bool {..} | Expr::Int {..} |
-            Expr::Float {..} => Ok((env, self)),
+            Expr::Float {..} | Expr::UnOp {..} | Expr::BinOp {..} |
+            Expr::IfExpr {..} | Expr::Subscript {..} | Expr::Tuple {..} |
+            Expr::Dict {..} | Expr::Builtin {..} | Expr::Convert {..} => {
+                self.smap_accum_l_result(Ok(env), |env, e| e.symbolize(env))
+            }
         }
     }
 }
@@ -166,30 +126,10 @@ impl Symbolize for Stmt {
                 let (_, body) = body.symbolize(body_env)?;
                 Ok((env, Stmt::For {var, lo, hi, step, body, i}))
             },
-            Stmt::If {cond, thn, els, i} => {
-                let (env, cond) = cond.symbolize(env)?;
-                let (_, thn) = thn.symbolize(env.clone())?;
-                let (_, els) = els.symbolize(env.clone())?;
-                Ok((env, Stmt::If {cond, thn, els, i}))
-            }
-            Stmt::While {cond, body, i} => {
-                let (env, cond) = cond.symbolize(env)?;
-                let (_, body) = body.symbolize(env.clone())?;
-                Ok((env, Stmt::While {cond, body, i}))
-            },
-            Stmt::WithGpuContext {body, i} => {
-                let (_, body) = body.symbolize(env.clone())?;
-                Ok((env, Stmt::WithGpuContext {body, i}))
-            },
-            Stmt::Label {label, assoc, i} => {
-                let (env, assoc) = match assoc {
-                    Some(s) => {
-                        let (env, s) = s.symbolize(env)?;
-                        (env, Some(Box::new(s)))
-                    },
-                    None => (env, None)
-                };
-                Ok((env, Stmt::Label {label, assoc, i}))
+            Stmt::While {..} | Stmt::If {..} | Stmt::WithGpuContext {..} |
+            Stmt::Label {..} => {
+                let (env, s) = self.smap_accum_l_result(Ok(env), |env, e: Expr| e.symbolize(env))?;
+                s.smap_accum_l_result(Ok(env), |env, s: Stmt| s.symbolize(env))
             }
         }
     }

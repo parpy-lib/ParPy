@@ -56,7 +56,7 @@ fn find_dict_types_type(
             });
             types.add_type(ty, id)
         },
-        _ => ty.sfold(|types, ty| find_dict_types_type(types, ty, id), types)
+        _ => ty.sfold(types, |types, ty| find_dict_types_type(types, ty, id))
     }
 }
 
@@ -65,15 +65,15 @@ fn find_dict_types_expr(
     e: &Expr
 ) -> DictTypes {
     let types = find_dict_types_type(types, &e.get_type(), None);
-    e.sfold(find_dict_types_expr, types)
+    e.sfold(types, find_dict_types_expr)
 }
 
 fn find_dict_types_stmt(
     types: DictTypes,
     stmt: &Stmt
 ) -> DictTypes {
-    let types = stmt.sfold(find_dict_types_stmt, types);
-    stmt.sfold(find_dict_types_expr, types)
+    let types = stmt.sfold(types, find_dict_types_stmt);
+    stmt.sfold(types, find_dict_types_expr)
 }
 
 fn find_dict_types_def(
@@ -85,7 +85,7 @@ fn find_dict_types_def(
         .fold(types, |types, Param {id, ty, ..}| {
             find_dict_types_type(types, ty, Some(id.get_str()))
         });
-    def.body.sfold(find_dict_types_stmt, types)
+    def.body.sfold(types, find_dict_types_stmt)
 }
 
 pub fn find_dict_types(def: &FunDef) -> DictTypes {

@@ -3,6 +3,7 @@ use crate::parir_compile_error;
 use crate::ir::ast::*;
 use crate::utils::err::*;
 use crate::utils::name::Name;
+use crate::utils::smap::SFold;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -11,7 +12,6 @@ fn collect_sync_points_stmt(
     stmt: &Stmt
 ) -> CompileResult<BTreeSet<Name>> {
     match stmt {
-        Stmt::Definition {..} | Stmt::Assign {..} => acc,
         Stmt::For {var, body, par, ..} => {
             let mut sync = acc?;
             if par.is_parallel() {
@@ -19,11 +19,9 @@ fn collect_sync_points_stmt(
             };
             collect_sync_points_stmts(Ok(sync), body)
         },
-        Stmt::If {thn, els, ..} => {
-            let acc = collect_sync_points_stmts(acc, thn);
-            collect_sync_points_stmts(acc, els)
-        },
-        Stmt::While {body, ..} => collect_sync_points_stmts(acc, body),
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} | Stmt::If {..} => {
+            stmt.sfold(acc, collect_sync_points_stmt)
+        }
     }
 }
 
@@ -39,17 +37,13 @@ fn remove_redundant_sync_par_stmt(
     stmt: &Stmt
 ) -> BTreeSet<Name> {
     match stmt {
-        Stmt::Definition {..} | Stmt::Assign {..} => sync,
         Stmt::For {var, body, ..} => {
             let is_par = sync.contains(var);
             remove_redundant_sync_par_stmts(sync, body, is_par)
         },
-        Stmt::If {thn, els, ..} => {
-            let sync = remove_redundant_sync_par_stmts(sync, thn, false);
-            remove_redundant_sync_par_stmts(sync, els, false)
-        },
-        Stmt::While {body, ..} => {
-            remove_redundant_sync_par_stmts(sync, body, false)
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
+        Stmt::If {..} => {
+            stmt.sfold(sync, remove_redundant_sync_par_stmt)
         },
     }
 }
@@ -67,13 +61,9 @@ fn remove_redundant_sync_par_stmts(
             };
             remove_redundant_sync_par_stmts(sync, &body, par.is_parallel())
         },
-        Some(Stmt::If {thn, els, ..}) => {
-            let sync = remove_redundant_sync_par_stmts(sync, &thn, in_par);
-            remove_redundant_sync_par_stmts(sync, &els, in_par)
-        },
-        Some(Stmt::While {body, ..}) => {
-            remove_redundant_sync_par_stmts(sync, &body, in_par)
-        },
+        Some(s @ (Stmt::While {..} | Stmt::If {..})) => {
+            s.sfold(sync, remove_redundant_sync_par_stmt)
+        }
     };
     stmts.iter()
         .rev()
@@ -96,11 +86,9 @@ fn remove_redundant_sync_stmt(
                 remove_redundant_sync_stmts(sync, body)
             }
         },
-        Stmt::If {thn, els, ..} => {
-            let sync = remove_redundant_sync_stmts(sync, thn);
-            remove_redundant_sync_stmts(sync, els)
-        },
-        Stmt::While {body, ..} => remove_redundant_sync_stmts(sync, body),
+        Stmt::While {..} | Stmt::If {..} => {
+            stmt.sfold(sync, remove_redundant_sync_stmt)
+        }
     }
 }
 
@@ -108,8 +96,7 @@ fn remove_redundant_sync_stmts(
     sync: BTreeSet<Name>,
     stmts: &Vec<Stmt>,
 ) -> BTreeSet<Name> {
-    stmts.iter()
-        .fold(sync, remove_redundant_sync_stmt)
+    stmts.sfold(sync, remove_redundant_sync_stmt)
 }
 
 fn ensure_no_inter_block_sync_par_stmt(
@@ -118,7 +105,6 @@ fn ensure_no_inter_block_sync_par_stmt(
     pars: &[GpuMap]
 ) -> CompileResult<()> {
     match stmt {
-        Stmt::Definition {..} | Stmt::Assign {..} => Ok(()),
         Stmt::For {var, body, par, i, ..} => {
             let pars = if sync.contains(var) {
                 let hd = &pars[0];
@@ -149,13 +135,11 @@ fn ensure_no_inter_block_sync_par_stmt(
             };
             ensure_no_inter_block_sync_par_stmts(body, sync, pars)
         },
-        Stmt::If {thn, els, ..} => {
-            ensure_no_inter_block_sync_par_stmts(thn, sync, pars)?;
-            ensure_no_inter_block_sync_par_stmts(els, sync, pars)
-        },
-        Stmt::While {body, ..} => {
-            ensure_no_inter_block_sync_par_stmts(body, sync, pars)
-        },
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} | Stmt::If {..} => {
+            stmt.sfold_result(Ok(()), |_, s| {
+                ensure_no_inter_block_sync_par_stmt(s, sync, pars)
+            })
+        }
     }
 }
 
@@ -164,10 +148,9 @@ fn ensure_no_inter_block_sync_par_stmts(
     sync: &BTreeSet<Name>,
     pars: &[GpuMap]
 ) -> CompileResult<()> {
-    stmts.iter()
-        .map(|stmt| ensure_no_inter_block_sync_par_stmt(stmt, sync, pars))
-        .collect::<CompileResult<()>>()?;
-    Ok(())
+    stmts.sfold_result(Ok(()), |_, s| {
+        ensure_no_inter_block_sync_par_stmt(s, sync, pars)
+    })
 }
 
 fn ensure_no_inter_block_sync_stmt(
@@ -176,7 +159,6 @@ fn ensure_no_inter_block_sync_stmt(
     gpu_mapping: &BTreeMap<Name, GpuMapping>
 ) -> CompileResult<()> {
     match stmt {
-        Stmt::Definition {..} | Stmt::Assign {..} => Ok(()),
         Stmt::For {var, body, ..} => {
             match gpu_mapping.get(var) {
                 Some(m) => {
@@ -186,12 +168,10 @@ fn ensure_no_inter_block_sync_stmt(
                 None => ensure_no_inter_block_sync_stmts(body, sync, gpu_mapping)
             }
         },
-        Stmt::If {thn, els, ..} => {
-            ensure_no_inter_block_sync_stmts(thn, sync, gpu_mapping)?;
-            ensure_no_inter_block_sync_stmts(els, sync, gpu_mapping)
-        },
-        Stmt::While {body, ..} => {
-            ensure_no_inter_block_sync_stmts(body, sync, gpu_mapping)
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} | Stmt::If {..} => {
+            stmt.sfold_result(Ok(()), |_, s| {
+                ensure_no_inter_block_sync_stmt(s, sync, gpu_mapping)
+            })
         }
     }
 }
@@ -201,10 +181,9 @@ fn ensure_no_inter_block_sync_stmts(
     sync: &BTreeSet<Name>,
     gpu_mapping: &BTreeMap<Name, GpuMapping>
 ) -> CompileResult<()> {
-    stmts.iter()
-        .map(|stmt| ensure_no_inter_block_sync_stmt(stmt, sync, gpu_mapping))
-        .collect::<CompileResult<()>>()?;
-    Ok(())
+    stmts.sfold_result(Ok(()), |_, s| {
+        ensure_no_inter_block_sync_stmt(s, sync, gpu_mapping)
+    })
 }
 
 /// Identify where we need to insert synchronization points in the AST (after which parallel
