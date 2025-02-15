@@ -9,23 +9,17 @@
 use super::ast::*;
 use crate::py_runtime_error;
 use crate::utils::err::*;
+use crate::utils::smap::SFold;
 
 use pyo3::prelude::*;
 
 fn assert_contains_labels_stmt(acc: bool, stmt: &Stmt) -> bool {
     match stmt {
-        Stmt::Definition {..} => acc,
-        Stmt::Assign {..} => acc,
-        Stmt::For {body, ..} =>
-            body.iter().fold(acc, assert_contains_labels_stmt),
-        Stmt::If {thn, els, ..} => {
-            let acc = thn.iter().fold(acc, assert_contains_labels_stmt);
-            els.iter().fold(acc, assert_contains_labels_stmt)
-        },
-        Stmt::While {body, ..} =>
-            body.iter().fold(acc, assert_contains_labels_stmt),
         Stmt::WithGpuContext {..} => true,
         Stmt::Label {..} => true,
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::For {..} |
+        Stmt::While {..} | Stmt::If {..} =>
+            stmt.sfold(assert_contains_labels_stmt, acc)
     }
 }
 

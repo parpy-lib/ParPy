@@ -1,5 +1,6 @@
 use crate::py::ast::*;
 use crate::utils::name::Name;
+use crate::utils::smap::SFold;
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -49,16 +50,13 @@ fn find_dict_types_type(
     id: Option<&String>
 ) -> DictTypes {
     match ty {
-        Type::Tuple {elems, ..} => {
-            elems.iter().fold(types, |types, ty| find_dict_types_type(types, ty, id))
-        },
         Type::Dict {fields, ..} => {
             let types = fields.values().fold(types, |types, ty| {
                 find_dict_types_type(types, ty, id)
             });
             types.add_type(ty, id)
         },
-        _ => types
+        _ => ty.sfold(|types, ty| find_dict_types_type(types, ty, id), types)
     }
 }
 
@@ -67,53 +65,15 @@ fn find_dict_types_expr(
     e: &Expr
 ) -> DictTypes {
     let types = find_dict_types_type(types, &e.get_type(), None);
-    match e {
-        Expr::UnOp {arg, ..} => find_dict_types_expr(types, arg),
-        Expr::BinOp {lhs, rhs, ..} => {
-            let types = find_dict_types_expr(types, lhs);
-            find_dict_types_expr(types, rhs)
-        },
-        Expr::Subscript {target, idx, ..} => {
-            let types = find_dict_types_expr(types, target);
-            find_dict_types_expr(types, idx)
-        },
-        Expr::Tuple {elems, ..} => elems.iter().fold(types, find_dict_types_expr),
-        Expr::Dict {fields, ..} => fields.values().fold(types, find_dict_types_expr),
-        Expr::Builtin {args, ..} => args.iter().fold(types, find_dict_types_expr),
-        Expr::Convert {e, ..} => find_dict_types_expr(types, e),
-        _ => types
-    }
+    e.sfold(find_dict_types_expr, types)
 }
 
 fn find_dict_types_stmt(
     types: DictTypes,
     stmt: &Stmt
 ) -> DictTypes {
-    match stmt {
-        Stmt::Definition {expr, ..} => find_dict_types_expr(types, expr),
-        Stmt::Assign {dst, expr, ..} => {
-            let types = find_dict_types_expr(types, dst);
-            find_dict_types_expr(types, expr)
-        },
-        Stmt::For {lo, hi, body, ..} => {
-            let types = find_dict_types_expr(types, lo);
-            let types = find_dict_types_expr(types, hi);
-            body.iter().fold(types, find_dict_types_stmt)
-        },
-        Stmt::If {cond, thn, els, ..} => {
-            let types = find_dict_types_expr(types, cond);
-            let types = thn.iter().fold(types, find_dict_types_stmt);
-            els.iter().fold(types, find_dict_types_stmt)
-        },
-        Stmt::While {cond, body, ..} => {
-            let types = find_dict_types_expr(types, cond);
-            body.iter().fold(types, find_dict_types_stmt)
-        },
-        Stmt::WithGpuContext {body, ..} => {
-            body.iter().fold(types, find_dict_types_stmt)
-        },
-        Stmt::Label {..} => types
-    }
+    let types = stmt.sfold(find_dict_types_stmt, types);
+    stmt.sfold(find_dict_types_expr, types)
 }
 
 fn find_dict_types_def(
@@ -125,9 +85,7 @@ fn find_dict_types_def(
         .fold(types, |types, Param {id, ty, ..}| {
             find_dict_types_type(types, ty, Some(id.get_str()))
         });
-    def.body
-        .iter()
-        .fold(types, find_dict_types_stmt)
+    def.body.sfold(find_dict_types_stmt, types)
 }
 
 pub fn find_dict_types(def: &FunDef) -> DictTypes {

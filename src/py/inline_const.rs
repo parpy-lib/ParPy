@@ -6,6 +6,7 @@ use super::ast::*;
 use crate::py_runtime_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
+use crate::utils::smap::SMapAccum;
 
 use std::collections::BTreeMap;
 
@@ -31,98 +32,26 @@ fn replace_constants_expr(
                 Expr::Subscript {target, idx, ty: ty.clone(), i: i.clone()}
             }
         },
-        Expr::String {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} => e,
-        Expr::UnOp {op, arg, ty, i} => {
-            let arg = Box::new(replace_constants_expr(consts, *arg));
-            Expr::UnOp {op, arg, ty, i}
-        },
-        Expr::BinOp {lhs, op, rhs, ty, i} => {
-            let lhs = Box::new(replace_constants_expr(consts, *lhs));
-            let rhs = Box::new(replace_constants_expr(consts, *rhs));
-            Expr::BinOp {lhs, op, rhs, ty, i}
-        },
-        Expr::IfExpr {cond, thn, els, ty, i} => {
-            let cond = Box::new(replace_constants_expr(consts, *cond));
-            let thn = Box::new(replace_constants_expr(consts, *thn));
-            let els = Box::new(replace_constants_expr(consts, *els));
-            Expr::IfExpr {cond, thn, els, ty, i}
-        },
-        Expr::Tuple {elems, ty, i} => {
-            let elems = replace_constants_exprs(consts, elems);
-            Expr::Tuple {elems, ty, i}
-        },
-        Expr::Dict {fields, ty, i} => {
-            let fields = fields.into_iter()
-                .map(|(id, e)| (id, replace_constants_expr(consts, e)))
-                .collect::<BTreeMap<String, Expr>>();
-            Expr::Dict {fields, ty, i}
-        },
-        Expr::Builtin {func, args, ty, i} => {
-            let args = replace_constants_exprs(consts, args);
-            Expr::Builtin {func, args, ty, i}
-        },
-        Expr::Convert {e, ty} => {
-            let e = Box::new(replace_constants_expr(consts, *e));
-            Expr::Convert {e, ty}
-        }
+        Expr::String {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
+        Expr::UnOp {..} | Expr::BinOp {..} | Expr::IfExpr {..} |
+        Expr::Tuple {..} | Expr::Dict {..} | Expr::Builtin {..} |
+        Expr::Convert {..} => e.smap(|e| replace_constants_expr(consts, e))
     }
-}
-
-fn replace_constants_exprs(
-    consts: &BTreeMap<Expr, Expr>,
-    exprs: Vec<Expr>
-) -> Vec<Expr> {
-    exprs.into_iter()
-        .map(|e| replace_constants_expr(consts, e))
-        .collect::<Vec<Expr>>()
 }
 
 fn replace_constants_stmt(
     consts: &BTreeMap<Expr, Expr>,
     s: Stmt
 ) -> Stmt {
-    match s {
-        Stmt::Definition {ty, id, expr, i} => {
-            let expr = replace_constants_expr(consts, expr);
-            Stmt::Definition {ty, id, expr, i}
-        },
-        Stmt::Assign {dst, expr, i} => {
-            let dst = replace_constants_expr(consts, dst);
-            let expr = replace_constants_expr(consts, expr);
-            Stmt::Assign {dst, expr, i}
-        },
-        Stmt::For {var, lo, hi, step, body, i} => {
-            let lo = replace_constants_expr(consts, lo);
-            let hi = replace_constants_expr(consts, hi);
-            let body = replace_constants_stmts(consts, body);
-            Stmt::For {var, lo, hi, step, body, i}
-        },
-        Stmt::If {cond, thn, els, i} => {
-            let cond = replace_constants_expr(consts, cond);
-            let thn = replace_constants_stmts(consts, thn);
-            let els = replace_constants_stmts(consts, els);
-            Stmt::If {cond, thn, els, i}
-        },
-        Stmt::While {cond, body, i} => {
-            let cond = replace_constants_expr(consts, cond);
-            let body = replace_constants_stmts(consts, body);
-            Stmt::While {cond, body, i}
-        },
-        Stmt::WithGpuContext {body, i} => {
-            let body = replace_constants_stmts(consts, body);
-            Stmt::WithGpuContext {body, i}
-        },
-        Stmt::Label {label, assoc, i} => Stmt::Label {label, assoc, i}
-    }
+    s.smap(|s| replace_constants_stmt(consts, s))
+        .smap(|e| replace_constants_expr(consts, e))
 }
 
 fn replace_constants_stmts(
     consts: &BTreeMap<Expr, Expr>,
     stmts: Vec<Stmt>
 ) -> Vec<Stmt> {
-    stmts.into_iter()
-        .map(|s| replace_constants_stmt(consts, s))
-        .collect::<Vec<Stmt>>()
+    stmts.smap(|s| replace_constants_stmt(consts, s))
 }
 
 fn extract_scalar_value<'py>(

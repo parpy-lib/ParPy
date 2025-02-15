@@ -542,16 +542,16 @@ fn type_check_stmt(
             let (_, body) = type_check_stmts(body_vars, body)?;
             Ok((vars, Stmt::For {var, lo, hi, step, body, i}))
         },
+        Stmt::While {cond, body, i} => {
+            let cond = validate_condition_type(type_check_expr(&vars, cond)?, &i)?;
+            let (_, body) = type_check_stmts(vars.clone(), body)?;
+            Ok((vars, Stmt::While {cond, body, i}))
+        },
         Stmt::If {cond, thn, els, i} => {
             let cond = validate_condition_type(type_check_expr(&vars, cond)?, &i)?;
             let (_, thn) = type_check_stmts(vars.clone(), thn)?;
             let (_, els) = type_check_stmts(vars.clone(), els)?;
             Ok((vars, Stmt::If {cond, thn, els, i}))
-        },
-        Stmt::While {cond, body, i} => {
-            let cond = validate_condition_type(type_check_expr(&vars, cond)?, &i)?;
-            let (_, body) = type_check_stmts(vars.clone(), body)?;
-            Ok((vars, Stmt::While {cond, body, i}))
         },
         Stmt::WithGpuContext {body, i} => {
             let (_, body) = type_check_stmts(vars.clone(), body)?;
