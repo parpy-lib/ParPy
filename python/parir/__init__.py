@@ -123,6 +123,11 @@ def validate_arguments(args, kwargs):
             elif not arg.is_contiguous():
                 raise RuntimeError(f"Argument {i} contains non-contiguous data")
             return arg
+        elif hasattr(arg, "__cuda_array_interface__"):
+            # If the argument implements the CUDA array interface, such as a
+            # CuPy array, we convert it to Torch and validate this, for
+            # simplicity.
+            return check_arg(torch.as_tensor(arg), i, in_dict)
         else:
             raise RuntimeError(f"Argument {i} has unsupported type {type(arg)}")
     return [check_arg(arg, f"#{i+1}", False) for (i, arg) in enumerate(args)]
