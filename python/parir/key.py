@@ -12,12 +12,12 @@ import torch
 def arg_to_string(arg):
     if isinstance(arg, torch.Tensor):
         if arg.ndim == 0:
-            return f"<{arg.dtype},{arg.item()}>"
+            return f"({arg.dtype}){arg.item()}"
         else:
             dims = ",".join([str(n) for n in arg.shape])
-            return f"<{arg.dtype},|{dims}|>"
+            return f"<{arg.dtype}>"
     elif isinstance(arg, int) or isinstance(arg, float):
-        return f"<{type(arg)},{arg}>"
+        return f"({type(arg)}){arg}"
     elif isinstance(arg, dict):
         return ",".join([f"{k}:{arg_to_string(v)}" for k, v in arg.items()])
     else:
