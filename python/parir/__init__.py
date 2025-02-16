@@ -29,22 +29,22 @@ def convert_python_function_to_ir(fn):
     ast = python_ast.parse(src)
     return parir.python_to_ir(ast, filepath, fst_line-1)
 
-def compile_function(ir_ast, args, kwargs, fn, key):
-    def check_kwarg(key, default_value, expected_ty):
-        if key not in kwargs or kwargs[key] is None:
-            return default_value
-        elif isinstance(kwargs[key], expected_ty):
-            v = kwargs[key]
-            del kwargs[key]
-            return v
-        else:
-            raise RuntimeError(f"The keyword argument {key} should be of type {ty}")
+def check_kwarg(kwargs, key, default_value, expected_ty):
+    if key not in kwargs or kwargs[key] is None:
+        return default_value
+    elif isinstance(kwargs[key], expected_ty):
+        v = kwargs[key]
+        del kwargs[key]
+        return v
+    else:
+        raise RuntimeError(f"The keyword argument {key} should be of type {ty}")
 
+def compile_function(ir_ast, args, kwargs, fn, key):
     # Extract provided keyword arguments if available and ensure they have the
     # correct types.
-    par = check_kwarg("parallelize", {}, dict)
-    cache = check_kwarg("cache", True, bool)
-    seq = check_kwarg("seq", False, bool)
+    par = check_kwarg(kwargs, "parallelize", {}, dict)
+    cache = check_kwarg(kwargs, "cache", True, bool)
+    seq = check_kwarg(kwargs, "seq", False, bool)
 
     # Any keyword arguments remaining after processing the known ones above are
     # considered unknown.
@@ -57,20 +57,6 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     # decorator.
     if seq:
         return fn
-
-    # Ensure all tensor arguments have data allocated on the GPU
-    def check_arg(arg, i):
-        import torch
-        if isinstance(arg, torch.Tensor) and arg.get_device() != torch.cuda.current_device():
-            raise RuntimeError(f"Data of tensor in argument {i+1} is not on the GPU")
-        elif isinstance(arg, dict):
-            for k, v in arg.items():
-                if isinstance(k, str):
-                    check_arg(v, i)
-                else:
-                    raise RuntimeError(f"Dictionary of argument {i+1} has non-string key")
-    for (i, arg) in enumerate(args):
-        check_arg(arg, i)
 
     # Compiles the IR AST using type information of the provided arguments and
     # the parallelization settings to determine how to generate parallel
@@ -102,6 +88,45 @@ def print_compiled(fun, args, par=None):
         par = {}
     return parir.compile_ir(ir_ast, args, par)
 
+# Validate all arguments, ensuring that they have a supported type and that
+# all tensor data is contiguous and allocated on the GPU.
+def validate_arguments(args, kwargs):
+    seq = check_kwarg(kwargs, "seq", False, bool)
+    kwargs["seq"] = seq
+    def check_arg(arg, i, in_dict):
+        import torch
+        if isinstance(arg, int) or isinstance(arg, float):
+            return arg
+        elif isinstance(arg, dict):
+            if in_dict:
+                raise RuntimeError(f"Argument {i} cannot be a nested dictionary")
+            for k, v in arg.items():
+                if isinstance(k, str):
+                    v = check_arg(v, f"{i}[\"{k}\"]", True)
+                else:
+                    raise RuntimeError(f"Argument {i} has a non-string key")
+            return arg
+        elif isinstance(arg, torch.Tensor):
+            # If we are to run the code sequentially (in the Python
+            # interpreter), it doesn't matter where the tensors are
+            # allocated or whether they are contiguous.
+            if seq:
+                return arg
+            if arg.ndim > 0 and arg.get_device() != torch.cuda.current_device():
+                print(arg)
+                msg = [
+                    f"The data of tensor in argument {i} is on device ",
+                    f"{arg.get_device()}, while it was expected to be on device ",
+                    f"{torch.cuda.current_device()}"
+                ]
+                raise RuntimeError("".join(msg))
+            elif not arg.is_contiguous():
+                raise RuntimeError(f"Argument {i} contains non-contiguous data")
+            return arg
+        else:
+            raise RuntimeError(f"Argument {i} has unsupported type {type(arg)}")
+    return [check_arg(arg, f"#{i+1}", False) for (i, arg) in enumerate(args)]
+
 def jit(fun):
     """
     Prepares the provided function for JIT-compilation. Initially, the Python
@@ -112,6 +137,7 @@ def jit(fun):
     ir_ast = convert_python_function_to_ir(fun)
 
     def inner(*args, **kwargs):
+        args = validate_arguments(args, kwargs)
         k = key.generate_function_key(fun, args, kwargs)
         compile_function(ir_ast, args, kwargs, fun, k)(*args)
     ir_asts[inner] = ir_ast

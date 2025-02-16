@@ -114,7 +114,7 @@ def get_cuda_wrapper(name, key, cache):
                 if arg.ndim == 0:
                     return arg.item()
                 else:
-                    return arg.contiguous().data_ptr()
+                    return arg.data_ptr()
             else:
                 return arg
         def extract_args(args):

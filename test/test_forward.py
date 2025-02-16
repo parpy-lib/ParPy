@@ -50,9 +50,9 @@ def read_trellis_inputs(model_path, signals_path, device):
     init_prob = torch.tensor(init_probs, dtype=torch.float32, device=device)
     hmm = {
         'gamma': torch.tensor(tail_factor, dtype=torch.float32, device=device),
-        'trans1': trans1,
+        'trans1': trans1.contiguous(),
         'trans2': trans2,
-        'output_prob': out_prob,
+        'output_prob': out_prob.contiguous(),
         'initial_prob': init_prob.flatten(),
         'synthetic_248': torch.tensor(synthetic_248, dtype=torch.float32, device=device),
         'num_states': torch.tensor(num_states, dtype=torch.int64, device=device)

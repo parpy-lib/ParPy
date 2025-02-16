@@ -1,6 +1,7 @@
 # This file ensures that features that are not yet supported by the compiler
 # are correctly reported as errors already when parsing the Python function.
 
+import numpy as np
 import parir
 import pytest
 import torch
@@ -55,7 +56,31 @@ def test_dict_with_non_string_keys():
         dict_arg({'x': 2, 'y': 4, 3: 5})
 
 def test_dict_with_int_key():
-    with pytest.raises(RuntimeError):
-        @parir.jit
-        def dict_arg(a):
+    @parir.jit
+    def dict_arg(a):
+        with parir.gpu:
             a["x"] = a[2]
+
+    with pytest.raises(RuntimeError):
+        dict_arg({'x': 2, 2: 4})
+
+@parir.jit
+def add(a, b, c, N):
+    parir.label("N")
+    for i in range(N):
+        c[i] = a[i] + b[i]
+
+def test_add_cpu_args():
+    a = torch.randn(10)
+    b = torch.randn(10)
+    c = torch.randn(10)
+    with pytest.raises(RuntimeError):
+        add(a, b, c, 10, parallelize={'N': [parir.threads(10)]})
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+def test_add_numpy_array_arg():
+    a = torch.randn(10, device='cuda')
+    b = torch.randn(10, device='cuda')
+    c = np.ndarray(10)
+    with pytest.raises(RuntimeError):
+        add(a, b, c, 10, parallelize={'N': [parir.threads(10)]})
