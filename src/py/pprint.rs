@@ -22,6 +22,7 @@ impl PrettyPrint for Builtin {
             Builtin::Convert {..} => "<convert>",
             Builtin::Label => "<label>",
             Builtin::GpuContext => "<gpu_context>",
+            Builtin::Ext {id} => &format!("{id}")
         };
         (env, s.to_string())
     }
@@ -154,16 +155,27 @@ impl PrettyPrint for Stmt {
             Stmt::If {cond, thn, els, ..} => {
                 let (env, cond) = cond.pprint(env);
                 let env = env.incr_indent();
-                let (env, thn) = pprint_iter(thn.iter(), env, "\n");
-                let (env, els) = pprint_iter(els.iter(), env, "\n");
+                let (env, thn_str) = pprint_iter(thn.iter(), env, "\n");
+                let (env, els_str) = pprint_iter(els.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("{indent}if {cond}:\n{thn}\nelse:\n{els}"))
+                if els.is_empty() {
+                    (env, format!("{indent}if {cond}:\n{thn_str}"))
+                } else {
+                    (env, format!(
+                        "{0}if {cond}:\n{thn_str}\n{0}else:\n{els_str}",
+                        indent
+                    ))
+                }
             },
             Stmt::WithGpuContext {body, ..} => {
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
                 (env, format!("{indent}with parir.gpu:\n{body}"))
+            },
+            Stmt::Call {func, args, ..} => {
+                let (env, args) = pprint_iter(args.iter(), env, ", ");
+                (env, format!("{indent}{func}({args})"))
             },
             Stmt::Label {label, assoc, ..} => {
                 let (env, assoc) = match assoc {
@@ -195,6 +207,18 @@ impl PrettyPrint for FunDef {
         let (env, body) = pprint_iter(body.iter(), env, "\n");
         let env = env.decr_indent();
         (env, format!("def {id}({params}):\n{body}"))
+    }
+}
+
+impl fmt::Display for Builtin {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.pprint_default())
+    }
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.pprint_default())
     }
 }
 
