@@ -495,7 +495,7 @@ fn type_check_expr(
             let args = type_check_exprs(vars, args)?;
             type_check_builtin(func, args, i)
         },
-        e @ Expr::Convert {..} => Ok(e)
+        Expr::Convert {..} => Ok(e),
     }
 }
 
@@ -554,6 +554,9 @@ fn type_check_stmt(
         },
         Stmt::WithGpuContext {..} | Stmt::Label {..} => {
             stmt.smap_accum_l_result(Ok(vars), type_check_stmt)
+        },
+        Stmt::Call {func, i, ..} => {
+            py_type_error!(i, "Call to function {func} should have been inlined (internal error)")
         },
     }
 }

@@ -80,7 +80,8 @@ fn to_unary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<UnOp> {
         py_ast::Builtin::Abs => Ok(UnOp::Abs),
         py_ast::Builtin::Inf | py_ast::Builtin::Max | py_ast::Builtin::Min |
         py_ast::Builtin::Atan2 | py_ast::Builtin::Convert {..} |
-        py_ast::Builtin::Label | py_ast::Builtin::GpuContext => {
+        py_ast::Builtin::Label | py_ast::Builtin::GpuContext |
+        py_ast::Builtin::Ext {..} => {
             parir_compile_error!(i, "Invalid builtin unary operator: {func}")
         }
     }
@@ -95,7 +96,7 @@ fn to_binary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<BinOp> {
         py_ast::Builtin::Cos | py_ast::Builtin::Sin | py_ast::Builtin::Sqrt |
         py_ast::Builtin::Tanh | py_ast::Builtin::Abs |
         py_ast::Builtin::Convert {..} | py_ast::Builtin::Label |
-        py_ast::Builtin::GpuContext => {
+        py_ast::Builtin::GpuContext | py_ast::Builtin::Ext {..} => {
             parir_compile_error!(i, "Invalid builtin binary operator: {func}")
         }
     }
@@ -388,6 +389,9 @@ fn to_ir_stmt(
             let body = to_ir_stmts(env, body)?;
             let par = LoopParallelism::default().with_threads(1);
             Ok(Stmt::For {var, lo, hi, step: 1, body, par, i})
+        },
+        py_ast::Stmt::Call {func, i, ..} => {
+            parir_compile_error!(i, "Found unsupported function call to {func}")
         },
         py_ast::Stmt::Label {label, assoc, i} => {
             match assoc {

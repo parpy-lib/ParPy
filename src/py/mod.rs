@@ -1,5 +1,6 @@
 pub mod ast;
 mod from_py;
+mod inline_calls;
 mod inline_const;
 mod labels;
 mod pprint;
@@ -11,6 +12,7 @@ use symbolize::Symbolize;
 use pyo3::prelude::*;
 
 pub use type_check::type_check;
+pub use inline_calls::inline_function_calls;
 pub use inline_const::inline_scalar_values;
 
 pub fn parse_untyped_ast<'py>(

@@ -152,28 +152,7 @@ impl fmt::Display for Type {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Builtin {
     Exp, Inf, Log, Max, Min, Abs, Cos, Sin, Sqrt, Tanh, Atan2,
-    Convert {sz: ElemSize}, Label, GpuContext
-}
-
-impl fmt::Display for Builtin {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Builtin::Exp => write!(f, "exp"),
-            Builtin::Inf => write!(f, "inf"),
-            Builtin::Log => write!(f, "log"),
-            Builtin::Max => write!(f, "max"),
-            Builtin::Min => write!(f, "min"),
-            Builtin::Abs => write!(f, "abs"),
-            Builtin::Cos => write!(f, "cos"),
-            Builtin::Sin => write!(f, "sin"),
-            Builtin::Sqrt => write!(f, "sqrt"),
-            Builtin::Tanh => write!(f, "tanh"),
-            Builtin::Atan2 => write!(f, "atan2"),
-            Builtin::Convert {sz} => write!(f, "convert({sz})"),
-            Builtin::Label => write!(f, "<label>"),
-            Builtin::GpuContext => write!(f, "gpu")
-        }
-    }
+    Convert {sz: ElemSize}, Label, GpuContext, Ext {id: String}
 }
 
 impl SMapAccum<Type> for Type {
@@ -215,47 +194,10 @@ pub enum UnOp {
     Sub, Not, BitNeg
 }
 
-impl fmt::Display for UnOp {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            UnOp::Sub => write!(f, "-"),
-            UnOp::Not => write!(f, "!"),
-            UnOp::BitNeg => write!(f, "~"),
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BinOp {
     Add, Sub, Mul, FloorDiv, Div, Mod, Pow, And, Or,
     BitAnd, BitOr, BitXor, BitShl, BitShr, Eq, Neq, Leq, Geq, Lt, Gt
-}
-
-impl fmt::Display for BinOp {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            BinOp::Add => write!(f, "+"),
-            BinOp::Sub => write!(f, "-"),
-            BinOp::Mul => write!(f, "*"),
-            BinOp::FloorDiv => write!(f, "//"),
-            BinOp::Div => write!(f, "/"),
-            BinOp::Mod => write!(f, "%"),
-            BinOp::Pow => write!(f, "**"),
-            BinOp::And => write!(f, "&&"),
-            BinOp::Or => write!(f, "||"),
-            BinOp::BitAnd => write!(f, "&"),
-            BinOp::BitOr => write!(f, "|"),
-            BinOp::BitXor => write!(f, "^"),
-            BinOp::BitShl => write!(f, "<<"),
-            BinOp::BitShr => write!(f, ">>"),
-            BinOp::Eq => write!(f, "=="),
-            BinOp::Neq => write!(f, "!="),
-            BinOp::Leq => write!(f, "<="),
-            BinOp::Geq => write!(f, ">="),
-            BinOp::Lt => write!(f, "<"),
-            BinOp::Gt => write!(f, ">"),
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -307,8 +249,8 @@ impl Expr {
             Expr::Subscript {..} => 8,
             Expr::Tuple {..} => 9,
             Expr::Dict {..} => 10,
-            Expr::Builtin {..} => 11,
-            Expr::Convert {..} => 12
+            Expr::Builtin {..} => 12,
+            Expr::Convert {..} => 13
         }
     }
 
@@ -371,47 +313,6 @@ impl PartialOrd for Expr {
 }
 
 impl Eq for Expr {}
-
-impl fmt::Display for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Expr::Var {id, ..} => write!(f, "{0}", id.get_str()),
-            Expr::String {v, ..} => write!(f, "\"{v}\""),
-            Expr::Bool {v, ..} => write!(f, "{v}"),
-            Expr::Int {v, ..} => write!(f, "{v}"),
-            Expr::Float {v, ..} => write!(f, "{v}"),
-            Expr::UnOp {op, arg, ..} => write!(f, "{op}{arg}"),
-            Expr::BinOp {lhs, op, rhs, ..} => write!(f, "({lhs} {op} {rhs})"),
-            Expr::IfExpr {cond, thn, els, ..} => write!(f, "({thn} if {cond} else {els})"),
-            Expr::Subscript {target, idx, ..} => write!(f, "{target}[{idx}]"),
-            Expr::Tuple {elems, ..} => {
-                let elems = elems.iter()
-                    .map(|e| format!("{e}"))
-                    .join(",");
-                write!(f, "({elems})")
-            },
-            Expr::Dict {fields, ..} => {
-                let fields = fields.iter()
-                    .map(|(k, v)| format!("{k}: {v}"))
-                    .join(",");
-                write!(f, "{{{fields}}}")
-            },
-            Expr::Builtin {func, args, ..} => {
-                if args.is_empty() {
-                    write!(f, "{func}")
-                } else {
-                    let args = args.iter()
-                        .map(|a| format!("{a}"))
-                        .join(",");
-                    write!(f, "{func}({args})")
-                }
-            },
-            Expr::Convert {e, ty} => {
-                write!(f, "({ty}){e}")
-            },
-        }
-    }
-}
 
 impl InfoNode for Expr {
     fn get_info(&self) -> Info {
@@ -519,6 +420,7 @@ pub enum Stmt {
     While {cond: Expr, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     WithGpuContext {body: Vec<Stmt>, i: Info},
+    Call {func: String, args: Vec<Expr>, i: Info},
     Label {label: String, assoc: Option<Box<Stmt>>, i: Info}
 }
 
@@ -531,6 +433,7 @@ impl InfoNode for Stmt {
             Stmt::While {i, ..} => i.clone(),
             Stmt::If {i, ..} => i.clone(),
             Stmt::WithGpuContext {i, ..} => i.clone(),
+            Stmt::Call {i, ..} => i.clone(),
             Stmt::Label {i, ..} => i.clone(),
         }
     }
@@ -565,6 +468,10 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, cond) = f(acc?, cond)?;
                 Ok((acc, Stmt::If {cond, thn, els, i}))
             },
+            Stmt::Call {func, args, i} => {
+                let (acc, args) = args.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Stmt::Call {func, args, i}))
+            },
             Stmt::WithGpuContext {..} | Stmt::Label {..} => Ok((acc?, self)),
         }
     }
@@ -582,6 +489,7 @@ impl SFold<Expr> for Stmt {
             Stmt::For {lo, hi, ..} => f(f(acc?, lo)?, hi),
             Stmt::While {cond, ..} => f(acc?, cond),
             Stmt::If {cond, ..} => f(acc?, cond),
+            Stmt::Call {args, ..} => args.sfold_result(acc, &f),
             Stmt::WithGpuContext {..} | Stmt::Label {..} => acc,
         }
     }
@@ -594,7 +502,6 @@ impl SMapAccum<Stmt> for Stmt {
         f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
     ) -> Result<(A, Stmt), E> {
         match self {
-            Stmt::Definition {..} | Stmt::Assign {..} => Ok((acc?, self)),
             Stmt::For {var, lo, hi, step, body, i} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::For {var, lo, hi, step, body, i}))
@@ -622,6 +529,9 @@ impl SMapAccum<Stmt> for Stmt {
                 };
                 Ok((acc, Stmt::Label {label, assoc, i}))
             },
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Call {..} => {
+                Ok((acc?, self))
+            }
         }
     }
 }
@@ -633,7 +543,6 @@ impl SFold<Stmt> for Stmt {
         f: impl Fn(A, &Stmt) -> Result<A, E>
     ) -> Result<A, E> {
         match self {
-            Stmt::Definition {..} | Stmt::Assign {..} => acc,
             Stmt::For {body, ..} => body.sfold_result(acc, &f),
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
@@ -641,7 +550,8 @@ impl SFold<Stmt> for Stmt {
             Stmt::Label {assoc, ..} => match assoc {
                 Some(a) => f(acc?, &a),
                 None => acc
-            }
+            },
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Call {..} => acc
         }
     }
 }

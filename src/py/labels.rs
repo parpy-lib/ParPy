@@ -18,7 +18,7 @@ fn assert_contains_labels_stmt(acc: bool, stmt: &Stmt) -> bool {
         Stmt::WithGpuContext {..} => true,
         Stmt::Label {..} => true,
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::For {..} |
-        Stmt::While {..} | Stmt::If {..} =>
+        Stmt::While {..} | Stmt::If {..} | Stmt::Call {..} =>
             stmt.sfold(acc, assert_contains_labels_stmt)
     }
 }
@@ -59,7 +59,8 @@ fn associate_labels_stmt(
             let body = associate_labels_stmts(vec![], body)?;
             Stmt::WithGpuContext {body, i}
         },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Label {..} => {
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Call {..} |
+        Stmt::Label {..} => {
             stmt
         }
     };

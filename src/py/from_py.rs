@@ -298,6 +298,10 @@ fn convert_expr<'py, 'a>(
             .map(|arg| convert_expr(arg?, env))
             .collect::<PyResult<Vec<Expr>>>()?;
         match convert_expr(expr.getattr("func")?, env)? {
+            Expr::Var {id, ..} => {
+                let func = Builtin::Ext {id: id.to_string()};
+                Ok(Expr::Builtin {func, args, ty, i})
+            },
             Expr::Builtin {func, args: a, ..} if a.len() == 0 => {
                 Ok(Expr::Builtin {func, args, ty, i})
             },
@@ -327,7 +331,7 @@ fn extract_step(e: Expr) -> PyResult<i64> {
     }
 }
 
-fn construct_label_stmt(
+fn construct_expr_stmt(
     value: Expr,
     i: &Info
 ) -> PyResult<Stmt> {
@@ -341,12 +345,20 @@ fn construct_label_stmt(
             py_runtime_error!(i, "{}", msg)
         }
     };
-    if let Expr::Builtin {func: Builtin::Label, mut args, ..} = value {
-        let label = match args.len() {
-            1 => extract_label(args.remove(0)),
-            _ => py_runtime_error!(i, "Label expects one argument")
-        }?;
-        Ok(Stmt::Label {label, assoc: None, i: i.clone()})
+    if let Expr::Builtin {func, mut args, ..} = value {
+        match func {
+            Builtin::Label => {
+                let label = match args.len() {
+                    1 => extract_label(args.remove(0)),
+                    _ => py_runtime_error!(i, "Label expects one argument")
+                }?;
+                Ok(Stmt::Label {label, assoc: None, i: i.clone()})
+            },
+            Builtin::Ext {id} => {
+                Ok(Stmt::Call {func: id, args, i: i.clone()})
+            },
+            _ => py_runtime_error!(i, "Unsupported expression statement")
+        }
     } else {
         py_runtime_error!(i, "Unsupported expression statement")
     }
@@ -456,7 +468,7 @@ fn convert_stmt<'py, 'a>(
         }
     } else if stmt.is_instance(&env.ast.getattr("Expr")?)? {
         let value = convert_expr(stmt.getattr("value")?, env)?;
-        construct_label_stmt(value, &i)
+        construct_expr_stmt(value, &i)
     } else if stmt.is_instance(&env.ast.getattr("With")?)? {
         let items = stmt.getattr("items")?;
         if items.len()? == 1 {

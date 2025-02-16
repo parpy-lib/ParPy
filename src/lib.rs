@@ -14,15 +14,19 @@ use pyo3::types::PyCapsule;
 
 #[pyfunction]
 fn python_to_ir<'py>(
-    py_ast : Bound<'py, PyAny>,
-    filepath : String,
-    fst_line : usize
+    py_ast: Bound<'py, PyAny>,
+    filepath: String,
+    fst_line: usize,
+    ir_asts: BTreeMap<String, Bound<'py, PyCapsule>>
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let py = py_ast.py().clone();
 
     // Convert the provided Python AST (parsed by the 'ast' module of Python) to a similar
     // representation of the Python AST using Rust data types.
     let def = py::parse_untyped_ast(py_ast, filepath, fst_line)?;
+
+    // Inline function calls referring to previously defined IR ASTs.
+    let def = py::inline_function_calls(def, &ir_asts)?;
 
     // Wrap the intermediate AST in a capsule that we return to Python.
     let name = CString::new("Parir untyped Python AST")?;
@@ -31,9 +35,9 @@ fn python_to_ir<'py>(
 
 #[pyfunction]
 fn compile_ir<'py>(
-    ir_ast_cap : Bound<'py, PyCapsule>,
-    args : Vec<Bound<'py, PyAny>>,
-    par : BTreeMap<String, Vec<par::ParKind>>
+    ir_ast_cap: Bound<'py, PyCapsule>,
+    args: Vec<Bound<'py, PyAny>>,
+    par: BTreeMap<String, Vec<par::ParKind>>
 ) -> PyResult<String> {
     // Extract a reference to the untyped AST parsed earlier.
     let untyped_ir_def : &py::ast::FunDef = unsafe {

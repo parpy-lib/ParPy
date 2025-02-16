@@ -26,8 +26,14 @@ def convert_python_function_to_ir(fn):
     if inspect.getdoc(fn) is not None:
         src = inspect.cleandoc(src)
 
+    # Parse the Python AST
     ast = python_ast.parse(src)
-    return parir.python_to_ir(ast, filepath, fst_line-1)
+
+    # Convert the Python representation of the AST to a Python-like
+    # representation in the compiler. As part of this step, we inline any
+    # references to previously parsed functions.
+    ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
+    return parir.python_to_ir(ast, filepath, fst_line-1, ir_ast_map)
 
 def check_kwarg(kwargs, key, default_value, expected_ty):
     if key not in kwargs or kwargs[key] is None:
