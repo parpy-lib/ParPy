@@ -2,6 +2,7 @@ pub mod ast;
 mod from_py;
 mod inline_const;
 mod labels;
+mod pprint;
 mod symbolize;
 mod type_check;
 
