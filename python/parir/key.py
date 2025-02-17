@@ -15,7 +15,7 @@ def arg_to_string(arg):
             return f"({arg.dtype}){arg.item()}"
         else:
             dims = ",".join([str(n) for n in arg.shape])
-            return f"<{arg.dtype}>"
+            return f"<{arg.dtype},{dims}>"
     elif isinstance(arg, int) or isinstance(arg, float):
         return f"({type(arg)}){arg}"
     elif isinstance(arg, dict):
