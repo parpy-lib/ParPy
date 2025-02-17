@@ -84,10 +84,12 @@ impl Info {
             .skip(start.line - 1)
             .take(end.line - start.line + 1)
             .join("\n");
+        let max_col = start.col.max(end.col);
+        let min_col = start.col.min(end.col);
         let err_markers = format!(
             "{0}{1}\n",
             " ".repeat(start.col),
-            "^".repeat(end.col - start.col)
+            "^".repeat(max_col - min_col)
         );
         let lines_msg = if start.line == end.line {
             format!("line {0}", start.line)
