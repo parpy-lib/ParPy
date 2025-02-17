@@ -139,18 +139,8 @@ fn ensure_scalar_type(e: Expr, expected: ElemSize) -> PyResult<Expr> {
     }
 }
 
-fn assert_type(e: &Expr, expected: &Type) -> PyResult<()> {
-    let i = e.get_info();
-    let actual = e.get_type();
-    if actual.eq(expected) {
-        Ok(())
-    } else {
-        py_type_error!(i, "Expected type {expected}, found type {actual}")
-    }
-}
-
 fn coerce_type(e: Expr, expected: &Type) -> PyResult<Expr> {
-    if let Ok(()) = assert_type(&e, expected) {
+    if e.get_type().eq(expected) {
         Ok(e)
     } else {
         let i = e.get_info();
@@ -180,7 +170,11 @@ fn coerce_type(e: Expr, expected: &Type) -> PyResult<Expr> {
                     py_type_error!(i, "Cannot coerce non-literal tuple value {e}")
                 }
             },
-            _ => py_type_error!(i, "Cannot coerce expression {e} of type {actual} to type {expected}")
+            _ => py_type_error!(
+                i,
+                "Cannot coerce expression {0} of type {1} to type {2}",
+                e, actual, expected
+            )
         }
     }
 }
