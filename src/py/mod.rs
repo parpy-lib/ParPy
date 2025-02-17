@@ -3,6 +3,7 @@ mod from_py;
 mod inline_calls;
 mod inline_const;
 mod labels;
+mod par;
 mod pprint;
 mod symbolize;
 mod type_check;
@@ -14,6 +15,7 @@ use pyo3::prelude::*;
 pub use type_check::type_check;
 pub use inline_calls::inline_function_calls;
 pub use inline_const::inline_scalar_values;
+pub use par::ensure_parallelism;
 
 pub fn parse_untyped_ast<'py>(
     ast: Bound<'py, PyAny>,

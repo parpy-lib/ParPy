@@ -1,0 +1,50 @@
+use super::ast::*;
+use crate::py_runtime_error;
+use crate::par::ParKind;
+use crate::utils::err::*;
+use crate::utils::smap::SFold;
+
+use pyo3::prelude::*;
+
+use std::collections::BTreeMap;
+
+/// We consider the AST to contain parallelism if it contains:
+/// 1. A label which is associated with a parallel argument.
+/// 2. A GPU context introduction, corresponding to the use of 'with parir.gpu:'.
+fn ensure_parallelism_stmt(
+    acc: bool,
+    s: &Stmt,
+    par: &BTreeMap<String, Vec<ParKind>>
+) -> bool {
+    match s {
+        Stmt::Label {label, ..} if par.contains_key(label) => true,
+        Stmt::WithGpuContext {..} => true,
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::For {..} |
+        Stmt::While {..} | Stmt::If {..} | Stmt::Label {..} | Stmt::Call {..} => {
+            s.sfold(acc, |acc, s| ensure_parallelism_stmt(acc, s, par))
+        }
+    }
+}
+
+/// Ensures that the provided function AST contains at least some use of parallelism. If it does
+/// not, we produce a clear error message explaining what the problem is and how to fix it.
+pub fn ensure_parallelism(
+    ast: &FunDef,
+    par: &BTreeMap<String, Vec<ParKind>>
+) -> PyResult<()> {
+    let contains_parallelism = ast.body.sfold(false, |acc, s| {
+        ensure_parallelism_stmt(acc, s, par)
+    });
+    if !contains_parallelism {
+        let msg = concat!(
+            "The function does not contain any parallelism, which is not allowed. ",
+            "Try adding a label ('parir.label') in front of a parallelizable statement, ",
+            "and specify its parallelism using the 'parallelize' keyword argument. ",
+            "Alternatively, if you want to run sequential code on the GPU, wrap the ",
+            "code in a GPU context as 'with parir.gpu: ...'."
+        );
+        py_runtime_error!(ast.i, "{}", msg)
+    } else {
+        Ok(())
+    }
+}

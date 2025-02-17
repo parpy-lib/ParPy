@@ -44,6 +44,8 @@ fn compile_ir<'py>(
         ir_ast_cap.reference()
     };
 
+    py::ensure_parallelism(untyped_ir_def, &par)?;
+
     // Specialize the Python-like AST based on the provided arguments, inferring the types of all
     // expressions and inlining scalar argument values in the AST.
     let py_ir_ast = py::type_check(untyped_ir_def.clone(), &args)?;

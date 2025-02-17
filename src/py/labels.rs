@@ -9,33 +9,8 @@
 use super::ast::*;
 use crate::py_runtime_error;
 use crate::utils::err::*;
-use crate::utils::smap::SFold;
 
 use pyo3::prelude::*;
-
-fn assert_contains_labels_stmt(acc: bool, stmt: &Stmt) -> bool {
-    match stmt {
-        Stmt::WithGpuContext {..} => true,
-        Stmt::Label {..} => true,
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::For {..} |
-        Stmt::While {..} | Stmt::If {..} | Stmt::Call {..} =>
-            stmt.sfold(acc, assert_contains_labels_stmt)
-    }
-}
-
-fn assert_contains_labels(fun: &FunDef) -> PyResult<()> {
-    let res = fun.body.iter().fold(false, assert_contains_labels_stmt);
-    if !res {
-        let msg = concat!(
-            "This function contains no code that runs or could be configured ",
-            "to run on the GPU, due to missing labels on parallelizable ",
-            "statements.\n",
-        );
-        py_runtime_error!(fun.i, "{}", msg)
-    } else {
-        Ok(())
-    }
-}
 
 fn associate_labels_stmt(
     acc: PyResult<Vec<Stmt>>,
@@ -95,7 +70,6 @@ fn associate_labels_stmts(
 }
 
 pub fn associate_labels(fun: FunDef) -> PyResult<FunDef> {
-    assert_contains_labels(&fun)?;
     let body = associate_labels_stmts(vec![], fun.body)?;
     Ok(FunDef {body, ..fun})
 }
