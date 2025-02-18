@@ -75,9 +75,9 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     # to the exposed shared library function.
     return compile.get_cuda_wrapper(fn.__name__, key, cache)
 
-def compile_string(fun_name, code, includes=[], libs=[]):
+def compile_string(fun_name, code, includes=[], libs=[], extra_flags=[]):
     k = "string_" + key.generate_code_key(code)
-    compile.build_cuda_shared_library(k, code, includes, libs)
+    compile.build_cuda_shared_library(k, code, includes, libs, extra_flags)
     return compile.get_cuda_wrapper(fun_name, k, False)
 
 def print_compiled(fun, args, par=None):
