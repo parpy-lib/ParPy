@@ -55,20 +55,17 @@ def build_cuda_shared_library(key, source, includes=[], libs=[]):
             raise RuntimeError(f"Compilation of generated CUDA code failed with exit code {r.returncode}:\nstdout:\n{stdout}\nstderr:\n{stderr}\nWrote generated code to file {temp_file}.")
 
 def torch_to_ctype(dtype):
-    if dtype == torch.int8:
-        return ctypes.c_int8
-    elif dtype == torch.int16:
-        return ctypes.c_int16
-    elif dtype == torch.int32:
-        return ctypes.c_int32
-    elif dtype == torch.int64:
-        return ctypes.c_int64
-    elif dtype == torch.float16:
-        return ctypes.c_int16
-    elif dtype == torch.float32:
-        return ctypes.c_float
-    elif dtype == torch.float64:
-        return ctypes.c_double
+    mapping = {
+        torch.int8: ctypes.c_int8,
+        torch.int16: ctypes.c_int16,
+        torch.int32: ctypes.c_int32,
+        torch.int64: ctypes.c_int64,
+        torch.float16: ctypes.c_int16,
+        torch.float32: ctypes.c_float,
+        torch.float64: ctypes.c_double
+    }
+    if dtype in mapping:
+        return mapping[dtype]
     else:
         raise RuntimeError(f"Unknown torch dtype: {dtype}")
 
@@ -90,7 +87,8 @@ def get_cuda_wrapper(name, key, cache):
                 return [v for (_, v) in sorted(arg.items())]
             else:
                 return [arg]
-        args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
+        if any([isinstance(arg, dict) for arg in args]):
+            args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
 
         # Extract the C type of each argument
         def get_ctype(arg):
@@ -117,10 +115,7 @@ def get_cuda_wrapper(name, key, cache):
                     return arg.data_ptr()
             else:
                 return arg
-        def extract_args(args):
-            args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
-            return [value_or_ptr(arg) for arg in args]
-        ptr_args = extract_args(args)
+        ptr_args = [value_or_ptr(arg) for arg in args]
         getattr(lib, name)(*ptr_args)
     wrapper.__name__ = name
     return wrapper
