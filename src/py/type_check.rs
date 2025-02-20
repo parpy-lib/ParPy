@@ -609,19 +609,19 @@ fn type_check_stmt(
     stmt: Stmt
 ) -> PyResult<(BTreeMap<Name, Type>, Stmt)> {
     match stmt {
-        Stmt::Definition {id, expr, i, ..} => {
+        Stmt::Definition {id, expr, labels, i, ..} => {
             let expr = type_check_expr(&vars, expr)?;
             let ty = expr.get_type().clone();
             vars.insert(id.clone(), ty.clone());
-            Ok((vars, Stmt::Definition {ty, id, expr, i}))
+            Ok((vars, Stmt::Definition {ty, id, expr, labels, i}))
         },
-        Stmt::Assign {dst, expr, i} => {
+        Stmt::Assign {dst, expr, labels, i} => {
             let dst = type_check_expr(&vars, dst)?;
             let expr = type_check_expr(&vars, expr)?;
             let expr = coerce_type(expr, dst.get_type())?;
-            Ok((vars, Stmt::Assign {dst, expr, i}))
+            Ok((vars, Stmt::Assign {dst, expr, labels, i}))
         },
-        Stmt::For {var, lo, hi, step, body, i} => {
+        Stmt::For {var, lo, hi, step, body, labels, i} => {
             let lo = type_check_expr(&vars, lo)?;
             let lo = ensure_scalar_type(lo, ElemSize::I64)?;
             let hi = type_check_expr(&vars, hi)?;
@@ -629,7 +629,7 @@ fn type_check_stmt(
             let mut body_vars = vars.clone();
             body_vars.insert(var.clone(), Type::Tensor {sz: ElemSize::I64, shape: vec![]});
             let (_, body) = type_check_stmts(body_vars, body)?;
-            Ok((vars, Stmt::For {var, lo, hi, step, body, i}))
+            Ok((vars, Stmt::For {var, lo, hi, step, body, labels, i}))
         },
         Stmt::While {cond, body, i} => {
             let cond = validate_condition_type(type_check_expr(&vars, cond)?, &i)?;

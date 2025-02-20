@@ -17,6 +17,8 @@ fn ensure_parallelism_stmt(
     par: &BTreeMap<String, Vec<ParKind>>
 ) -> bool {
     match s {
+        Stmt::Definition {labels, ..} | Stmt::Assign {labels, ..} |
+        Stmt::For {labels, ..} if labels.iter().any(|l| par.contains_key(l)) => true,
         Stmt::Label {label, ..} if par.contains_key(label) => true,
         Stmt::WithGpuContext {..} => true,
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::For {..} |

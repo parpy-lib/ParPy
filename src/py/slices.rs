@@ -92,17 +92,23 @@ fn insert_loop_ids<'a>(ids: &'a [Name], e: Expr) -> Expr {
     }
 }
 
-fn insert_for_loops(lhs: Expr, rhs: Expr, dims: Vec<(i64, Name)>, i: &Info) -> Stmt {
+fn insert_for_loops(
+    lhs: Expr,
+    rhs: Expr,
+    dims: Vec<(i64, Name)>,
+    _labels: Vec<String>, // TODO: Properly insert these into the loops...
+    i: &Info
+) -> Stmt {
     let int = |v| Expr::Int {
         v,
         ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]},
         i: i.clone()
     };
-    let mut stmt = Stmt::Assign {dst: lhs, expr: rhs, i: i.clone()};
+    let mut stmt = Stmt::Assign {dst: lhs, expr: rhs, labels: vec![], i: i.clone()};
     for (shape, id) in dims.into_iter() {
         stmt = Stmt::For {
             var: id, lo: int(0), hi: int(shape), step: 1,
-            body: vec![stmt], i: i.clone()
+            body: vec![stmt], labels: vec![], i: i.clone()
         }
     }
     stmt
@@ -110,7 +116,7 @@ fn insert_for_loops(lhs: Expr, rhs: Expr, dims: Vec<(i64, Name)>, i: &Info) -> S
 
 fn replace_slices_with_for_loops_stmt(stmt: Stmt) -> PyResult<Stmt> {
     match stmt {
-        Stmt::Assign {dst, expr, i} => {
+        Stmt::Assign {dst, expr, labels, i} => {
             let rhs_dims = collect_slice_dims(0, &expr)?;
             if rhs_dims > 0 {
                 let lhs_dims = collect_slice_dims(0, &dst)?;
@@ -123,7 +129,7 @@ fn replace_slices_with_for_loops_stmt(stmt: Stmt) -> PyResult<Stmt> {
                         let dims = result_shape.into_iter()
                             .zip(ids.into_iter())
                             .collect::<Vec<(i64, Name)>>();
-                        Ok(insert_for_loops(dst, expr, dims, &i))
+                        Ok(insert_for_loops(dst, expr, dims, labels, &i))
                     } else {
                         let msg = format!(
                             "Internal error: Found {0} slices, but expected {1}.",
@@ -138,10 +144,9 @@ fn replace_slices_with_for_loops_stmt(stmt: Stmt) -> PyResult<Stmt> {
                     )
                 }
             } else {
-                Ok(Stmt::Assign {dst, expr, i})
+                Ok(Stmt::Assign {dst, expr, labels, i})
             }
         },
-        // TODO: Support attaching labels
         // TODO: Support slice operations reducing the dimensions (e.g., sum)
         Stmt::Definition {..} | Stmt::Label {..} | Stmt::For {..} |
         Stmt::While {..} | Stmt::If {..} | Stmt::WithGpuContext {..} |

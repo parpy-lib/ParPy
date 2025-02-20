@@ -73,9 +73,9 @@ fn inline_function_calls_stmt<'py>(
                 py_runtime_error!(i, "{}", msg)?
             }
         },
-        Stmt::For {var, lo, hi, step, body, i} => {
+        Stmt::For {var, lo, hi, step, body, labels, i} => {
             let body = inline_function_calls_stmts(body, ir_asts)?;
-            acc.push(Stmt::For {var, lo, hi, step, body, i});
+            acc.push(Stmt::For {var, lo, hi, step, body, labels, i});
         },
         Stmt::While {cond, body, i} => {
             let body = inline_function_calls_stmts(body, ir_asts)?;
@@ -90,21 +90,7 @@ fn inline_function_calls_stmt<'py>(
             let body = inline_function_calls_stmts(body, ir_asts)?;
             acc.push(Stmt::WithGpuContext {body, i});
         },
-        Stmt::Label {label, assoc, i} => {
-            match assoc {
-                Some(s) => {
-                    let mut inner_acc = inline_function_calls_stmt(vec![], *s, ir_asts)?;
-                    if inner_acc.len() == 1 {
-                        let assoc = Some(Box::new(inner_acc.remove(0)));
-                        acc.push(Stmt::Label {label, assoc, i})
-                    } else {
-                        py_runtime_error!(i, "Internal error: found label referring to invalid statement")?
-                    }
-                },
-                None => acc.push(Stmt::Label {label, assoc: None, i})
-            }
-        },
-        Stmt::Definition {..} | Stmt::Assign {..} => {
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Label {..} => {
             acc.push(stmt);
         }
     };

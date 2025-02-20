@@ -437,14 +437,17 @@ impl SFold<Expr> for Expr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
-    Definition {ty: Type, id: Name, expr: Expr, i: Info},
-    Assign {dst: Expr, expr: Expr, i: Info},
-    For {var: Name, lo: Expr, hi: Expr, step: i64, body: Vec<Stmt>, i: Info},
+    Definition {ty: Type, id: Name, expr: Expr, labels: Vec<String>, i: Info},
+    Assign {dst: Expr, expr: Expr, labels: Vec<String>, i: Info},
+    For {
+        var: Name, lo: Expr, hi: Expr, step: i64, body: Vec<Stmt>,
+        labels: Vec<String>, i: Info
+    },
     While {cond: Expr, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     WithGpuContext {body: Vec<Stmt>, i: Info},
     Call {func: String, args: Vec<Expr>, i: Info},
-    Label {label: String, assoc: Option<Box<Stmt>>, i: Info}
+    Label {label: String, i: Info}
 }
 
 impl InfoNode for Stmt {
@@ -469,19 +472,19 @@ impl SMapAccum<Expr> for Stmt {
         f: impl Fn(A, Expr) -> Result<(A, Expr), E>
     ) -> Result<(A, Stmt), E> {
         match self {
-            Stmt::Definition {ty, id, expr, i} => {
+            Stmt::Definition {ty, id, expr, labels, i} => {
                 let (acc, expr) = f(acc?, expr)?;
-                Ok((acc, Stmt::Definition {ty, id, expr, i}))
+                Ok((acc, Stmt::Definition {ty, id, expr, labels, i}))
             },
-            Stmt::Assign {dst, expr, i} => {
+            Stmt::Assign {dst, expr, labels, i} => {
                 let (acc, dst) = f(acc?, dst)?;
                 let (acc, expr) = f(acc, expr)?;
-                Ok((acc, Stmt::Assign {dst, expr, i}))
+                Ok((acc, Stmt::Assign {dst, expr, labels, i}))
             },
-            Stmt::For {var, lo, hi, step, body, i} => {
+            Stmt::For {var, lo, hi, step, body, labels, i} => {
                 let (acc, lo) = f(acc?, lo)?;
                 let (acc, hi) = f(acc, hi)?;
-                Ok((acc, Stmt::For {var, lo, hi, step, body, i}))
+                Ok((acc, Stmt::For {var, lo, hi, step, body, labels, i}))
             },
             Stmt::While {cond, body, i} => {
                 let (acc, cond) = f(acc?, cond)?;
@@ -525,9 +528,9 @@ impl SMapAccum<Stmt> for Stmt {
         f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
     ) -> Result<(A, Stmt), E> {
         match self {
-            Stmt::For {var, lo, hi, step, body, i} => {
+            Stmt::For {var, lo, hi, step, body, labels, i} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Stmt::For {var, lo, hi, step, body, i}))
+                Ok((acc, Stmt::For {var, lo, hi, step, body, labels, i}))
             },
             Stmt::While {cond, body, i} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
@@ -542,17 +545,8 @@ impl SMapAccum<Stmt> for Stmt {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::WithGpuContext {body, i}))
             },
-            Stmt::Label {label, assoc, i} => {
-                let (acc, assoc) = match assoc {
-                    Some(a) => {
-                        let (acc, a) = f(acc?, *a)?;
-                        (acc, Some(Box::new(a)))
-                    },
-                    None => (acc?, None)
-                };
-                Ok((acc, Stmt::Label {label, assoc, i}))
-            },
-            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Call {..} => {
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Label {..} |
+            Stmt::Call {..} => {
                 Ok((acc?, self))
             }
         }
@@ -570,11 +564,8 @@ impl SFold<Stmt> for Stmt {
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
             Stmt::WithGpuContext {body, ..} => body.sfold_result(acc, &f),
-            Stmt::Label {assoc, ..} => match assoc {
-                Some(a) => f(acc?, &a),
-                None => acc
-            },
-            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Call {..} => acc
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Label {..} |
+            Stmt::Call {..} => acc
         }
     }
 }

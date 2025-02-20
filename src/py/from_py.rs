@@ -369,7 +369,7 @@ fn construct_expr_stmt(
                     1 => extract_label(args.remove(0)),
                     _ => py_runtime_error!(i, "Label expects one argument")
                 }?;
-                Ok(Stmt::Label {label, assoc: None, i: i.clone()})
+                Ok(Stmt::Label {label, i: i.clone()})
             },
             Builtin::Ext {id} => {
                 Ok(Stmt::Call {func: id, args, i: i.clone()})
@@ -440,7 +440,7 @@ fn convert_stmt<'py, 'a>(
         let body = convert_stmts(stmt.getattr("body")?, env)?;
 
         if stmt.getattr("orelse")?.len()? == 0 {
-            Ok(Stmt::For {var, lo, hi, step, body, i})
+            Ok(Stmt::For {var, lo, hi, step, body, labels: vec![], i})
         } else {
             py_runtime_error!(i, "For-loops with an else-clause are not supported")
         }
@@ -458,7 +458,7 @@ fn convert_stmt<'py, 'a>(
             let expr = convert_expr(stmt.getattr("value")?, env)?;
             match (dst, expr) {
                 (dst @ (Expr::Var {..} | Expr::Subscript {..}), expr) => {
-                    Ok(Stmt::Assign {dst, expr, i})
+                    Ok(Stmt::Assign {dst, expr, labels: vec![], i})
                 },
                 _ => py_runtime_error!(i, "Unsupported form of assignment")
             }
@@ -474,7 +474,7 @@ fn convert_stmt<'py, 'a>(
             ty: Type::Unknown,
             i: i.clone()
         };
-        Ok(Stmt::Assign {dst, expr, i})
+        Ok(Stmt::Assign {dst, expr, labels: vec![], i})
     } else if stmt.is_instance(&env.ast.getattr("While")?)? {
         let cond = convert_expr(stmt.getattr("test")?, env)?;
         let body = convert_stmts(stmt.getattr("body")?, env)?;
@@ -997,6 +997,7 @@ mod test {
                 ty: Type::Unknown,
                 i: mkinfo(1, 4, 1, 5)
             },
+            labels: vec![],
             i: mkinfo(1, 0, 1, 5)
         });
     }
@@ -1030,9 +1031,11 @@ mod test {
                         ty: Type::Unknown,
                         i: mkinfo(2, 9, 2, 10)
                     },
+                    labels: vec![],
                     i: mkinfo(2, 2, 2, 10)
                 }
             ],
+            labels: vec![],
             i: mkinfo(1, 0, 2, 10)
         })
     }
@@ -1066,9 +1069,11 @@ mod test {
                         ty: Type::Unknown,
                         i: mkinfo(2, 9, 2, 10)
                     },
+                    labels: vec![],
                     i: mkinfo(2, 2, 2, 10)
                 }
             ],
+            labels: vec![],
             i: mkinfo(1, 0, 2, 10)
         });
     }
@@ -1096,6 +1101,7 @@ mod test {
                         i: mkinfo(2, 2, 2, 3)
                     },
                     expr: Expr::Int {v: 1, ty: Type::Unknown, i: mkinfo(2, 6, 2, 7)},
+                    labels: vec![],
                     i: mkinfo(2, 2, 2, 7)
                 }
             ],
@@ -1107,6 +1113,7 @@ mod test {
                         i: mkinfo(4, 2, 4, 3)
                     },
                     expr: Expr::Int {v: 2, ty: Type::Unknown, i: mkinfo(4, 6, 4, 7)},
+                    labels: vec![],
                     i: mkinfo(4, 2, 4, 7)
                 }
             ],
@@ -1127,6 +1134,7 @@ mod test {
                         i: mkinfo(2, 2, 2, 3)
                     },
                     expr: Expr::Int {v: 1, ty: Type::Unknown, i: mkinfo(2, 6, 2, 7)},
+                    labels: vec![],
                     i: mkinfo(2, 2, 2, 7)
                 }
             ],

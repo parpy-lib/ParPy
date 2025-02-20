@@ -314,27 +314,40 @@ fn convert_par_spec(p: Option<&Vec<ParKind>>) -> LoopParallelism {
         })
 }
 
+fn lookup_label(
+    mut labels: Vec<String>,
+    i: &Info
+) -> CompileResult<Option<String>> {
+    if labels.is_empty() {
+        Ok(None)
+    } else if labels.len() == 1 {
+        Ok(Some(labels.remove(0)))
+    } else {
+        parir_compile_error!(i, "Multiple labels cannot be associated with one statement")
+    }
+}
+
 fn to_ir_stmt(
     env: &IREnv,
-    label: Option<String>,
     stmt: py_ast::Stmt
 ) -> CompileResult<Stmt> {
     match stmt {
-        py_ast::Stmt::Definition {ty, id, expr, i} => {
+        py_ast::Stmt::Definition {ty, id, expr, i, ..} => {
             let ty = to_ir_type(env, &i, ty)?;
             let expr = to_ir_expr(env, expr)?;
             Ok(Stmt::Definition {ty, id, expr, i})
         },
-        py_ast::Stmt::Assign {dst, expr, i} => {
+        py_ast::Stmt::Assign {dst, expr, i, ..} => {
             let dst = to_ir_expr(env, dst)?;
             let expr = to_ir_expr(env, expr)?;
             Ok(Stmt::Assign {dst, expr, i})
         },
-        py_ast::Stmt::For {var, lo, hi, step, body, i} => {
+        py_ast::Stmt::For {var, lo, hi, step, body, labels, i} => {
             let lo = to_ir_expr(env, lo)?;
             let hi = to_ir_expr(env, hi)?;
             let body = to_ir_stmts(env, body)?;
-            let par = convert_par_spec(label.and_then(|l| env.par.get(&l)));
+            let l = lookup_label(labels, &i)?;
+            let par = convert_par_spec(l.and_then(|l| env.par.get(&l)));
             Ok(Stmt::For {var, lo, hi, step, body, par, i})
         },
         py_ast::Stmt::If {cond, thn, els, i} => {
@@ -362,11 +375,8 @@ fn to_ir_stmt(
         py_ast::Stmt::Call {func, i, ..} => {
             parir_compile_error!(i, "Found unsupported function call to {func}")
         },
-        py_ast::Stmt::Label {label, assoc, i} => {
-            match assoc {
-                Some(s) => to_ir_stmt(env, Some(label), *s),
-                None => parir_compile_error!(i, "Found label without associated statement")
-            }
+        py_ast::Stmt::Label {i, ..} => {
+            parir_compile_error!(i, "Found label without associated statement")
         }
     }
 }
@@ -376,7 +386,7 @@ fn to_ir_stmts(
     stmts: Vec<py_ast::Stmt>
 ) -> CompileResult<Vec<Stmt>> {
     stmts.into_iter()
-        .map(|s| to_ir_stmt(env, None, s))
+        .map(|s| to_ir_stmt(env, s))
         .collect::<_>()
 }
 

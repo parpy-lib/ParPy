@@ -98,12 +98,12 @@ impl Symbolize for Expr {
 impl Symbolize for Stmt {
     fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<Stmt> {
         match self {
-            Stmt::Definition {ty, id, expr, i} => {
+            Stmt::Definition {ty, id, expr, labels, i} => {
                 let (env, id) = env.set_symbol(id);
                 let (env, expr) = expr.symbolize(env)?;
-                Ok((env, Stmt::Definition {ty, id, expr, i}))
+                Ok((env, Stmt::Definition {ty, id, expr, labels, i}))
             },
-            Stmt::Assign {dst, expr, i, ..} => {
+            Stmt::Assign {dst, expr, labels, i, ..} => {
                 // If we assign to a variable without a symbol, this means it is being introduced
                 // here. In this case, we replace the assign node with a definition node,
                 // indicating that this introduces and assigns a value to a new variable.
@@ -111,21 +111,21 @@ impl Symbolize for Stmt {
                     Expr::Var {id, ty, i} if !env.has_symbol(&id) => {
                         let (env, id) = env.set_symbol(id);
                         let (env, expr) = expr.symbolize(env)?;
-                        Ok((env, Stmt::Definition {ty, id, expr, i}))
+                        Ok((env, Stmt::Definition {ty, id, expr, labels, i}))
                     },
                     _ => {
                         let (env, dst) = dst.symbolize(env)?;
                         let (env, expr) = expr.symbolize(env)?;
-                        Ok((env, Stmt::Assign {dst, expr, i}))
+                        Ok((env, Stmt::Assign {dst, expr, labels, i}))
                     }
                 }
             },
-            Stmt::For {var, lo, hi, step, body, i} => {
+            Stmt::For {var, lo, hi, step, body, labels, i} => {
                 let (body_env, var) = env.clone().set_symbol(var);
                 let (body_env, lo) = lo.symbolize(body_env)?;
                 let (body_env, hi) = hi.symbolize(body_env)?;
                 let (_, body) = body.symbolize(body_env)?;
-                Ok((env, Stmt::For {var, lo, hi, step, body, i}))
+                Ok((env, Stmt::For {var, lo, hi, step, body, labels, i}))
             },
             Stmt::While {..} | Stmt::If {..} | Stmt::WithGpuContext {..} |
             Stmt::Call {..} | Stmt::Label {..} => {
@@ -208,7 +208,7 @@ mod test {
         let id = name("x");
         let i = Info::default();
         let s = Stmt::Assign {
-            dst: nvar(&id), expr: int(0), i: i.clone()
+            dst: nvar(&id), expr: int(0), labels: vec![], i: i.clone()
         };
         let env = sym_env(vec![]);
         let (env, stmt) = s.symbolize(env).unwrap();
@@ -226,7 +226,7 @@ mod test {
         let id = name("x");
         let i = Info::default();
         let s = Stmt::Assign {
-            dst: nvar(&id), expr: int(0), i: i.clone()
+            dst: nvar(&id), expr: int(0), labels: vec![], i: i.clone()
         };
         let id_sym = id.clone().with_new_sym();
         let env = sym_env(vec![id_sym.clone()]);
@@ -250,7 +250,10 @@ mod test {
             lo: int(0),
             hi: int(10),
             step: 1,
-            body: vec![Stmt::Assign {dst: nvar(&y), expr: nvar(&x), i: i.clone()}],
+            body: vec![Stmt::Assign {
+                dst: nvar(&y), expr: nvar(&x), labels: vec![], i: i.clone()
+            }],
+            labels: vec![],
             i: i.clone()
         };
         let env = sym_env(vec![]);

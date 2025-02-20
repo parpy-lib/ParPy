@@ -9,68 +9,92 @@
 use super::ast::*;
 use crate::py_runtime_error;
 use crate::utils::err::*;
+use crate::utils::info::*;
 
 use pyo3::prelude::*;
 
-fn associate_labels_stmt(
-    acc: PyResult<Vec<Stmt>>,
-    stmt: Stmt
-) -> PyResult<Vec<Stmt>> {
-    let stmt = match stmt {
-        Stmt::For {var, lo, hi, step, body, i} => {
-            let body = associate_labels_stmts(vec![], body)?;
-            Stmt::For {var, lo, hi, step, body, i}
+fn add_labels_stmt(
+    stmt: Stmt,
+    mut l: Vec<String>
+) -> PyResult<Stmt> {
+    match stmt {
+        Stmt::Definition {ty, id, expr, mut labels, i} => {
+            labels.append(&mut l);
+            Ok(Stmt::Definition {ty, id, expr, labels, i})
         },
-        Stmt::If {cond, thn, els, i} => {
-            let thn = associate_labels_stmts(vec![], thn)?;
-            let els = associate_labels_stmts(vec![], els)?;
-            Stmt::If {cond, thn, els, i}
+        Stmt::Assign {dst, expr, mut labels, i} => {
+            labels.append(&mut l);
+            Ok(Stmt::Assign {dst, expr, labels, i})
         },
-        Stmt::While {cond, body, i} => {
-            let body = associate_labels_stmts(vec![], body)?;
-            Stmt::While {cond, body, i}
+        Stmt::For {var, lo, hi, step, body, mut labels, i} => {
+            labels.append(&mut l);
+            Ok(Stmt::For {var, lo, hi, step, body, labels, i})
         },
-        Stmt::WithGpuContext {body, i} => {
-            let body = associate_labels_stmts(vec![], body)?;
-            Stmt::WithGpuContext {body, i}
-        },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Call {..} |
-        Stmt::Label {..} => {
-            stmt
-        }
-    };
-    let mut acc = acc?;
-    match acc.pop() {
-        Some(Stmt::Label {label, assoc: None, i}) => {
-            match stmt {
-                Stmt::Label {..} | Stmt::For {..} => {
-                    acc.push(Stmt::Label {label, assoc: Some(Box::new(stmt)), i});
-                    Ok(acc)
-                },
-                _ => py_runtime_error!(i, "Labels cannot be associated with non-parallelizable statements")
-            }
-        },
-        Some(top_stmt) => {
-            acc.push(top_stmt);
-            acc.push(stmt);
-            Ok(acc)
-        },
-        _ => {
-            acc.push(stmt);
-            Ok(acc)
-        }
+        Stmt::If {..} | Stmt::While {..} | Stmt::WithGpuContext {..} |
+        Stmt::Call {..} | Stmt::Label {..} =>
+            py_runtime_error!(
+                stmt.get_info(),
+                "Cannot associate label with non-parallelizable statement"
+            )
     }
 }
 
-fn associate_labels_stmts(
-    acc: Vec<Stmt>,
-    body: Vec<Stmt>
-) -> PyResult<Vec<Stmt>> {
-    body.into_iter().fold(Ok(acc), associate_labels_stmt)
+fn associate_labels_stmt(
+    acc: PyResult<(Vec<Stmt>, Vec<String>)>,
+    s: Stmt
+) -> PyResult<(Vec<Stmt>, Vec<String>)> {
+    let (mut stmts, mut labels) = acc?;
+    if let Stmt::Label {label, ..} = s {
+        labels.push(label);
+        Ok((stmts, labels))
+    } else {
+        let s = if !labels.is_empty() {
+            add_labels_stmt(s, labels)
+        } else {
+            Ok(s)
+        }?;
+        let s = match s {
+            Stmt::For {var, lo, hi, step, body, labels, i} => {
+                let body = associate_labels_stmts(body)?;
+                Stmt::For {var, lo, hi, step, body, labels, i}
+            },
+            Stmt::While {cond, body, i} => {
+                let body = associate_labels_stmts(body)?;
+                Stmt::While {cond, body, i}
+            },
+            Stmt::If {cond, thn, els, i} => {
+                let thn = associate_labels_stmts(thn)?;
+                let els = associate_labels_stmts(els)?;
+                Stmt::If {cond, thn, els, i}
+            },
+            Stmt::WithGpuContext {body, i} => {
+                let body = associate_labels_stmts(body)?;
+                Stmt::WithGpuContext {body, i}
+            },
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Call {..} |
+            Stmt::Label {..} => {
+                s
+            }
+        };
+        stmts.push(s);
+        Ok((stmts, vec![]))
+    }
 }
 
+fn associate_labels_stmts(stmts: Vec<Stmt>) -> PyResult<Vec<Stmt>> {
+    let (stmts, labels) = stmts.into_iter()
+        .fold(Ok((vec![], vec![])), associate_labels_stmt)?;
+    if labels.is_empty() {
+        Ok(stmts)
+    } else {
+        let i = stmts.last().map(|s| s.get_info()).unwrap_or(Info::default());
+        py_runtime_error!(i, "Found labels not associated with any statement")
+    }
+}
+
+
 pub fn associate_labels(fun: FunDef) -> PyResult<FunDef> {
-    let body = associate_labels_stmts(vec![], fun.body)?;
+    let body = associate_labels_stmts(fun.body)?;
     Ok(FunDef {body, ..fun})
 }
 
@@ -92,15 +116,16 @@ mod test {
     fn assoc_for_loop() {
         let x = Name::sym_str("x");
         let body = vec![
-            Stmt::Label {label: "x".to_string(), assoc: None, i: i()},
-            Stmt::For {var: x.clone(), lo: int(1), hi: int(7), step: 2, body: vec![], i: i()}
+            Stmt::Label {label: "x".to_string(), i: i()},
+            Stmt::For {
+                var: x.clone(), lo: int(1), hi: int(7), step: 2, body: vec![],
+                labels: vec![], i: i()
+            }
         ];
-        let res = associate_labels_stmts(vec![], body).unwrap();
-        assert_eq!(res, vec![Stmt::Label {
-            label: "x".to_string(), assoc: Some(Box::new(Stmt::For {
-                var: x, lo: int(1), hi: int(7), step: 2, body: vec![], i: i()
-            })),
-            i: i()
+        let res = associate_labels_stmts(body).unwrap();
+        assert_eq!(res, vec![Stmt::For {
+            var: x, lo: int(1), hi: int(7), step: 2, body: vec![],
+            labels: vec!["x".to_string()], i: i()
         }]);
     }
 
@@ -108,24 +133,24 @@ mod test {
     fn assoc_nested_loops() {
         let x = Name::sym_str("x");
         let y = Name::sym_str("y");
-        let inner_for = Stmt::For {
-            var: y.clone(), lo: int(1), hi: int(10), step: 1, body: vec![], i: i()
+        let inner_for = |l| Stmt::For {
+            var: y.clone(), lo: int(1), hi: int(10), step: 1, body: vec![],
+            labels: l, i: i()
         };
         let body = vec![
             Stmt::For {
                 var: x.clone(), lo: int(1), hi: int(7), step: 1, body: vec![
-                    Stmt::Label {label: "i".to_string(), assoc: None, i: i()},
-                    inner_for.clone()
+                    Stmt::Label {label: "i".to_string(), i: i()},
+                    inner_for(vec![])
                 ],
-                i: i()
+                labels: vec![], i: i()
             }
         ];
-        let res = associate_labels_stmts(vec![], body).unwrap();
+        let res = associate_labels_stmts(body).unwrap();
         assert_eq!(res, vec![Stmt::For {
-            var: x.clone(), lo: int(1), hi: int(7), step: 1, body: vec![Stmt::Label {
-                label: "i".to_string(), assoc: Some(Box::new(inner_for)), i: i()
-            }],
-            i: i()
+            var: x.clone(), lo: int(1), hi: int(7), step: 1,
+            body: vec![inner_for(vec!["i".to_string()])],
+            labels: vec![], i: i()
         }]);
     }
 }

@@ -195,15 +195,8 @@ impl PrettyPrint for Stmt {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{indent}{func}({args})"))
             },
-            Stmt::Label {label, assoc, ..} => {
-                let (env, assoc) = match assoc {
-                    Some(a) => {
-                        let (env, a) = a.pprint(env);
-                        (env, format!("\n{a}"))
-                    },
-                    None => (env, "".to_string())
-                };
-                (env, format!("{indent}parir.label(\"{label}\"){assoc}"))
+            Stmt::Label {label, ..} => {
+                (env, format!("{indent}parir.label(\"{label}\")"))
             }
         }
     }
