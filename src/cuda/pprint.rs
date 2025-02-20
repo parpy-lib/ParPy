@@ -111,7 +111,7 @@ pub fn print_binop(op: &BinOp, argty: &Type, ty: &Type) -> String {
         BinOp::Add => "+",
         BinOp::Sub => "-",
         BinOp::Mul => "*",
-        BinOp::Div => "/",
+        BinOp::FloorDiv | BinOp::Div => "/",
         BinOp::Rem => "%",
         BinOp::Pow => match ty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "hpow",

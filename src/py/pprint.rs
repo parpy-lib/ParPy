@@ -33,7 +33,14 @@ impl PrettyPrint for UnOp {
         let s = match self {
             UnOp::Sub => "-",
             UnOp::Not => "!",
-            UnOp::BitNeg => "~"
+            UnOp::BitNeg => "~",
+            UnOp::Exp => "exp",
+            UnOp::Log => "log",
+            UnOp::Cos => "cos",
+            UnOp::Sin => "sin",
+            UnOp::Sqrt => "sqrt",
+            UnOp::Tanh => "tanh",
+            UnOp::Abs => "abs"
         };
         (env, s.to_string())
     }
@@ -47,7 +54,7 @@ impl PrettyPrint for BinOp {
             BinOp::Mul => "*",
             BinOp::FloorDiv => "//",
             BinOp::Div => "/",
-            BinOp::Mod => "%",
+            BinOp::Rem => "%",
             BinOp::Pow => "**",
             BinOp::And => "&&",
             BinOp::Or => "||",
@@ -61,7 +68,10 @@ impl PrettyPrint for BinOp {
             BinOp::Leq => "<=",
             BinOp::Geq => ">=",
             BinOp::Lt => "<",
-            BinOp::Gt => ">"
+            BinOp::Gt => ">",
+            BinOp::Max => "max",
+            BinOp::Min => "min",
+            BinOp::Atan2 => "atan2"
         };
         (env, s.to_string())
     }

@@ -1,4 +1,5 @@
 pub mod ast;
+mod constant_fold;
 mod from_py;
 mod inline_calls;
 mod inline_const;

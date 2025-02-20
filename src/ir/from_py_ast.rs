@@ -128,38 +128,6 @@ fn to_builtin(
     }
 }
 
-fn to_ir_unop(unop: py_ast::UnOp) -> UnOp {
-    match unop {
-        py_ast::UnOp::Sub => UnOp::Sub,
-        py_ast::UnOp::Not => UnOp::Not,
-        py_ast::UnOp::BitNeg => UnOp::BitNeg
-    }
-}
-
-fn to_ir_binop(binop: py_ast::BinOp) -> BinOp {
-    match binop {
-        py_ast::BinOp::Add => BinOp::Add,
-        py_ast::BinOp::Sub => BinOp::Sub,
-        py_ast::BinOp::Mul => BinOp::Mul,
-        py_ast::BinOp::FloorDiv | py_ast::BinOp::Div => BinOp::Div,
-        py_ast::BinOp::Mod => BinOp::Rem,
-        py_ast::BinOp::Pow => BinOp::Pow,
-        py_ast::BinOp::And => BinOp::And,
-        py_ast::BinOp::Or => BinOp::Or,
-        py_ast::BinOp::BitAnd => BinOp::BitAnd,
-        py_ast::BinOp::BitOr => BinOp::BitOr,
-        py_ast::BinOp::BitXor => BinOp::BitXor,
-        py_ast::BinOp::BitShl => BinOp::BitShl,
-        py_ast::BinOp::BitShr => BinOp::BitShr,
-        py_ast::BinOp::Eq => BinOp::Eq,
-        py_ast::BinOp::Neq => BinOp::Neq,
-        py_ast::BinOp::Leq => BinOp::Leq,
-        py_ast::BinOp::Geq => BinOp::Geq,
-        py_ast::BinOp::Lt => BinOp::Lt,
-        py_ast::BinOp::Gt => BinOp::Gt,
-    }
-}
-
 fn unwrap_tensor_indices(
     env: &IREnv,
     target: py_ast::Expr,
@@ -252,14 +220,12 @@ fn to_ir_expr(
             Ok(Expr::Float {v, ty, i})
         },
         py_ast::Expr::UnOp {op, arg, ty, i} => {
-            let op = to_ir_unop(op);
             let arg = Box::new(to_ir_expr(env, *arg)?);
             let ty = to_ir_type(env, &i, ty)?;
             Ok(Expr::UnOp {op, arg, ty, i})
         },
         py_ast::Expr::BinOp {lhs, op, rhs, ty, i} => {
             let lhs = Box::new(to_ir_expr(env, *lhs)?);
-            let op = to_ir_binop(op);
             let rhs = Box::new(to_ir_expr(env, *rhs)?);
             let ty = to_ir_type(env, &i, ty)?;
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})

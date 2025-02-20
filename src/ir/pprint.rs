@@ -25,54 +25,6 @@ impl PrettyPrint for Type {
     }
 }
 
-impl PrettyPrint for UnOp {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let s = match self {
-            UnOp::Sub => "-",
-            UnOp::Not => "!",
-            UnOp::BitNeg => "~",
-            UnOp::Exp => "exp",
-            UnOp::Log => "log",
-            UnOp::Cos => "cos",
-            UnOp::Sin => "sin",
-            UnOp::Sqrt => "sqrt",
-            UnOp::Tanh => "tanh",
-            UnOp::Abs => "abs"
-        };
-        (env, s.to_string())
-    }
-}
-
-impl PrettyPrint for BinOp {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let s = match self {
-            BinOp::Add => "+",
-            BinOp::Sub => "-",
-            BinOp::Mul => "*",
-            BinOp::Div => "/",
-            BinOp::Rem => "%",
-            BinOp::Pow => "**",
-            BinOp::And => "&&",
-            BinOp::Or => "||",
-            BinOp::BitAnd => "&",
-            BinOp::BitOr => "|",
-            BinOp::BitXor => "^",
-            BinOp::BitShl => "<<",
-            BinOp::BitShr => ">>",
-            BinOp::Eq => "==",
-            BinOp::Neq => "!=",
-            BinOp::Leq => "<=",
-            BinOp::Geq => ">=",
-            BinOp::Lt => "<",
-            BinOp::Gt => ">",
-            BinOp::Max => "max",
-            BinOp::Min => "min",
-            BinOp::Atan2 => "atan2"
-        };
-        (env, s.to_string())
-    }
-}
-
 impl PrettyPrint for Expr {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {

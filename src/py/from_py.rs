@@ -81,7 +81,7 @@ fn convert_bin_op<'py, 'a>(
     } else if binop.is_instance(&env.ast.getattr("FloorDiv")?)? {
         Ok(BinOp::FloorDiv)
     } else if binop.is_instance(&env.ast.getattr("Mod")?)? {
-        Ok(BinOp::Mod)
+        Ok(BinOp::Rem)
     } else if binop.is_instance(&env.ast.getattr("Pow")?)? {
         Ok(BinOp::Pow)
     } else if binop.is_instance(&env.ast.getattr("BitAnd")?)? {

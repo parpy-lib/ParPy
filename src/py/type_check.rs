@@ -297,6 +297,10 @@ fn type_check_unop(
                 py_type_error!(i, "Invalid type {ty} of bitwise negation")
             }
         },
+        UnOp::Exp | UnOp::Log | UnOp::Cos | UnOp::Sin | UnOp::Sqrt |
+        UnOp::Tanh | UnOp::Abs => {
+            py_type_error!(i, "Type-checking not implemented for this operator")
+        }
     }
 }
 
@@ -321,7 +325,7 @@ fn type_check_binop(
             }
         },
         // Arithmetic operations only supported for integers
-        BinOp::FloorDiv | BinOp::Mod => {
+        BinOp::FloorDiv | BinOp::Rem => {
             if ty.is_signed_integer() {
                 Ok(ty)
             } else {
@@ -359,6 +363,9 @@ fn type_check_binop(
                 py_type_error!(i, "Invalid type {ty} of boolean comparison operation")
             }
         },
+        BinOp::Max | BinOp::Min | BinOp::Atan2 => {
+            py_type_error!(i, "Type-checking not implemented for this operator")
+        }
     }?;
     Ok((Box::new(lhs), ty, Box::new(rhs)))
 }

@@ -191,13 +191,15 @@ impl SFold<Type> for Type {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UnOp {
-    Sub, Not, BitNeg
+    Sub, Not, BitNeg, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BinOp {
-    Add, Sub, Mul, FloorDiv, Div, Mod, Pow, And, Or,
-    BitAnd, BitOr, BitXor, BitShl, BitShr, Eq, Neq, Leq, Geq, Lt, Gt
+    Add, Sub, Mul, FloorDiv, Div, Rem, Pow, And, Or,
+    BitAnd, BitOr, BitXor, BitShl, BitShr,
+    Eq, Neq, Leq, Geq, Lt, Gt,
+    Max, Min, Atan2
 }
 
 #[derive(Clone, Debug, PartialEq)]

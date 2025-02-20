@@ -4,23 +4,14 @@ use crate::utils::smap::{SFold, SMapAccum};
 
 // Reuse the definition of element sizes from the Python AST.
 pub use crate::py::ast::ElemSize;
+pub use crate::py::ast::UnOp;
+pub use crate::py::ast::BinOp;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Boolean,
     Tensor {sz: ElemSize, shape: Vec<i64>},
     Struct {id: Name},
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum UnOp {
-    Sub, Not, BitNeg, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum BinOp {
-    Add, Sub, Mul, Div, Rem, Pow, And, Or, BitAnd, BitOr, BitXor, BitShl, BitShr,
-    Eq, Neq, Leq, Geq, Lt, Gt, Max, Min, Atan2
 }
 
 impl BinOp {
@@ -35,7 +26,7 @@ impl BinOp {
             BinOp::Leq | BinOp::Geq | BinOp::Lt | BinOp::Gt => 8,
             BinOp::BitShl | BinOp::BitShr => 10,
             BinOp::Add | BinOp::Sub => 11,
-            BinOp::Mul | BinOp::Div | BinOp::Rem => 12,
+            BinOp::Mul | BinOp::FloorDiv | BinOp::Div | BinOp::Rem => 12,
             BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => 20
         }
     }
