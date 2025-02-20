@@ -57,7 +57,7 @@ pub enum Type {
 impl Type {
     pub fn get_scalar_elem_size<'a>(&'a self) -> Option<&'a ElemSize> {
         match self {
-            Type::Tensor {sz, shape} if shape.len() == 0 => Some(sz),
+            Type::Tensor {sz, shape} if shape.is_empty() => Some(sz),
             _ => None
         }
     }
@@ -75,6 +75,14 @@ impl Type {
     pub fn is_floating_point(&self) -> bool {
         self.get_scalar_elem_size()
             .is_some_and(|sz| sz.is_floating_point())
+    }
+
+    pub fn is_arith_tensor(&self) -> bool {
+        if let Type::Tensor {sz, shape} = self {
+            !shape.is_empty() && (sz.is_signed_integer() || sz.is_floating_point())
+        } else {
+            false
+        }
     }
 
     pub fn get_dict_type_fields(&self) -> BTreeMap<String, Type> {

@@ -302,6 +302,13 @@ fn type_check_binop(
     let lhs = coerce_type(lhs, &ty)?;
     let rhs = coerce_type(rhs, &ty)?;
     let ty = match op {
+        // Tensor-wide arithmetic operations for slicing
+        BinOp::Add | BinOp::Sub | BinOp::Mul if ty.is_arith_tensor() => {
+            Ok(ty)
+        },
+        _ if ty.is_arith_tensor() => {
+            py_type_error!(i, "Operation not supported on tensors")
+        },
         // Arithmetic operations supporting either integers or floating point numbers
         BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => {
             if ty.is_signed_integer() || ty.is_floating_point() {
@@ -424,6 +431,10 @@ fn extract_slice_dims(idx: &Expr, shape: &[i64]) -> PyResult<Vec<i64>> {
     match idx {
         Expr::Tuple {elems, ..} => {
             let (_, dims) = elems.sfold_result(Ok((shape, vec![])), extract_slice_dim)?;
+            Ok(dims)
+        },
+        Expr::Slice {..} => {
+            let (_, dims) = extract_slice_dim((shape, vec![]), idx)?;
             Ok(dims)
         },
         _ => Ok(vec![0])

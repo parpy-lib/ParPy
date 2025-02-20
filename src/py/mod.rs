@@ -6,6 +6,7 @@ mod inline_const;
 mod labels;
 mod par;
 mod pprint;
+mod slices;
 mod symbolize;
 mod type_check;
 
@@ -49,7 +50,9 @@ pub fn specialize_ast_on_arguments<'py>(
     let ast = inline_const::inline_scalar_values(ast, &args)?;
     let ast = type_check::type_check_body(ast)?;
 
-    // TODO: replace slices with for-loops
+    // Replace slice statements with for-loops
+    let ast = slices::replace_slices_with_for_loops(ast)?;
+
     Ok(ast)
 }
 

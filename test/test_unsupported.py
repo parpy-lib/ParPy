@@ -6,12 +6,6 @@ import parir
 import pytest
 import torch
 
-def test_slicing_rejected():
-    with pytest.raises(RuntimeError):
-        @parir.jit
-        def add_slice(x, y, out, N):
-            out[:N] = x[:N] + y[:N]
-
 def test_while_else_rejected():
     with pytest.raises(RuntimeError):
         @parir.jit
