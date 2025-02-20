@@ -267,6 +267,23 @@ fn convert_expr<'py, 'a>(
         let target = convert_expr(expr.getattr("value")?, env)?;
         let idx = convert_expr(expr.getattr("slice")?, env)?;
         Ok(Expr::Subscript {target: Box::new(target), idx: Box::new(idx), ty, i})
+    } else if expr.is_instance(&env.ast.getattr("Slice")?)? {
+        let lo = expr.getattr("lower")?;
+        let lo = if lo.is_none() {
+            None
+        } else {
+            Some(Box::new(convert_expr(lo, env)?))
+        };
+        let hi = expr.getattr("upper")?;
+        let hi = if hi.is_none() {
+            py_runtime_error!(i, "Slices must have an explicit upper bound")?
+        } else {
+            Box::new(convert_expr(hi, env)?)
+        };
+        if !expr.getattr("step")?.is_none() {
+            py_runtime_error!(i, "Slices with a step size are not supported")?
+        };
+        Ok(Expr::Slice {lo, hi, ty, i})
     } else if expr.is_instance(&env.ast.getattr("Attribute")?)? {
         lookup_builtin_expr(&expr, &i)
     } else if expr.is_instance(&env.ast.getattr("Tuple")?)? {

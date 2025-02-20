@@ -86,6 +86,22 @@ impl<T: Clone, I: Ord> SMapAccum<T> for BTreeMap<I, T> {
     }
 }
 
+impl<T: Clone> SMapAccum<T> for Option<Box<T>> {
+    fn smap_accum_l_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, T) -> Result<(A, T), E>
+    ) -> Result<(A, Self), E> {
+        match self {
+            Some(e) => {
+                let (acc, e) = f(acc?, *e)?;
+                Ok((acc, Some(Box::new(e))))
+            },
+            None => Ok((acc?, None))
+        }
+    }
+}
+
 impl<T: Clone> SFold<T> for Vec<T> {
     fn sfold_result<A, E>(
         &self,
@@ -114,5 +130,18 @@ impl<T: Clone, I> SFold<T> for BTreeMap<I, T> {
     ) -> Result<A, E> {
         self.iter()
             .fold(acc, |acc, (_, t)| f(acc?, t))
+    }
+}
+
+impl<T: Clone> SFold<T> for Option<Box<T>> {
+    fn sfold_result<A, E>(
+        &self,
+        acc: Result<A, E>,
+        f: impl Fn(A, &T) -> Result<A, E>
+    ) -> Result<A, E> {
+        match self {
+            Some(e) => f(acc?, e),
+            None => acc
+        }
     }
 }

@@ -271,6 +271,9 @@ fn to_ir_expr(
                 }
             }
         },
+        py_ast::Expr::Slice {i, ..} => {
+            parir_compile_error!(i, "Slices are not allowed outside of indexing")
+        },
         py_ast::Expr::Tuple {i, ..} => {
             parir_compile_error!(i, "Tuple literals are not supported outside of indexing")
         },

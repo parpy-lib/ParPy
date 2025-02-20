@@ -1,9 +1,10 @@
 use super::ast::*;
+use super::constant_fold;
 use crate::py_type_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::utils::smap::SMapAccum;
+use crate::utils::smap::{SFold, SMapAccum};
 
 use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
@@ -76,21 +77,6 @@ fn convert_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
         Ok(Type::Dict {fields})
     } else {
         py_type_error!(Info::default(), "Argument {0:?} has unsupported type {1:?}", arg, ty)
-    }
-}
-
-fn add_param_types<'py>(
-    id: &Name,
-    params: Vec<Param>,
-    args: &Vec<Bound<'py, PyAny>>
-) -> PyResult<Vec<Param>> {
-    if args.len() == params.len() {
-        args.iter()
-            .zip(params.into_iter())
-            .map(|(arg, Param {id, i, ..})| Ok(Param {id, ty: convert_type(&arg)?, i}))
-            .collect::<PyResult<Vec<Param>>>()
-    } else {
-        py_type_error!(Info::default(), "Function {id} expected {0} arguments but received {1}", params.len(), args.len())
     }
 }
 
@@ -370,6 +356,121 @@ fn type_check_binop(
     Ok((Box::new(lhs), ty, Box::new(rhs)))
 }
 
+fn num_index_dimensions(idx: &Expr) -> usize {
+    match idx {
+        Expr::Tuple {elems, ..} => elems.len(),
+        _ => 1
+    }
+}
+
+fn extract_slice_dim<'a>(
+    acc: (&'a [i64], Vec<i64>),
+    e: &Expr
+) -> PyResult<(&'a [i64], Vec<i64>)> {
+    let (shape, mut slice_dims) = acc;
+    let i = e.get_info();
+    match e {
+        Expr::Slice {lo, hi, ..} => {
+            let lo_idx = if let Some(e) = lo {
+                if let Expr::Int {v, ..} = e.as_ref() {
+                    Ok(*v)
+                } else {
+                    let msg = "Lower-bound of slice must be known when type-checking.";
+                    py_type_error!(i, "{}", msg)
+                }
+            } else {
+                Ok(0)
+            }?;
+            let hi_idx = match hi.as_ref() {
+                Expr::Int {v, ..} => Ok(*v),
+                _ => {
+                    let msg = "Upper-bound of slice must be known when type-checking.";
+                    py_type_error!(i, "{}", msg)
+                }
+            }?;
+            if lo_idx < hi_idx {
+                if lo_idx >= 0 && hi_idx <= shape[0] {
+                    slice_dims.push(hi_idx - lo_idx);
+                } else {
+                    py_type_error!(
+                        i,
+                        "Slice dimensions {0} and {1} out of range for shape {2}",
+                        lo_idx, hi_idx, shape[0]
+                    )?
+                }
+            } else {
+                py_type_error!(
+                    i,
+                    "Lower-bound {0} of slice must be less than its upper-bound {1}.",
+                    lo_idx, hi_idx
+                )?
+            }
+        },
+        Expr::Int {v, ..} => {
+            if *v >= 0 && *v < shape[0] {
+                slice_dims.push(0);
+            } else {
+                py_type_error!(i, "Index {0} out of range for shape {1}", v, shape[0])?
+            }
+        },
+        // For non-literal valued indices, we cannot do bounds-checking. We allow them anyway for
+        // the sake of flexibility.
+        _ => slice_dims.push(0)
+    };
+    Ok((&shape[1..], slice_dims))
+}
+
+fn extract_slice_dims(idx: &Expr, shape: &[i64]) -> PyResult<Vec<i64>> {
+    match idx {
+        Expr::Tuple {elems, ..} => {
+            let (_, dims) = elems.sfold_result(Ok((shape, vec![])), extract_slice_dim)?;
+            Ok(dims)
+        },
+        _ => Ok(vec![0])
+    }
+}
+
+fn type_check_indexing(
+    vars: &BTreeMap<Name, Type>,
+    target: &Expr,
+    idx: Expr,
+) -> PyResult<(Type, Expr)> {
+    let idx = type_check_expr(vars, idx)?;
+    // NOTE: We immediately run constant folding on the index expression to eliminate any simple
+    // arithmetic on the bounds of a slice (e.g., 10-1), as we require them to be literal values.
+    let idx = constant_fold::fold_expr(idx);
+    let i = idx.get_info();
+    let elem_ty = if let Type::Tensor {sz, shape} = target.get_type() {
+        let ndims = num_index_dimensions(&idx);
+        if ndims <= shape.len() {
+            let idx_dims = extract_slice_dims(&idx, &shape[..])?;
+            let res_shape = idx_dims.into_iter()
+                .chain(shape.clone().into_iter().skip(ndims))
+                .filter(|dim| *dim > 0)
+                .collect::<Vec<i64>>();
+            Ok(Type::Tensor {sz: sz.clone(), shape: res_shape})
+        } else {
+            let sh = shape.iter().map(|i| i.to_string()).join(",");
+            py_type_error!(i, "Indexing with {ndims} dimensions on tensor of shape [{sh}]")
+        }
+    } else {
+        py_type_error!(i, "Subscript operation on unsupported target {target}")
+    }?;
+    let expected_ty = match idx.get_type() {
+        Type::Tensor {shape, ..} if shape.len() == 0 => {
+            Ok(Type::Tensor {sz: ElemSize::I64, shape: vec![]})
+        },
+        Type::Tuple {elems} => {
+            let expected_types = elems.iter()
+                .map(|_| Type::Tensor {sz: ElemSize::I64, shape: vec![]})
+                .collect::<Vec<Type>>();
+            Ok(Type::Tuple {elems: expected_types})
+        },
+        ty => py_type_error!(i, "Unsupported index of type {ty} in subscript operation")
+    }?;
+    Ok((elem_ty, coerce_type(idx, &expected_ty)?))
+}
+
 fn type_check_expr(
     vars: &BTreeMap<Name, Type>,
     e: Expr
@@ -433,44 +534,21 @@ fn type_check_expr(
                         py_type_error!(i, "Cannot index using a string on non-dict expression")
                     }
                 },
-                idx => {
-                    let idx = type_check_expr(vars, idx)?;
-                    let elem_ty = if let Type::Tensor {sz, shape} = target.get_type() {
-                        let idx_dims = match idx.get_type() {
-                            Type::Tensor {shape, ..} if shape.len() == 0 => Ok(1),
-                            Type::Tuple {elems} => Ok(elems.len()),
-                            ty => py_type_error!(i, "Unsupported index of type {ty}")
-                        }?;
-                        if idx_dims <= shape.len() {
-                            let res_shape = shape.clone()
-                                .into_iter()
-                                .skip(idx_dims)
-                                .collect::<Vec<i64>>();
-                            Ok(Type::Tensor {sz: sz.clone(), shape: res_shape})
-                        } else {
-                            let sh = shape.iter().map(|i| i.to_string()).join(",");
-                            py_type_error!(i, "Indexing with {idx_dims} dimensions on tensor of shape [{sh}]")
-                        }
-                    } else {
-                        py_type_error!(i, "Subscript operation on unsupported target {target}")
-                    }?;
-                    match idx.get_type() {
-                        Type::Tensor {shape, ..} if shape.len() == 0 => {
-                            let expected_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
-                            Ok((elem_ty, coerce_type(idx, &expected_ty)?))
-                        },
-                        Type::Tuple {elems} => {
-                            let expected_types = elems.iter()
-                                .map(|_| Type::Tensor {sz: ElemSize::I64, shape: vec![]})
-                                .collect::<Vec<Type>>();
-                            let expected_ty = Type::Tuple {elems: expected_types};
-                            Ok((elem_ty, coerce_type(idx, &expected_ty)?))
-                        },
-                        ty => py_type_error!(i, "Unsupported index of type {ty} in subscript operation")
-                    }
-                }
+                idx => type_check_indexing(vars, &target, idx)
             }?;
             Ok(Expr::Subscript {target: Box::new(target), idx: Box::new(idx), ty, i})
+        },
+        Expr::Slice {lo, hi, i, ..} => {
+            let lo = match lo {
+                Some(e) => Some(Box::new(type_check_expr(vars, *e)?)),
+                None => None
+            };
+            let hi = Box::new(type_check_expr(vars, *hi)?);
+            // NOTE: The type of a slice expression is pointless since it can never be used outside
+            // of a subscript operation, so we consider it an integer type to be consistent with
+            // regular indices.
+            let ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
+            Ok(Expr::Slice {lo, hi, ty, i})
         },
         Expr::Tuple {elems, i, ..} => {
             let elems = elems.into_iter()
@@ -569,25 +647,40 @@ fn type_check_stmts(
     stmts.smap_accum_l_result(Ok(vars), type_check_stmt)
 }
 
-fn type_check_body(
-    body: Vec<Stmt>,
-    params: Vec<Param>
-) -> PyResult<Vec<Stmt>> {
-    let vars = params.iter()
-        .map(|Param {id, ty, ..}| (id.clone(), ty.clone()))
-        .collect::<BTreeMap<Name, Type>>();
-    let (_, body) = type_check_stmts(vars, body)?;
-    Ok(body)
+fn add_param_types<'py>(
+    id: &Name,
+    params: Vec<Param>,
+    args: &Vec<Bound<'py, PyAny>>
+) -> PyResult<Vec<Param>> {
+    if args.len() == params.len() {
+        args.iter()
+            .zip(params.into_iter())
+            .map(|(arg, Param {id, i, ..})| Ok(Param {id, ty: convert_type(&arg)?, i}))
+            .collect::<PyResult<Vec<Param>>>()
+    } else {
+        py_type_error!(
+            Info::default(),
+            "Function {id} expected {0} arguments but received {1}",
+            params.len(), args.len()
+        )
+    }
 }
 
-pub fn type_check<'py>(
+pub fn type_check_params<'py>(
     def: FunDef,
     args: &Vec<Bound<'py, PyAny>>
 ) -> PyResult<FunDef> {
-    let FunDef {id, params, body, i} = def;
-    let params = add_param_types(&id, params, args)?;
-    let body = type_check_body(body, params.clone())?;
-    Ok(FunDef {id, params, body, i})
+    let params = add_param_types(&def.id, def.params, args)?;
+    Ok(FunDef {params, ..def})
+}
+
+pub fn type_check_body<'py>(def: FunDef) -> PyResult<FunDef> {
+    let vars = def.params
+        .iter()
+        .map(|Param {id, ty, ..}| (id.clone(), ty.clone()))
+        .collect::<BTreeMap<Name, Type>>();
+    let (_, body) = type_check_stmts(vars, def.body)?;
+    Ok(FunDef {body, ..def})
 }
 
 #[cfg(test)]
@@ -734,6 +827,11 @@ mod test {
         Name::new(s.to_string())
     }
 
+    fn int(v: i64, ty: Option<Type>) -> Expr {
+        let ty = ty.unwrap_or(Type::Unknown);
+        Expr::Int {v, ty, i: Info::default()}
+    }
+
     fn test_tc_unop(op: UnOp, arg: Expr) -> PyResult<Type> {
         type_check_unop(&op, &arg, &Info::default())
     }
@@ -741,7 +839,7 @@ mod test {
     #[test]
     fn type_check_unop_signed_int_negation() {
         let ty = scalar_type(ElemSize::I64);
-        let arg = Expr::Int {v: 1, ty: ty.clone(), i: Info::default()};
+        let arg = int(1, Some(ty.clone()));
         let res = test_tc_unop(UnOp::Sub, arg).unwrap();
         assert_eq!(res, ty);
     }
@@ -762,8 +860,8 @@ mod test {
     #[test]
     fn type_check_binop_signed_int_addition() {
         let ty = scalar_type(ElemSize::I64);
-        let lhs = Expr::Int {v: 1, ty: ty.clone(), i: Info::default()};
-        let rhs = Expr::Int {v: 2, ty: ty.clone(), i: Info::default()};
+        let lhs = int(1, Some(ty.clone()));
+        let rhs = int(2, Some(ty.clone()));
         let res = test_tc_binop(lhs, BinOp::Add, rhs).unwrap();
         assert_eq!(res, ty);
     }
@@ -790,8 +888,8 @@ mod test {
     #[test]
     fn type_check_int_equality() {
         let ty = scalar_type(ElemSize::I16);
-        let lhs = Expr::Int {v: 1, ty: ty.clone(), i: Info::default()};
-        let rhs = Expr::Int {v: 2, ty: ty.clone(), i: Info::default()};
+        let lhs = int(1, Some(ty.clone()));
+        let rhs = int(2, Some(ty.clone()));
         let res = test_tc_binop(lhs, BinOp::Eq, rhs).unwrap();
         assert_eq!(res, bool_type());
     }
@@ -839,7 +937,7 @@ mod test {
     #[test]
     fn type_check_expr_int_literal() {
         let vars = make_map(vec![]);
-        let v = Expr::Int {v: 0, ty: Type::Unknown, i: Info::default()};
+        let v = int(0, None);
         let r = type_check_expr(&vars, v);
         assert!(r.is_ok());
         assert_eq!(r.unwrap().get_type().clone(), scalar_type(ElemSize::I64));
@@ -884,7 +982,7 @@ mod test {
         let vars = make_map(vec![("x", tensor_ty.clone())]);
         let v = Expr::Subscript {
             target: Box::new(Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()}),
-            idx: Box::new(Expr::Int {v: 0, ty: Type::Unknown, i: Info::default()}),
+            idx: Box::new(int(0, None)),
             ty: Type::Unknown,
             i: Info::default()
         };
@@ -930,34 +1028,148 @@ mod test {
         }
     }
 
-    #[test]
-    fn type_check_expr_tensor_slicing() {
-        let tensor_ty = Type::Tensor {sz: ElemSize::F32, shape: vec![5,6,4]};
+    fn test_slicing(
+        target_shape: Vec<i64>,
+        idx_args: Vec<Expr>,
+        result_shape: Vec<i64>
+    ) -> () {
+        let target_ty = Type::Tensor {sz: ElemSize::F32, shape: target_shape};
         let vars = make_map(vec![
-            ("x", tensor_ty.clone()),
+            ("x", target_ty.clone())
         ]);
-        let tuple_ty = Type::Tuple {
-            elems: vec![scalar_type(ElemSize::I64), scalar_type(ElemSize::I64)]
-        };
+        let nidxs = idx_args.len();
         let idx = Box::new(Expr::Tuple {
-            elems: vec![
-                Expr::Int {v: 2, ty: scalar_type(ElemSize::I64), i: Info::default()},
-                Expr::Int {v: 5, ty: scalar_type(ElemSize::I64), i: Info::default()}
-            ],
-            ty: tuple_ty.clone(),
+            elems: idx_args,
+            ty: Type::Unknown,
             i: Info::default()
         });
-        let v = Expr::Subscript {
+        let subscript = Expr::Subscript {
             target: Box::new(Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()}),
             idx, ty: Type::Unknown, i: Info::default()
         };
-        let r = type_check_expr(&vars, v);
+        let idx_ty = Type::Tuple {
+            elems: (0..nidxs).into_iter()
+                .map(|_| scalar_type(ElemSize::I64)).collect::<Vec<Type>>()
+        };
+        let result_ty = Type::Tensor {sz: ElemSize::F32, shape: result_shape};
+        let r = type_check_expr(&vars, subscript);
         if let Expr::Subscript {target, idx, ty, ..} = r.unwrap() {
-            assert_eq!(ty, Type::Tensor {sz: ElemSize::F32, shape: vec![4]});
-            assert_eq!(target.get_type().clone(), tensor_ty);
-            assert_eq!(idx.get_type().clone(), tuple_ty);
+            assert_eq!(ty, result_ty);
+            assert_eq!(target_ty, target.get_type().clone());
+            assert_eq!(idx_ty, idx.get_type().clone());
         } else {
             assert!(false);
         }
+    }
+
+    #[test]
+    fn type_check_expr_tensor_partial_index() {
+        let target_shape = vec![5,6,4];
+        let idx_args = vec![
+            int(2, None),
+            int(5, None),
+        ];
+        let result_shape = vec![4];
+        test_slicing(target_shape, idx_args, result_shape);
+    }
+
+    fn slice(lo: Option<i64>, hi: i64) -> Expr {
+        let lo = lo.map(|i| Box::new(int(i, None)));
+        let hi = Box::new(int(hi, None));
+        Expr::Slice {lo, hi, ty: Type::Unknown, i: Info::default()}
+    }
+
+    #[test]
+    fn type_check_slice_index() {
+        let target_shape = vec![7,4,3];
+        let idx_args = vec![
+            slice(Some(2), 7),
+            int(3, None)
+        ];
+        let result_shape = vec![5, 3];
+        test_slicing(target_shape, idx_args, result_shape);
+    }
+
+    #[test]
+    fn high_dimensional_slicing() {
+        let target_shape = vec![5,8,6,3,5,4];
+        let idx_args = vec![
+            int(2, None),
+            slice(Some(1), 7),
+            int(2, None),
+            slice(None, 3),
+            int(4, None)
+        ];
+        let result_shape = vec![6,3,4];
+        test_slicing(target_shape, idx_args, result_shape);
+    }
+
+    #[test]
+    #[should_panic]
+    fn out_of_bounds_access() {
+        let target_shape = vec![5,8];
+        let idx_args = vec![int(4, None), int(9, None)];
+        let result_shape = vec![];
+        test_slicing(target_shape, idx_args, result_shape);
+    }
+
+    #[test]
+    #[should_panic]
+    fn negative_index_access() {
+        let target_shape = vec![5,8];
+        let idx_args = vec![int(-1, None)];
+        let result_shape = vec![8];
+        test_slicing(target_shape, idx_args, result_shape);
+    }
+
+    #[test]
+    #[should_panic]
+    fn slice_beyond_end() {
+        let target_shape = vec![5,8];
+        let idx_args = vec![slice(Some(3), 6)];
+        let result_shape = vec![3,8];
+        test_slicing(target_shape, idx_args, result_shape);
+    }
+
+    #[test]
+    #[should_panic]
+    fn slice_longer_than_target() {
+        let target_shape = vec![5,8];
+        let idx_args = vec![slice(Some(1), 7)];
+        let result_shape = vec![6,8];
+        test_slicing(target_shape, idx_args, result_shape);
+    }
+
+    #[test]
+    #[should_panic]
+    fn reject_non_literal_out_of_bounds_index() {
+        let target_shape = vec![5,8];
+        let idx_args = vec![
+            Expr::UnOp {
+                op: UnOp::Sub, arg: Box::new(int(1, None)), ty: Type::Unknown,
+                i: Info::default()
+            }
+        ];
+        let result_shape = vec![8];
+        test_slicing(target_shape, idx_args, result_shape);
+    }
+
+    #[test]
+    #[should_panic]
+    fn reject_non_literal_slice() {
+        let target_shape = vec![5,8];
+        let idx_args = vec![
+            Expr::Slice {
+                lo: None,
+                hi: Box::new(Expr::UnOp {
+                    op: UnOp::Sub, arg: Box::new(int(1, None)), ty: Type::Unknown,
+                    i: Info::default()
+                }),
+                ty: Type::Unknown,
+                i: Info::default()
+            }
+        ];
+        let result_shape = vec![8];
+        test_slicing(target_shape, idx_args, result_shape);
     }
 }

@@ -44,19 +44,16 @@ fn compile_ir<'py>(
         ir_ast_cap.reference()
     };
 
-    py::ensure_parallelism(untyped_ir_def, &par)?;
-
     // Specialize the Python-like AST based on the provided arguments, inferring the types of all
-    // expressions and inlining scalar argument values in the AST.
-    let py_ir_ast = py::type_check(untyped_ir_def.clone(), &args)?;
-    let py_ir_ast = py::inline_scalar_values(py_ir_ast, &args)?;
+    // expressions and inlining scalar argument values directly into the AST.
+    let py_ast = py::specialize_ast_on_arguments(untyped_ir_def.clone(), args, &par)?;
 
     // Converts the Python-like AST to an IR by removing or simplifying concepts from Python. For
     // example, this transformation
     // * Inserts top-level struct definitions for each Python dictionary.
     // * Replaces uses of tuples for indexing with an integer expression.
     // * Adds the parallelization arguments directly to the AST.
-    let ir_ast = ir::from_python(py_ir_ast, par)?;
+    let ir_ast = ir::from_python(py_ast, par)?;
 
     // Convert the IR AST to CUDA code, based on the parallel annotations on for-loops.
     let ast = cuda::codegen(ir_ast)?;

@@ -213,6 +213,7 @@ pub enum Expr {
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     Subscript {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
+    Slice {lo: Option<Box<Expr>>, hi: Box<Expr>, ty: Type, i: Info},
     Tuple {elems: Vec<Expr>, ty: Type, i: Info},
     Dict {fields: BTreeMap<String, Expr>, ty: Type, i: Info},
     Builtin {func: Builtin, args: Vec<Expr>, ty: Type, i: Info},
@@ -231,6 +232,7 @@ impl Expr {
             Expr::BinOp {ty, ..} => ty,
             Expr::IfExpr {ty, ..} => ty,
             Expr::Subscript {ty, ..} => ty,
+            Expr::Slice {ty, ..} => ty,
             Expr::Tuple {ty, ..} => ty,
             Expr::Dict {ty, ..} => ty,
             Expr::Builtin {ty, ..} => ty,
@@ -249,8 +251,9 @@ impl Expr {
             Expr::BinOp {..} => 6,
             Expr::IfExpr {..} => 7,
             Expr::Subscript {..} => 8,
-            Expr::Tuple {..} => 9,
-            Expr::Dict {..} => 10,
+            Expr::Slice {..} => 9,
+            Expr::Tuple {..} => 10,
+            Expr::Dict {..} => 11,
             Expr::Builtin {..} => 12,
             Expr::Convert {..} => 13
         }
@@ -267,6 +270,7 @@ impl Expr {
             Expr::BinOp {lhs, op, rhs, ty, ..} => Expr::BinOp {lhs, op, rhs, ty, i},
             Expr::IfExpr {cond, thn, els, ty, ..} => Expr::IfExpr {cond, thn, els, ty, i},
             Expr::Subscript {target, idx, ty, ..} => Expr::Subscript {target, idx, ty, i},
+            Expr::Slice {lo, hi, ty, ..} => Expr::Slice {lo, hi, ty, i},
             Expr::Tuple {elems, ty, ..} => Expr::Tuple {elems, ty, i},
             Expr::Dict {fields, ty, ..} => Expr::Dict {fields, ty, i},
             Expr::Builtin {func, args, ty, ..} => Expr::Builtin {func, args, ty, i},
@@ -294,6 +298,8 @@ impl Ord for Expr {
             ( Expr::Subscript {target: ltarget, idx: lidx, ..}
             , Expr::Subscript {target: rtarget, idx: ridx, ..} ) =>
                 ltarget.cmp(rtarget).then(lidx.cmp(ridx)),
+            (Expr::Slice {lo: llo, hi: lhi, ..}, Expr::Slice {lo: rlo, hi: rhi, ..}) =>
+                llo.cmp(rlo).then(lhi.cmp(rhi)),
             (Expr::Tuple {elems: lelems, ..}, Expr::Tuple {elems: relems, ..}) =>
                 lelems.cmp(relems),
             (Expr::Dict {fields: lfields, ..}, Expr::Dict {fields: rfields, ..}) =>
@@ -328,6 +334,7 @@ impl InfoNode for Expr {
             Expr::BinOp {i, ..} => i.clone(),
             Expr::IfExpr {i, ..} => i.clone(),
             Expr::Subscript {i, ..} => i.clone(),
+            Expr::Slice {i, ..} => i.clone(),
             Expr::Tuple {i, ..} => i.clone(),
             Expr::Dict {i, ..} => i.clone(),
             Expr::Builtin {i, ..} => i.clone(),
@@ -373,6 +380,11 @@ impl SMapAccum<Expr> for Expr {
                     target: Box::new(target), idx: Box::new(idx), ty, i
                 }))
             },
+            Expr::Slice {lo, hi, ty, i} => {
+                let (acc, lo) = lo.smap_accum_l_result(acc, &f)?;
+                let (acc, hi) = f(acc, *hi)?;
+                Ok((acc, Expr::Slice {lo, hi: Box::new(hi), ty, i}))
+            },
             Expr::Tuple {elems, ty, i} => {
                 let (acc, elems) = elems.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Expr::Tuple {elems, ty, i}))
@@ -406,6 +418,7 @@ impl SFold<Expr> for Expr {
             Expr::BinOp {lhs, rhs, ..} => f(f(acc?, lhs)?, rhs),
             Expr::IfExpr {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
             Expr::Subscript {target, idx, ..} => f(f(acc?, target)?, idx),
+            Expr::Slice {lo, hi, ..} => f(lo.sfold_result(acc, &f)?, hi),
             Expr::Tuple {elems, ..} => elems.sfold_result(acc, &f),
             Expr::Dict {fields, ..} => fields.sfold_result(acc, &f),
             Expr::Builtin {args, ..} => args.sfold_result(acc, &f),

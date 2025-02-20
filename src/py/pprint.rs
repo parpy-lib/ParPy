@@ -107,6 +107,14 @@ impl PrettyPrint for Expr {
                 let (env, idx) = idx.pprint(env);
                 (env, format!("{target}[{idx}]"))
             },
+            Expr::Slice {lo, hi, ..} => {
+                let (env, lo) = match lo {
+                    Some(e) => e.pprint(env),
+                    None => (env, String::new())
+                };
+                let (env, hi) = hi.pprint(env);
+                (env, format!("{lo}:{hi}"))
+            },
             Expr::Tuple {elems, ..} => {
                 let (env, elems) = pprint_iter(elems.iter(), env, ", ");
                 (env, format!("({elems})"))
