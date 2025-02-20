@@ -16,14 +16,15 @@ use pyo3::types::PyCapsule;
 fn python_to_ir<'py>(
     py_ast: Bound<'py, PyAny>,
     filepath: String,
-    fst_line: usize,
+    line_ofs: usize,
+    col_ofs: usize,
     ir_asts: BTreeMap<String, Bound<'py, PyCapsule>>
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let py = py_ast.py().clone();
 
     // Convert the provided Python AST (parsed by the 'ast' module of Python) to a similar
     // representation of the Python AST using Rust data types.
-    let def = py::parse_untyped_ast(py_ast, filepath, fst_line)?;
+    let def = py::parse_untyped_ast(py_ast, filepath, line_ofs, col_ofs)?;
 
     // Inline function calls referring to previously defined IR ASTs.
     let def = py::inline_function_calls(def, &ir_asts)?;

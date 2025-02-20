@@ -14,7 +14,8 @@ use std::ffi::CString;
 struct ConvertEnv<'py, 'a> {
     ast: Bound<'py, PyModule>,
     filepath: &'a str,
-    fst_line: usize
+    line_ofs: usize,
+    col_ofs: usize
 }
 
 fn extract_node_info<'py>(
@@ -43,7 +44,8 @@ fn extract_info<'py, 'a>(
 ) -> Info {
     if let Ok(i) = extract_node_info(node) {
         i.with_file(env.filepath)
-            .with_line_offset(env.fst_line)
+            .with_line_offset(env.line_ofs)
+            .with_column_offset(env.col_ofs)
     } else {
         Info::default()
     }
@@ -536,12 +538,13 @@ fn convert_stmts<'py, 'a>(
 pub fn to_untyped_ir<'py>(
     ast: Bound<'py, PyAny>,
     filepath: String,
-    fst_line: usize
+    line_ofs: usize,
+    col_ofs: usize
 ) -> PyResult<FunDef> {
     let env = ConvertEnv {
         ast : ast.py().import("ast")?,
         filepath : &filepath,
-        fst_line
+        line_ofs, col_ofs
     };
 
     let body = ast.getattr("body")?.get_item(0)?;
@@ -719,7 +722,8 @@ mod test {
             let env = ConvertEnv {
                 ast : py.import("ast")?,
                 filepath: &String::from("<test>"),
-                fst_line: 0
+                line_ofs: 0,
+                col_ofs: 0
             };
             convert_expr(expr, &env)
         })
@@ -1001,7 +1005,8 @@ mod test {
             let env = ConvertEnv {
                 ast : py.import("ast")?,
                 filepath: &String::from("<test>"),
-                fst_line: 0
+                line_ofs: 0,
+                col_ofs: 0
             };
             convert_stmt(stmt, &env)
         })
@@ -1173,7 +1178,8 @@ mod test {
             let env = ConvertEnv {
                 ast : py.import("ast")?,
                 filepath: &String::from("<test>"),
-                fst_line: 0
+                line_ofs: 0,
+                col_ofs: 0
             };
             convert_stmts(stmt, &env)
         })

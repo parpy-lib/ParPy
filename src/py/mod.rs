@@ -22,9 +22,10 @@ pub use inline_calls::inline_function_calls;
 pub fn parse_untyped_ast<'py>(
     ast: Bound<'py, PyAny>,
     filepath: String,
-    fst_line: usize
+    line_ofs: usize,
+    col_ofs: usize
 ) -> PyResult<ast::FunDef> {
-    let ast = from_py::to_untyped_ir(ast, filepath, fst_line)?;
+    let ast = from_py::to_untyped_ir(ast, filepath, line_ofs, col_ofs)?;
     let ast = ast.symbolize_default()?;
     labels::associate_labels(ast)
 }

@@ -15,6 +15,7 @@ def reduce():
 def convert_python_function_to_ir(fn):
     import ast as python_ast
     import inspect
+    import itertools
     import textwrap
     filepath = inspect.getfile(fn)
     src, fst_line = inspect.getsourcelines(fn)
@@ -22,6 +23,7 @@ def convert_python_function_to_ir(fn):
     # The Python AST parser requires properly indented code. Therefore, we make
     # sure to dedent it properly in case it is a nested function, including
     # removing any documentation strings that may prevent proper dedentation.
+    col_ofs = sum(1 for _ in itertools.takewhile(str.isspace, src[0]))
     src = textwrap.dedent("".join(src))
     if inspect.getdoc(fn) is not None:
         src = inspect.cleandoc(src)
@@ -33,7 +35,7 @@ def convert_python_function_to_ir(fn):
     # representation in the compiler. As part of this step, we inline any
     # references to previously parsed functions.
     ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
-    return parir.python_to_ir(ast, filepath, fst_line-1, ir_ast_map)
+    return parir.python_to_ir(ast, filepath, fst_line-1, col_ofs, ir_ast_map)
 
 def check_kwarg(kwargs, key, default_value, expected_ty):
     if key not in kwargs or kwargs[key] is None:
