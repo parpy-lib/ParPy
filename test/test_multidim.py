@@ -5,20 +5,15 @@ import torch
 @parir.jit
 def copy_2d(dst, src, N, M):
     parir.label('i')
-    for i in range(N):
-        parir.label('j')
-        for j in range(M):
-            dst[i,j] = src[i,j]
+    parir.label('j')
+    dst[:N,:M] = src[:N,:M]
 
 @parir.jit
 def copy_3d(dst, src, N, M, K):
     parir.label('i')
-    for i in range(N):
-        parir.label('j')
-        for j in range(M):
-            parir.label('k')
-            for k in range(K):
-                dst[i,j,k] = src[i,j,k]
+    parir.label('j')
+    parir.label('k')
+    dst[:N,:M,:K] = src[:N,:M,:K]
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_copy_two_dims():

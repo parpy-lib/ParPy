@@ -954,6 +954,30 @@ mod test {
     }
 
     #[test]
+    fn convert_expr_slice() {
+        let expr = convert_expr_wrap("a[3:10]").unwrap();
+        assert_eq!(expr, Expr::Subscript {
+            target: Box::new(Expr::Var {
+                id: var("a"),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            idx: Box::new(Expr::Slice {
+                lo: Some(Box::new(Expr::Int {
+                    v: 3, ty: Type::Unknown, i: mkinfo(1, 2, 1, 3)
+                })),
+                hi: Box::new(Expr::Int {
+                    v: 10, ty: Type::Unknown, i: mkinfo(1, 4, 1, 6)
+                }),
+                ty: Type::Unknown,
+                i: mkinfo(1, 2, 1, 6)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 7)
+        });
+    }
+
+    #[test]
     fn convert_expr_dict() {
         let expr = convert_expr_wrap("{'a': 2, 'b': 3.14}").unwrap();
         let fields = vec![

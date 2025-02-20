@@ -7,10 +7,8 @@ torch.manual_seed(1234)
 @parir.jit
 def copy(dst, src, N, M):
     parir.label('i')
-    for i in range(N):
-        parir.label('j')
-        for j in range(M):
-            dst[i,j] = src[i,j]
+    parir.label('j')
+    dst[:N,:M] = src[:N,:M]
 
 def generate_copy_test_data(device):
     N, M = 100, 100

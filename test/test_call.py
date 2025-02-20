@@ -5,8 +5,7 @@ import torch
 @parir.jit
 def add_inplace(x, y, M):
     parir.label("1d")
-    for i in range(M):
-        y[i] += x[i]
+    y[:M] += x[:M]
 
 @parir.jit
 def add_2d_inplace(x, y, N, M):

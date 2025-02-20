@@ -7,8 +7,7 @@ import pytest
 @parir.jit
 def add(a, b, c, N):
     parir.label('N')
-    for i in range(N):
-        c[i] = a[i] + b[i]
+    c[:N] = a[:N] + b[:N]
 
 @pytest.mark.skipif(importlib.util.find_spec('cupy') is None, reason="This test requires CuPy")
 def test_call_cupy():

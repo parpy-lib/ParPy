@@ -96,7 +96,7 @@ fn insert_for_loops(
     lhs: Expr,
     rhs: Expr,
     dims: Vec<(i64, Name)>,
-    _labels: Vec<String>, // TODO: Properly insert these into the loops...
+    mut labels: Vec<String>,
     i: &Info
 ) -> Stmt {
     let int = |v| Expr::Int {
@@ -106,9 +106,14 @@ fn insert_for_loops(
     };
     let mut stmt = Stmt::Assign {dst: lhs, expr: rhs, labels: vec![], i: i.clone()};
     for (shape, id) in dims.into_iter() {
+        let for_label = if !labels.is_empty() {
+            vec![labels.remove(0)]
+        } else {
+            vec![]
+        };
         stmt = Stmt::For {
             var: id, lo: int(0), hi: int(shape), step: 1,
-            body: vec![stmt], labels: vec![], i: i.clone()
+            body: vec![stmt], labels: for_label, i: i.clone()
         }
     }
     stmt
@@ -156,7 +161,30 @@ fn replace_slices_with_for_loops_stmt(stmt: Stmt) -> PyResult<Stmt> {
     }
 }
 
+fn unsupported_slice_error(i: &Info) -> PyResult<()> {
+    let msg = concat!(
+        "Found slice expression in unsupported position.\n",
+        "Slicing statements should be used in assignments, where all dimensions ",
+        "are mentioned on the right-hand side, and at most one is omitted in ",
+        "the left-hand side expression."
+    );
+    py_runtime_error!(i, "{}", msg)
+}
+
+fn ensure_no_remaining_slices_expr(acc: (), e: &Expr) -> PyResult<()> {
+    match e {
+        Expr::Slice {i, ..} => unsupported_slice_error(i),
+        _ => e.sfold_result(Ok(acc), ensure_no_remaining_slices_expr)
+    }
+}
+
+fn ensure_no_remaining_slices_stmt(acc: (), s: &Stmt) -> PyResult<()> {
+    let _ = s.sfold_result(Ok(acc), ensure_no_remaining_slices_stmt)?;
+    s.sfold_result(Ok(acc), ensure_no_remaining_slices_expr)
+}
+
 pub fn replace_slices_with_for_loops(fun: FunDef) -> PyResult<FunDef> {
     let body = fun.body.smap_result(replace_slices_with_for_loops_stmt)?;
+    body.sfold_result(Ok(()), ensure_no_remaining_slices_stmt)?;
     Ok(FunDef {body, ..fun})
 }
