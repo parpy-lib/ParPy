@@ -29,5 +29,6 @@ def test_nested_dict():
         }
     }
     y = torch.tensor([0], dtype=torch.int32, device='cuda')
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as e_info:
         dummy(x, y, cache=False)
+    assert e_info.match(r".*nested dictionary.*")

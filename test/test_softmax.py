@@ -11,10 +11,8 @@ def softmax(x, N, M, out):
     # We have N independent instances we want to do softmax on
     parir.label('i')
     for i in range(N):
-        m = parir.float32(-parir.inf)
         parir.label('j1')
-        for j in range(M):
-            m = max(m, x[i, j])
+        m = parir.max(x[i,:])
 
         parir.label('j2')
         for j in range(M):

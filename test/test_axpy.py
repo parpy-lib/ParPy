@@ -39,8 +39,9 @@ def test_axpy_gpu():
 def test_axpy_compile_fails_no_parallelism():
     N, a, x, y = axpy_test_data()
     out = torch.empty_like(x)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as e_info:
         parir.print_compiled(axpy, [a, x, y, out, N])
+    assert e_info.match(r".*does not contain any parallelism.*")
 
 def test_axpy_compiles_with_parallelism():
     N, a, x, y = axpy_test_data()

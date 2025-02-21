@@ -5,7 +5,7 @@ import torch
 @parir.jit
 def add_inplace(x, y, M):
     parir.label("1d")
-    y[:M] += x[:M]
+    y[:] += x[:]
 
 @parir.jit
 def add_2d_inplace(x, y, N, M):
@@ -60,22 +60,24 @@ def test_nested_call_dependency():
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_call_non_decorated_function_fails():
     # This function is intentionally not decorated with '@parir.jit'
-    def add(x, y, M):
+    def non_decorated_add(x, y, M):
         for i in range(M):
             y[i] += x[i]
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as e_info:
         @parir.jit
         def add_2d(x, y, N, M):
             parir.label('N')
             for i in range(N):
-                add(x[i], y[i], M)
+                non_decorated_add(x[i], y[i], M)
+    assert e_info.match(r".*unknown function non_decorated_add.*")
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_recursive_call_fails():
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as e_info:
         @parir.jit
         def reset(x, i):
             with parir.gpu:
                 if i > 0:
                     x[i] = 0.0
                     reset(x, i-1)
+    assert e_info.match(r".*unknown function reset.*")

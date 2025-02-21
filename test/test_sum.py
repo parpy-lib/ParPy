@@ -5,21 +5,19 @@ import torch
 torch.manual_seed(1234)
 
 @parir.jit
-def sum_rows(x, out, N, M):
+def sum_rows(x, out, N):
     parir.label("outer")
     for i in range(N):
-        out[i] = 0.0
         parir.label("inner")
-        for j in range(M):
-            out[i] = out[i] + x[i, j]
+        out[i] = parir.sum(x[i,:])
 
 def sum_wrap(x, p=None):
     N, M = x.shape
     out = torch.empty(N, dtype=x.dtype, device=x.device)
     if p is None:
-        sum_rows(x, out, N, M, seq=True)
+        sum_rows(x, out, N, seq=True)
     else:
-        sum_rows(x, out, N, M, parallelize=p, cache=False)
+        sum_rows(x, out, N, parallelize=p, cache=False)
     return out
 
 def compare_sum(N, M, p):
@@ -55,8 +53,9 @@ def test_sum_multi_block_reduction_fails():
         'outer': [parir.threads(N)],
         'inner': [parir.threads(M), parir.reduce()]
     }
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as e_info:
         compare_sum(N, M, p)
+    assert e_info.match(r".*1024 threads.*")
 
 def test_sum_compiles():
     N = 100
@@ -64,12 +63,12 @@ def test_sum_compiles():
     x = torch.randn((N, M), dtype=torch.float32)
     out = torch.empty(N, dtype=torch.float32)
     p = {'outer': [parir.threads(N)]}
-    s1 = parir.print_compiled(sum_rows, [x, out, N, M], p)
+    s1 = parir.print_compiled(sum_rows, [x, out, N], p)
     assert len(s1) != 0
 
     p = {
         'outer': [parir.threads(N)],
         'inner': [parir.threads(128), parir.reduce()]
     }
-    s2 = parir.print_compiled(sum_rows, [x, out, N, M], p)
+    s2 = parir.print_compiled(sum_rows, [x, out, N], p)
     assert len(s2) != 0

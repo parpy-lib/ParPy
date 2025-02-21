@@ -17,11 +17,9 @@ def spmm_cell(A, B, C):
     for i in range(A["nrows"]):
         parir.label('j')
         for j in range(B["ncols"]):
-            s = parir.float32(0.0)
             parir.label('aidx')
             for aidx in range(A["rows"][i], A["rows"][i+1]):
-                s = s + A["values"][aidx] * B["values"][A["cols"][aidx], j]
-            C[i, j] = s
+                C[i,j] += A["values"][aidx] * B["values"][A["cols"][aidx], j]
 
 def spmm_wrap(A, B, target, p=None):
     # Remove the original reference to the CSR matrix, since this cannot be

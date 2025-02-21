@@ -12,11 +12,9 @@ np.random.seed(1234)
 def spmv_row(A, x, y):
     parir.label('row')
     for row in range(A["nrows"]):
-        s = 0.0
         parir.label('i')
         for i in range(A["rows"][row], A["rows"][row+1]):
-            s = s + A["values"][i] * x[A["cols"][i]]
-        y[row] = s
+            y[row] += A["values"][i] * x[A["cols"][i]]
 
 def spmv_wrap(A, x, N, p):
     A = {
@@ -25,7 +23,7 @@ def spmv_wrap(A, x, N, p):
         'cols': A.col_indices(),
         'nrows': N
     }
-    y = torch.empty((A["nrows"],), dtype=x.dtype, device=x.device)
+    y = torch.zeros((A["nrows"],), dtype=x.dtype, device=x.device)
     spmv_row(A, x, y, parallelize=p, cache=False)
     return y
 

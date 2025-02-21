@@ -79,12 +79,12 @@ def parir_aug_ops(dst, a, b):
 @parir.jit
 def parir_max(dst, a, b):
     with parir.gpu:
-        dst[0] = max(a[0], b[0])
+        dst[0] = parir.max(a[0], b[0])
 
 @parir.jit
 def parir_min(dst, a, b):
     with parir.gpu:
-        dst[0] = min(a[0], b[0])
+        dst[0] = parir.min(a[0], b[0])
 
 def arith_binop_dtype(fn, ldtype, rdtype, compile_only):
     a = torch.randint(1, 10, (1,), dtype=ldtype)
@@ -124,12 +124,22 @@ def is_invalid_pow_call(fn, ldtype, rdtype):
         ((not is_float_dtype(ldtype) and not is_float_dtype(rdtype)) or
         (ldtype == torch.float16 and rdtype == torch.float16)))
 
+def set_expected_behavior_binop(fn, ldtype, rdtype):
+    if is_invalid_div_or_rem_call(fn, ldtype, rdtype):
+        return True, r"Invalid type .* of integer arithmetic operation"
+    elif is_invalid_pow_call(fn, ldtype, rdtype):
+        return True, r"Invalid type .* of floating-point arithmetic operation"
+    elif fn in bitwise_funs and (is_float_dtype(ldtype) or is_float_dtype(rdtype)):
+        return True, r"Invalid type .* of bitwise operation"
+    else:
+        return False, None
+
 def bin_arith_helper(fn, ldtype, rdtype, compile_only):
-    if (is_invalid_div_or_rem_call(fn, ldtype, rdtype) or
-        is_invalid_pow_call(fn, ldtype, rdtype) or
-        (fn in bitwise_funs and (is_float_dtype(ldtype) or is_float_dtype(rdtype)))):
-        with pytest.raises(TypeError):
+    should_fail, msg_regex = set_expected_behavior_binop(fn, ldtype, rdtype)
+    if should_fail:
+        with pytest.raises(TypeError) as e_info:
             arith_binop_dtype(fn, ldtype, rdtype, compile_only)
+        assert e_info.match(msg_regex)
     else:
         arith_binop_dtype(fn, ldtype, rdtype, compile_only)
 
@@ -204,10 +214,18 @@ def arith_unop_dtype(fn, dtype, compile_only):
 float_funs = [parir_cos, parir_sin, parir_tanh, parir_atan2, parir_sqrt]
 float_tys = [torch.float16, torch.float32, torch.float64]
 
-def float_unop_helper(fn, dtype, compile_only):
+def set_expected_behavior_unop(fn, dtype):
     if fn.__name__ == "parir_tanh" and dtype == torch.float16:
-        with pytest.raises(TypeError):
+        return True, "Operation tanh not supported for 16-bit floats.*"
+    else:
+        return False, None
+
+def float_unop_helper(fn, dtype, compile_only):
+    should_fail, msg_regex = set_expected_behavior_unop(fn, dtype)
+    if should_fail:
+        with pytest.raises(TypeError) as e_info:
             arith_unop_dtype(fn, dtype, compile_only)
+        assert e_info.match(msg_regex)
     else:
         arith_unop_dtype(fn, dtype, compile_only)
 

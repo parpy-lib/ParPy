@@ -11,7 +11,7 @@ def store_gt(x, y, out, N):
         out[i] = x[i] < y[i]
 
 @parir.jit
-def reduce_and(x, out, N):
+def reduce_and(x, out):
     with parir.gpu:
         out[0] = out[0] and x[0]
 
@@ -21,7 +21,8 @@ def bool_test_data():
     y = torch.randn(N, dtype=torch.float32)
     return x, y, N
 
-def bool_wrap(x, y, N, p=None):
+def bool_wrap(x, y, p=None):
+    N, = x.shape
     tmp = torch.empty(N, dtype=torch.bool, device=x.device)
     if p is None:
         store_gt(x, y, tmp, N, seq=True)
@@ -29,21 +30,18 @@ def bool_wrap(x, y, N, p=None):
         store_gt(x, y, tmp, N, parallelize=p, cache=False)
     out = torch.empty(1, dtype=torch.bool, device=x.device)
     if p is None:
-        reduce_and(tmp, out, N, seq=True)
+        reduce_and(tmp, out, seq=True)
     else:
-        reduce_and(tmp, out, N)
+        reduce_and(tmp, out)
     return out
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_bool_gpu():
     x, y, N = bool_test_data()
-    expected = bool_wrap(x, y, N)
+    expected = bool_wrap(x, y)
 
-    p = {
-        'i': [parir.threads(N)],
-        'j': [parir.threads(64), parir.reduce()]
-    }
-    actual = bool_wrap(x.cuda(), y.cuda(), N, p).cpu()
+    p = {'i': [parir.threads(N)]}
+    actual = bool_wrap(x.cuda(), y.cuda(), p).cpu()
     assert torch.allclose(expected, actual, atol=1e-5)
 
 def test_bool_compiles():
@@ -54,5 +52,5 @@ def test_bool_compiles():
     assert len(s) != 0
 
     res = torch.empty(1, dtype=torch.bool)
-    s = parir.print_compiled(reduce_and, [tmp, res, N])
+    s = parir.print_compiled(reduce_and, [tmp, res])
     assert len(s) != 0
