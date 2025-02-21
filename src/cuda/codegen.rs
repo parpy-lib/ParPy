@@ -8,6 +8,7 @@ use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::pprint::PrettyPrint;
+use crate::utils::reduce;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -223,16 +224,6 @@ fn subtract_from_grid(grid: LaunchArgs, m: &GpuMap) -> LaunchArgs {
     }
 }
 
-fn generate_literal(v: f64, sz: &ElemSize, i: Info) -> Expr {
-    let ty = Type::Scalar {sz: sz.clone()};
-    match sz {
-        ElemSize::Bool => Expr::Bool {v: v != 0.0, ty, i},
-        ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 =>
-            Expr::Int {v: v as i64, ty, i},
-        ElemSize::F16 | ElemSize::F32 | ElemSize::F64 => Expr::Float {v, ty, i}
-    }
-}
-
 fn reduction_op_neutral_element(
     op: &BinOp,
     argty: &Type,
@@ -240,14 +231,9 @@ fn reduction_op_neutral_element(
     i: Info
 ) -> CompileResult<Expr> {
     if let Type::Scalar {sz} = &ty {
-        match op {
-            BinOp::Add => Ok(generate_literal(0.0, sz, i)),
-            BinOp::Mul => Ok(generate_literal(1.0, sz, i)),
-            BinOp::Max => Ok(generate_literal(f64::NEG_INFINITY, sz, i)),
-            BinOp::Min => Ok(generate_literal(f64::INFINITY, sz, i)),
-            BinOp::And => Ok(generate_literal(1.0, sz, i)),
-            BinOp::Or => Ok(generate_literal(0.0, sz, i)),
-            _ => {
+        match reduce::reduction_op_neutral_element(op, sz.clone(), i.clone()) {
+            Some(literal) => Ok(literal),
+            None => {
                 let op = pprint::print_binop(op, argty, &ty);
                 parir_compile_error!(i, "Parallel reductions not supported for operator {op}")
             }

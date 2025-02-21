@@ -31,7 +31,7 @@ fn add_labels_stmt(
             Ok(Stmt::For {var, lo, hi, step, body, labels, i})
         },
         Stmt::If {..} | Stmt::While {..} | Stmt::WithGpuContext {..} |
-        Stmt::Call {..} | Stmt::Label {..} =>
+        Stmt::Scope {..} | Stmt::Call {..} | Stmt::Label {..} =>
             py_runtime_error!(
                 stmt.get_info(),
                 "Cannot associate label with non-parallelizable statement"
@@ -70,6 +70,10 @@ fn associate_labels_stmt(
             Stmt::WithGpuContext {body, i} => {
                 let body = associate_labels_stmts(body)?;
                 Stmt::WithGpuContext {body, i}
+            },
+            Stmt::Scope {body, i} => {
+                let body = associate_labels_stmts(body)?;
+                Stmt::Scope {body, i}
             },
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Call {..} |
             Stmt::Label {..} => {

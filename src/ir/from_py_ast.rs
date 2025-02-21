@@ -386,6 +386,12 @@ fn to_ir_stmt(
             let par = LoopParallelism::default().with_threads(1).unwrap();
             Ok(Stmt::For {var, lo, hi, step: 1, body, par, i})
         },
+        py_ast::Stmt::Scope {i, ..} => {
+            parir_compile_error!(i,
+                "Found intermediate scope statement that should have been \
+                 removed by the compiler"
+            )
+        },
         py_ast::Stmt::Call {func, i, ..} => {
             parir_compile_error!(i, "Found unsupported function call to {func}")
         },

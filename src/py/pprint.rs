@@ -193,6 +193,10 @@ impl PrettyPrint for Stmt {
                 let env = env.decr_indent();
                 (env, format!("{indent}with parir.gpu:\n{body}"))
             },
+            Stmt::Scope {body, ..} => {
+                let (env, body) = pprint_iter(body.iter(), env, "\n");
+                (env, format!("{indent}{body}"))
+            },
             Stmt::Call {func, args, ..} => {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{indent}{func}({args})"))

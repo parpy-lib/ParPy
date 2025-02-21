@@ -694,7 +694,7 @@ fn type_check_stmt(
             let (_, els) = type_check_stmts(vars.clone(), els)?;
             Ok((vars, Stmt::If {cond, thn, els, i}))
         },
-        Stmt::WithGpuContext {..} | Stmt::Label {..} => {
+        Stmt::WithGpuContext {..} | Stmt::Scope {..} | Stmt::Label {..} => {
             stmt.smap_accum_l_result(Ok(vars), type_check_stmt)
         },
         Stmt::Call {func, i, ..} => {

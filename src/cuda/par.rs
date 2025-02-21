@@ -234,7 +234,7 @@ mod test {
     }
 
     fn for_loop(var: Name, nthreads: i64, body: Vec<Stmt>) -> Stmt {
-        let par = LoopParallelism::default().with_threads(nthreads);
+        let par = LoopParallelism::default().with_threads(nthreads).unwrap();
         Stmt::For {var, lo: int(0), hi: int(10), step: 1, body, par, i: Info::default()}
     }
 
