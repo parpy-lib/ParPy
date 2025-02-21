@@ -109,11 +109,12 @@ impl PrettyPrint for Expr {
                 (env, format!("{target}[{idx}]"))
             },
             Expr::Slice {lo, hi, ..} => {
-                let (env, lo) = match lo {
+                let pprint_opt = |env, o: &Option<Box<Expr>>| match o {
                     Some(e) => e.pprint(env),
                     None => (env, String::new())
                 };
-                let (env, hi) = hi.pprint(env);
+                let (env, lo) = pprint_opt(env, lo);
+                let (env, hi) = pprint_opt(env, hi);
                 (env, format!("{lo}:{hi}"))
             },
             Expr::Tuple {elems, ..} => {

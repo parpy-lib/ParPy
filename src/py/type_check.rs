@@ -427,23 +427,22 @@ fn extract_slice_dim<'a>(
     let i = e.get_info();
     match e {
         Expr::Slice {lo, hi, ..} => {
-            let lo_idx = if let Some(e) = lo {
-                if let Expr::Int {v, ..} = e.as_ref() {
-                    Ok(*v)
+            let extract_index = |o: &Option<Box<Expr>>, default, err_msg_prefix| {
+                if let Some(e) = o {
+                    if let Expr::Int {v, ..} = e.as_ref() {
+                        Ok(*v)
+                    } else {
+                        py_type_error!(i,
+                            "{err_msg_prefix} of slice must be known \
+                             when type-checking."
+                        )
+                    }
                 } else {
-                    let msg = "Lower-bound of slice must be known when type-checking.";
-                    py_type_error!(i, "{}", msg)
+                    Ok(default)
                 }
-            } else {
-                Ok(0)
-            }?;
-            let hi_idx = match hi.as_ref() {
-                Expr::Int {v, ..} => Ok(*v),
-                _ => {
-                    let msg = "Upper-bound of slice must be known when type-checking.";
-                    py_type_error!(i, "{}", msg)
-                }
-            }?;
+            };
+            let lo_idx = extract_index(lo, 0, "Lower-bound")?;
+            let hi_idx = extract_index(hi, shape[0], "Upper-bound")?;
             if lo_idx < hi_idx {
                 if lo_idx >= 0 && hi_idx <= shape[0] {
                     slice_dims.push(hi_idx - lo_idx);
@@ -599,11 +598,15 @@ pub fn type_check_expr(
             Ok(Expr::Subscript {target: Box::new(target), idx: Box::new(idx), ty, i})
         },
         Expr::Slice {lo, hi, i, ..} => {
-            let lo = match lo {
-                Some(e) => Some(Box::new(type_check_expr(vars, *e)?)),
-                None => None
+            let type_check_boxed = |o: Option<Box<Expr>>| match o {
+                Some(e) => {
+                    let e = type_check_expr(vars, *e)?;
+                    Ok::<Option<Box<Expr>>, PyErr>(Some(Box::new(e)))
+                },
+                None => Ok(None)
             };
-            let hi = Box::new(type_check_expr(vars, *hi)?);
+            let lo = type_check_boxed(lo)?;
+            let hi = type_check_boxed(hi)?;
             // NOTE: The type of a slice expression is pointless since it can never be used outside
             // of a subscript operation, so we consider it an integer type to be consistent with
             // regular indices.
@@ -1133,9 +1136,9 @@ mod test {
         test_slicing(target_shape, idx_args, result_shape);
     }
 
-    fn slice(lo: Option<i64>, hi: i64) -> Expr {
+    fn slice(lo: Option<i64>, hi: Option<i64>) -> Expr {
         let lo = lo.map(|i| Box::new(int(i, None)));
-        let hi = Box::new(int(hi, None));
+        let hi = hi.map(|i| Box::new(int(i, None)));
         Expr::Slice {lo, hi, ty: Type::Unknown, i: Info::default()}
     }
 
@@ -1143,10 +1146,18 @@ mod test {
     fn type_check_slice_index() {
         let target_shape = vec![7,4,3];
         let idx_args = vec![
-            slice(Some(2), 7),
+            slice(Some(2), Some(7)),
             int(3, None)
         ];
         let result_shape = vec![5, 3];
+        test_slicing(target_shape, idx_args, result_shape);
+    }
+
+    #[test]
+    fn unspec_slice_index() {
+        let target_shape = vec![10];
+        let idx_args = vec![slice(None, None)];
+        let result_shape = vec![10];
         test_slicing(target_shape, idx_args, result_shape);
     }
 
@@ -1155,9 +1166,9 @@ mod test {
         let target_shape = vec![5,8,6,3,5,4];
         let idx_args = vec![
             int(2, None),
-            slice(Some(1), 7),
+            slice(Some(1), Some(7)),
             int(2, None),
-            slice(None, 3),
+            slice(None, Some(3)),
             int(4, None)
         ];
         let result_shape = vec![6,3,4];
@@ -1186,7 +1197,7 @@ mod test {
     #[should_panic]
     fn slice_beyond_end() {
         let target_shape = vec![5,8];
-        let idx_args = vec![slice(Some(3), 6)];
+        let idx_args = vec![slice(Some(3), Some(6))];
         let result_shape = vec![3,8];
         test_slicing(target_shape, idx_args, result_shape);
     }
@@ -1195,7 +1206,7 @@ mod test {
     #[should_panic]
     fn slice_longer_than_target() {
         let target_shape = vec![5,8];
-        let idx_args = vec![slice(Some(1), 7)];
+        let idx_args = vec![slice(Some(1), Some(7))];
         let result_shape = vec![6,8];
         test_slicing(target_shape, idx_args, result_shape);
     }
@@ -1221,10 +1232,10 @@ mod test {
         let idx_args = vec![
             Expr::Slice {
                 lo: None,
-                hi: Box::new(Expr::UnOp {
+                hi: Some(Box::new(Expr::UnOp {
                     op: UnOp::Sub, arg: Box::new(int(1, None)), ty: Type::Unknown,
                     i: Info::default()
-                }),
+                })),
                 ty: Type::Unknown,
                 i: Info::default()
             }

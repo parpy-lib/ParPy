@@ -221,7 +221,7 @@ pub enum Expr {
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     Subscript {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
-    Slice {lo: Option<Box<Expr>>, hi: Box<Expr>, ty: Type, i: Info},
+    Slice {lo: Option<Box<Expr>>, hi: Option<Box<Expr>>, ty: Type, i: Info},
     Tuple {elems: Vec<Expr>, ty: Type, i: Info},
     Dict {fields: BTreeMap<String, Expr>, ty: Type, i: Info},
     Builtin {func: Builtin, args: Vec<Expr>, axis: Option<i64>, ty: Type, i: Info},
@@ -390,8 +390,8 @@ impl SMapAccum<Expr> for Expr {
             },
             Expr::Slice {lo, hi, ty, i} => {
                 let (acc, lo) = lo.smap_accum_l_result(acc, &f)?;
-                let (acc, hi) = f(acc, *hi)?;
-                Ok((acc, Expr::Slice {lo, hi: Box::new(hi), ty, i}))
+                let (acc, hi) = hi.smap_accum_l_result(Ok(acc), &f)?;
+                Ok((acc, Expr::Slice {lo, hi, ty, i}))
             },
             Expr::Tuple {elems, ty, i} => {
                 let (acc, elems) = elems.smap_accum_l_result(acc, &f)?;
@@ -426,7 +426,7 @@ impl SFold<Expr> for Expr {
             Expr::BinOp {lhs, rhs, ..} => f(f(acc?, lhs)?, rhs),
             Expr::IfExpr {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
             Expr::Subscript {target, idx, ..} => f(f(acc?, target)?, idx),
-            Expr::Slice {lo, hi, ..} => f(lo.sfold_result(acc, &f)?, hi),
+            Expr::Slice {lo, hi, ..} => hi.sfold_result(lo.sfold_result(acc, &f), &f),
             Expr::Tuple {elems, ..} => elems.sfold_result(acc, &f),
             Expr::Dict {fields, ..} => fields.sfold_result(acc, &f),
             Expr::Builtin {args, ..} => args.sfold_result(acc, &f),

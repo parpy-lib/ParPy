@@ -305,9 +305,9 @@ fn convert_expr<'py, 'a>(
         };
         let hi = expr.getattr("upper")?;
         let hi = if hi.is_none() {
-            py_runtime_error!(i, "Slices must have an explicit upper bound")?
+            None
         } else {
-            Box::new(convert_expr(hi, env)?)
+            Some(Box::new(convert_expr(hi, env)?))
         };
         if !expr.getattr("step")?.is_none() {
             py_runtime_error!(i, "Slices with a step size are not supported")?
@@ -998,14 +998,58 @@ mod test {
                 lo: Some(Box::new(Expr::Int {
                     v: 3, ty: Type::Unknown, i: mkinfo(1, 2, 1, 3)
                 })),
-                hi: Box::new(Expr::Int {
+                hi: Some(Box::new(Expr::Int {
                     v: 10, ty: Type::Unknown, i: mkinfo(1, 4, 1, 6)
-                }),
+                })),
                 ty: Type::Unknown,
                 i: mkinfo(1, 2, 1, 6)
             }),
             ty: Type::Unknown,
             i: mkinfo(1, 0, 1, 7)
+        });
+    }
+
+    #[test]
+    fn convert_expr_slice_no_lower_bound() {
+        let expr = convert_expr_wrap("a[:5]").unwrap();
+        assert_eq!(expr, Expr::Subscript {
+            target: Box::new(Expr::Var {
+                id: var("a"),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            idx: Box::new(Expr::Slice {
+                lo: None,
+                hi: Some(Box::new(Expr::Int {
+                    v: 5, ty: Type::Unknown, i: mkinfo(1, 3, 1, 4)
+                })),
+                ty: Type::Unknown,
+                i: mkinfo(1, 2, 1, 4)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 5)
+        });
+    }
+
+    #[test]
+    fn convert_expr_slice_no_upper_bound() {
+        let expr = convert_expr_wrap("a[2:]").unwrap();
+        assert_eq!(expr, Expr::Subscript {
+            target: Box::new(Expr::Var {
+                id: var("a"),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            idx: Box::new(Expr::Slice {
+                lo: Some(Box::new(Expr::Int {
+                    v: 2, ty: Type::Unknown, i: mkinfo(1, 2, 1, 3)
+                })),
+                hi: None,
+                ty: Type::Unknown,
+                i: mkinfo(1, 2, 1, 4)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 5)
         });
     }
 
