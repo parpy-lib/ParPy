@@ -21,7 +21,6 @@ def max(x, y, axis=None):
         return builtins.max(x, y)
 
 def sum(x, axis=None):
-    print(x)
     return torch.sum(x, axis=axis)
 
 def float16(x):

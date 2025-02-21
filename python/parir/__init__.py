@@ -122,7 +122,6 @@ def validate_arguments(args, kwargs):
             if seq:
                 return arg
             if arg.ndim > 0 and arg.get_device() != torch.cuda.current_device():
-                print(arg)
                 msg = [
                     f"The data of tensor in argument {i} is on device ",
                     f"{arg.get_device()}, while it was expected to be on device ",
