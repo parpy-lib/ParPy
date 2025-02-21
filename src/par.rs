@@ -1,5 +1,7 @@
 use pyo3::prelude::*;
 
+pub const REDUCE_PAR_LABEL: &'static str = "_reduce";
+
 #[pyclass]
 #[derive(Clone, Debug)]
 pub enum ParKind {

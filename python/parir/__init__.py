@@ -14,6 +14,7 @@ def reduce():
 
 def convert_python_function_to_ir(fn):
     import ast as python_ast
+    import builtins
     import inspect
     import itertools
     import textwrap
@@ -23,7 +24,7 @@ def convert_python_function_to_ir(fn):
     # The Python AST parser requires properly indented code. Therefore, we make
     # sure to dedent it properly in case it is a nested function, including
     # removing any documentation strings that may prevent proper dedentation.
-    col_ofs = sum(1 for _ in itertools.takewhile(str.isspace, src[0]))
+    col_ofs = builtins.sum(1 for _ in itertools.takewhile(str.isspace, src[0]))
     src = textwrap.dedent("".join(src))
     if inspect.getdoc(fn) is not None:
         src = inspect.cleandoc(src)

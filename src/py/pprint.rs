@@ -19,6 +19,7 @@ impl PrettyPrint for Builtin {
             Builtin::Sqrt => "sqrt",
             Builtin::Tanh => "tanh",
             Builtin::Atan2 => "atan2",
+            Builtin::Sum => "sum",
             Builtin::Convert {..} => "<convert>",
             Builtin::Label => "<label>",
             Builtin::GpuContext => "<gpu_context>",

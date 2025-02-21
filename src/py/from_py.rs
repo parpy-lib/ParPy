@@ -164,6 +164,8 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Builtin> 
                 Ok(Builtin::Tanh)
             } else if e.eq(parir.getattr("atan2")?)? {
                 Ok(Builtin::Atan2)
+            } else if e.eq(parir.getattr("sum")?)? {
+                Ok(Builtin::Sum)
             } else if e.eq(parir.getattr("float16")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::F16})
             } else if e.eq(parir.getattr("float32")?)? {
@@ -194,7 +196,32 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Builtin> 
 
 fn lookup_builtin_expr<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
     let func = lookup_builtin(expr, &i)?;
-    Ok(Expr::Builtin {func, args: vec![], ty: Type::Unknown, i: i.clone()})
+    Ok(Expr::Builtin {func, args: vec![], axis: None, ty: Type::Unknown, i: i.clone()})
+}
+
+/// Currently, the only supported keyword argument is the 'axis' keyword, used to determine which
+/// axis should be reduced in the supported reduction builtins (sum, min, and max). If any other
+/// keyword argument is provided, we report an error.
+fn extract_axis_kwarg<'py, 'a>(
+    acc: PyResult<Option<i64>>,
+    kw: Bound<'py, PyAny>,
+    i: &Info,
+    env: &'py ConvertEnv<'py, 'a>
+) -> PyResult<Option<i64>> {
+    let kw_str = kw.getattr("arg")?.extract::<String>()?;
+    match acc? {
+        None if kw_str == "axis" => {
+            let kw_val = kw.getattr("value")?;
+            if let Ok(Expr::Int {v, ..}) = convert_expr(kw_val, env) {
+                Ok(Some(v))
+            } else {
+                py_runtime_error!(i, "Expected integer value for 'axis' keyword argument")
+            }
+        },
+        None | Some(_) => {
+            py_runtime_error!(i, "Unsupported keyword argument in call: {kw_str}")
+        }
+    }
 }
 
 fn convert_expr<'py, 'a>(
@@ -316,13 +343,16 @@ fn convert_expr<'py, 'a>(
             .try_iter()?
             .map(|arg| convert_expr(arg?, env))
             .collect::<PyResult<Vec<Expr>>>()?;
+        let axis = expr.getattr("keywords")?
+            .try_iter()?
+            .fold(Ok(None), |acc, kw| extract_axis_kwarg(acc, kw?, &i, env))?;
         match convert_expr(expr.getattr("func")?, env)? {
             Expr::Var {id, ..} => {
                 let func = Builtin::Ext {id: id.to_string()};
-                Ok(Expr::Builtin {func, args, ty, i})
+                Ok(Expr::Builtin {func, args, axis, ty, i})
             },
             Expr::Builtin {func, args: a, ..} if a.len() == 0 => {
-                Ok(Expr::Builtin {func, args, ty, i})
+                Ok(Expr::Builtin {func, args, axis, ty, i})
             },
             _ => py_runtime_error!(i, "Function calls are only supported on built-in functions")
         }
@@ -655,14 +685,12 @@ mod test {
 
     #[test]
     fn lookup_builtin_max() -> PyResult<()> {
-        lookup_builtin_ok("parir.max", Builtin::Max)?;
-        lookup_builtin_ok("max", Builtin::Max)
+        lookup_builtin_ok("parir.max", Builtin::Max)
     }
 
     #[test]
     fn lookup_builtin_min() -> PyResult<()> {
-        lookup_builtin_ok("parir.min", Builtin::Min)?;
-        lookup_builtin_ok("min", Builtin::Min)
+        lookup_builtin_ok("parir.min", Builtin::Min)
     }
 
     #[test]

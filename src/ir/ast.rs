@@ -157,8 +157,12 @@ pub struct LoopParallelism {
 }
 
 impl LoopParallelism {
-    pub fn with_threads(self, nthreads: i64) -> Self {
-        LoopParallelism {nthreads, ..self}
+    pub fn with_threads(self, nthreads: i64) -> Option<Self> {
+        if self.nthreads == 0 {
+            Some(LoopParallelism {nthreads, ..self})
+        } else {
+            None
+        }
     }
 
     pub fn with_reduction(self) -> Self {

@@ -182,19 +182,67 @@ fn lub_type(l: Type, r: Type, i: &Info) -> PyResult<Type> {
 fn type_check_builtin(
     func: Builtin,
     mut args: Vec<Expr>,
+    axis: Option<i64>,
     i: Info
 ) -> PyResult<Expr> {
+    // If the axis keyword argument was specified, it must be associated with one of the tensor
+    // reduction operations. Otherwise, we report an error.
+    if axis.is_some() {
+        match &func {
+            Builtin::Sum | Builtin::Max | Builtin::Min => Ok(()),
+            _ => py_type_error!(i, "The 'axis' kwarg is not supported for builtin {func}")
+        }
+    } else {
+        Ok(())
+    }?;
+
+    // Type-check the built-in functions
     match &func {
         // Literals
         Builtin::Inf if args.is_empty() => {
-            Ok(Expr::Builtin {func, args, ty: Type::Tensor {sz: ElemSize::F64, shape: vec![]}, i})
+            let ty = Type::Tensor {sz: ElemSize::F64, shape: vec![]};
+            Ok(Expr::Builtin {func, args, axis, ty, i})
+        },
+        // Unary tensor reductions, with an optional keyword argument
+        Builtin::Sum | Builtin::Max | Builtin::Min if args.len() == 1 => {
+            let err = |arg_ty: &Type| {
+                py_type_error!(
+                    i,
+                    "Unexpected argument of type {arg_ty} of tensor reduction builtin"
+                )
+            };
+            let arg_ty = args[0].get_type();
+            if let Type::Tensor {sz, mut shape} = arg_ty.clone() {
+                if !shape.is_empty() && (sz.is_signed_integer() || sz.is_floating_point()) {
+                    let ty = match axis {
+                        Some(n) => {
+                            let dim = shape.len() as i64;
+                            if n < dim && n >= -dim {
+                                shape.remove(n.rem_euclid(dim) as usize);
+                            } else {
+                                py_type_error!(
+                                    i,
+                                    "Invalid axis value {n} for tensor of dim {dim}"
+                                )?
+                            };
+                            Type::Tensor {sz, shape}
+                        },
+                        None => Type::Tensor {sz, shape: vec![]}
+                    };
+                    Ok(Expr::Builtin {func, args, axis, ty, i})
+                } else {
+                    err(&arg_ty)
+                }
+            } else {
+                err(&arg_ty)
+            }
         },
         // Unary operations on (floating-point) scalar values
         Builtin::Exp | Builtin::Log | Builtin::Cos | Builtin::Sin |
         Builtin::Sqrt if args.len() == 1 => {
             let ty = args[0].get_type().clone();
             if ty.is_floating_point() {
-                Ok(Expr::Builtin {func, args, ty, i})
+                Ok(Expr::Builtin {func, args, axis, ty, i})
             } else {
                 py_type_error!(i, "Unexpected type {ty} of unary builtin (expected float)")
             }
@@ -204,15 +252,16 @@ fn type_check_builtin(
             let ty = args[0].get_type().clone();
             match ty.get_scalar_elem_size() {
                 Some(ElemSize::F16) =>
-                    py_type_error!(i, "Operation tanh not supporteed for 16-bit floats"),
-                Some(ElemSize::F32 | ElemSize::F64) => Ok(Expr::Builtin {func, args, ty, i}),
+                    py_type_error!(i, "Operation tanh not supported for 16-bit floats"),
+                Some(ElemSize::F32 | ElemSize::F64) =>
+                    Ok(Expr::Builtin {func, args, axis, ty, i}),
                 _ => py_type_error!(i, "Unexpected type {ty} of tanh builtin (expected float)")
             }
         },
         Builtin::Abs if args.len() == 1 => {
             let ty = args[0].get_type().clone();
             if ty.is_signed_integer() || ty.is_floating_point() {
-                Ok(Expr::Builtin {func, args, ty, i})
+                Ok(Expr::Builtin {func, args, axis, ty, i})
             } else {
                 py_type_error!(i, "Unexpected type {ty} of abs builtin")
             }
@@ -236,7 +285,7 @@ fn type_check_builtin(
                 let fst = coerce_type(fst, &ty)?;
                 let snd = coerce_type(snd, &ty)?;
                 let args = vec![fst, snd];
-                Ok(Expr::Builtin {func, args, ty, i})
+                Ok(Expr::Builtin {func, args, axis, ty, i})
             };
             let snd = args.pop().unwrap();
             let fst = args.pop().unwrap();
@@ -482,7 +531,7 @@ fn type_check_indexing(
     Ok((elem_ty, coerce_type(idx, &expected_ty)?))
 }
 
-fn type_check_expr(
+pub fn type_check_expr(
     vars: &BTreeMap<Name, Type>,
     e: Expr
 ) -> PyResult<Expr> {
@@ -581,9 +630,9 @@ fn type_check_expr(
             let ty = Type::Dict {fields: ty_fields};
             Ok(Expr::Dict {fields, ty, i})
         },
-        Expr::Builtin {func, args, i, ..} => {
+        Expr::Builtin {func, args, axis, i, ..} => {
             let args = type_check_exprs(vars, args)?;
-            type_check_builtin(func, args, i)
+            type_check_builtin(func, args, axis, i)
         },
         Expr::Convert {..} => Ok(e),
     }

@@ -1,8 +1,28 @@
-from builtins import min, max, abs
+from builtins import abs
 from math import atan2, cos, exp, inf, log, sin, sqrt, tanh
+import builtins
+import torch
 import contextlib
 
 gpu = contextlib.nullcontext()
+
+def min(x, y, axis=None):
+    if y is None:
+        return torch.min(x, axis=axis)
+    else:
+        assert axis is None
+        return builtins.min(x, y)
+
+def max(x, y, axis=None):
+    if y is None:
+        return torch.max(x, axis=axis)
+    else:
+        assert axis is None
+        return builtins.max(x, y)
+
+def sum(x, axis=None):
+    print(x)
+    return torch.sum(x, axis=axis)
 
 def float16(x):
     return float(x)

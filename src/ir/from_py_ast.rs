@@ -7,6 +7,8 @@ use crate::utils::name::Name;
 use crate::par::ParKind;
 use crate::py::ast as py_ast;
 
+use itertools::Itertools;
+
 use std::collections::BTreeMap;
 
 pub struct IREnv {
@@ -79,9 +81,9 @@ fn to_unary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<UnOp> {
         py_ast::Builtin::Tanh => Ok(UnOp::Tanh),
         py_ast::Builtin::Abs => Ok(UnOp::Abs),
         py_ast::Builtin::Inf | py_ast::Builtin::Max | py_ast::Builtin::Min |
-        py_ast::Builtin::Atan2 | py_ast::Builtin::Convert {..} |
-        py_ast::Builtin::Label | py_ast::Builtin::GpuContext |
-        py_ast::Builtin::Ext {..} => {
+        py_ast::Builtin::Atan2 | py_ast::Builtin::Sum |
+        py_ast::Builtin::Convert {..} | py_ast::Builtin::Label |
+        py_ast::Builtin::GpuContext | py_ast::Builtin::Ext {..} => {
             parir_compile_error!(i, "Invalid builtin unary operator: {func}")
         }
     }
@@ -94,7 +96,7 @@ fn to_binary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<BinOp> {
         py_ast::Builtin::Atan2 => Ok(BinOp::Atan2),
         py_ast::Builtin::Exp | py_ast::Builtin::Inf | py_ast::Builtin::Log |
         py_ast::Builtin::Cos | py_ast::Builtin::Sin | py_ast::Builtin::Sqrt |
-        py_ast::Builtin::Tanh | py_ast::Builtin::Abs |
+        py_ast::Builtin::Tanh | py_ast::Builtin::Abs | py_ast::Builtin::Sum |
         py_ast::Builtin::Convert {..} | py_ast::Builtin::Label |
         py_ast::Builtin::GpuContext | py_ast::Builtin::Ext {..} => {
             parir_compile_error!(i, "Invalid builtin binary operator: {func}")
@@ -288,7 +290,7 @@ fn to_ir_expr(
                 parir_compile_error!(i, "Internal compiler error encountered when mapping dictionary to struct")
             }
         },
-        py_ast::Expr::Builtin {func, args, ty, i} => {
+        py_ast::Expr::Builtin {func, args, ty, i, ..} => {
             let args = args.into_iter()
                 .map(|e| to_ir_expr(env, e))
                 .collect::<CompileResult<Vec<Expr>>>()?;
@@ -304,26 +306,39 @@ fn to_ir_expr(
     }
 }
 
-fn convert_par_spec(p: Option<&Vec<ParKind>>) -> LoopParallelism {
+fn convert_par_spec(
+    acc: Option<LoopParallelism>,
+    p: Option<&Vec<ParKind>>
+) -> Option<LoopParallelism> {
     p.unwrap_or(&vec![])
         .clone()
         .into_iter()
-        .fold(LoopParallelism::default(), |acc, kind| match kind {
-            ParKind::GpuThreads(n) => acc.with_threads(n),
-            ParKind::GpuReduction {} => acc.with_reduction()
+        .fold(acc, |acc, kind| match kind {
+            ParKind::GpuThreads(n) => acc?.with_threads(n),
+            ParKind::GpuReduction {} => Some(acc?.with_reduction())
         })
 }
 
-fn lookup_label(
-    mut labels: Vec<String>,
+fn lookup_labels(
+    par: &BTreeMap<String, Vec<ParKind>>,
+    labels: Vec<String>,
     i: &Info
-) -> CompileResult<Option<String>> {
-    if labels.is_empty() {
-        Ok(None)
-    } else if labels.len() == 1 {
-        Ok(Some(labels.remove(0)))
-    } else {
-        parir_compile_error!(i, "Multiple labels cannot be associated with one statement")
+) -> CompileResult<LoopParallelism> {
+    let par = labels.clone()
+        .into_iter()
+        .map(|l| par.get(&l))
+        .fold(Some(LoopParallelism::default()), convert_par_spec);
+    match par {
+        Some(p) => Ok(p),
+        None => {
+            let labels = labels.into_iter().join(", ");
+            let msg = format!(
+                "The labels associated with this statement specify conflicting \
+                 number of threads in parallelization.\n\
+                 Labels of this statement: {labels}"
+            );
+            parir_compile_error!(i, "{}", msg)
+        }
     }
 }
 
@@ -346,8 +361,7 @@ fn to_ir_stmt(
             let lo = to_ir_expr(env, lo)?;
             let hi = to_ir_expr(env, hi)?;
             let body = to_ir_stmts(env, body)?;
-            let l = lookup_label(labels, &i)?;
-            let par = convert_par_spec(l.and_then(|l| env.par.get(&l)));
+            let par = lookup_labels(&env.par, labels, &i)?;
             Ok(Stmt::For {var, lo, hi, step, body, par, i})
         },
         py_ast::Stmt::If {cond, thn, els, i} => {
@@ -369,7 +383,7 @@ fn to_ir_stmt(
             let lo = Expr::Int {v: 0, ty: int64_ty.clone(), i: i.clone()};
             let hi = Expr::Int {v: 1, ty: int64_ty.clone(), i: i.clone()};
             let body = to_ir_stmts(env, body)?;
-            let par = LoopParallelism::default().with_threads(1);
+            let par = LoopParallelism::default().with_threads(1).unwrap();
             Ok(Stmt::For {var, lo, hi, step: 1, body, par, i})
         },
         py_ast::Stmt::Call {func, i, ..} => {

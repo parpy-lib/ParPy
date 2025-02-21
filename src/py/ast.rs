@@ -159,7 +159,7 @@ impl fmt::Display for Type {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Builtin {
-    Exp, Inf, Log, Max, Min, Abs, Cos, Sin, Sqrt, Tanh, Atan2,
+    Exp, Inf, Log, Max, Min, Abs, Cos, Sin, Sqrt, Tanh, Atan2, Sum,
     Convert {sz: ElemSize}, Label, GpuContext, Ext {id: String}
 }
 
@@ -224,7 +224,7 @@ pub enum Expr {
     Slice {lo: Option<Box<Expr>>, hi: Box<Expr>, ty: Type, i: Info},
     Tuple {elems: Vec<Expr>, ty: Type, i: Info},
     Dict {fields: BTreeMap<String, Expr>, ty: Type, i: Info},
-    Builtin {func: Builtin, args: Vec<Expr>, ty: Type, i: Info},
+    Builtin {func: Builtin, args: Vec<Expr>, axis: Option<i64>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 }
 
@@ -281,7 +281,7 @@ impl Expr {
             Expr::Slice {lo, hi, ty, ..} => Expr::Slice {lo, hi, ty, i},
             Expr::Tuple {elems, ty, ..} => Expr::Tuple {elems, ty, i},
             Expr::Dict {fields, ty, ..} => Expr::Dict {fields, ty, i},
-            Expr::Builtin {func, args, ty, ..} => Expr::Builtin {func, args, ty, i},
+            Expr::Builtin {func, args, axis, ty, ..} => Expr::Builtin {func, args, axis, ty, i},
             Expr::Convert {e, ty} => Expr::Convert {e: Box::new(e.with_info(i)), ty}
         }
     }
@@ -401,9 +401,9 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, fields) = fields.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Expr::Dict {fields, ty, i}))
             },
-            Expr::Builtin {func, args, ty, i} => {
+            Expr::Builtin {func, args, axis, ty, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Expr::Builtin {func, args, ty, i}))
+                Ok((acc, Expr::Builtin {func, args, axis, ty, i}))
             },
             Expr::Convert {e, ty} => {
                 let (acc, e) = f(acc?, *e)?;
