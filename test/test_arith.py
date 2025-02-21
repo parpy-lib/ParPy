@@ -76,10 +76,20 @@ def parir_aug_ops(dst, a, b):
         dst[0] += a[0]
         dst[0] -= b[0]
 
-def arith_binop_dtype(fn, dtype, compile_only):
-    a = torch.randint(1, 10, (1,), dtype=dtype)
-    b = torch.randint(1, 10, (1,), dtype=dtype)
-    dst = torch.zeros((1,), dtype=dtype)
+@parir.jit
+def parir_max(dst, a, b):
+    with parir.gpu:
+        dst[0] = max(a[0], b[0])
+
+@parir.jit
+def parir_min(dst, a, b):
+    with parir.gpu:
+        dst[0] = min(a[0], b[0])
+
+def arith_binop_dtype(fn, ldtype, rdtype, compile_only):
+    a = torch.randint(1, 10, (1,), dtype=ldtype)
+    b = torch.randint(1, 10, (1,), dtype=rdtype)
+    dst = torch.zeros((1,), dtype=rdtype)
     if compile_only:
         s = parir.print_compiled(fn, [dst, a, b])
         assert len(s) != 0
@@ -94,7 +104,7 @@ bitwise_funs = [
 ]
 arith_funs = [
     parir_add, parir_sub, parir_mul, parir_div_int, parir_div, parir_rem,
-    parir_pow, parir_abs, parir_aug_ops
+    parir_pow, parir_abs, parir_aug_ops, parir_max, parir_min
 ] + bitwise_funs
 arith_tys = [
     torch.int8, torch.int16, torch.int32, torch.int64, torch.float16,
@@ -104,27 +114,55 @@ arith_tys = [
 def is_float_dtype(dtype):
     return dtype == torch.float16 or dtype == torch.float32 or dtype == torch.float64
 
-def bin_arith_helper(fn, dtype, compile_only):
-    if (((fn.__name__ == "parir_div_int" or fn.__name__ == "parir_rem")
-             and is_float_dtype(dtype)) or
-         (fn.__name__ == "parir_pow" and
-             not (dtype == torch.float32 or dtype == torch.float64)) or
-         (fn in bitwise_funs and is_float_dtype(dtype))):
+def is_invalid_div_or_rem_call(fn, ldtype, rdtype):
+    return ((fn.__name__ == "parir_div_int" or fn.__name__ == "parir_rem") and
+        (is_float_dtype(ldtype) or is_float_dtype(rdtype)))
+
+# There is no 'pow' implementation for 16-bit floats in CUDA
+def is_invalid_pow_call(fn, ldtype, rdtype):
+    return (fn.__name__ == "parir_pow" and
+        ((not is_float_dtype(ldtype) and not is_float_dtype(rdtype)) or
+        (ldtype == torch.float16 and rdtype == torch.float16)))
+
+def bin_arith_helper(fn, ldtype, rdtype, compile_only):
+    if (is_invalid_div_or_rem_call(fn, ldtype, rdtype) or
+        is_invalid_pow_call(fn, ldtype, rdtype) or
+        (fn in bitwise_funs and (is_float_dtype(ldtype) or is_float_dtype(rdtype)))):
         with pytest.raises(TypeError):
-            arith_binop_dtype(fn, dtype, compile_only)
+            arith_binop_dtype(fn, ldtype, rdtype, compile_only)
     else:
-        arith_binop_dtype(fn, dtype, compile_only)
+        arith_binop_dtype(fn, ldtype, rdtype, compile_only)
 
 @pytest.mark.parametrize('fn', arith_funs)
 @pytest.mark.parametrize('dtype', arith_tys)
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_bin_arith(fn, dtype):
-    bin_arith_helper(fn, dtype, False)
+    bin_arith_helper(fn, dtype, dtype, False)
 
 @pytest.mark.parametrize('fn', arith_funs)
 @pytest.mark.parametrize('dtype', arith_tys)
 def test_bin_arith_compile(fn, dtype):
-    bin_arith_helper(fn, dtype, True)
+    bin_arith_helper(fn, dtype, dtype, True)
+
+# All allowed pairs of types in arithmetic operations, where the LHS should be
+# coerced to the RHS type.
+arith_ty_pairs = [
+    (torch.int8, torch.int16),
+    (torch.int8, torch.int32),
+    (torch.int8, torch.int64),
+    (torch.int16, torch.int32),
+    (torch.int16, torch.int64),
+    (torch.int32, torch.int64),
+    (torch.float16, torch.float32),
+    (torch.float16, torch.float64),
+    (torch.float32, torch.float64),
+]
+
+@pytest.mark.parametrize('fn', arith_funs)
+@pytest.mark.parametrize('dtypes', arith_ty_pairs)
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+def test_bin_arith_mixed_types(fn, dtypes):
+    bin_arith_helper(fn, dtypes[0], dtypes[1], False)
 
 @parir.jit
 def parir_cos(dst, src):
