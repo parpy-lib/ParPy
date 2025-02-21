@@ -329,7 +329,7 @@ fn type_check_binop(
         BinOp::Pow => {
             match ty.get_scalar_elem_size() {
                 Some(ElemSize::F32 | ElemSize::F64) => Ok(ty),
-                _ => py_type_error!(i, "Invalid type {ty} of floating-poont arithmetic operation")
+                _ => py_type_error!(i, "Invalid type {ty} of floating-point arithmetic operation")
             }
         },
         // Boolean operations
