@@ -1,8 +1,6 @@
 use super::ast::*;
 use crate::utils::pprint::*;
 
-use itertools::Itertools;
-
 use std::fmt;
 
 impl PrettyPrint for Builtin {
@@ -120,17 +118,6 @@ impl PrettyPrint for Expr {
             Expr::Tuple {elems, ..} => {
                 let (env, elems) = pprint_iter(elems.iter(), env, ", ");
                 (env, format!("({elems})"))
-            },
-            Expr::Dict {fields, ..} => {
-                let (env, fields) = fields.iter()
-                    .fold((env, vec![]), |acc, (k, v)| {
-                        let (env, mut fields) = acc;
-                        let (env, v) = v.pprint(env);
-                        fields.push(format!("{k}: {v}"));
-                        (env, fields)
-                    });
-                let fields = fields.into_iter().join(", ");
-                (env, format!("{{{fields}}}"))
             },
             Expr::Builtin {func, args, ..} => {
                 let (env, func) = func.pprint(env);

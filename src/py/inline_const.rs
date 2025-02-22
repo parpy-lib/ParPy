@@ -34,8 +34,8 @@ fn replace_constants_expr(
         },
         Expr::String {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
         Expr::UnOp {..} | Expr::BinOp {..} | Expr::IfExpr {..} |
-        Expr::Slice {..} | Expr::Tuple {..} | Expr::Dict {..} |
-        Expr::Builtin {..} | Expr::Convert {..} =>
+        Expr::Slice {..} | Expr::Tuple {..} | Expr::Builtin {..} |
+        Expr::Convert {..} =>
             e.smap(|e| replace_constants_expr(consts, e))
     }
 }

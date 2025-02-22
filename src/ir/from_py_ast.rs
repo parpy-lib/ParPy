@@ -279,17 +279,6 @@ fn to_ir_expr(
         py_ast::Expr::Tuple {i, ..} => {
             parir_compile_error!(i, "Tuple literals are not supported outside of indexing")
         },
-        py_ast::Expr::Dict {fields, ty, i} => {
-            let fields = fields.into_iter()
-                .map(|(id, e)| Ok((id, to_ir_expr(env, e)?)))
-                .collect::<CompileResult<Vec<(String, Expr)>>>()?;
-            if let Some(id) = env.structs.get(&ty) {
-                let ty = Type::Struct {id: id.clone()};
-                Ok(Expr::Struct {id: id.clone(), fields, ty, i})
-            } else {
-                parir_compile_error!(i, "Internal compiler error encountered when mapping dictionary to struct")
-            }
-        },
         py_ast::Expr::Builtin {func, args, ty, i, ..} => {
             let args = args.into_iter()
                 .map(|e| to_ir_expr(env, e))

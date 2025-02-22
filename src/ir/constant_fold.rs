@@ -90,7 +90,7 @@ fn fold_expr(e: Expr) -> Expr {
         },
         Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
         Expr::IfExpr {..} | Expr::StructFieldAccess {..} |
-        Expr::TensorAccess {..} | Expr::Struct {..} => e.smap(fold_expr)
+        Expr::TensorAccess {..} => e.smap(fold_expr)
     }
 }
 

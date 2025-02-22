@@ -58,18 +58,6 @@ impl PrettyPrint for Expr {
                 let (env, idx) = idx.pprint(env);
                 (env, format!("{target}[{idx}]"))
             },
-            Expr::Struct {id, fields, ..} => {
-                let (env, id) = id.pprint(env);
-                let (env, fields) = fields.iter()
-                    .fold((env, vec![]), |acc, (label, e)| {
-                        let (env, mut fields) = acc;
-                        let (env, e) = e.pprint(env);
-                        fields.push(format!("{label}: {e}"));
-                        (env, fields)
-                    });
-                let fields = fields.into_iter().join(", ");
-                (env, format!("struct {id} {{{fields}}}"))
-            },
             Expr::Convert {e, ty} => {
                 let (env, e) = e.pprint(env);
                 let (env, ty) = ty.pprint(env);

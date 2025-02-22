@@ -43,7 +43,6 @@ pub enum Expr {
     IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     TensorAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
-    Struct {id: Name, fields: Vec<(String, Expr)>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 }
 
@@ -59,7 +58,6 @@ impl Expr {
             Expr::IfExpr {ty, ..} => ty,
             Expr::StructFieldAccess {ty, ..} => ty,
             Expr::TensorAccess {ty, ..} => ty,
-            Expr::Struct {ty, ..} => ty,
             Expr::Convert {ty, ..} => ty,
         }
     }
@@ -77,7 +75,6 @@ impl InfoNode for Expr {
             Expr::IfExpr {i, ..} => i.clone(),
             Expr::StructFieldAccess {i, ..} => i.clone(),
             Expr::TensorAccess {i, ..} => i.clone(),
-            Expr::Struct {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
         }
     }
@@ -119,10 +116,6 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, idx) = f(acc, *idx)?;
                 Ok((acc, Expr::TensorAccess {target: Box::new(target), idx: Box::new(idx), ty, i}))
             },
-            Expr::Struct {id, fields, ty, i} => {
-                let (acc, fields) = fields.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Expr::Struct {id, fields, ty, i}))
-            },
             Expr::Convert {e, ty} => {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
@@ -144,7 +137,6 @@ impl SFold<Expr> for Expr {
             Expr::IfExpr {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
             Expr::StructFieldAccess {target, ..} => f(acc?, target),
             Expr::TensorAccess {target, idx, ..} => f(f(acc?, target)?, idx),
-            Expr::Struct {fields, ..} => fields.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
         }
     }

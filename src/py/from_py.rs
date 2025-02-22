@@ -8,7 +8,6 @@ use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
 use pyo3::types;
 
-use std::collections::BTreeMap;
 use std::ffi::CString;
 
 struct ConvertEnv<'py, 'a> {
@@ -321,23 +320,6 @@ fn convert_expr<'py, 'a>(
             .map(|elem| convert_expr(elem?, env))
             .collect::<PyResult<Vec<Expr>>>()?;
         Ok(Expr::Tuple {elems: elts, ty, i})
-    } else if expr.is_instance(&env.ast.getattr("Dict")?)? {
-        let keys = expr.getattr("keys")?
-            .try_iter()?
-            .map(|k| convert_expr(k?, env))
-            .map(|k| match k? {
-                Expr::String {v, ..} => Ok(v),
-                _ => py_runtime_error!(i, "Expected dictionary of string keys")
-            })
-            .collect::<PyResult<Vec<String>>>()?;
-        let values = expr.getattr("values")?
-            .try_iter()?
-            .map(|v| convert_expr(v?, env))
-            .collect::<PyResult<Vec<Expr>>>()?;
-        let fields = keys.into_iter()
-            .zip(values.into_iter())
-            .collect::<BTreeMap<String, Expr>>();
-        Ok(Expr::Dict {fields, ty, i})
     } else if expr.is_instance(&env.ast.getattr("Call")?)? {
         let args = expr.getattr("args")?
             .try_iter()?
@@ -1050,23 +1032,6 @@ mod test {
             }),
             ty: Type::Unknown,
             i: mkinfo(1, 0, 1, 5)
-        });
-    }
-
-    #[test]
-    fn convert_expr_dict() {
-        let expr = convert_expr_wrap("{'a': 2, 'b': 3.14}").unwrap();
-        let fields = vec![
-            ("a", Expr::Int {v: 2, ty: Type::Unknown, i: mkinfo(1, 6, 1, 7)}),
-            ("b", Expr::Float {v: 3.14, ty: Type::Unknown, i: mkinfo(1, 14, 1, 18)})
-        ];
-        let fields = fields.into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect::<BTreeMap<String, Expr>>();
-        assert_eq!(expr, Expr::Dict {
-            fields,
-            ty: Type::Unknown,
-            i: mkinfo(1, 0, 1, 19)
         });
     }
 

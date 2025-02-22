@@ -623,21 +623,14 @@ pub fn type_check_expr(
             let ty = Type::Tuple {elems: elem_types};
             Ok(Expr::Tuple {elems, ty, i})
         },
-        Expr::Dict {fields, i, ..} => {
-            let fields = fields.into_iter()
-                .map(|(k, v)| Ok((k, type_check_expr(vars, v)?)))
-                .collect::<PyResult<BTreeMap<String, Expr>>>()?;
-            let ty_fields = fields.iter()
-                .map(|(k, v)| (k.clone(), v.get_type().clone()))
-                .collect::<BTreeMap<String, Type>>();
-            let ty = Type::Dict {fields: ty_fields};
-            Ok(Expr::Dict {fields, ty, i})
-        },
         Expr::Builtin {func, args, axis, i, ..} => {
             let args = type_check_exprs(vars, args)?;
             type_check_builtin(func, args, axis, i)
         },
-        Expr::Convert {..} => Ok(e),
+        Expr::Convert {e, ty} => {
+            let e = Box::new(type_check_expr(vars, *e)?);
+            Ok(Expr::Convert {e, ty})
+        }
     }
 }
 
@@ -878,12 +871,6 @@ mod test {
         let ty1 = Type::Tuple {elems: vec![scalar_type(ElemSize::F32)]};
         let ty2 = Type::Tuple {elems: vec![scalar_type(ElemSize::F64)]};
         test_lub_type_fail(ty1, ty2)
-    }
-
-    #[test]
-    fn lub_type_dict() {
-        let ty = Type::Dict {fields: BTreeMap::new()};
-        test_lub_type_ok(ty.clone(), ty.clone(), ty.clone())
     }
 
     fn var(s: &str) -> Name {
