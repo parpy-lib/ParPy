@@ -1,5 +1,6 @@
 use super::ast::*;
 use super::constant_fold;
+use super::slices;
 use crate::py_type_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -562,6 +563,18 @@ fn num_index_dimensions(idx: &Expr) -> usize {
     }
 }
 
+fn extract_slice_bound(
+    o: &Option<Box<Expr>>,
+    default: i64,
+    msg_prefix: &str,
+    i: &Info
+) -> PyResult<i64> {
+    match slices::extract_slice_index(o, default) {
+        Some(idx) => Ok(idx),
+        None => py_type_error!(i, "{msg_prefix} of slice must be fixed.")
+    }
+}
+
 fn extract_slice_dim<'a>(
     acc: (&'a [i64], Vec<i64>),
     e: &Expr
@@ -569,20 +582,14 @@ fn extract_slice_dim<'a>(
     let (shape, mut slice_dims) = acc;
     let i = e.get_info();
     match e {
-        Expr::Slice {lo, hi, ..} => {
-            let extract_index = |o: &Option<Box<Expr>>, default, err_msg_prefix| {
-                if let Some(e) = o {
-                    if let Expr::Int {v, ..} = e.as_ref() {
-                        Ok(*v)
-                    } else {
-                        py_type_error!(i, "{err_msg_prefix} of slice must be fixed.")
-                    }
-                } else {
-                    Ok(default)
-                }
+        Expr::Slice {lo, hi, i, ..} => {
+            let lo_idx = extract_slice_bound(lo, 0, "Lower-bound", &i)?;
+            let hi_idx = extract_slice_bound(hi, shape[0], "Upper-bound", &i)?;
+            let hi_idx = if hi_idx < 0 {
+                hi_idx + shape[0]
+            } else {
+                hi_idx
             };
-            let lo_idx = extract_index(lo, 0, "Lower-bound")?;
-            let hi_idx = extract_index(hi, shape[0], "Upper-bound")?;
             if lo_idx < hi_idx {
                 if lo_idx >= 0 && hi_idx <= shape[0] {
                     slice_dims.push(hi_idx - lo_idx);

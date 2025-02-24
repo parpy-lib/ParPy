@@ -55,13 +55,34 @@ fn find_reduce_dim(rhs: &Expr) -> Option<i64> {
     }
 }
 
+pub fn extract_slice_index(
+    o: &Option<Box<Expr>>,
+    default: i64
+) -> Option<i64> {
+    if let Some(e) = o {
+        if let Expr::Int {v, ..} = e.as_ref() {
+            Some(*v)
+        } else {
+            None
+        }
+    } else {
+        Some(default)
+    }
+}
+
 fn insert_slice_dim_ids_index<'a>(
     ids: &'a[Name],
     e: Expr
 ) -> (&'a[Name], Expr) {
     match e {
-        Expr::Slice {i, ty, ..} => {
-            let slice_dim = Expr::Var {id: ids[0].clone(), ty, i};
+        Expr::Slice {lo, i, ty, ..} => {
+            let lo = extract_slice_index(&lo, 0).unwrap();
+            let slice_dim = Expr::BinOp {
+                lhs: Box::new(Expr::Int {v: lo, ty: ty.clone(), i: i.clone()}),
+                op: BinOp::Add,
+                rhs: Box::new(Expr::Var {id: ids[0].clone(), ty: ty.clone(), i: i.clone()}),
+                ty, i
+            };
             (&ids[1..], slice_dim)
         },
         _ => e.smap_accum_l(ids, insert_slice_dim_ids_index)
