@@ -12,20 +12,16 @@ def softmax(x, N, M, out):
     parir.label('i')
     for i in range(N):
         parir.label('j1')
-        m = parir.max(x[i,:])
+        m = parir.max(x[i,:], axis=0)
 
         parir.label('j2')
-        for j in range(M):
-            out[i, j] = parir.exp(x[i, j] - m)
+        out[i,:] = parir.exp(x[i,:] - m)
 
-        s = parir.float32(0.0)
         parir.label('j3')
-        for j in range(M):
-            s = s + out[i, j]
+        s = parir.sum(out[i,:], axis=0)
 
         parir.label('j4')
-        for j in range(M):
-            out[i, j] = out[i, j] / s
+        out[i,:] = out[i,:] / s
 
 
 def softmax_wrap(x, p=None):

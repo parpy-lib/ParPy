@@ -42,17 +42,25 @@ pub fn specialize_ast_on_arguments<'py>(
     // Perform the type-checking and inlining of literal values in an intertwined manner. First, we
     // type-check the parameters based on the corresponding arguments provided in the function
     // call. Second, once the parameters have been typed, we inline the values of scalar parameters
-    // into the AST. Third, we type-check the body of the function.
+    // into the AST.
     //
-    // This particular order is important, because it allows the type-checker to determine the
-    // exact size of all slices, and therefore reason about the correctness of the dimensions of
-    // slice operations.
+    // This particular order is important, because it allows us to reason about the exact sizes of
+    // all slices and by extension the correctness of dimensions of slice operations.
     let ast = type_check::type_check_params(ast, &args)?;
     let ast = inline_const::inline_scalar_values(ast, &args)?;
-    let ast = type_check::type_check_body(ast)?;
 
-    // Replace slice statements with for-loops
+    // As the types of slice operations involve tensors, we check that the shapes of all operations
+    // are valid, ignoring the element types inside tensors. Second, we perform the slice
+    // transformation, replacing slice statements with scalar operations. Third, we type-check the
+    // scalar operations of the resulting AST.
+    //
+    // We only support broadcasting in a slice operation where all dimensions are explicit, as this
+    // allows us to parallelize properly. In other situations, any kind of broadcasting is
+    // disallowed. The order in which we perform the operations below are carefully chosen to not
+    // impose this restriction on slice operations.
+    let ast = type_check::check_body_shape(ast)?;
     let ast = slices::replace_slices_with_for_loops(ast)?;
+    let ast = type_check::type_check_body(ast)?;
 
     Ok(ast)
 }

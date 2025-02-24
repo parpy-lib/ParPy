@@ -51,7 +51,7 @@ def matmul_slice(a, b, c, M, N):
         parir.label('N')
         for j in range(N):
             parir.label('K')
-            c[i,j] = parir.sum(a[i,:] * b[:,j])
+            c[i,j] = parir.sum(a[i,:] * b[:,j], axis=0)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_matmul_slicing():
@@ -66,7 +66,7 @@ def test_matmul_slicing():
     matmul_slice(a, b, c, M, N, parallelize=p, cache=False)
     assert torch.allclose(a @ b, c, atol=1e-5)
 
-def test_slice_materialization_fail():
+def test_slice_assign_fail():
     @parir.jit
     def slice_materialize(x):
         with parir.gpu:
@@ -74,6 +74,4 @@ def test_slice_materialization_fail():
     x = torch.randn(10, device='cuda')
     with pytest.raises(RuntimeError) as e_info:
         slice_materialize(x)
-    assert e_info.match(r".*materialize.*")
-
-
+    assert e_info.match(r"Slice expression cannot be assigned to fresh variable y.*")

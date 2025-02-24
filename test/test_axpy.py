@@ -7,8 +7,7 @@ torch.manual_seed(1234)
 @parir.jit
 def axpy(a, x, y, out, N):
     parir.label('i')
-    for i in range(N):
-        out[i] = a * x[i] + y[i]
+    out[:] = a * x[:] + y[:]
 
 def axpy_wrap(a, x, y, N, p=None):
     out = torch.empty_like(x)

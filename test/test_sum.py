@@ -9,7 +9,7 @@ def sum_rows(x, out, N):
     parir.label("outer")
     for i in range(N):
         parir.label("inner")
-        out[i] = parir.sum(x[i,:])
+        out[i] = parir.sum(x[i,:], axis=-1)
 
 def sum_wrap(x, p=None):
     N, M = x.shape

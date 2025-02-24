@@ -15,6 +15,13 @@ pub enum ElemSize {
 }
 
 impl ElemSize {
+    pub fn is_boolean(&self) -> bool {
+        match self {
+            ElemSize::Bool => true,
+            _ => false
+        }
+    }
+
     pub fn is_signed_integer(&self) -> bool {
         match self {
             ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 => true,
@@ -59,29 +66,6 @@ impl Type {
         match self {
             Type::Tensor {sz, shape} if shape.is_empty() => Some(sz),
             _ => None
-        }
-    }
-
-    pub fn is_boolean(&self) -> bool {
-        self.get_scalar_elem_size()
-            .is_some_and(|sz| sz == &ElemSize::Bool)
-    }
-
-    pub fn is_signed_integer(&self) -> bool {
-        self.get_scalar_elem_size()
-            .is_some_and(|sz| sz.is_signed_integer())
-    }
-
-    pub fn is_floating_point(&self) -> bool {
-        self.get_scalar_elem_size()
-            .is_some_and(|sz| sz.is_floating_point())
-    }
-
-    pub fn is_arith_tensor(&self) -> bool {
-        if let Type::Tensor {sz, shape} = self {
-            !shape.is_empty() && (sz.is_signed_integer() || sz.is_floating_point())
-        } else {
-            false
         }
     }
 
@@ -260,7 +244,7 @@ impl Expr {
             Expr::Slice {..} => 9,
             Expr::Tuple {..} => 10,
             Expr::Builtin {..} => 11,
-            Expr::Convert {..} => 12
+            Expr::Convert {..} => 12,
         }
     }
 
@@ -278,7 +262,7 @@ impl Expr {
             Expr::Slice {lo, hi, ty, ..} => Expr::Slice {lo, hi, ty, i},
             Expr::Tuple {elems, ty, ..} => Expr::Tuple {elems, ty, i},
             Expr::Builtin {func, args, axis, ty, ..} => Expr::Builtin {func, args, axis, ty, i},
-            Expr::Convert {e, ty} => Expr::Convert {e: Box::new(e.with_info(i)), ty}
+            Expr::Convert {e, ty} => Expr::Convert {e: Box::new(e.with_info(i)), ty},
         }
     }
 }
@@ -351,10 +335,6 @@ impl SMapAccum<Expr> for Expr {
         f: impl Fn(A, Expr) -> Result<(A, Expr), E>
     ) -> Result<(A, Expr), E> {
         match self {
-            Expr::Var {..} | Expr::String {..} | Expr::Bool {..} |
-            Expr::Int {..} | Expr::Float {..} => {
-                Ok((acc?, self))
-            },
             Expr::UnOp {op, arg, ty, i} => {
                 let (acc, arg) = f(acc?, *arg)?;
                 Ok((acc, Expr::UnOp {op, arg: Box::new(arg), ty, i}))
@@ -397,7 +377,11 @@ impl SMapAccum<Expr> for Expr {
             Expr::Convert {e, ty} => {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
-            }
+            },
+            Expr::Var {..} | Expr::String {..} | Expr::Bool {..} |
+            Expr::Int {..} | Expr::Float {..} => {
+                Ok((acc?, self))
+            },
         }
     }
 }
@@ -409,8 +393,6 @@ impl SFold<Expr> for Expr {
         f: impl Fn(A, &Expr) -> Result<A, E>
     ) -> Result<A, E> {
         match self {
-            Expr::Var {..} | Expr::String {..} | Expr::Bool {..} |
-            Expr::Int {..} | Expr::Float {..} => acc,
             Expr::UnOp {arg, ..} => f(acc?, arg),
             Expr::BinOp {lhs, rhs, ..} => f(f(acc?, lhs)?, rhs),
             Expr::IfExpr {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
@@ -419,6 +401,8 @@ impl SFold<Expr> for Expr {
             Expr::Tuple {elems, ..} => elems.sfold_result(acc, &f),
             Expr::Builtin {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
+            Expr::Var {..} | Expr::String {..} | Expr::Bool {..} |
+            Expr::Int {..} | Expr::Float {..} => acc
         }
     }
 }

@@ -2,6 +2,7 @@ use crate::py_runtime_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
+use crate::utils::reduce;
 use super::ast::*;
 
 use pyo3::PyTypeInfo;
@@ -198,9 +199,20 @@ fn lookup_builtin_expr<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr
     Ok(Expr::Builtin {func, args: vec![], axis: None, ty: Type::Unknown, i: i.clone()})
 }
 
+fn extract_integer_literal_value(e: Expr) -> Option<i64> {
+    match e {
+        Expr::Int {v, ..} => Some(v),
+        Expr::UnOp {op: UnOp::Sub, arg, ..} => match *arg {
+            Expr::Int {v, ..} => Some(-v),
+            _ => None
+        },
+        _ => None
+    }
+}
+
 /// Currently, the only supported keyword argument is the 'axis' keyword, used to determine which
 /// axis should be reduced in the supported reduction builtins (sum, min, and max). If any other
-/// keyword argument is provided, we report an error.
+/// keyword arguments are provided, we report an error.
 fn extract_axis_kwarg<'py, 'a>(
     acc: PyResult<Option<i64>>,
     kw: Bound<'py, PyAny>,
@@ -211,15 +223,30 @@ fn extract_axis_kwarg<'py, 'a>(
     match acc? {
         None if kw_str == "axis" => {
             let kw_val = kw.getattr("value")?;
-            if let Ok(Expr::Int {v, ..}) = convert_expr(kw_val, env) {
-                Ok(Some(v))
-            } else {
-                py_runtime_error!(i, "Expected integer value for 'axis' keyword argument")
+            match extract_integer_literal_value(convert_expr(kw_val, env)?) {
+                Some(v) => Ok(Some(v)),
+                None => py_runtime_error!(i, "Expected integer literal value \
+                                              for 'axis' keyword argument")
             }
         },
         None | Some(_) => {
             py_runtime_error!(i, "Unsupported keyword argument in call: {kw_str}")
         }
+    }
+}
+
+fn validate_use_of_axis_keyword(
+    func: &Builtin,
+    nargs: usize,
+    uses_axis_arg: bool,
+    i: &Info
+) -> PyResult<()> {
+    let is_reduction_op = reduce::builtin_to_reduction_op(func).is_some() && nargs == 1;
+    if is_reduction_op != uses_axis_arg {
+        py_runtime_error!(i, "The 'axis' keyword must be specified for \
+                              reduction operators (and only for these)")
+    } else {
+        Ok(())
     }
 }
 
@@ -331,9 +358,11 @@ fn convert_expr<'py, 'a>(
         match convert_expr(expr.getattr("func")?, env)? {
             Expr::Var {id, ..} => {
                 let func = Builtin::Ext {id: id.to_string()};
+                validate_use_of_axis_keyword(&func, args.len(), axis.is_some(), &i)?;
                 Ok(Expr::Builtin {func, args, axis, ty, i})
             },
             Expr::Builtin {func, args: a, ..} if a.len() == 0 => {
+                validate_use_of_axis_keyword(&func, args.len(), axis.is_some(), &i)?;
                 Ok(Expr::Builtin {func, args, axis, ty, i})
             },
             _ => py_runtime_error!(i, "Function calls are only supported on built-in functions")
