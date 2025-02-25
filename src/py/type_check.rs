@@ -609,7 +609,12 @@ fn extract_slice_dim<'a>(
             }
         },
         Expr::Int {v, ..} => {
-            if *v >= 0 && *v < shape[0] {
+            let idx = if *v < 0 {
+                *v + shape[0]
+            } else {
+                *v
+            };
+            if idx >= 0 && idx < shape[0] {
                 slice_dims.push(0);
             } else {
                 py_type_error!(i, "Index {0} out of range for shape {1}", v, shape[0])?
