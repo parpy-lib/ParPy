@@ -1355,11 +1355,19 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
     fn negative_index_access() {
         let target_shape = vec![5,8];
         let idx_args = vec![int(-1, None)];
         let result_shape = vec![8];
+        test_slicing(target_shape, idx_args, result_shape);
+    }
+
+    #[test]
+    #[should_panic]
+    fn slice_negative_lower_bound_fails() {
+        let target_shape = vec![5,8];
+        let idx_args = vec![slice(Some(-1), None)];
+        let result_shape = vec![5];
         test_slicing(target_shape, idx_args, result_shape);
     }
 
@@ -1382,8 +1390,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
-    fn reject_non_literal_out_of_bounds_index() {
+    fn negative_literal_index() {
         let target_shape = vec![5,8];
         let idx_args = vec![
             Expr::UnOp {

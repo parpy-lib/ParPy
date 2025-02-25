@@ -1,6 +1,7 @@
 pub mod ast;
 mod constant_fold;
 mod from_py;
+mod indices;
 mod inline_calls;
 mod inline_const;
 mod labels;
@@ -53,16 +54,19 @@ pub fn specialize_ast_on_arguments<'py>(
     debug_env.print("Python-like AST after inlining", &ast);
 
     // As the types of slice operations involve tensors, we check that the shapes of all operations
-    // are valid, ignoring the element types inside tensors. Second, we perform the slice
-    // transformation, replacing slice statements with scalar operations. Third, we type-check the
-    // scalar operations of the resulting AST.
+    // are valid, ignoring the element types inside tensors. Next, we resolve indices based on the
+    // inferred shapes, replacing negative and omitted indices with valid non-negative indices.
+    // After this, we perform the slice transformation, replacing slice statements with scalar
+    // operations. Finally, we can type-check the scalar operations of the resulting AST.
     //
-    // We only support broadcasting in a slice operation where all dimensions are explicit, as this
-    // allows us to parallelize properly. In other situations, any kind of broadcasting is
-    // disallowed. The order in which we perform the operations below are carefully chosen to not
-    // impose this restriction on slice operations.
+    // Slice operations must be explicit, but they are allowed to perform broadcasting operations,
+    // unlike regular operations. When working with slices, the dimensions are explicitly declared,
+    // making it natural to specify parallelism, while regular broadcasting would make this
+    // implicit and therefore ill-suited with the parallelism approach used in this library.
     let ast = type_check::check_body_shape(ast)?;
     debug_env.print("Python-like AST after shape checking", &ast);
+    let ast = indices::resolve_indices(ast)?;
+    debug_env.print("Python-like AST after resolving indices", &ast);
     let ast = slices::replace_slices_with_for_loops(ast)?;
     debug_env.print("Python-like AST after slice transformation", &ast);
     let ast = type_check::type_check_body(ast)?;
