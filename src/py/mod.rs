@@ -10,8 +10,9 @@ mod slices;
 mod symbolize;
 mod type_check;
 
-use crate::par::ParKind;
 use symbolize::Symbolize;
+use crate::par::ParKind;
+use crate::utils::debug;
 
 use pyo3::prelude::*;
 
@@ -33,7 +34,8 @@ pub fn parse_untyped_ast<'py>(
 pub fn specialize_ast_on_arguments<'py>(
     ast: ast::FunDef,
     args: Vec<Bound<'py, PyAny>>,
-    par: &BTreeMap<String, Vec<ParKind>>
+    par: &BTreeMap<String, Vec<ParKind>>,
+    debug_env: &debug::DebugEnv
 ) -> PyResult<ast::FunDef> {
     // Ensure the AST contains any degree of parallelism - otherwise, there is no point in using
     // this framework at all.
@@ -48,6 +50,7 @@ pub fn specialize_ast_on_arguments<'py>(
     // all slices and by extension the correctness of dimensions of slice operations.
     let ast = type_check::type_check_params(ast, &args)?;
     let ast = inline_const::inline_scalar_values(ast, &args)?;
+    debug_env.print("Python-like AST after inlining", &ast);
 
     // As the types of slice operations involve tensors, we check that the shapes of all operations
     // are valid, ignoring the element types inside tensors. Second, we perform the slice
@@ -59,8 +62,11 @@ pub fn specialize_ast_on_arguments<'py>(
     // disallowed. The order in which we perform the operations below are carefully chosen to not
     // impose this restriction on slice operations.
     let ast = type_check::check_body_shape(ast)?;
+    debug_env.print("Python-like AST after shape checking", &ast);
     let ast = slices::replace_slices_with_for_loops(ast)?;
+    debug_env.print("Python-like AST after slice transformation", &ast);
     let ast = type_check::type_check_body(ast)?;
+    debug_env.print("Python-like AST after type-checking", &ast);
 
     Ok(ast)
 }

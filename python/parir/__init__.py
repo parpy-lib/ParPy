@@ -54,6 +54,7 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     par = check_kwarg(kwargs, "parallelize", {}, dict)
     cache = check_kwarg(kwargs, "cache", True, bool)
     seq = check_kwarg(kwargs, "seq", False, bool)
+    debug = check_kwarg(kwargs, "debug", False, bool)
 
     # Any keyword arguments remaining after processing the known ones above are
     # considered unknown.
@@ -71,7 +72,7 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     # the parallelization settings to determine how to generate parallel
     # low-level code.
     if not cache or not compile.is_cached(key):
-        code = parir.compile_ir(ir_ast, args, par)
+        code = parir.compile_ir(ir_ast, args, par, debug)
         compile.build_cuda_shared_library(key, code)
 
     # Return a CUDA wrapper which ensures the arguments are passed correctly on
@@ -83,7 +84,7 @@ def compile_string(fun_name, code, includes=[], libs=[], extra_flags=[]):
     compile.build_cuda_shared_library(k, code, includes, libs, extra_flags)
     return compile.get_cuda_wrapper(fun_name, k, False)
 
-def print_compiled(fun, args, par=None):
+def print_compiled(fun, args, par=None, debug=False):
     """
     Compile the provided Python function with respect to the given function
     arguments and parallelization arguments. Returns the resulting CUDA C++
@@ -95,7 +96,7 @@ def print_compiled(fun, args, par=None):
         ir_ast = convert_python_function_to_ir(fun)
     if par is None:
         par = {}
-    return parir.compile_ir(ir_ast, args, par)
+    return parir.compile_ir(ir_ast, args, par, debug)
 
 # Validate all arguments, ensuring that they have a supported type and that
 # all tensor data is contiguous and allocated on the GPU.
