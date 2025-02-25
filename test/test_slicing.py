@@ -66,7 +66,7 @@ def test_matmul_slicing():
     matmul_slice(a, b, c, M, N, parallelize=p, cache=False)
     assert torch.allclose(a @ b, c, atol=1e-5)
 
-def test_slice_assign_fail():
+def test_slice_assign_to_var_fail():
     @parir.jit
     def slice_materialize(x):
         with parir.gpu:
@@ -99,3 +99,15 @@ def test_slice_offset():
 
     assert torch.allclose(A, A_seq, atol=1e-5)
     assert torch.allclose(B, B_seq, atol=1e-5)
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+def test_assign_value_to_slice():
+    @parir.jit
+    def slice_assignment(x):
+        parir.label('N')
+        parir.label('M')
+        x[:,:] = 0.0
+    x = torch.empty((10, 15), dtype=torch.float16, device='cuda')
+    p = {'N': [parir.threads(10)], 'M': [parir.threads(15)]}
+    slice_assignment(x, parallelize=p)
+    assert torch.allclose(x, torch.zeros_like(x))
