@@ -413,23 +413,28 @@ fn type_check_builtin(
             let snd = args.pop().unwrap();
             let fst = args.pop().unwrap();
             let ty = lub_type(env, fst.get_type().clone(), snd.get_type().clone(), &i)?;
-            match ty.get_scalar_elem_size() {
-                Some(_) if func != Builtin::Atan2 => {
-                    mk_builtin(func, fst, snd, ty, i)
-                },
-                Some(sz) if func == Builtin::Atan2 => {
-                    match sz {
-                        ElemSize::F64 => mk_builtin(func, fst, snd, ty, i),
-                        _ => py_type_error!(i, "Operation atan2 is only \
-                                                supported for 64-bit floats.")
+            if env.shapes_only {
+                mk_builtin(func, fst, snd, ty, i)
+            } else {
+                match ty.get_scalar_elem_size() {
+                    Some(_) if func != Builtin::Atan2 => {
+                        mk_builtin(func, fst, snd, ty, i)
+                    },
+                    Some(sz) if func == Builtin::Atan2 => {
+                        match sz {
+                            ElemSize::F64 => mk_builtin(func, fst, snd, ty, i),
+                            _ => py_type_error!(i, "Operation atan2 is only \
+                                                    supported for 64-bit floats.")
+                        }
+                    },
+                    _ => {
+                        py_type_error!(i, "Unexpected type {ty} of builtin")
                     }
-                },
-                _ => {
-                    py_type_error!(i, "Unexpected type {ty} of builtin")
                 }
             }
         },
-        _ => py_type_error!(i, "Unsupported use of builtin {func}")
+        _ => py_type_error!(i, "Unsupported use of builtin {func} with {0} \
+                                args.", args.len())
     }
 }
 

@@ -39,12 +39,14 @@ pub fn ensure_parallelism(
         ensure_parallelism_stmt(acc, s, par)
     });
     if !contains_parallelism {
-        let msg = concat!(
-            "The function does not contain any parallelism, which is not allowed. ",
-            "Try adding a label ('parir.label') in front of a parallelizable statement, ",
-            "and specify its parallelism using the 'parallelize' keyword argument. ",
-            "Alternatively, if you want to run sequential code on the GPU, wrap the ",
-            "code in a GPU context as 'with parir.gpu: ...'."
+        let msg = format!(
+            "The function {0} does not contain any parallelism, which is not \
+             allowed. Try adding a label ('parir.label') in front of a \
+             parallelizable statement, and specify its parallelism using the \
+             'parallelize' keyword argument. Alternatively, if you want to run \
+             sequential code on the GPU, wrap the code in a GPU context as \
+             'with parir.gpu: ...'.",
+             ast.id
         );
         py_runtime_error!(ast.i, "{}", msg)
     } else {

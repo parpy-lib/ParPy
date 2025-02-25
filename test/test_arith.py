@@ -217,8 +217,6 @@ float_tys = [torch.float16, torch.float32, torch.float64]
 def set_expected_behavior_unop(fn, dtype):
     if fn.__name__ == "parir_tanh" and dtype == torch.float16:
         return True, "Operation tanh not supported for 16-bit floats.*"
-    elif fn.__name__ == "parir_atan2" and not (dtype == torch.float64):
-        return True, "Operation atan2 is only supported for 64-bit floats.*"
     else:
         return False, None
 

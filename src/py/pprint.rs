@@ -21,7 +21,7 @@ impl PrettyPrint for Builtin {
             Builtin::Convert {..} => "<convert>",
             Builtin::Label => "<label>",
             Builtin::GpuContext => "<gpu_context>",
-            Builtin::Ext {id} => &format!("{id}")
+            Builtin::Ext {id} => &format!("<ext>{id}")
         };
         (env, s.to_string())
     }
