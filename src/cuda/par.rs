@@ -70,7 +70,9 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
             };
             Ok(inner_par)
         },
-        Stmt::While {body, ..} => find_parallel_structure_stmts_par(body),
+        Stmt::While {body, ..} => {
+            find_parallel_structure_stmts_par(body)
+        },
     }
 }
 
@@ -97,7 +99,8 @@ fn find_parallel_structure_stmt_seq(
                 find_parallel_structure_stmts_seq(acc, body)
             }
         },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} | Stmt::If {..} => {
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
+        Stmt::If {..} => {
             stmt.sfold_result(Ok(acc), find_parallel_structure_stmt_seq)
         }
     }
