@@ -70,6 +70,7 @@ def add(a, b, c, N):
     for i in range(N):
         c[i] = a[i] + b[i]
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_add_cpu_args():
     a = torch.randn(10)
     b = torch.randn(10)

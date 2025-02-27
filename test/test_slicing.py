@@ -66,6 +66,7 @@ def test_matmul_slicing():
     matmul_slice(a, b, c, M, N, parallelize=p, cache=False)
     assert torch.allclose(a @ b, c, atol=1e-5)
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_slice_assign_to_var_fail():
     @parir.jit
     def slice_materialize(x):
