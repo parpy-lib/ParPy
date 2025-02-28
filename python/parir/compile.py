@@ -37,8 +37,8 @@ def build_cuda_shared_library(key, source, includes=[], libs=[], extra_flags=[])
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
-        include_cmd = [["-I", include] for include in includes]
-        lib_cmd = [["-L", lib] for lib in libs]
+        include_cmd = flatten([["-I", include] for include in includes])
+        lib_cmd = flatten([["-L", lib] for lib in libs])
         commands = [
             "-O3", "--shared", "-Xcompiler", "-fPIC", f"-arch={arch}",
             "-x", "cu", f"{tmp.name}", "-o", f"{libpath}"
