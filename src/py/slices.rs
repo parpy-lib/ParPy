@@ -9,6 +9,8 @@ use crate::utils::smap::{SFold, SMapAccum};
 
 use pyo3::prelude::*;
 
+use std::collections::BTreeMap;
+
 fn slice_err<T>(i: &Info, spec_msg: &str) -> PyResult<T> {
     let msg =
         "Slices must be of a particular form. Importantly, it is not supported \
@@ -48,10 +50,19 @@ fn is_reduction_op(op: &Builtin) -> bool {
     }
 }
 
-fn find_reduce_dim(rhs: &Expr) -> Option<i64> {
+enum ReduceDim {
+    One(i64),
+    All,
+    None
+}
+
+fn find_reduce_dim(rhs: &Expr) -> ReduceDim {
     match rhs {
-        Expr::Builtin {func, axis, ..} if is_reduction_op(func) => *axis,
-        _ => None
+        Expr::Builtin {func, axis, ..} if is_reduction_op(func) => match axis {
+            Some(n) => ReduceDim::One(*n),
+            None => ReduceDim::All
+        },
+        _ => ReduceDim::None
     }
 }
 
@@ -118,12 +129,12 @@ fn extract_shape(e: &Expr) -> PyResult<Vec<i64>> {
     }
 }
 
-fn sub_var_expr(e: Expr, var_id: &Name, sub: &Expr) -> Expr {
+fn sub_vars_expr(e: Expr, vars: &BTreeMap<Name, Expr>) -> Expr {
     match e {
-        Expr::Var {id, ..} if id == *var_id => {
-            sub.clone()
+        Expr::Var {id, ..} if vars.contains_key(&id) => {
+            vars.get(&id).unwrap().clone()
         },
-        _ => e.smap(|e| sub_var_expr(e, var_id, sub))
+        _ => e.smap(|e| sub_vars_expr(e, vars))
     }
 }
 
@@ -131,11 +142,43 @@ fn sub_var_stmt_rhs(s: Stmt, id: &Name, sub: &Expr) -> PyResult<Expr> {
     match s {
         Stmt::Definition {expr: Expr::BinOp {rhs, ..}, ..} |
         Stmt::Assign {expr: Expr::BinOp {rhs, ..}, ..} => {
-            Ok(sub_var_expr(*rhs, id, sub))
+            let mut vars = BTreeMap::new();
+            vars.insert(id.clone(), sub.clone());
+            Ok(sub_vars_expr(*rhs, &vars))
         },
         _ => py_runtime_error!(s.get_info(), "Unexpected form of statement \
                                               (internal error)")
     }
+}
+
+fn replace_ids_with_shape_expr(
+    e: Expr,
+    reduce_id: &Name,
+    dims: &Vec<(Name, i64)>
+) -> Expr {
+    let i = e.get_info();
+    let mut reduce_expr = Expr::Var {
+        id: reduce_id.clone(), ty: Type::Unknown, i: i.clone()
+    };
+    let mut sub_map = BTreeMap::new();
+    for (id, sh) in dims.iter().rev() {
+        let sub_expr = Expr::BinOp {
+            lhs: Box::new(reduce_expr.clone()),
+            op: BinOp::Rem,
+            rhs: Box::new(Expr::Int {v: *sh, ty: Type::Unknown, i: i.clone()}),
+            ty: Type::Unknown,
+            i: i.clone()
+        };
+        sub_map.insert(id.clone(), sub_expr);
+        reduce_expr = Expr::BinOp {
+            lhs: Box::new(reduce_expr),
+            op: BinOp::Div,
+            rhs: Box::new(Expr::Int {v: *sh, ty: Type::Unknown, i: i.clone()}),
+            ty: Type::Unknown,
+            i: i.clone()
+        };
+    }
+    sub_vars_expr(e, &sub_map)
 }
 
 enum TargetData {
@@ -220,6 +263,27 @@ fn extract_reduction_data(e: Expr) -> PyResult<(BinOp, Expr)> {
     }
 }
 
+fn validate_label_count(
+    nlabels: usize,
+    nslices: i64,
+    reduce_all: bool,
+    i: &Info
+) -> PyResult<()> {
+    let nlabels = nlabels as i64;
+    if !(nlabels == 0 || (reduce_all && nlabels == 1) || (!reduce_all && nlabels == nslices)) {
+        let msg = format!(
+            "Statement has {0} slices but found {1} labels.\nSlice statements \
+             must have zero labels, exactly one label per dimension of the \
+             slice operation, or one label if the slice operation is a \
+             multi-dimensional reduction.",
+             nslices, nlabels
+        );
+        py_runtime_error!(i, "{}", msg)
+    } else {
+        Ok(())
+    }
+}
+
 fn replace_slices_assignment(
     reconstruct_stmt: impl Fn(Expr, Expr, Vec<String>, Info) -> Stmt,
     def_id: Option<Name>,
@@ -234,18 +298,6 @@ fn replace_slices_assignment(
     let rslices = count_slices_expr(0, &rhs);
     let nslices = i64::max(lslices, rslices);
     if nslices > 0 {
-        // Ensure that the number of labels are either zero (no labels are specified) or exactly one
-        // label is provided for each dimension.
-        if !(labels.is_empty() || labels.len() == nslices as usize) {
-            let msg = format!(
-                "Expected {0} labels but found {1}\nSlice statements must \
-                 either be given no labels or exactly one label per \
-                 dimension of the slice operation.",
-                 nslices, labels.len()
-            );
-            py_runtime_error!(i, "{}", msg)?
-        }
-
         let ids = (0..nslices).into_iter()
             .map(|_| Name::sym_str("slice_dim"))
             .collect::<Vec<Name>>();
@@ -259,18 +311,19 @@ fn replace_slices_assignment(
         let mut dims = ids.into_iter()
             .zip(shapes.into_iter())
             .collect::<Vec<(Name, i64)>>();
+        let target_data = match def_id {
+            Some(ref id) => TargetData::Def(id.clone()),
+            None => TargetData::Assign(lhs.clone())
+        };
         match find_reduce_dim(&rhs) {
-            Some(n) => {
+            ReduceDim::One(n) => {
+                validate_label_count(labels.len(), nslices, false, &i)?;
                 let idx = n.rem_euclid(nslices) as usize;
                 let (reduce_id, reduce_dim) = dims.remove(idx);
                 let label = if idx < labels.len() {
                     Some(labels.remove(idx))
                 } else {
                     None
-                };
-                let target_data = match def_id {
-                    Some(id) => TargetData::Def(id),
-                    None => TargetData::Assign(lhs.clone())
                 };
                 let (op, rhs) = extract_reduction_data(rhs)?;
                 let rhs = Expr::BinOp {
@@ -287,7 +340,33 @@ fn replace_slices_assignment(
                 };
                 generate_for_loops(inner_stmt, dims, labels, Some(reduce_data))
             },
-            None => {
+            ReduceDim::All => {
+                validate_label_count(labels.len(), nslices, true, &i)?;
+                let (op, rhs) = extract_reduction_data(rhs)?;
+                let reduce_id = Name::sym_str("reduce_dim");
+                let rhs = replace_ids_with_shape_expr(rhs, &reduce_id, &dims);
+                let rhs = Expr::BinOp {
+                    lhs: Box::new(lhs.clone()), op, rhs: Box::new(rhs),
+                    ty: Type::Unknown, i: i.clone()
+                };
+                let inner_stmt = Stmt::Assign {
+                    dst: lhs, expr: rhs, labels: vec![], i
+                };
+                let reduce_dim = dims.iter().map(|(_, sh)| sh).product();
+                let label = if labels.len() == 1 {
+                    Some(labels.remove(0))
+                } else {
+                    None
+                };
+                let reduce_data = ReduceData {
+                    niters: reduce_dim,
+                    var_id: reduce_id,
+                    label, target_data
+                };
+                generate_for_loops(inner_stmt, vec![], vec![], Some(reduce_data))
+            },
+            ReduceDim::None => {
+                validate_label_count(labels.len(), nslices, false, &i)?;
                 match def_id {
                     None => {
                         let inner_stmt = Stmt::Assign {

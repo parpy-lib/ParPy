@@ -333,13 +333,19 @@ fn type_check_builtin(
                     Type::Tensor {sz, shape} => (sz, shape),
                     _ => unreachable!()
                 };
-                let n = axis.unwrap();
-                let dim = shape.len() as i64;
-                if n < dim && n >= -dim {
-                    shape.remove(n.rem_euclid(dim) as usize);
-                } else {
-                    py_type_error!(i, "Invalid axis value {n} for \
-                                       tensor of {dim} dimensions")?
+                match axis {
+                    Some(n) => {
+                        let dim = shape.len() as i64;
+                        if n < dim && n >= -dim {
+                            shape.remove(n.rem_euclid(dim) as usize);
+                        } else {
+                            py_type_error!(i, "Invalid axis value {n} for \
+                                               tensor of {dim} dimensions.")?
+                        }
+                    },
+                    None => {
+                        shape.clear();
+                    }
                 };
                 let ty = Type::Tensor {sz, shape};
                 Ok(Expr::Builtin {func, args, axis, ty, i})

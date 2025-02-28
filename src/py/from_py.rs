@@ -2,7 +2,6 @@ use crate::py_runtime_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::utils::reduce;
 use super::ast::*;
 
 use pyo3::PyTypeInfo;
@@ -235,21 +234,6 @@ fn extract_axis_kwarg<'py, 'a>(
     }
 }
 
-fn validate_use_of_axis_keyword(
-    func: &Builtin,
-    nargs: usize,
-    uses_axis_arg: bool,
-    i: &Info
-) -> PyResult<()> {
-    let is_reduction_op = reduce::builtin_to_reduction_op(func).is_some() && nargs == 1;
-    if is_reduction_op != uses_axis_arg {
-        py_runtime_error!(i, "The 'axis' keyword must be specified for \
-                              reduction operators (and only for these)")
-    } else {
-        Ok(())
-    }
-}
-
 fn convert_expr<'py, 'a>(
     expr: Bound<'py, PyAny>, env: &'py ConvertEnv<'py, 'a>
 ) -> PyResult<Expr> {
@@ -358,11 +342,9 @@ fn convert_expr<'py, 'a>(
         match convert_expr(expr.getattr("func")?, env)? {
             Expr::Var {id, ..} => {
                 let func = Builtin::Ext {id: id.to_string()};
-                validate_use_of_axis_keyword(&func, args.len(), axis.is_some(), &i)?;
                 Ok(Expr::Builtin {func, args, axis, ty, i})
             },
             Expr::Builtin {func, args: a, ..} if a.len() == 0 => {
-                validate_use_of_axis_keyword(&func, args.len(), axis.is_some(), &i)?;
                 Ok(Expr::Builtin {func, args, axis, ty, i})
             },
             _ => py_runtime_error!(i, "Function calls are only supported on built-in functions")
