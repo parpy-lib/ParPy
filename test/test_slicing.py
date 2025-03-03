@@ -27,7 +27,7 @@ def matmul_slice(a, b, M, N, c):
         parir.label('N')
         for j in range(N):
             parir.label('K')
-            c[i,j] = parir.sum(a[i,:] * b[:,j], axis=0)
+            c[i,j] = parir.sum(a[i,:] * b[:,j])
 
 @parir.jit
 def jacobi_1d(nsteps, A, B):

@@ -9,18 +9,18 @@ np.random.seed(1234)
 @parir.jit
 def softmax(x, N, M, out):
     # We have N independent instances we want to do softmax on
-    parir.label('i')
+    parir.label('N')
     for i in range(N):
-        parir.label('j1')
-        m = parir.max(x[i,:], axis=0)
+        parir.label('M')
+        m = parir.max(x[i,:])
 
-        parir.label('j2')
+        parir.label('M')
         out[i,:] = parir.exp(x[i,:] - m)
 
-        parir.label('j3')
-        s = parir.sum(out[i,:], axis=0)
+        parir.label('M')
+        s = parir.sum(out[i,:])
 
-        parir.label('j4')
+        parir.label('M')
         out[i,:] = out[i,:] / s
 
 
@@ -42,17 +42,14 @@ def compare_softmax(p):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_softmax_seq_reduce():
-    p = { "i" : [parir.threads(256)] }
+    p = { "N" : [parir.threads(256)] }
     compare_softmax(p)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_softmax_gpu():
     p = {
-        "i" : [parir.threads(256)],
-        "j1": [parir.threads(128), parir.reduce()],
-        "j2": [parir.threads(128)],
-        "j3": [parir.threads(128), parir.reduce()],
-        "j4": [parir.threads(128)]
+        "N" : [parir.threads(256)],
+        "M": [parir.threads(128)],
     }
     compare_softmax(p)
 
@@ -61,11 +58,8 @@ def test_softmax_compiles():
     x = torch.randn((N, M), dtype=torch.float32)
     out = torch.empty_like(x)
     p = {
-        "i" : [parir.threads(256)],
-        "j1": [parir.threads(128), parir.reduce()],
-        "j2": [parir.threads(128)],
-        "j3": [parir.threads(128), parir.reduce()],
-        "j4": [parir.threads(128)]
+        "N" : [parir.threads(256)],
+        "M": [parir.threads(128)],
     }
     s = parir.print_compiled(softmax, [x, N, M, out], p)
     assert len(s) != 0
