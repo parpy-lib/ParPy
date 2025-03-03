@@ -76,7 +76,7 @@ def test_add_cpu_args():
     b = torch.randn(10)
     c = torch.randn(10)
     with pytest.raises(RuntimeError) as e_info:
-        add(a, b, c, 10, parallelize={'N': [parir.threads(10)]})
+        add(a, b, c, 10, parallelize={'N': [parir.threads(10)]}, cache=False)
     assert e_info.match(r".*is on device.*expected to be on device.*")
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -85,5 +85,5 @@ def test_add_numpy_array_arg():
     b = torch.randn(10, device='cuda')
     c = np.ndarray(10)
     with pytest.raises(RuntimeError) as e_info:
-        add(a, b, c, 10, parallelize={'N': [parir.threads(10)]})
+        add(a, b, c, 10, parallelize={'N': [parir.threads(10)]}, cache=False)
     assert e_info.match(r".*unsupported type.*")
