@@ -109,8 +109,7 @@ fn ensure_no_inter_block_sync_par_stmt(
     match stmt {
         Stmt::For {var, body, par, i, ..} => {
             let pars = if sync.contains(var) {
-                let hd = &pars[0];
-                match hd {
+                match &pars[0] {
                     GpuMap::Thread {..} => {
                         Ok(())
                     },
@@ -232,34 +231,9 @@ pub fn identify_sync_points(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::ir::ir_builder::*;
     use crate::cuda::ast::{Dim, LaunchArgs};
     use crate::cuda::par::DEFAULT_TPB;
-    use crate::utils::info::Info;
-
-    fn id(x: &str) -> Name {
-        Name::new(x.to_string())
-    }
-
-    fn int(v: i64) -> Expr {
-        Expr::Int {v, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]}, i: Info::default()}
-    }
-
-    fn for_loop(var: Name, n : i64, body: Vec<Stmt>) -> Stmt {
-        let par = LoopParallelism::default().with_threads(n).unwrap();
-        Stmt::For {var, lo: int(0), hi: int(10), step: 1, body, par, i: Info::default()}
-    }
-
-    fn make_ast(body: Vec<Stmt>) -> Ast {
-        Ast {
-            structs: vec![],
-            fun: FunDef {
-                id: Name::new("x".to_string()),
-                params: vec![],
-                body,
-                i: Info::default()
-            }
-        }
-    }
 
     fn make_mapping(map: Vec<(Name, GpuMapping)>) -> BTreeMap<Name, GpuMapping> {
         map.into_iter().collect::<_>()

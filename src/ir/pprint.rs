@@ -8,7 +8,6 @@ use std::fmt;
 impl PrettyPrint for Type {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
-            Type::Boolean => (env, "bool".to_string()),
             Type::Tensor {sz, shape} if shape.is_empty() => sz.pprint(env),
             Type::Tensor {sz, shape} => {
                 let (env, sz) = sz.pprint(env);

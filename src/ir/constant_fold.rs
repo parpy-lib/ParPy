@@ -48,7 +48,10 @@ impl CFExpr<Type> for Expr {
 
 impl CFType for Type {
     fn is_bool(&self) -> bool {
-        *self == Type::Boolean
+        match self {
+            Type::Tensor {sz, shape} => shape.is_empty() && *sz == ElemSize::Bool,
+            _ => false
+        }
     }
 
     fn is_int(&self) -> bool {
@@ -111,49 +114,7 @@ pub fn fold(ast: Ast) -> Ast {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::utils::info::*;
-    use crate::utils::name::*;
-
-    fn var(id: &str) -> Expr {
-        Expr::Var {id: Name::sym_str(id), ty: Type::Boolean, i: Info::default()}
-    }
-
-    fn bool_expr(v: bool) -> Expr {
-        Expr::Bool {v, ty: Type::Boolean, i: Info::default()}
-    }
-
-    fn int_with_ty(v: i64, ty: Option<Type>) -> Expr {
-        let ty = ty.unwrap_or(Type::Tensor {sz: ElemSize::I64, shape: vec![]});
-        Expr::Int {v, ty, i: Info::default()}
-    }
-
-    fn int(v: i64) -> Expr {
-        int_with_ty(v, None)
-    }
-
-    fn float_with_ty(v: f64, ty: Option<Type>) -> Expr {
-        let ty = ty.unwrap_or(Type::Tensor {sz: ElemSize::F64, shape: vec![]});
-        Expr::Float {v, ty, i: Info::default()}
-    }
-
-    fn float(v: f64) -> Expr {
-        float_with_ty(v, None)
-    }
-
-    fn unop(op: UnOp, arg: Expr) -> Expr {
-        let ty = arg.get_type().clone();
-        let i = arg.get_info();
-        Expr::UnOp {op, arg: Box::new(arg), ty, i}
-    }
-
-    fn binop(lhs: Expr, op: BinOp, rhs: Expr, ty: Option<Type>) -> Expr {
-        let ty = match ty {
-            Some(ty) => ty,
-            None => lhs.get_type().clone()
-        };
-        let i = lhs.get_info();
-        Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i}
-    }
+    use crate::ir::ir_builder::*;
 
     fn cf(e: &Expr) -> Expr {
         fold_expr(e.clone())
@@ -191,13 +152,13 @@ mod test {
 
     #[test]
     fn int_equality() {
-        let e = binop(int(2), BinOp::Eq, int(3), Some(Type::Boolean));
+        let e = binop(int(2), BinOp::Eq, int(3), Some(bool_ty()));
         assert_eq!(cf(&e), bool_expr(false));
     }
 
     #[test]
     fn float_lt() {
-        let e = binop(float(1.5), BinOp::Lt, float(2.5), Some(Type::Boolean));
+        let e = binop(float(1.5), BinOp::Lt, float(2.5), Some(bool_ty()));
         assert_eq!(cf(&e), bool_expr(true));
     }
 

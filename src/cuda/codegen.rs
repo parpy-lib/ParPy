@@ -22,7 +22,6 @@ struct CodegenEnv {
 
 fn from_ir_type(ty: ir_ast::Type) -> Type {
     match ty {
-        ir_ast::Type::Boolean => Type::Boolean,
         ir_ast::Type::Tensor {sz, shape} if shape.is_empty() => Type::Scalar {sz},
         ir_ast::Type::Tensor {sz, ..} => Type::Pointer {sz},
         ir_ast::Type::Struct {id} => Type::Struct {id}

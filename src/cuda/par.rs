@@ -9,6 +9,8 @@ use crate::utils::info::Info;
 use crate::utils::name::Name;
 use crate::utils::smap::SFold;
 
+use itertools::Itertools;
+
 use std::collections::BTreeMap;
 
 type ParResult = CompileResult<BTreeMap<Name, Vec<i64>>>;
@@ -56,9 +58,13 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
             if thn.n.eq(&els.n) {
                 Ok(Par {n: thn.n, i: i.clone()})
             } else {
-                let msg = concat!(
-                    "Branches cannot have inconsistent parallel structure: {thn.n:?} != {els.n:?}",
-                    "\n\nThis may cause significantly imbalanced workloads."
+                let lhs = thn.n.iter().join(", ");
+                let rhs = els.n.iter().join(", ");
+                let msg = format!(
+                    "Found branches with inconsistent parallel structure: \
+                     [{lhs}] != [{rhs}].\n\
+                     This is not supported because the compiller cannot generate \
+                     efficient code for this."
                 );
                 parir_compile_error!(i, "{}", msg)
             }
@@ -227,26 +233,11 @@ pub fn map_gpu_grid(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::ir::ir_builder;
+    use crate::ir::ir_builder::*;
 
     fn id(s: &str) -> Name {
-        Name::new(s.to_string()).with_new_sym()
-    }
-
-    fn int(v: i64) -> Expr {
-        Expr::Int {v, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]}, i: Info::default()}
-    }
-
-    fn for_loop(var: Name, nthreads: i64, body: Vec<Stmt>) -> Stmt {
-        let par = LoopParallelism::default().with_threads(nthreads).unwrap();
-        Stmt::For {var, lo: int(0), hi: int(10), step: 1, body, par, i: Info::default()}
-    }
-
-    fn if_cond(thn: Vec<Stmt>, els: Vec<Stmt>) -> Stmt {
-        Stmt::If {cond: int(0), thn, els, i: Info::default()}
-    }
-
-    fn fun_def(body: Vec<Stmt>) -> FunDef {
-        FunDef {id: id("x"), params: vec![], body, i: Info::default()}
+        ir_builder::id(s).with_new_sym()
     }
 
     fn find_structure(def: FunDef) -> BTreeMap<Name, Vec<i64>> {

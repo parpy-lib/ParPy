@@ -9,7 +9,6 @@ pub use crate::py::ast::BinOp;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
-    Boolean,
     Tensor {sz: ElemSize, shape: Vec<i64>},
     Struct {id: Name},
 }
