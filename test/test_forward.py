@@ -151,15 +151,11 @@ def forward_lse(hmm, seqs, result, alpha1, alpha2):
         if seqs["maxlen"] & 1:
             alpha = alpha1
 
-        maxp = parir.float32(-parir.inf)
         parir.label('state')
-        for state in range(hmm["num_states"]):
-            maxp = parir.max(maxp, alpha[inst, state])
+        maxp = parir.max(alpha[inst, :])
 
-        psum = parir.float32(0.0)
         parir.label('state')
-        for state in range(hmm["num_states"]):
-            psum = psum + parir.exp(alpha[inst, state] - maxp)
+        psum = parir.sum(parir.exp(alpha[inst, :] - maxp))
 
         result[inst] = maxp + parir.log(psum)
 
