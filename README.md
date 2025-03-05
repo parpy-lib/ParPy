@@ -32,7 +32,7 @@ CUDA compiler) is in the `PATH`.
 
 Assume we have defined a function in Python for computing the row-wise sum of a
 two-dimensional Torch tensor `x` and storing the result in `out`:
-```
+```python
 def sum_rows(x, out, N, M):
   for i in range(N):
     for j in range(M):
@@ -43,7 +43,7 @@ Note that the iterations of the outer for-loop over `i` are independent.
 Therefore, we can parallelize this function using Parir. Paralellization using
 Parir is performed in two steps. First, we annotate the function and label the
 statements we want to parallelize:
-```
+```python
 import parir
 
 @parir.jit
@@ -103,7 +103,7 @@ shows how records can be reused across multiple functions.
 Parir will automatically specialize the compilation based on the provided
 arguments, by inlining the values of all scalar parameter values. For instance,
 if we call a decorated function `f` as
-```
+```python
 f(t, 10)
 ```
 
@@ -116,14 +116,14 @@ specialization.
 
 
 The overhead of JIT compilation can be significant when called in a loop as
-```
+```python
 for i in range(N):
   f(t, i)
 ```
 
 because the updated value of `i` triggers a JIT compilation in each iteration.
 To work around this, we can wrap the value in a tensor as
-```
+```python
 for i in range(N):
   ix = torch.tensor([i], dtype=torch.int64)
   f(t, ix)
@@ -139,7 +139,7 @@ parallelized outer for-loops are mapped to CUDA blocks. Importantly, we require
 that all statements on the same level of nesting in a parallel for-loop have
 the same amount of parallelism (or are sequential). This means that we cannot
 have subsequent nested for-loops, such as
-```
+```python
 for i in range(N):
   for j1 in range(M1):
     ...
@@ -151,7 +151,7 @@ where the `j1` loop uses 512 threads and the `j2` loop uses 256 threads. In
 this case, half the threads would be idle when running the second loop, which
 is wasteful performance-wise. If we want to use a different number of threads
 in the two loops, we can rewrite the code as
-```
+```python
 for i in range(N):
   for j1 in range(M1):
     ...
@@ -177,7 +177,7 @@ However, in certain situations, we may be willing to pay this extra cost.
 Consider, for instance, the below function for computing the sum. Even if we
 parallelize the reduction loop, the assignment to `out[0]` ends up outside the
 parallel code, which results in an error.
-```
+```python
 import parir
 @parir.jit
 def sum(x, out, N):
@@ -189,7 +189,7 @@ def sum(x, out, N):
 
 To work around this, we can use the `parir.gpu` context. All code within this
 context runs on the GPU. The fixed code looks like
-```
+```python
 import parir
 @parir.jit
 def sum(x, out, N):
@@ -223,7 +223,7 @@ purpose.
 
 For instance, consider the `sum_rows` function presented as an example above.
 To print the resulting CUDA code from compiling this function, we can use
-```
+```python
 p = {'i': [parir.threads(32)], 'j': [parir.threads(128), parir.reduce()]}
 print(parir.print_compiled(sum_rows, [x, out, N, M], p))
 ```
@@ -238,8 +238,8 @@ An advanced user could store the output code to a file and modify it manually.
 This is useful for performing operations not supported by the Parir compiler
 (as discussed above), or to debug the generated code. Assuming the modified
 code of the function `sum_rows` is loaded to a string `s`, we compile it as
-```
-fn = parir.compile_string("sum_rows", s, includes=[], libs=[])
+```python
+fn = parir.compile_string("sum_rows", s, includes=[], libs=[], extra_flags=[])
 ```
 
 where the resulting function `fn` is a callable Python function expecting the
@@ -247,4 +247,5 @@ same arguments as the original `sum_rows` function. The two required arguments
 is the name of the function and the CUDA C++ code. The `includes` and `libs`
 keyword arguments specify include paths (`-I`) and library paths (`-L`) to be
 passed to the `nvcc` compiler (e.g., if the modified code depends on external
-libraries).
+libraries), and the `extra_flags` keyword argument provides custom arguments to
+be passed to `nvcc`.
