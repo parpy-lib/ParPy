@@ -50,7 +50,7 @@ pub mod ir_builder {
     }
 
     pub fn var(v: &str) -> Expr {
-        let id = Name::sym_str(v);
+        let id = Name::new(v.to_string());
         Expr::Var {id, ty: scalar_ty(ElemSize::Bool), i: Info::default()}
     }
 
@@ -91,6 +91,14 @@ pub mod ir_builder {
         Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i}
     }
 
+    pub fn assign(lhs: Expr, rhs: Expr) -> Stmt {
+        Stmt::Assign {dst: lhs, expr: rhs, i: Info::default()}
+    }
+
+    pub fn loop_par(n: i64) -> LoopParallelism {
+        LoopParallelism::default().with_threads(n).unwrap()
+    }
+
     fn for_loop_complete(
         var: Name,
         lo: Expr,
@@ -103,7 +111,7 @@ pub mod ir_builder {
     }
 
     pub fn for_loop(var: Name, n: i64, body: Vec<Stmt>) -> Stmt {
-        let par = LoopParallelism::default().with_threads(n).unwrap();
+        let par = loop_par(n);
         for_loop_complete(var, int(0), int(10), 1, par, body)
     }
 
@@ -115,9 +123,21 @@ pub mod ir_builder {
         if_cond_complete(bool_expr(true), thn, els)
     }
 
+    fn while_loop_complete(cond: Expr, body: Vec<Stmt>) -> Stmt {
+        Stmt::While {cond, body, i: Info::default()}
+    }
+
+    pub fn while_loop(body: Vec<Stmt>) -> Stmt {
+        while_loop_complete(bool_expr(true), body)
+    }
+
+    pub fn sync_point(block_local: bool) -> Stmt {
+        Stmt::SyncPoint {block_local, i: Info::default()}
+    }
+
     pub fn fun_def(body: Vec<Stmt>) -> FunDef {
         FunDef {
-            id: Name::sym_str("main"),
+            id: Name::new("main".to_string()),
             params: vec![],
             body,
             i: Info::default()

@@ -513,6 +513,10 @@ fn generate_kernel_stmt(
             let expr = from_ir_expr(expr)?;
             acc.push(Stmt::Assign {dst, expr});
         },
+        ir_ast::Stmt::SyncPoint {i, ..} => {
+            parir_compile_error!(i, "Internal error: Found synchronization point \
+                                     outside parallel code")?
+        },
         ir_ast::Stmt::For {var, lo, hi, step, body, par, i} => {
             let (p, grid, map) = if par.is_parallel() {
                 let m = map[0].clone();
@@ -586,6 +590,10 @@ fn from_ir_stmt(
     let kernels = match stmt {
         ir_ast::Stmt::Definition {i, ..} | ir_ast::Stmt::Assign {i, ..} => {
             parir_compile_error!(i, "Assignments are not allowed outside parallel code")
+        },
+        ir_ast::Stmt::SyncPoint {i, ..} => {
+            parir_compile_error!(i, "Internal error: Found synchronization point \
+                                     outside parallel code")
         },
         ir_ast::Stmt::For {var, lo, hi, step, body, par, i} => {
             let var_ty = from_ir_type(lo.get_type().clone());

@@ -88,6 +88,13 @@ impl PrettyPrint for Stmt {
                 let (env, expr) = expr.pprint(env);
                 (env, format!("{indent}{dst} = {expr};"))
             },
+            Stmt::SyncPoint {block_local, ..} => {
+                if *block_local {
+                    (env, format!("{indent}__syncthreads();"))
+                } else {
+                    (env, format!("{indent}sync();"))
+                }
+            },
             Stmt::For {var, lo, hi, body, par, ..} => {
                 let (env, var) = var.pprint(env);
                 let (env, lo) = lo.pprint(env);

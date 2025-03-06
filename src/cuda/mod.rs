@@ -7,6 +7,9 @@ mod pprint;
 mod par;
 mod sync;
 
+mod new_sync;
+mod par_tree;
+
 use ast::*;
 use crate::ir::ast as ir_ast;
 use crate::utils::err::*;

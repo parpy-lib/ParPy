@@ -175,6 +175,7 @@ impl Default for LoopParallelism {
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr, i: Info},
     Assign {dst: Expr, expr: Expr, i: Info},
+    SyncPoint {block_local: bool, i: Info},
     For {
         var: Name, lo: Expr, hi: Expr, step: i64, body: Vec<Stmt>,
         par: LoopParallelism, i: Info
@@ -188,6 +189,7 @@ impl InfoNode for Stmt {
         match self {
             Stmt::Definition {i, ..} => i.clone(),
             Stmt::Assign {i, ..} => i.clone(),
+            Stmt::SyncPoint {i, ..} => i.clone(),
             Stmt::For {i, ..} => i.clone(),
             Stmt::If {i, ..} => i.clone(),
             Stmt::While {i, ..} => i.clone(),
@@ -224,6 +226,7 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, cond) = f(acc?, cond)?;
                 Ok((acc, Stmt::While {cond, body, i}))
             },
+            Stmt::SyncPoint {..} => Ok((acc?, self)),
         }
     }
 }
@@ -237,6 +240,7 @@ impl SFold<Expr> for Stmt {
         match self {
             Stmt::Definition {expr, ..} => f(acc?, expr),
             Stmt::Assign {dst, expr, ..} => f(f(acc?, dst)?, expr),
+            Stmt::SyncPoint {..} => acc,
             Stmt::For {lo, hi, ..} => f(f(acc?, lo)?, hi),
             Stmt::If {cond, ..} => f(acc?, cond),
             Stmt::While {cond, ..} => f(acc?, cond),
@@ -251,7 +255,6 @@ impl SMapAccum<Stmt> for Stmt {
         f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
     ) -> Result<(A, Stmt), E> {
         match self {
-            Stmt::Definition {..} | Stmt::Assign {..} => Ok((acc?, self)),
             Stmt::For {var, lo, hi, step, body, par, i} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::For {var, lo, hi, step, body, par, i}))
@@ -265,6 +268,8 @@ impl SMapAccum<Stmt> for Stmt {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::While {cond, body, i}))
             },
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} =>
+                Ok((acc?, self)),
         }
     }
 }
@@ -279,7 +284,7 @@ impl SFold<Stmt> for Stmt {
             Stmt::For {body, ..} => body.sfold_result(acc, &f),
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
-            Stmt::Definition {..} | Stmt::Assign {..} => acc
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} => acc
         }
     }
 }

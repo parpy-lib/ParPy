@@ -19,8 +19,8 @@ fn collect_sync_points_stmt(
             };
             collect_sync_points_stmts(Ok(sync), body)
         },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
-        Stmt::If {..} => {
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
+        Stmt::While {..} | Stmt::If {..} => {
             stmt.sfold(acc, collect_sync_points_stmt)
         }
     }
@@ -42,8 +42,8 @@ fn remove_redundant_sync_par_stmt(
             let is_par = sync.contains(var);
             remove_redundant_sync_par_stmts(sync, body, is_par)
         },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
-        Stmt::If {..} => {
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
+        Stmt::While {..} | Stmt::If {..} => {
             stmt.sfold(sync, remove_redundant_sync_par_stmt)
         },
     }
@@ -61,8 +61,8 @@ fn remove_redundant_sync_par_stmts(
             };
             remove_redundant_sync_par_stmts(sync, &body, par.is_parallel())
         },
-        Some(s @ (Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
-                  Stmt::If {..})) => {
+        Some(s @ (Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
+                  Stmt::While {..} | Stmt::If {..})) => {
             s.sfold(sync, remove_redundant_sync_par_stmt)
         },
         None => sync,
@@ -87,8 +87,8 @@ fn remove_redundant_sync_stmt(
                 remove_redundant_sync_stmts(sync, body)
             }
         },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
-        Stmt::If {..} => {
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
+        Stmt::While {..} | Stmt::If {..} => {
             stmt.sfold(sync, remove_redundant_sync_stmt)
         }
     }
@@ -136,8 +136,8 @@ fn ensure_no_inter_block_sync_par_stmt(
             };
             ensure_no_inter_block_sync_par_stmts(body, sync, pars)
         },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
-        Stmt::If {..} => {
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
+        Stmt::While {..} | Stmt::If {..} => {
             stmt.sfold_result(Ok(()), |_, s| {
                 ensure_no_inter_block_sync_par_stmt(s, sync, pars)
             })
@@ -170,12 +170,12 @@ fn ensure_no_inter_block_sync_stmt(
                 None => ensure_no_inter_block_sync_stmts(body, sync, gpu_mapping)
             }
         },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
-        Stmt::If {..} => {
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
+        Stmt::While {..} | Stmt::If {..} => {
             stmt.sfold_result(Ok(()), |_, s| {
                 ensure_no_inter_block_sync_stmt(s, sync, gpu_mapping)
             })
-        }
+        },
     }
 }
 
