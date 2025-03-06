@@ -132,7 +132,8 @@ impl PrettyPrint for Field {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let Field {id, ty, ..} = self;
         let (env, ty) = ty.pprint(env);
-        (env, format!("{ty} {id};"))
+        let indent = env.print_indent();
+        (env, format!("{indent}{ty} {id};"))
     }
 }
 
