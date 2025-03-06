@@ -6,6 +6,8 @@ use crate::utils::info::Info;
 use crate::utils::name::Name;
 use crate::utils::smap::{SFold, SMapAccum};
 
+use std::collections::BTreeSet;
+
 fn insert_synchronization_points_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
     match s {
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} => {
@@ -332,7 +334,7 @@ fn eliminate_unnecessary_synchronization_points_stmt(
     s: Stmt,
 ) -> Vec<Stmt> {
     match s {
-        Stmt::SyncPoint {..} if !env.in_parallel => (),
+        Stmt::SyncPoint {block_local: false, ..} if !env.in_parallel => (),
         Stmt::For {var, lo, hi, step, body, par, i} => {
             let env = env.enter_loop(par.is_parallel());
             let body = eliminate_unnecessary_synchronization_points_stmts(env, body);
@@ -375,32 +377,89 @@ fn eliminate_unnecessary_synchronization_points(body: Vec<Stmt>) -> Vec<Stmt> {
     eliminate_unnecessary_synchronization_points_stmts(env, body)
 }
 
-/// Adds explicit synchronization points in the AST where this is necessary, and eliminates the
-/// ones that are unnecessary before returning the updated AST with synchronization.
+fn promote_assign_to_def_stmt(
+    mut vars: BTreeSet<Name>,
+    s: Stmt
+) -> (BTreeSet<Name>, Stmt) {
+    match s {
+        Stmt::Definition {ref id, ..} => {
+            vars.insert(id.clone());
+            (vars, s)
+        },
+        Stmt::Assign {dst: Expr::Var {id, ..}, expr, i} if !vars.contains(&id) => {
+            let ty = expr.get_type().clone();
+            (vars, Stmt::Definition {ty, id, expr, i})
+        },
+        Stmt::For {var, lo, hi, step, body, par, i} => {
+            let body = promote_assign_to_def_stmts(&vars, body);
+            (vars, Stmt::For {var, lo, hi, step, body, par, i})
+        },
+        Stmt::While {cond, body, i} => {
+            let body = promote_assign_to_def_stmts(&vars, body);
+            (vars, Stmt::While {cond, body, i})
+        },
+        Stmt::If {cond, thn, els, i} => {
+            let thn = promote_assign_to_def_stmts(&vars, thn);
+            let els = promote_assign_to_def_stmts(&vars, els);
+            (vars, Stmt::If {cond, thn, els, i})
+        },
+        Stmt::Assign {..} | Stmt::SyncPoint {..} => {
+            (vars, s)
+        }
+    }
+}
+
+fn promote_assign_to_def_stmts(vars: &BTreeSet<Name>, stmts: Vec<Stmt>) -> Vec<Stmt> {
+    let (_, stmts) = stmts.into_iter()
+        .fold((vars.clone(), vec![]), |acc, s| {
+            let (vars, mut stmts) = acc;
+            let (vars, s) = promote_assign_to_def_stmt(vars, s);
+            stmts.push(s);
+            (vars, stmts)
+        });
+    stmts
+}
+
+fn promote_assign_to_def(body: Vec<Stmt>) -> Vec<Stmt> {
+    promote_assign_to_def_stmts(&BTreeSet::new(), body)
+}
+
+/// Restructure the code such that inter-block synchronizations are eliminated from the code. In
+/// particular, we identify the synchronization points within parallel code and classify them based
+/// on whether they require inter-block synchronization. When we have inter-block synchronization
+/// points inside a sequential loop, where the iteration order matters, the code is transformed by
+/// hoisting the sequential loop outside of the parallel code. The code is updated such that
+/// statements execute in a correct order with respect to the original program.
 ///
-/// The iterations of a parallel for-loop can run in arbitrary order, but all iterations must
-/// complete before executing subsequent statements, as these may depend on the result of the
-/// parallel for-loop. Therefore, we insert a synchronization point after every parallel for-loop.
-///
-/// We also insert a synchronization point after a statement which contains incompatible
-/// parallelism with respect to subsequent statements. That is, we consider the statements on a
-/// level of nesting in reverse order, and insert synchronization points when we find a statement
-/// whose parallelism is incompatible with what we have seen so far. These synchronization points
-/// are used to guide later transformations.
-///
-/// Finally, we eliminate synchronization points that are unnecessary. First, the outermost
-/// parallel for-loop will be translated to a CUDA kernel entry. CUDA ensures that one kernel
-/// completes before the next one starts, so we eliminate synchronization points of the outermost
-/// parallel for-loops. Second, we eliminate synchronization points at the end of a parallel
-/// for-loop (when the last statement is a synchronize node) because there is no need for the
-/// iterations of a parallel for-loop to wait for one another.
-pub fn add_synchronization_points(ast: Ast) -> CompileResult<Ast> {
+/// As part of the transformation, assignments to local variables are replaced with a declaration
+/// when this is required to maintain correctness after moving the code. Further, temporary data is
+/// allocated for representing local variables that are defined and used in separate kernels after
+/// transforming the AST. These are performed to restore the AST to a valid state.
+pub fn restructure_inter_block_synchronization(ast: Ast) -> CompileResult<Ast> {
     let Ast {fun: FunDef {id, params, body, i}, structs} = ast;
+    // Insert a synchronization point at the end of each parallel for-loop, and determine for each
+    // of them whether they require inter-block synchronization.
     let body = insert_synchronization_points(body);
     let par = par_tree::build_tree(&body);
     let body = classify_synchronization_points(&par, body);
+
+    // Hoist sequential loops inside parallel code containing inter-block synchronization points
+    // such that they occur outside of the parallel code, and restructure the code to ensure the
+    // execution order remains valid.
     let body = hoist_inner_sequential_loops(&par, body)?;
+
+    // Remove synchronization points that are unnecessary. A synchronization point is deemed
+    // unnecessary either if it occurs outside of parallel code or if it occurs at the end of a
+    // parallel for-loop.
     let body = eliminate_unnecessary_synchronization_points(body);
+
+    // After hoisting, the code may be restructured such that the definition and the use(s) of a
+    // local variable end up in separate parallel kernels. First, we promote assignments to
+    // definitions, to properly handle repeated assignments to a local variable ending up in
+    // separate kernels. Second, we allocate temporary data for storing local variables, when
+    // these are defined and used in separate kernels.
+    let body = promote_assign_to_def(body);
+
     Ok(Ast {fun: FunDef {id, params, body, i}, structs})
 }
 
@@ -433,9 +492,8 @@ mod test {
 
     fn assert_classify(body: Vec<Stmt>, expected: Vec<Stmt>) {
         let par = par_tree::build_tree(&body);
-        let body = make_ast(classify_synchronization_points(&par, body));
-        let expected = make_ast(expected);
-        println!("{0}\n{1}", body.pprint_default(), expected.pprint_default());
+        let body = classify_synchronization_points(&par, body);
+        print_stmts(&body, &expected);
         assert_eq!(body, expected);
     }
 
@@ -443,6 +501,12 @@ mod test {
         let par = par_tree::build_tree(&body);
         let body = hoist_inner_sequential_loops(&par, body).unwrap();
         let body = eliminate_unnecessary_synchronization_points(body);
+        print_stmts(&body, &expected);
+        assert_eq!(body, expected);
+    }
+
+    fn assert_assign_to_def(body: Vec<Stmt>, expected: Vec<Stmt>) {
+        let body = promote_assign_to_def(body);
         print_stmts(&body, &expected);
         assert_eq!(body, expected);
     }
@@ -782,5 +846,32 @@ mod test {
             for_("x", 10, vec![assign(var("i"), int(9))])
         ];
         assert_hoist(body, expected)
+    }
+
+    #[test]
+    fn assign_to_def_post_hoisting() {
+        let body = vec![
+            for_("x", 10, vec![
+                def(id("a"), int(1)),
+                def(id("b"), var("a"))
+            ]),
+            for_("y", 0, vec![
+                for_("x", 10, vec![
+                     assign(var("a"), int(2)),
+                ])
+            ])
+        ];
+        let expected = vec![
+            for_("x", 10, vec![
+                def(id("a"), int(1)),
+                def(id("b"), var("a"))
+            ]),
+            for_("y", 0, vec![
+                for_("x", 10, vec![
+                     def(id("a"), int(2)),
+                ])
+            ])
+        ];
+        assert_assign_to_def(body, expected)
     }
 }

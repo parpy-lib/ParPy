@@ -10,12 +10,11 @@ use crate::utils::name::Name;
 use crate::utils::pprint::PrettyPrint;
 use crate::utils::reduce;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 #[derive(Debug)]
 struct CodegenEnv {
     gpu_mapping: BTreeMap<Name, GpuMapping>,
-    sync: BTreeSet<Name>,
     struct_fields: BTreeMap<Name, Vec<Field>>,
     id: Name
 }
@@ -498,7 +497,6 @@ fn generate_parallel_reduction(
 fn generate_kernel_stmt(
     grid: LaunchArgs,
     map: &[GpuMap],
-    sync: &BTreeSet<Name>,
     mut acc: Vec<Stmt>,
     stmt: ir_ast::Stmt
 ) -> CompileResult<Vec<Stmt>> {
@@ -513,9 +511,13 @@ fn generate_kernel_stmt(
             let expr = from_ir_expr(expr)?;
             acc.push(Stmt::Assign {dst, expr});
         },
+        ir_ast::Stmt::SyncPoint {block_local: true, ..} => {
+            acc.push(Stmt::Syncthreads {});
+        },
         ir_ast::Stmt::SyncPoint {i, ..} => {
-            parir_compile_error!(i, "Internal error: Found synchronization point \
-                                     outside parallel code")?
+            parir_compile_error!(i, "Found an unsupported inter-block \
+                                     synchronization statement in parallel \
+                                     code, which is not supported")?
         },
         ir_ast::Stmt::For {var, lo, hi, step, body, par, i} => {
             let (p, grid, map) = if par.is_parallel() {
@@ -532,23 +534,19 @@ fn generate_kernel_stmt(
                     var_ty, var, init, cond, incr, body, par.nthreads, i)?
                 );
             } else {
-                let body = generate_kernel_stmts(grid, map, sync, vec![], body)?;
-                let should_sync = sync.contains(&var);
+                let body = generate_kernel_stmts(grid, map, vec![], body)?;
                 acc.push(Stmt::For {var_ty, var, init, cond, incr, body});
-                if should_sync {
-                    acc.push(Stmt::Syncthreads {});
-                };
             };
         },
         ir_ast::Stmt::If {cond, thn, els, ..} => {
             let cond = from_ir_expr(cond)?;
-            let thn = generate_kernel_stmts(grid.clone(), map, sync, vec![], thn)?;
-            let els = generate_kernel_stmts(grid, map, sync, vec![], els)?;
+            let thn = generate_kernel_stmts(grid.clone(), map, vec![], thn)?;
+            let els = generate_kernel_stmts(grid, map, vec![], els)?;
             acc.push(Stmt::If {cond, thn, els});
         },
         ir_ast::Stmt::While {cond, body, ..} => {
             let cond = from_ir_expr(cond)?;
-            let body = generate_kernel_stmts(grid, map, sync, vec![], body)?;
+            let body = generate_kernel_stmts(grid, map, vec![], body)?;
             acc.push(Stmt::While {cond, body});
         },
     };
@@ -558,12 +556,11 @@ fn generate_kernel_stmt(
 fn generate_kernel_stmts(
     grid: LaunchArgs,
     map: &[GpuMap],
-    sync: &BTreeSet<Name>,
     acc: Vec<Stmt>,
     stmts: Vec<ir_ast::Stmt>
 ) -> CompileResult<Vec<Stmt>> {
     stmts.into_iter()
-        .fold(Ok(acc), |acc, stmt| generate_kernel_stmt(grid.clone(), map, sync, acc?, stmt))
+        .fold(Ok(acc), |acc, stmt| generate_kernel_stmt(grid.clone(), map, acc?, stmt))
 }
 
 fn generate_host_kernel_launch(
@@ -605,7 +602,7 @@ fn from_ir_stmt(
                     let kernel_id = generate_kernel_name(&env.id, &var);
                     let stmt = ir_ast::Stmt::For {var, lo, hi, step, body, par, i: i.clone()};
                     let kernel_body = generate_kernel_stmt(
-                        m.grid.clone(), &m.get_mapping()[..], &env.sync, vec![], stmt
+                        m.grid.clone(), &m.get_mapping()[..], vec![], stmt
                     )?;
                     let fv = free_vars::free_variables(&kernel_body);
                     let kernel_params = fv.clone()
@@ -764,8 +761,7 @@ fn struct_top_fields(t: Top) -> (Name, Vec<Field>) {
 
 pub fn from_ir(
     ast: ir_ast::Ast,
-    gpu_mapping: BTreeMap<Name, GpuMapping>,
-    sync: BTreeSet<Name>
+    gpu_mapping: BTreeMap<Name, GpuMapping>
 ) -> CompileResult<Ast> {
     let mut structs = ast.structs
         .into_iter()
@@ -777,7 +773,7 @@ pub fn from_ir(
         .map(struct_top_fields)
         .collect::<BTreeMap<Name, Vec<Field>>>();
     let env = CodegenEnv {
-        gpu_mapping, sync, struct_fields, id: Name::new(String::new())
+        gpu_mapping, struct_fields, id: Name::new(String::new())
     };
 
     let mut tops = vec![

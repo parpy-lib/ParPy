@@ -41,21 +41,20 @@ def test_sum_inner_and_outer_parallel_gpu():
     M = 50
     p = {
         'outer': [parir.threads(N)],
-        'inner': [parir.threads(128), parir.reduce()]
+        'inner': [parir.threads(128)]
     }
     compare_sum(N, M, p)
 
+@pytest.mark.skip("In progress of adding support for this")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_sum_multi_block_reduction_fails():
+def test_sum_multi_block_reduction():
     N = 100
     M = 2048
     p = {
         'outer': [parir.threads(N)],
-        'inner': [parir.threads(M), parir.reduce()]
+        'inner': [parir.threads(M)]
     }
-    with pytest.raises(RuntimeError) as e_info:
-        compare_sum(N, M, p)
-    assert e_info.match(r".*1024 threads.*")
+    compare_sum(N, M, p)
 
 def test_sum_compiles():
     N = 100
@@ -68,7 +67,7 @@ def test_sum_compiles():
 
     p = {
         'outer': [parir.threads(N)],
-        'inner': [parir.threads(128), parir.reduce()]
+        'inner': [parir.threads(128)]
     }
     s2 = parir.print_compiled(sum_rows, [x, out, N], p)
     assert len(s2) != 0

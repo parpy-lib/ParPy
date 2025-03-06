@@ -78,18 +78,16 @@ def read_expected_output(fname, device):
     return torch.tensor([float(l) for l in f.readlines()], dtype=torch.float32, device=device)
 
 @parir.jit
-def forward_init(hmm, seqs, alpha_src):
+def forward_kernel(hmm, seqs, alpha1, alpha2, result):
     parir.label('inst')
     for inst in range(seqs["num_instances"]):
+        # Initialization
         o = seqs["data"][inst, 0]
         parir.label('state')
         for state in range(hmm["num_states"]):
-            alpha_src[inst, state] = hmm["initial_prob"][state] + hmm["output_prob"][o, state % 64]
+            alpha1[inst, state] = hmm["initial_prob"][state] + hmm["output_prob"][o, state % 64]
 
-@parir.jit
-def forward_steps(hmm, seqs, alpha1, alpha2):
-    parir.label('inst')
-    for inst in range(seqs["num_instances"]):
+        # Forward steps (t = 1, .., maxlen-1)
         for t in range(1, seqs["maxlen"]):
             alpha_src = alpha2
             alpha_dst = alpha1
@@ -142,46 +140,24 @@ def forward_steps(hmm, seqs, alpha1, alpha2):
                 elif t == seqs["lens"][inst]:
                     alpha_dst[inst, state] = alpha_src[inst, state]
 
-@parir.jit
-def forward_lse(hmm, seqs, result, alpha1, alpha2):
-    parir.label('inst')
-    for inst in range(seqs["num_instances"]):
         # Summation of final alpha values
         alpha = alpha2
         if seqs["maxlen"] & 1:
             alpha = alpha1
 
-        parir.label('state')
+        parir.label('reduce')
         maxp = parir.max(alpha[inst, :])
 
-        parir.label('state')
+        parir.label('reduce')
         psum = parir.sum(parir.exp(alpha[inst, :] - maxp))
 
         result[inst] = maxp + parir.log(psum)
 
-def forward(hmm, seqs):
-    result = torch.empty(seqs["num_instances"], dtype=torch.float32, device='cuda')
+def forward(hmm, seqs, par):
     alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32, device='cuda')
     alpha2 = torch.empty_like(alpha1)
-
-    par = {
-        'inst': [parir.threads(seqs["num_instances"])],
-        'state': [parir.threads(hmm["num_states"])]
-    }
-    forward_init(hmm, seqs, alpha1, parallelize=par, cache=False)
-
-    par = {
-        'inst': [parir.threads(seqs["num_instances"])],
-        'state': [parir.threads(hmm["num_states"])]
-    }
-    forward_steps(hmm, seqs, alpha1, alpha2, parallelize=par, cache=False)
-
-    par = {
-        'inst': [parir.threads(seqs["num_instances"])],
-        'state': [parir.threads(hmm["num_states"]), parir.reduce()]
-    }
-    forward_lse(hmm, seqs, result, alpha1, alpha2, parallelize=par, cache=False)
-
+    result = torch.empty(seqs["num_instances"], dtype=torch.float32, device='cuda')
+    forward_kernel(hmm, seqs, alpha1, alpha2, result, parallelize=par, cache=False)
     return result
 
 def read_test_data(device):
@@ -191,11 +167,29 @@ def read_test_data(device):
     expected = read_expected_output("test/data/3mer-expected.txt", device)
     return hmm, seqs, expected
 
+def run_forw_test(hmm, seqs, expected, p):
+    probs = forward(hmm, seqs, p)
+    assert torch.allclose(probs, expected, atol=1e-5), f"{probs}\n{expected}"
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_forward():
+def test_forward_single_block():
     hmm, seqs, expected = read_test_data('cuda')
-    probs = forward(hmm, seqs)
-    assert torch.allclose(probs, expected), f"{probs}\n{expected}"
+    p = {
+        'inst': [parir.threads(seqs["num_instances"])],
+        'state': [parir.threads(512)],
+        'reduce': [parir.threads(512)]
+    }
+    run_forw_test(hmm, seqs, expected, p)
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+def test_forward_multi_block():
+    hmm, seqs, expected = read_test_data('cuda')
+    p = {
+        'inst': [parir.threads(seqs["num_instances"])],
+        'state': [parir.threads(2048)],
+        'reduce': [parir.threads(512)]
+    }
+    run_forw_test(hmm, seqs, expected, p)
 
 def test_forward_compiles():
     # Load data on the CPU since these tests should run without a GPU.
@@ -207,15 +201,5 @@ def test_forward_compiles():
         'inst': [parir.threads(seqs["num_instances"])],
         'state': [parir.threads(hmm["num_states"])]
     }
-    s = parir.print_compiled(forward_init, [hmm, seqs, alpha1], p)
-    assert len(s) != 0
-
-    s = parir.print_compiled(forward_steps, [hmm, seqs, alpha1, alpha2], p)
-    assert len(s) != 0
-
-    p = {
-        'inst': [parir.threads(seqs["num_instances"])],
-        'state': [parir.threads(hmm["num_states"]), parir.reduce()]
-    }
-    s = parir.print_compiled(forward_lse, [hmm, seqs, result, alpha1, alpha2], p)
+    s = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], p)
     assert len(s) != 0
