@@ -192,7 +192,7 @@ def parir_tanh(dst, src):
 @parir.jit
 def parir_atan2(dst, src):
     with parir.gpu:
-        dst[0] = parir.atan2(src[0], 1.0)
+        dst[0] = parir.atan2(src[0], src[0])
 
 @parir.jit
 def parir_sqrt(dst, src):
@@ -217,6 +217,8 @@ float_tys = [torch.float16, torch.float32, torch.float64]
 def set_expected_behavior_unop(fn, dtype):
     if fn.__name__ == "parir_tanh" and dtype == torch.float16:
         return True, "Operation tanh not supported for 16-bit floats.*"
+    elif fn.__name__ == "parir_atan2" and dtype != torch.float64:
+        return True, "Operation atan2 is only supported for 64-bit floats.*"
     else:
         return False, None
 
