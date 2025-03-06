@@ -1,5 +1,5 @@
 from builtins import abs
-from math import atan2, cos, exp, inf, log, sin, sqrt, tanh
+from torch import atan2, cos, exp, inf, log, sin, sqrt, tanh
 import builtins
 import torch
 import contextlib

@@ -657,22 +657,22 @@ mod test {
     #[test]
     fn lookup_builtin_exp() -> PyResult<()> {
         lookup_builtin_ok("parir.exp", Builtin::Exp)?;
-        lookup_builtin_ok("math.exp", Builtin::Exp)?;
+        lookup_builtin_fail("torch.exp")?;
         lookup_builtin_fail("exp")
     }
 
     #[test]
     fn lookup_builtin_inf() -> PyResult<()> {
         lookup_builtin_ok("parir.inf", Builtin::Inf)?;
-        lookup_builtin_ok("math.inf", Builtin::Inf)?;
         lookup_builtin_ok("float('inf')", Builtin::Inf)?;
+        lookup_builtin_fail("torch.inf")?;
         lookup_builtin_fail("inf")
     }
 
     #[test]
     fn lookup_builtin_log() -> PyResult<()> {
         lookup_builtin_ok("parir.log", Builtin::Log)?;
-        lookup_builtin_ok("math.log", Builtin::Log)?;
+        lookup_builtin_fail("torch.log")?;
         lookup_builtin_fail("log")
     }
 
@@ -706,19 +706,19 @@ mod test {
     #[test]
     fn lookup_builtin_sqrt() -> PyResult<()> {
         lookup_builtin_ok("parir.sqrt", Builtin::Sqrt)?;
-        lookup_builtin_ok("math.sqrt", Builtin::Sqrt)
+        lookup_builtin_fail("torch.sqrt")
     }
 
     #[test]
     fn lookup_builtin_trigonometry() -> PyResult<()> {
         lookup_builtin_ok("parir.cos", Builtin::Cos)?;
-        lookup_builtin_ok("math.cos", Builtin::Cos)?;
+        lookup_builtin_fail("torch.cos")?;
         lookup_builtin_ok("parir.sin", Builtin::Sin)?;
-        lookup_builtin_ok("math.sin", Builtin::Sin)?;
+        lookup_builtin_fail("torch.sin")?;
         lookup_builtin_ok("parir.tanh", Builtin::Tanh)?;
-        lookup_builtin_ok("math.tanh", Builtin::Tanh)?;
+        lookup_builtin_fail("torch.tanh")?;
         lookup_builtin_ok("parir.atan2", Builtin::Atan2)?;
-        lookup_builtin_ok("math.atan2", Builtin::Atan2)
+        lookup_builtin_fail("torch.atan2")
     }
 
     #[test]
