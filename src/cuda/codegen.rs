@@ -7,7 +7,6 @@ use crate::ir::ast as ir_ast;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::utils::pprint::PrettyPrint;
 use crate::utils::reduce;
 
 use std::collections::BTreeMap;
@@ -223,7 +222,7 @@ fn reduction_op_neutral_element(
     i: Info
 ) -> CompileResult<Expr> {
     if let Type::Scalar {sz} = &ty {
-        match reduce::reduction_op_neutral_element(op, sz.clone(), i.clone()) {
+        match reduce::neutral_element(op, sz, &i) {
             Some(literal) => Ok(literal),
             None => {
                 let op = pprint::print_binop(op, argty, &ty);
@@ -275,69 +274,6 @@ fn generate_warp_sync(
     });
 }
 
-fn parallel_reduction_error<T>(spec_msg: &str, i: &Info) -> CompileResult<T> {
-    let msg = concat!(
-        "Parallel reductions are only supported on for-loops of the form\n",
-        "  for i in range(a, b):\n",
-        "    x = x + y\n",
-        "where x is either a variable or an array access, y is an arbitrary ",
-        "expression, and '+' is a known binary reduction operation.",
-    );
-    parir_compile_error!(i, "{spec_msg}\n\n{msg}")
-}
-
-fn extract_reduction_lhs_and_rhs(
-    mut body: Vec<ir_ast::Stmt>,
-    i: &Info
-) -> CompileResult<(Expr, Expr)> {
-    // The loop body must contain a single statement.
-    if body.len() == 1 {
-        let s = body.remove(0);
-        // The loop's single statement must be a single (re)assignment.
-        match s {
-            ir_ast::Stmt::Assign {dst, expr, ..} => {
-                // Left-hand side must either be a variable or a tensor access.
-                match dst {
-                    ir_ast::Expr::Var {..} | ir_ast::Expr::TensorAccess {..} => {
-                        Ok((from_ir_expr(dst)?, from_ir_expr(expr)?))
-                    },
-                    _ => {
-                        let msg = "Left-hand side of reduction must be a variable or tensor access";
-                        parallel_reduction_error(msg, i)
-                    }
-                }
-            },
-            _ => {
-                let msg = "Reduction for-loop statement must be an assignment";
-                parallel_reduction_error(msg, i)
-            }
-        }
-    } else {
-        let msg = "Reduction for-loop must contain a single statement";
-        parallel_reduction_error(msg, i)
-    }
-}
-
-fn extract_bin_op(expr: Expr) -> CompileResult<(Expr, BinOp, Expr, Type, Info)> {
-    let i = expr.get_info();
-    match expr {
-        Expr::BinOp {lhs, op, rhs, ty, i} => Ok((*lhs, op, *rhs, ty, i)),
-        Expr::Convert {e, ..} => extract_bin_op(*e),
-        _ => {
-            let msg = "RHS of reduction statement should be a binary operation";
-            parallel_reduction_error(msg, &i)
-        }
-    }
-}
-
-fn unwrap_convert(e: &Expr) -> Expr {
-    if let Expr::Convert {e, ..} = e {
-        unwrap_convert(e)
-    } else {
-        e.clone()
-    }
-}
-
 fn generate_parallel_reduction(
     var_ty: Type,
     var: Name,
@@ -348,149 +284,142 @@ fn generate_parallel_reduction(
     nthreads: i64,
     i: Info
 ) -> CompileResult<Stmt> {
-    let (dst, expr) = extract_reduction_lhs_and_rhs(body, &i)?;
+    let (lhs, op, rhs, sz, i) = reduce::extract_reduction_operands(body, &i)?;
+    let lhs = from_ir_expr(lhs)?;
+    let rhs = from_ir_expr(rhs)?;
+    let ty = Type::Scalar {sz: sz.clone()};
     let mut acc = Vec::new();
-    let (lhs, op, rhs, ty, i) = extract_bin_op(expr)?;
     let ne = reduction_op_neutral_element(&op, lhs.get_type(), ty.clone(), i.clone())?;
     let opfn = |lhs, rhs| Expr::BinOp {
         lhs: Box::new(lhs), op: op.clone(), rhs: Box::new(rhs),
         ty: ty.clone(), i: i.clone()
     };
-    let acc = if dst == unwrap_convert(&lhs) {
-        let temp_id = Name::sym_str("t");
-        let temp_var = Expr::Var {id: temp_id.clone(), ty: ty.clone(), i: i.clone()};
-        // Generate code for a warp-local reduction
-        acc.push(Stmt::Definition {
-            ty: ty.clone(),
-            id: temp_id.clone(),
-            expr: ne.clone()
-        });
-        let temp_assign = Stmt::Assign {
-            dst: temp_var.clone(),
-            expr: Expr::BinOp {
-                lhs: Box::new(temp_var.clone()),
-                op: op.clone(),
-                rhs: Box::new(rhs),
-                ty: ty.clone(), i: i.clone()
-            }
-        };
-        acc.push(Stmt::For {
-            var_ty, var, init, cond, incr, body: vec![temp_assign]
-        });
-        acc.push(Stmt::Syncthreads {});
-        generate_warp_sync(&mut acc, opfn, &temp_var.clone(), &i);
+    let temp_id = Name::sym_str("t");
+    let temp_var = Expr::Var {id: temp_id.clone(), ty: ty.clone(), i: i.clone()};
+    // Generate code for a warp-local reduction
+    acc.push(Stmt::Definition {
+        ty: ty.clone(),
+        id: temp_id.clone(),
+        expr: ne.clone()
+    });
+    let temp_assign = Stmt::Assign {
+        dst: temp_var.clone(),
+        expr: Expr::BinOp {
+            lhs: Box::new(temp_var.clone()),
+            op: op.clone(),
+            rhs: Box::new(rhs),
+            ty: ty.clone(), i: i.clone()
+        }
+    };
+    acc.push(Stmt::For {
+        var_ty, var, init, cond, incr, body: vec![temp_assign]
+    });
+    acc.push(Stmt::Syncthreads {});
+    generate_warp_sync(&mut acc, opfn, &temp_var.clone(), &i);
 
-        // If the parallelism includes more than 32 threads, we are using more than one
-        // warp. In this case, we synchronize across all threads of the block.
-        let i64_ty = Type::Scalar {sz: ElemSize::I64};
-        if nthreads > 32 {
-            // Allocate shared memory and write to it
-            let shared_id = Name::sym_str("stemp");
-            let shared_var = Expr::Var {id: shared_id.clone(), ty: ty.clone(), i: i.clone()};
-            acc.push(Stmt::AllocShared {ty: ty.clone(), id: shared_id, sz: 32});
-            let thread_warp_idx = Expr::BinOp {
-                lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()}),
-                op: BinOp::Rem,
+    // If the parallelism includes more than 32 threads, we are using more than one
+    // warp. In this case, we synchronize across all threads of the block.
+    let i64_ty = Type::Scalar {sz: ElemSize::I64};
+    if nthreads > 32 {
+        // Allocate shared memory and write to it
+        let shared_id = Name::sym_str("stemp");
+        let shared_var = Expr::Var {id: shared_id.clone(), ty: ty.clone(), i: i.clone()};
+        acc.push(Stmt::AllocShared {ty: ty.clone(), id: shared_id, sz: 32});
+        let thread_warp_idx = Expr::BinOp {
+            lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()}),
+            op: BinOp::Rem,
+            rhs: Box::new(Expr::Int {v: 32, ty: i64_ty.clone(), i: i.clone()}),
+            ty: i64_ty.clone(),
+            i: i.clone()
+        };
+        let var_id = Name::sym_str("i");
+        let var = Expr::Var {id: var_id.clone(), ty: ty.clone(), i: i.clone()};
+        acc.push(Stmt::For {
+            var_ty: i64_ty.clone(),
+            var: var_id.clone(),
+            init: Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()},
+            cond: Expr::BinOp {
+                lhs: Box::new(var.clone()),
+                op: BinOp::Lt,
                 rhs: Box::new(Expr::Int {v: 32, ty: i64_ty.clone(), i: i.clone()}),
                 ty: i64_ty.clone(),
                 i: i.clone()
-            };
-            let var_id = Name::sym_str("i");
-            let var = Expr::Var {id: var_id.clone(), ty: ty.clone(), i: i.clone()};
-            acc.push(Stmt::For {
-                var_ty: i64_ty.clone(),
-                var: var_id.clone(),
-                init: Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()},
-                cond: Expr::BinOp {
-                    lhs: Box::new(var.clone()),
-                    op: BinOp::Lt,
-                    rhs: Box::new(Expr::Int {v: 32, ty: i64_ty.clone(), i: i.clone()}),
-                    ty: i64_ty.clone(),
-                    i: i.clone()
-                },
-                incr: Expr::BinOp {
-                    lhs: Box::new(var.clone()),
-                    op: BinOp::Add,
-                    rhs: Box::new(Expr::Int {
-                        v: nthreads, ty: i64_ty.clone(), i: i.clone()
-                    }),
-                    ty: i64_ty.clone(),
-                    i: i.clone()
-                },
-                body: vec![Stmt::Assign {
-                    dst: Expr::ArrayAccess {
-                        target: Box::new(shared_var.clone()),
-                        idx: Box::new(var.clone()),
-                        ty: ty.clone(),
-                        i: i.clone()
-                    },
-                    expr: ne.clone()
-                }]
-            });
-            acc.push(Stmt::Syncthreads {});
-            acc.push(Stmt::If {
-                cond: Expr::BinOp {
-                    lhs: Box::new(thread_warp_idx.clone()),
-                    op: BinOp::Eq,
-                    rhs: Box::new(Expr::Int {v: 0, ty: i64_ty.clone(), i: i.clone()}),
-                    ty: Type::Boolean,
-                    i: i.clone()
-                },
-                thn: vec![Stmt::Assign {
-                    dst: Expr::ArrayAccess {
-                        target: Box::new(shared_var.clone()),
-                        idx: Box::new(Expr::BinOp {
-                            lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()}),
-                            op: BinOp::Div,
-                            rhs: Box::new(Expr::Int {v: 32, ty: i64_ty.clone(), i: i.clone()}),
-                            ty: i64_ty.clone(),
-                            i: i.clone()
-                        }),
-                        ty: ty.clone(),
-                        i: i.clone()
-                    },
-                    expr: temp_var.clone()
-                }],
-                els: vec![]
-            });
-            acc.push(Stmt::Syncthreads {});
-
-            // Load data from shared memory, and synchronize across the threads of the
-            // warp.
-            acc.push(Stmt::Assign {
-                dst: temp_var.clone(),
-                expr: Expr::ArrayAccess {
-                    target: Box::new(shared_var),
-                    idx: Box::new(thread_warp_idx),
+            },
+            incr: Expr::BinOp {
+                lhs: Box::new(var.clone()),
+                op: BinOp::Add,
+                rhs: Box::new(Expr::Int {
+                    v: nthreads, ty: i64_ty.clone(), i: i.clone()
+                }),
+                ty: i64_ty.clone(),
+                i: i.clone()
+            },
+            body: vec![Stmt::Assign {
+                dst: Expr::ArrayAccess {
+                    target: Box::new(shared_var.clone()),
+                    idx: Box::new(var.clone()),
                     ty: ty.clone(),
                     i: i.clone()
-                }
-            });
-            generate_warp_sync(&mut acc, opfn, &temp_var.clone(), &i);
-        } else {
-            acc.push(Stmt::Syncthreads {});
-        }
-
-        // Write the result stored in the temporary value to the original target.
-        // If the target is an array access, only the first thread writes to reduce
-        // global array contention.
-        let assign_stmt = Stmt::Assign {
-            dst: dst.clone(),
-            expr: Expr::BinOp {
-                lhs: Box::new(dst.clone()), op,
-                rhs: Box::new(temp_var.clone()),
-                ty: ty.clone(), i: i.clone()
+                },
+                expr: ne.clone()
+            }]
+        });
+        acc.push(Stmt::Syncthreads {});
+        acc.push(Stmt::If {
+            cond: Expr::BinOp {
+                lhs: Box::new(thread_warp_idx.clone()),
+                op: BinOp::Eq,
+                rhs: Box::new(Expr::Int {v: 0, ty: i64_ty.clone(), i: i.clone()}),
+                ty: Type::Boolean,
+                i: i.clone()
             },
-        };
-        acc.push(assign_stmt);
-        Ok(acc)
+            thn: vec![Stmt::Assign {
+                dst: Expr::ArrayAccess {
+                    target: Box::new(shared_var.clone()),
+                    idx: Box::new(Expr::BinOp {
+                        lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()}),
+                        op: BinOp::Div,
+                        rhs: Box::new(Expr::Int {v: 32, ty: i64_ty.clone(), i: i.clone()}),
+                        ty: i64_ty.clone(),
+                        i: i.clone()
+                    }),
+                    ty: ty.clone(),
+                    i: i.clone()
+                },
+                expr: temp_var.clone()
+            }],
+            els: vec![]
+        });
+        acc.push(Stmt::Syncthreads {});
+
+        // Load data from shared memory, and synchronize across the threads of the
+        // warp.
+        acc.push(Stmt::Assign {
+            dst: temp_var.clone(),
+            expr: Expr::ArrayAccess {
+                target: Box::new(shared_var),
+                idx: Box::new(thread_warp_idx),
+                ty: ty.clone(),
+                i: i.clone()
+            }
+        });
+        generate_warp_sync(&mut acc, opfn, &temp_var.clone(), &i);
     } else {
-        let msg = format!(
-            "Left-hand side of binop {0} is not equal to assignment target {1}",
-            lhs.pprint_default(), dst.pprint_default()
-        );
-        parallel_reduction_error(&msg, &i)
-    }?;
+        acc.push(Stmt::Syncthreads {});
+    }
+
+    // Write the result stored in the temporary value to the original target.
+    // If the target is an array access, only the first thread writes to reduce
+    // global array contention.
+    let assign_stmt = Stmt::Assign {
+        dst: lhs.clone(),
+        expr: Expr::BinOp {
+            lhs: Box::new(lhs.clone()), op,
+            rhs: Box::new(temp_var.clone()),
+            ty: ty.clone(), i: i.clone()
+        },
+    };
+    acc.push(assign_stmt);
     Ok(Stmt::Scope {body: acc})
 }
 
