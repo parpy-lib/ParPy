@@ -549,6 +549,14 @@ fn generate_kernel_stmt(
             let body = generate_kernel_stmts(grid, map, vec![], body)?;
             acc.push(Stmt::While {cond, body});
         },
+        ir_ast::Stmt::Alloc {i, ..} => {
+            parir_compile_error!(i, "Memory allocation is not supported in \
+                                     parallel code.")?
+        },
+        ir_ast::Stmt::Free {i, ..} => {
+            parir_compile_error!(i, "Memory deallocation is not supported in \
+                                     parallel code.")?
+        },
     };
     Ok(acc)
 }
@@ -644,6 +652,14 @@ fn from_ir_stmt(
             host_body.push(Stmt::While {cond, body});
             Ok(kernels)
         },
+        ir_ast::Stmt::Alloc {id, elem_sz, sz, ..} => {
+            host_body.push(Stmt::MallocAsync {id, elem_sz, sz});
+            Ok(kernels)
+        },
+        ir_ast::Stmt::Free {id, ..} => {
+            host_body.push(Stmt::FreeAsync {id});
+            Ok(kernels)
+        }
     }?;
     Ok((host_body, kernels))
 }

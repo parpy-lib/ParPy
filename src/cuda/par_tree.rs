@@ -66,7 +66,7 @@ fn build_tree_stmt_par(acc: ParNode, s: &Stmt) -> ParNode {
             acc.with_child(var.clone(), node)
         },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
-        Stmt::While {..} | Stmt::If {..} => {
+        Stmt::While {..} | Stmt::If {..} | Stmt::Alloc {..} | Stmt::Free {..} => {
             s.sfold(acc, build_tree_stmt_par)
         }
     }
@@ -84,7 +84,7 @@ fn build_tree_stmt(acc: ParTree, s: &Stmt) -> ParTree {
             }
         },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
-        Stmt::While {..} | Stmt::If {..} => {
+        Stmt::While {..} | Stmt::If {..} | Stmt::Alloc {..} | Stmt::Free {..} => {
             s.sfold(acc, build_tree_stmt)
         }
 

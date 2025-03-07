@@ -123,6 +123,14 @@ impl PrettyPrint for Stmt {
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
                 (env, format!("{0}while ({cond}) {{\n{body}\n{0}}}", indent))
+            },
+            Stmt::Alloc {id, elem_sz, sz, ..} => {
+                let (env, elem_sz) = elem_sz.pprint(env);
+                (env, format!("{indent}{id} = alloc[{elem_sz}]({sz})"))
+            },
+            Stmt::Free {id, ..} => {
+                let (env, id) = id.pprint(env);
+                (env, format!("{indent}free({id})"))
             }
         }
     }

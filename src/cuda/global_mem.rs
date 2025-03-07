@@ -73,7 +73,8 @@ fn find_thread_index_dependent_variables_stmt(
         },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
         Stmt::If {..} | Stmt::Scope {..} | Stmt::AllocShared {..} |
-        Stmt::Syncthreads {} | Stmt::Dim3Definition {..} | Stmt::KernelLaunch {..} => {
+        Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
+        Stmt::MallocAsync {..} | Stmt::FreeAsync {..} | Stmt::KernelLaunch {..} => {
             stmt.sfold(Ok(acc), find_thread_index_dependent_variables_stmt)
         }
     }

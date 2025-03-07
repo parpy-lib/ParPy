@@ -48,7 +48,8 @@ fn unify_par(acc: Par, p: Par) -> CompileResult<Par> {
 fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
     match stmt {
         Stmt::Definition {i, ..} | Stmt::Assign {i, ..} |
-        Stmt::SyncPoint {i, ..} => {
+        Stmt::SyncPoint {i, ..} | Stmt::Alloc {i, ..} |
+        Stmt::Free {i, ..} => {
             Ok(Par {n: vec![], i: i.clone()})
         },
         Stmt::If {thn, els, i, ..} => {
@@ -108,7 +109,7 @@ fn find_parallel_structure_stmt_seq(
             }
         },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
-        Stmt::While {..} | Stmt::If {..} => {
+        Stmt::While {..} | Stmt::If {..} | Stmt::Alloc {..} | Stmt::Free {..} => {
             stmt.sfold_result(Ok(acc), find_parallel_structure_stmt_seq)
         }
     }

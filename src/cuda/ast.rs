@@ -292,6 +292,8 @@ pub enum Stmt {
     Syncthreads {},
     Dim3Definition {id: Name, args: Dim3},
     KernelLaunch {id: Name, blocks: Name, threads: Name, args: Vec<Expr>},
+    MallocAsync {id: Name, elem_sz: ElemSize, sz: usize},
+    FreeAsync {id: Name},
     Scope {body: Vec<Stmt>},
 }
 
@@ -330,7 +332,8 @@ impl SMapAccum<Expr> for Stmt {
                 Ok((acc, Stmt::KernelLaunch {id, blocks, threads, args}))
             },
             Stmt::AllocShared {..} | Stmt::Syncthreads {..} |
-            Stmt::Dim3Definition {..} | Stmt::Scope {..} => Ok((acc?, self)),
+            Stmt::Dim3Definition {..} | Stmt::MallocAsync {..} |
+            Stmt::FreeAsync {..} | Stmt::Scope {..} => Ok((acc?, self)),
         }
     }
 }
@@ -349,7 +352,8 @@ impl SFold<Expr> for Stmt {
             Stmt::While {cond, ..} => f(acc?, cond),
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
             Stmt::AllocShared {..} | Stmt::Syncthreads {} |
-            Stmt::Dim3Definition {..} | Stmt::Scope {..} => acc,
+            Stmt::Dim3Definition {..} | Stmt::MallocAsync {..} |
+            Stmt::FreeAsync {..} | Stmt::Scope {..} => acc,
         }
     }
 }
@@ -380,6 +384,7 @@ impl SMapAccum<Stmt> for Stmt {
             },
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
             Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
+            Stmt::MallocAsync {..} | Stmt::FreeAsync {..} |
             Stmt::KernelLaunch {..} => Ok((acc?, self))
         }
     }
@@ -398,6 +403,7 @@ impl SFold<Stmt> for Stmt {
             Stmt::Scope {body} => body.sfold_result(acc, &f),
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
             Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
+            Stmt::MallocAsync {..} | Stmt::FreeAsync {..} |
             Stmt::KernelLaunch {..} => acc,
         }
     }

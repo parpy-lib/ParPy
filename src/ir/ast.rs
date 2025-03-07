@@ -182,6 +182,8 @@ pub enum Stmt {
     },
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
+    Alloc {id: Name, elem_sz: ElemSize, sz: usize, i: Info},
+    Free {id: Name, i: Info},
 }
 
 impl InfoNode for Stmt {
@@ -193,6 +195,8 @@ impl InfoNode for Stmt {
             Stmt::For {i, ..} => i.clone(),
             Stmt::If {i, ..} => i.clone(),
             Stmt::While {i, ..} => i.clone(),
+            Stmt::Alloc {i, ..} => i.clone(),
+            Stmt::Free {i, ..} => i.clone()
         }
     }
 }
@@ -226,7 +230,9 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, cond) = f(acc?, cond)?;
                 Ok((acc, Stmt::While {cond, body, i}))
             },
-            Stmt::SyncPoint {..} => Ok((acc?, self)),
+            Stmt::SyncPoint {..} | Stmt::Alloc {..} | Stmt::Free {..} => {
+                Ok((acc?, self))
+            },
         }
     }
 }
@@ -240,10 +246,10 @@ impl SFold<Expr> for Stmt {
         match self {
             Stmt::Definition {expr, ..} => f(acc?, expr),
             Stmt::Assign {dst, expr, ..} => f(f(acc?, dst)?, expr),
-            Stmt::SyncPoint {..} => acc,
             Stmt::For {lo, hi, ..} => f(f(acc?, lo)?, hi),
             Stmt::If {cond, ..} => f(acc?, cond),
             Stmt::While {cond, ..} => f(acc?, cond),
+            Stmt::SyncPoint {..} | Stmt::Alloc {..} | Stmt::Free {..} => acc
         }
     }
 }
@@ -268,8 +274,10 @@ impl SMapAccum<Stmt> for Stmt {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::While {cond, body, i}))
             },
-            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} =>
-                Ok((acc?, self)),
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
+            Stmt::Alloc {..} | Stmt::Free {..} => {
+                Ok((acc?, self))
+            }
         }
     }
 }
@@ -284,7 +292,8 @@ impl SFold<Stmt> for Stmt {
             Stmt::For {body, ..} => body.sfold_result(acc, &f),
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
-            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} => acc
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
+            Stmt::Alloc {..} | Stmt::Free {..} => acc
         }
     }
 }

@@ -452,6 +452,15 @@ impl PrettyPrint for Stmt {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{indent}{id}<<<{blocks}, {threads}>>>({args});"))
             },
+            Stmt::MallocAsync {id, elem_sz, sz} => {
+                let (env, id) = id.pprint(env);
+                let (env, elem_sz) = elem_sz.pprint(env);
+                (env, format!("{indent}cudaMallocAsync(&{id}, {sz} * sizeof({elem_sz}), 0);"))
+            },
+            Stmt::FreeAsync {id} => {
+                let (env, id) = id.pprint(env);
+                (env, format!("{indent}cudaFreeAsync({id}, 0);"))
+            },
             Stmt::Scope {body} => {
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");

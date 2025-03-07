@@ -54,7 +54,8 @@ fn fv_stmt(mut env: FVEnv, s: &Stmt) -> FVEnv {
             env
         },
         Stmt::Assign {..} | Stmt::If {..} | Stmt::While {..} |
-        Stmt::Syncthreads {..} | Stmt::KernelLaunch {..} | Stmt::Scope {..} => {
+        Stmt::Syncthreads {..} | Stmt::KernelLaunch {..} |
+        Stmt::MallocAsync {..} | Stmt::FreeAsync {..} | Stmt::Scope {..} => {
             let env = s.sfold(env, fv_expr);
             s.sfold(env, fv_stmt)
         }
