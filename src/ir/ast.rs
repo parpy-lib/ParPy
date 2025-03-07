@@ -31,7 +31,7 @@ impl BinOp {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Expr {
     Var {id: Name, ty: Type, i: Info},
     Bool {v: bool, ty: Type, i: Info},
@@ -75,6 +75,34 @@ impl InfoNode for Expr {
             Expr::StructFieldAccess {i, ..} => i.clone(),
             Expr::TensorAccess {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
+        }
+    }
+}
+
+impl PartialEq for Expr {
+    fn eq(&self, other: &Expr) -> bool {
+        match (self, other) {
+            (Expr::Var {id: lid, ..}, Expr::Var {id: rid, ..}) => lid.eq(rid),
+            (Expr::Bool {v: lv, ..}, Expr::Bool {v: rv, ..}) => lv.eq(rv),
+            (Expr::Int {v: lv, ..}, Expr::Int {v: rv, ..}) => lv.eq(rv),
+            (Expr::Float {v: lv, ..}, Expr::Float {v: rv, ..}) => lv.eq(rv),
+            ( Expr::UnOp {op: lop, arg: larg, ..}
+            , Expr::UnOp {op: rop, arg: rarg, ..} ) =>
+                lop.eq(rop) && larg.eq(rarg),
+            ( Expr::BinOp {lhs: llhs, op: lop, rhs: lrhs, ..}
+            , Expr::BinOp {lhs: rlhs, op: rop, rhs: rrhs, ..} ) =>
+                llhs.eq(rlhs) && lop.eq(rop) && lrhs.eq(rrhs),
+            ( Expr::IfExpr {cond: lcond, thn: lthn, els: lels, ..}
+            , Expr::IfExpr {cond: rcond, thn: rthn, els: rels, ..} ) =>
+                lcond.eq(rcond) && lthn.eq(rthn) && lels.eq(rels),
+            ( Expr::StructFieldAccess {target: ltarget, label: llabel, ..}
+            , Expr::StructFieldAccess {target: rtarget, label: rlabel, ..} ) =>
+                ltarget.eq(rtarget) && llabel.eq(rlabel),
+            ( Expr::TensorAccess {target: ltarget, idx: lidx, ..}
+            , Expr::TensorAccess {target: rtarget, idx: ridx, ..} ) =>
+                ltarget.eq(rtarget) && lidx.eq(ridx),
+            (Expr::Convert {e: le, ..}, Expr::Convert {e: re, ..}) => le.eq(re),
+            (_, _) => false
         }
     }
 }
