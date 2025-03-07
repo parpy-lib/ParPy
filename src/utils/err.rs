@@ -23,8 +23,8 @@ impl fmt::Display for ErrorKind {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompileError {
-    msg : String,
-    kind : ErrorKind
+    msg: String,
+    kind: ErrorKind
 }
 
 impl CompileError {
