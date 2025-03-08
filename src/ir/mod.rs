@@ -8,13 +8,15 @@ use ast::*;
 use crate::par::ParKind;
 use crate::par::REDUCE_PAR_LABEL;
 use crate::py::ast as py_ast;
+use crate::utils::debug::*;
 use crate::utils::err::*;
 
 use std::collections::BTreeMap;
 
 pub fn from_python(
     def: py_ast::FunDef,
-    mut par: BTreeMap<String, Vec<ParKind>>
+    mut par: BTreeMap<String, Vec<ParKind>>,
+    debug_env: &DebugEnv
 ) -> CompileResult<Ast> {
     // Insert the special label associated with a reduction into the parallelization mapping. This
     // is used in slicing involving reduction operations.
@@ -27,6 +29,7 @@ pub fn from_python(
         .collect::<CompileResult<Vec<StructDef>>>()?;
     let fun = from_py_ast::to_ir_def(&env, def)?;
     let ast = Ast {structs, fun};
+    debug_env.print("Initial IR AST", &ast);
     let ast = constant_fold::fold(ast);
     Ok(ast)
 }
