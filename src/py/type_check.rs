@@ -54,13 +54,21 @@ impl TypeCheckEnv {
         self.is_scalar_h(ty, |sz| sz.is_floating_point())
     }
 
-    pub fn is_arith_tensor(&self, ty: &Type) -> bool {
+    fn is_tensor(&self, ty: &Type, predicate: impl Fn(&ElemSize) -> bool) -> bool {
         match ty {
             Type::Tensor {sz, ..} => {
-                self.shapes_only || sz.is_signed_integer() || sz.is_floating_point()
-            }
+                self.shapes_only || predicate(sz)
+            },
             _ => false
         }
+    }
+
+    pub fn is_arith_tensor(&self, ty: &Type) -> bool {
+        self.is_tensor(ty, |sz| sz.is_signed_integer() || sz.is_floating_point())
+    }
+
+    pub fn is_bool_tensor(&self, ty: &Type) -> bool {
+        self.is_tensor(ty, |sz| sz.is_boolean())
     }
 }
 
@@ -311,6 +319,30 @@ fn lub_type(env: &TypeCheckEnv, l: Type, r: Type, i: &Info) -> PyResult<Type> {
     }
 }
 
+fn is_well_typed_arith_tensor_builtin(
+    env: &TypeCheckEnv,
+    op: &Builtin,
+    ty: &Type
+) -> bool {
+    match op {
+        Builtin::Max | Builtin::Min | Builtin::Sum | Builtin::Prod => {
+            env.is_arith_tensor(ty)
+        },
+        _ => false
+    }
+}
+
+fn is_well_typed_bool_tensor_builtin(
+    env: &TypeCheckEnv,
+    op: &Builtin,
+    ty: &Type
+) -> bool {
+    match op {
+        Builtin::Any | Builtin::All => env.is_bool_tensor(ty),
+        _ => false
+    }
+}
+
 fn type_check_builtin(
     env: &TypeCheckEnv,
     func: Builtin,
@@ -326,9 +358,11 @@ fn type_check_builtin(
             Ok(Expr::Builtin {func, args, axis, ty, i})
         },
         // Unary tensor reductions, with an optional keyword argument
-        Builtin::Sum | Builtin::Max | Builtin::Min if args.len() == 1 => {
+        Builtin::Max | Builtin::Min | Builtin::Sum | Builtin::Prod |
+        Builtin::Any | Builtin::All if args.len() == 1 => {
             let arg_ty = args[0].get_type();
-            if env.is_arith_tensor(&arg_ty) {
+            if is_well_typed_arith_tensor_builtin(env, &func, &arg_ty) ||
+               is_well_typed_bool_tensor_builtin(env, &func, &arg_ty) {
                 let (sz, mut shape) = match arg_ty.clone() {
                     Type::Tensor {sz, shape} => (sz, shape),
                     _ => unreachable!()

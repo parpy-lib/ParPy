@@ -6,22 +6,49 @@ import contextlib
 
 gpu = contextlib.nullcontext()
 
-def min(x, y, axis=None):
+def min(x, y=None, axis=None):
     if y is None:
-        return torch.min(x, axis=axis)
+        if axis is None:
+            return torch.min(x)
+        else:
+            return torch.min(x, dim=axis).values
     else:
         assert axis is None
         return builtins.min(x, y)
 
-def max(x, y, axis=None):
+def max(x, y=None, axis=None):
     if y is None:
-        return torch.max(x, axis=axis)
+        if axis is None:
+            return torch.max(x)
+        else:
+            return torch.max(x, dim=axis).values
     else:
         assert axis is None
         return builtins.max(x, y)
 
 def sum(x, axis=None):
-    return torch.sum(x, axis=axis)
+    if axis is None:
+        return torch.sum(x)
+    else:
+        return torch.sum(x, dim=axis)
+
+def prod(x, axis=None):
+    if axis is None:
+        return torch.prod(x)
+    else:
+        return torch.prod(x, dim=axis)
+
+def any(x, axis=None):
+    if axis is None:
+        return torch.any(x)
+    else:
+        return torch.any(x, dim=axis)
+
+def all(x, axis=None):
+    if axis is None:
+        return torch.all(x)
+    else:
+        return torch.all(x, axis=axis)
 
 def float16(x):
     return float(x)

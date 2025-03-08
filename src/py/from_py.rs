@@ -165,6 +165,12 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Builtin> 
                 Ok(Builtin::Atan2)
             } else if e.eq(parir.getattr("sum")?)? {
                 Ok(Builtin::Sum)
+            } else if e.eq(parir.getattr("prod")?)? {
+                Ok(Builtin::Prod)
+            } else if e.eq(parir.getattr("any")?)? {
+                Ok(Builtin::Any)
+            } else if e.eq(parir.getattr("all")?)? {
+                Ok(Builtin::All)
             } else if e.eq(parir.getattr("float16")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::F16})
             } else if e.eq(parir.getattr("float32")?)? {
@@ -210,8 +216,8 @@ fn extract_integer_literal_value(e: Expr) -> Option<i64> {
 }
 
 /// Currently, the only supported keyword argument is the 'axis' keyword, used to determine which
-/// axis should be reduced in the supported reduction builtins (sum, min, and max). If any other
-/// keyword arguments are provided, we report an error.
+/// axis should be reduced in the supported reduction builtins. If any other keyword arguments are
+/// provided, we report an error.
 fn extract_axis_kwarg<'py, 'a>(
     acc: PyResult<Option<i64>>,
     kw: Bound<'py, PyAny>,
@@ -687,6 +693,14 @@ mod test {
     }
 
     #[test]
+    fn lookup_builtin_reduce_ops() -> PyResult<()> {
+        lookup_builtin_ok("parir.sum", Builtin::Sum)?;
+        lookup_builtin_ok("parir.prod", Builtin::Prod)?;
+        lookup_builtin_ok("parir.any", Builtin::Any)?;
+        lookup_builtin_ok("parir.all", Builtin::All)
+    }
+
+    #[test]
     fn lookup_builtin_abs() -> PyResult<()> {
         lookup_builtin_ok("parir.abs", Builtin::Abs)?;
         lookup_builtin_ok("abs", Builtin::Abs)
@@ -734,6 +748,21 @@ mod test {
     #[test]
     fn lookup_builtin_torch_sum_fail() -> PyResult<()> {
         lookup_builtin_fail("torch.sum")
+    }
+
+    #[test]
+    fn lookup_builtin_torch_prod_fail() -> PyResult<()> {
+        lookup_builtin_fail("torch.prod")
+    }
+
+    #[test]
+    fn lookup_builtin_torch_any_fail() -> PyResult<()> {
+        lookup_builtin_fail("torch.any")
+    }
+
+    #[test]
+    fn lookup_builtin_torch_all_fail() -> PyResult<()> {
+        lookup_builtin_fail("torch.all")
     }
 
     fn convert_expr_wrap(s: &str) -> PyResult<Expr> {

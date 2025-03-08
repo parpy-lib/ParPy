@@ -44,10 +44,7 @@ fn count_slices_expr(acc: i64, e: &Expr) -> i64 {
 }
 
 fn is_reduction_op(op: &Builtin) -> bool {
-    match op {
-        Builtin::Sum | Builtin::Max | Builtin::Min => true,
-        _ => false
-    }
+    reduce::builtin_to_reduction_op(op).is_some()
 }
 
 enum ReduceDim {

@@ -82,8 +82,8 @@ pub fn neutral_element<T: ExprLit>(
         BinOp::Mul => Some(T::generate_literal(1.0, sz, i)),
         BinOp::Max => Some(T::generate_literal(f64::NEG_INFINITY, sz, i)),
         BinOp::Min => Some(T::generate_literal(f64::INFINITY, sz, i)),
-        BinOp::And => Some(T::generate_literal(1.0, sz, i)),
-        BinOp::Or => Some(T::generate_literal(0.0, sz, i)),
+        BinOp::BitAnd => Some(T::generate_literal(1.0, sz, i)),
+        BinOp::BitOr => Some(T::generate_literal(0.0, sz, i)),
         _ => None
     }
 }
@@ -91,9 +91,25 @@ pub fn neutral_element<T: ExprLit>(
 pub fn builtin_to_reduction_op(func: &Builtin) -> Option<BinOp> {
     match func {
         Builtin::Sum => Some(BinOp::Add),
+        Builtin::Prod => Some(BinOp::Mul),
+        Builtin::Any => Some(BinOp::Or),
+        Builtin::All => Some(BinOp::And),
         Builtin::Max => Some(BinOp::Max),
         Builtin::Min => Some(BinOp::Min),
         _ => None
+    }
+}
+
+/// The 'and' and 'or' operators are short-circuiting in both C and Python. However, we do not want
+/// to generate short-circuiting code, as the warp-level reductions will get stuck unless all
+/// threads have the same value (because some threads short-circuit, thereby ignoring the warp sync
+/// intrinsic call). To work around this, we use the bitwise operations, which are equivalent for
+/// boolean values assuming they are encoded as 0 or 1 (not necessarily true in C).
+fn non_short_circuiting_op(op: ir_ast::BinOp) -> ir_ast::BinOp {
+    match op {
+        BinOp::And => BinOp::BitAnd,
+        BinOp::Or => BinOp::BitOr,
+        _ => op
     }
 }
 
@@ -105,7 +121,7 @@ fn extract_bin_op(
         ir_ast::Expr::BinOp {lhs, op, rhs, ty, i} => {
             match ty {
                 ir_ast::Type::Tensor {sz, shape} if shape.is_empty() => {
-                    Ok((*lhs, op, *rhs, sz, i))
+                    Ok((*lhs, non_short_circuiting_op(op), *rhs, sz, i))
                 },
                 _ => parir_compile_error!(i, "Expected the result of reduction \
                                               to be a scalar value, found {0}",
