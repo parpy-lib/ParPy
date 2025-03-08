@@ -91,11 +91,6 @@ pub mod ir_builder {
         Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i}
     }
 
-    pub fn def(id: Name, rhs: Expr) -> Stmt {
-        let ty = rhs.get_type().clone();
-        Stmt::Definition {ty, id, expr: rhs, i: Info::default()}
-    }
-
     pub fn assign(lhs: Expr, rhs: Expr) -> Stmt {
         Stmt::Assign {dst: lhs, expr: rhs, i: Info::default()}
     }

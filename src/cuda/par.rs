@@ -98,16 +98,13 @@ fn find_parallel_structure_stmt_seq(
     stmt: &Stmt
 ) -> ParResult {
     match stmt {
-        Stmt::For {var, body, par, ..} => {
-            if par.is_parallel() {
-                let mut p = find_parallel_structure_stmts_par(body)?;
-                p.n.insert(0, par.nthreads);
-                acc.insert(var.clone(), p.n);
-                Ok(acc)
-            } else {
-                find_parallel_structure_stmts_seq(acc, body)
-            }
+        Stmt::For {var, body, par, ..} if par.is_parallel() => {
+            let mut p = find_parallel_structure_stmts_par(body)?;
+            p.n.insert(0, par.nthreads);
+            acc.insert(var.clone(), p.n);
+            Ok(acc)
         },
+        Stmt::For {body, ..} => find_parallel_structure_stmts_seq(acc, body),
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
         Stmt::While {..} | Stmt::If {..} | Stmt::Alloc {..} | Stmt::Free {..} => {
             stmt.sfold_result(Ok(acc), find_parallel_structure_stmt_seq)
