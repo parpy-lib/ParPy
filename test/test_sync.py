@@ -66,7 +66,7 @@ def sum_exp_3d_wrap(par):
     x = torch.randn(N, M, K, dtype=torch.float32, device='cuda')
     x_2 = x.detach().clone()
     out = torch.empty(N, M, dtype=x.dtype, device=x.device)
-    sum_exp_3d(x, N, M, out, parallelize=par, cache=False, debug=True)
+    sum_exp_3d(x, N, M, out, parallelize=par, cache=False)
     ref_out = torch.empty_like(out)
     sum_exp_3d(x_2, N, M, ref_out, seq=True)
     assert torch.allclose(out, ref_out, atol=1e-5)

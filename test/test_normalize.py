@@ -6,14 +6,11 @@ import torch
 def normalize_rows(t, nrows, ncols):
     parir.label('i')
     for i in range(nrows):
-        s = parir.float32(0.0)
         parir.label('j1')
-        for j in range(ncols):
-            s = s + t[i, j]
+        s = parir.sum(t[i, :])
 
         parir.label('j2')
-        for j in range(ncols):
-            t[i, j] = t[i, j] / s
+        t[i, :] /= s
 
 def normalize_wrap(t, p=None):
     nrows, ncols = t.shape

@@ -7,8 +7,7 @@ torch.manual_seed(1234)
 @parir.jit
 def store_gt(x, y, out, N):
     parir.label('i')
-    for i in range(N):
-        out[i] = x[i] < y[i]
+    out[:] = x[:] < y[:]
 
 @parir.jit
 def reduce_and(x, out):
