@@ -42,9 +42,9 @@ impl PrettyPrint for Type {
             Type::Void => (env, "void".to_string()),
             Type::Boolean => (env, "bool".to_string()),
             Type::Scalar {sz} => sz.pprint(env),
-            Type::Pointer {sz} => {
-                let (env, sz) = sz.pprint(env);
-                (env, format!("{sz}*"))
+            Type::Pointer {ty} => {
+                let (env, ty) = ty.pprint(env);
+                (env, format!("{ty}*"))
             },
             Type::Struct {id, ..} => {
                 let (env, id) = id.pprint(env);
@@ -452,10 +452,10 @@ impl PrettyPrint for Stmt {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{indent}{id}<<<{blocks}, {threads}>>>({args});"))
             },
-            Stmt::MallocAsync {id, elem_sz, sz} => {
+            Stmt::MallocAsync {id, elem_ty, sz} => {
                 let (env, id) = id.pprint(env);
-                let (env, elem_sz) = elem_sz.pprint(env);
-                (env, format!("{indent}cudaMallocAsync(&{id}, {sz} * sizeof({elem_sz}), 0);"))
+                let (env, elem_ty) = elem_ty.pprint(env);
+                (env, format!("{indent}cudaMallocAsync(&{id}, {sz} * sizeof({elem_ty}), 0);"))
             },
             Stmt::FreeAsync {id} => {
                 let (env, id) = id.pprint(env);

@@ -21,7 +21,12 @@ struct CodegenEnv {
 fn from_ir_type(ty: ir_ast::Type) -> Type {
     match ty {
         ir_ast::Type::Tensor {sz, shape} if shape.is_empty() => Type::Scalar {sz},
-        ir_ast::Type::Tensor {sz, ..} => Type::Pointer {sz},
+        ir_ast::Type::Tensor {sz, ..} => {
+            Type::Pointer {ty: Box::new(Type::Scalar {sz})}
+        },
+        ir_ast::Type::Pointer {ty, ..} => {
+            Type::Pointer {ty: Box::new(from_ir_type(*ty))}
+        },
         ir_ast::Type::Struct {id} => Type::Struct {id}
     }
 }
@@ -581,8 +586,12 @@ fn from_ir_stmt(
             host_body.push(Stmt::While {cond, body});
             Ok(kernels)
         },
-        ir_ast::Stmt::Alloc {id, elem_sz, sz, ..} => {
-            host_body.push(Stmt::MallocAsync {id, elem_sz, sz});
+        ir_ast::Stmt::Alloc {id, elem_ty, sz, i} => {
+            let elem_ty = from_ir_type(elem_ty);
+            let ty = Type::Pointer {ty: Box::new(elem_ty.clone())};
+            let expr = Expr::Int {v: 0, ty: ty.clone(), i};
+            host_body.push(Stmt::Definition {ty, id: id.clone(), expr});
+            host_body.push(Stmt::MallocAsync {id, elem_ty, sz});
             Ok(kernels)
         },
         ir_ast::Stmt::Free {id, ..} => {

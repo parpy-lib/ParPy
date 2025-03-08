@@ -10,6 +10,7 @@ pub use crate::py::ast::BinOp;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Tensor {sz: ElemSize, shape: Vec<i64>},
+    Pointer {ty: Box<Type>, count: usize},
     Struct {id: Name},
 }
 
@@ -210,7 +211,7 @@ pub enum Stmt {
     },
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
-    Alloc {id: Name, elem_sz: ElemSize, sz: usize, i: Info},
+    Alloc {id: Name, elem_ty: Type, sz: usize, i: Info},
     Free {id: Name, i: Info},
 }
 

@@ -16,6 +16,10 @@ impl PrettyPrint for Type {
                     .join(", ");
                 (env, format!("tensor<{sz};{shape_str}>"))
             },
+            Type::Pointer {ty, count} => {
+                let (env, ty) = ty.pprint(env);
+                (env, format!("ptr<{ty};{count}>"))
+            },
             Type::Struct {id} => {
                 let (env, id) = id.pprint(env);
                 (env, format!("struct {id}"))

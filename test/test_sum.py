@@ -45,7 +45,6 @@ def test_sum_inner_and_outer_parallel_gpu():
     }
     compare_sum(N, M, p)
 
-@pytest.mark.skip("In progress of adding support for this")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_sum_multi_block_reduction():
     N = 100

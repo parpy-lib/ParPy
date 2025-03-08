@@ -10,7 +10,7 @@ pub enum Type {
     Void,
     Boolean,
     Scalar {sz: ElemSize},
-    Pointer {sz: ElemSize},
+    Pointer {ty: Box<Type>},
     Struct {id: Name},
 }
 
@@ -292,7 +292,7 @@ pub enum Stmt {
     Syncthreads {},
     Dim3Definition {id: Name, args: Dim3},
     KernelLaunch {id: Name, blocks: Name, threads: Name, args: Vec<Expr>},
-    MallocAsync {id: Name, elem_sz: ElemSize, sz: usize},
+    MallocAsync {id: Name, elem_ty: Type, sz: usize},
     FreeAsync {id: Name},
     Scope {body: Vec<Stmt>},
 }

@@ -145,10 +145,10 @@ def forward_kernel(hmm, seqs, alpha1, alpha2, result):
         if seqs["maxlen"] & 1:
             alpha = alpha1
 
-        parir.label('reduce')
+        parir.label('state')
         maxp = parir.max(alpha[inst, :])
 
-        parir.label('reduce')
+        parir.label('state')
         psum = parir.sum(parir.exp(alpha[inst, :] - maxp))
 
         result[inst] = maxp + parir.log(psum)
@@ -157,6 +157,7 @@ def forward(hmm, seqs, par):
     alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32, device='cuda')
     alpha2 = torch.empty_like(alpha1)
     result = torch.empty(seqs["num_instances"], dtype=torch.float32, device='cuda')
+    code = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], par)
     forward_kernel(hmm, seqs, alpha1, alpha2, result, parallelize=par, cache=False)
     return result
 
@@ -177,7 +178,6 @@ def test_forward_single_block():
     p = {
         'inst': [parir.threads(seqs["num_instances"])],
         'state': [parir.threads(512)],
-        'reduce': [parir.threads(512)]
     }
     run_forw_test(hmm, seqs, expected, p)
 
@@ -187,7 +187,6 @@ def test_forward_multi_block():
     p = {
         'inst': [parir.threads(seqs["num_instances"])],
         'state': [parir.threads(2048)],
-        'reduce': [parir.threads(512)]
     }
     run_forw_test(hmm, seqs, expected, p)
 
