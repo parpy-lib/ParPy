@@ -55,9 +55,11 @@ enum ReduceDim {
 
 fn find_reduce_dim(rhs: &Expr) -> ReduceDim {
     match rhs {
-        Expr::Builtin {func, axis, ..} if is_reduction_op(func) => match axis {
-            Some(n) => ReduceDim::One(*n),
-            None => ReduceDim::All
+        Expr::Builtin {func, args, axis, ..} if is_reduction_op(func) && args.len() == 1 => {
+            match axis {
+                Some(n) => ReduceDim::One(*n),
+                None => ReduceDim::All
+            }
         },
         _ => ReduceDim::None
     }
