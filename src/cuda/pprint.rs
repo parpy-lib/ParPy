@@ -494,8 +494,13 @@ impl PrettyPrint for Param {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let Param {id, ty, ..} = self;
         let (env, id) = id.pprint(env);
+        let restrict_str = if let Type::Pointer {..} = &ty {
+            " __restrict__"
+        } else {
+            ""
+        };
         let (env, ty) = ty.pprint(env);
-        (env, format!("{ty} {id}"))
+        (env, format!("{ty}{restrict_str} {id}"))
     }
 }
 
