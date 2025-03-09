@@ -283,8 +283,8 @@ fn validate_label_count(
     }
 }
 
-fn assert_no_lhs_slices(lslices: i64, i: &Info) -> PyResult<()> {
-    if lslices > 0 {
+fn assert_slice_count(ok: bool, i: &Info) -> PyResult<()> {
+    if !ok {
         py_runtime_error!(i, "Broadcasting a scalar reduction result to a \
                               slice expression is not allowed. Try storing \
                               the reduction result in a local variable and \
@@ -327,6 +327,7 @@ fn replace_slices_assignment(
         };
         match find_reduce_dim(&rhs) {
             ReduceDim::One(n) => {
+                assert_slice_count(lslices == rslices - 1, &i)?;
                 validate_label_count(labels.len(), nslices, false, &i)?;
                 let idx = n.rem_euclid(nslices) as usize;
                 let (reduce_id, reduce_dim) = dims.remove(idx);
@@ -351,7 +352,7 @@ fn replace_slices_assignment(
                 generate_for_loops(inner_stmt, dims, labels, Some(reduce_data))
             },
             ReduceDim::All => {
-                assert_no_lhs_slices(lslices, &i)?;
+                assert_slice_count(lslices == 0, &i)?;
                 validate_label_count(labels.len(), nslices, true, &i)?;
                 let (op, rhs) = extract_reduction_data(rhs)?;
                 let reduce_id = Name::sym_str("reduce_dim");
