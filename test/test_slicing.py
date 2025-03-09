@@ -77,6 +77,12 @@ def slice_reduce_in_loop(x, y, N, out):
         parir.label('M')
         out[i] = parir.sum(x[i,:] * y[:,i])
 
+@parir.jit
+def slice_invalid_reduce_assignment(x, y, z, N):
+    parir.label('N')
+    for i in range(N):
+        x[i,:] = parir.min(y[i,:] + z[:,i])
+
 def run_slicing_test(compile_only, spec):
     def move_to_device(arg, device):
         if isinstance(arg, torch.Tensor):
@@ -137,7 +143,10 @@ fun_specs = [
     , TypeError, r".*incompatible shapes.*" ),
     ( slice_reduce_incompatible_shapes, [tensor(10, 12), tensor(10), tensor(1)]
     , TypeError, r".*incompatible shapes.*" ),
-    ( slice_reduce_in_loop, [tensor(10, 10), tensor(10, 10), 10, tensor(10)])
+    ( slice_reduce_in_loop, [tensor(10, 10), tensor(10, 10), 10, tensor(10)]),
+    ( slice_invalid_reduce_assignment
+    , [tensor(10, 10), tensor(10, 10), tensor(10, 10), 10]
+    , RuntimeError, r".*Broadcasting a scalar reduction.*" ),
 ]
 
 def slice_assign_invalid_dims(x, y):

@@ -283,6 +283,17 @@ fn validate_label_count(
     }
 }
 
+fn assert_no_lhs_slices(lslices: i64, i: &Info) -> PyResult<()> {
+    if lslices > 0 {
+        py_runtime_error!(i, "Broadcasting a scalar reduction result to a \
+                              slice expression is not allowed. Try storing \
+                              the reduction result in a local variable and \
+                              broadcast this value on the left-hand side.")
+    } else {
+        Ok(())
+    }
+}
+
 fn replace_slices_assignment(
     reconstruct_stmt: impl Fn(Expr, Expr, Vec<String>, Info) -> Stmt,
     def_id: Option<Name>,
@@ -340,6 +351,7 @@ fn replace_slices_assignment(
                 generate_for_loops(inner_stmt, dims, labels, Some(reduce_data))
             },
             ReduceDim::All => {
+                assert_no_lhs_slices(lslices, &i)?;
                 validate_label_count(labels.len(), nslices, true, &i)?;
                 let (op, rhs) = extract_reduction_data(rhs)?;
                 let reduce_id = Name::sym_str("reduce_dim");
