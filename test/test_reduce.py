@@ -183,6 +183,9 @@ def test_reduce_inner_and_outer_parallel_gpu(fun_data):
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 @pytest.mark.parametrize('fun_data', reduce_funs)
 def test_irregular_reduction(fun_data):
+    # We request use of 83 threads for the innermost loop, which is not evenly
+    # divisible by 32. The compiler should adjust it upward to the next number
+    # divisible by 32 or warp-level intrinsics will misbehave.
     N = 100
     M = 83
     p = {
@@ -191,7 +194,6 @@ def test_irregular_reduction(fun_data):
     }
     fn, bool_type = fun_data
     compare_reduce(fn, bool_type, N, M, p)
-
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 @pytest.mark.parametrize('fun_data', reduce_funs)

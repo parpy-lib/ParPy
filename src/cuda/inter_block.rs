@@ -230,10 +230,10 @@ fn single_block_reduce_loop(
         },
         i: i.clone()
     };
-    // Use a multiple of 32 threads up to 1024. This is critical because the warp-level intrinsics
-    // used in the reduction may misbehave otherwise.
+    // Use the number of blocks, or at most 1024 threads, to ensure the loop is mapped to a single
+    // block.
     let par = LoopParallelism {
-        nthreads: i64::min((((nblocks + 31) / 32) * 32) as i64, 1024),
+        nthreads: i64::min(nblocks as i64, 1024),
         reduction: true
     };
     Stmt::For {

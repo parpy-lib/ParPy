@@ -13,6 +13,9 @@ use itertools::Itertools;
 
 use std::collections::BTreeMap;
 
+pub const DEFAULT_TPB: i64 = 1024;
+pub const WARP_SIZE: i64 = 32;
+
 type ParResult = CompileResult<BTreeMap<Name, Vec<i64>>>;
 
 struct Par {
@@ -101,6 +104,14 @@ fn find_parallel_structure_stmt_seq(
         Stmt::For {var, body, par, ..} if par.is_parallel() => {
             let mut p = find_parallel_structure_stmts_par(body)?;
             p.n.insert(0, par.nthreads);
+            // Ensure that the innermost thread count of the parallel structure of this loop uses a
+            // thread count evenly divisible by the size of a warp. This is very important because
+            // warp-level intrinsics behave unexpectedly when not all threads of a warp are used,
+            // causing parallel reductions to misbehave.
+            match p.n.last_mut() {
+                Some(n) => *n = ((*n + WARP_SIZE - 1) / WARP_SIZE) * WARP_SIZE,
+                None => ()
+            };
             acc.insert(var.clone(), p.n);
             Ok(acc)
         },
@@ -120,8 +131,7 @@ fn find_parallel_structure_stmts_seq(
 }
 
 fn find_parallel_structure_fun_def(fun_def: &FunDef) -> ParResult {
-    let map = BTreeMap::new();
-    find_parallel_structure_stmts_seq(map, &fun_def.body)
+    find_parallel_structure_stmts_seq(BTreeMap::new(), &fun_def.body)
 }
 
 pub fn find_parallel_structure(ast: &Ast) -> ParResult {
@@ -134,8 +144,6 @@ pub enum GpuMap {
     Thread {n: i64, mult: i64, dim: Dim},
     ThreadBlock {n: i64, nthreads: i64, nblocks: i64, dim: Dim}
 }
-
-pub const DEFAULT_TPB : i64 = 1024;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GpuMapping {
@@ -258,7 +266,7 @@ mod test {
     fn single_par_loop() {
         let x = id("x");
         let def = fun_def(vec![for_loop(x.clone(), 10, vec![])]);
-        let expected = to_map(vec![(x, vec![10])]);
+        let expected = to_map(vec![(x, vec![32])]);
         assert_eq!(find_structure(def), expected);
     }
 
@@ -270,7 +278,7 @@ mod test {
             vec![for_loop(id("z"), 3, vec![for_loop(id("w"), 0, vec![])])],
         )])]);
         let expected = to_map(vec![
-            (x, vec![2, 3])
+            (x, vec![2, 32])
         ]);
         assert_eq!(find_structure(def), expected);
     }
@@ -302,7 +310,7 @@ mod test {
             for_loop(x.clone(), 10, vec![for_loop(id("y"), 15, vec![for_loop(id("z"), 0, vec![])])])
         ]);
         let expected = to_map(vec![
-            (x, vec![10, 15])
+            (x, vec![10, 32])
         ]);
         assert_eq!(find_structure(def), expected);
     }
@@ -317,7 +325,7 @@ mod test {
             )])
         ]);
         let expected = to_map(vec![
-            (x, vec![10, 15])
+            (x, vec![10, 32])
         ]);
         assert_eq!(find_structure(def), expected);
     }
@@ -342,8 +350,8 @@ mod test {
             for_loop(x2.clone(), 7, vec![])
         ]);
         let expected = to_map(vec![
-            (x1, vec![5]),
-            (x2, vec![7])
+            (x1, vec![32]),
+            (x2, vec![32])
         ]);
         assert_eq!(find_structure(def), expected);
     }
@@ -359,11 +367,11 @@ mod test {
                     vec![for_loop(id("y"), 0, vec![for_loop(id("z"), 6, vec![])])]
                 )
             ]),
-            for_loop(x2.clone(), 7, vec![for_loop(id("w"), 12, vec![])])
+            for_loop(x2.clone(), 7, vec![for_loop(id("w"), 42, vec![])])
         ]);
         let expected = to_map(vec![
-            (x1, vec![5, 6]),
-            (x2, vec![7, 12])
+            (x1, vec![5, 32]),
+            (x2, vec![7, 64])
         ]);
         assert_eq!(find_structure(def), expected);
     }

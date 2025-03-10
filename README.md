@@ -134,6 +134,8 @@ An advanced or curious user can set the `debug` keyword argument to `True` in a 
 
 The approach used to map parallelism to CUDA is relatively straightforward. The innermost level of parallelism is mapped to CUDA threads (up to 1024) or threads and blocks. Any parallel outer for-loops are always mapped to CUDA blocks. The outermost parallel for-loop maps to a CUDA kernel and any sequential loops outside it result in a for-loop running on the CPU side and launching one or more CUDA kernels.
 
+Implementing reductions efficiently require all 32 threads of a GPU warp to be participating. If a user requests `n` threads in the innermost loop, the compiler will automatically increase this to the next number divisible by 32 (by setting it to `((n + 31) / 32) * 32`). The parallelism requested in outer parallel loops will never be adjusted by the compiler.
+
 Generally, the compiler assumes all statements on the same level of nesting (in terms of parallelism) have the same amount of parallelism. Assume we have written code such as:
 ```python
 parir.label('N')
