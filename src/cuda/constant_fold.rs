@@ -107,12 +107,25 @@ fn fold_stmt(s: Stmt) -> Stmt {
                     };
                     Stmt::Scope {body}
                 },
+                // Integer values are allowed in conditions to be consistent with how it works in
+                // Python and in CUDA C++.
+                Expr::Int {v, ..} => {
+                    let body = if v == 0 {
+                        els.smap(fold_stmt)
+                    } else {
+                        thn.smap(fold_stmt)
+                    };
+                    Stmt::Scope {body}
+                },
                 cond => {
                     let thn = thn.smap(fold_stmt);
                     let els = els.smap(fold_stmt);
                     Stmt::If {cond, thn, els}
-                },
+                }
             }
+        },
+        Stmt::For {body, ..} if body.is_empty() => {
+            Stmt::Scope {body}
         },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
         Stmt::For {..} | Stmt::While {..} | Stmt::Syncthreads {} |

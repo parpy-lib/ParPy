@@ -143,7 +143,7 @@ fn apply_int_int_binop<T, E: CFExpr<T>>(
         BinOp::Add => Some(lv + rv),
         BinOp::Sub => Some(lv - rv),
         BinOp::Mul => Some(lv * rv),
-        BinOp::Div if rv != 0 => Some(lv / rv),
+        BinOp::FloorDiv if rv != 0 => Some(lv / rv),
         BinOp::Rem if rv != 0 => Some(lv % rv),
         BinOp::BitAnd => Some(lv & rv),
         BinOp::Max => Some(i64::max(lv, rv)),
