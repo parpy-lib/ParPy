@@ -3,6 +3,7 @@ from .compile import clear_cache
 from .operators import *
 
 ir_asts = {}
+fun_cache = {}
 
 def threads(n):
     from .parir import ParKind
@@ -48,7 +49,7 @@ def check_kwarg(kwargs, key, default_value, expected_ty):
     else:
         raise RuntimeError(f"The keyword argument {key} should be of type {ty}")
 
-def compile_function(ir_ast, args, kwargs, fn, key):
+def compile_function(ir_ast, args, kwargs, fn):
     # Extract provided keyword arguments if available and ensure they have the
     # correct types.
     par = check_kwarg(kwargs, "parallelize", {}, dict)
@@ -68,16 +69,26 @@ def compile_function(ir_ast, args, kwargs, fn, key):
     if seq:
         return fn
 
+    # If we recently generated a CUDA wrapper for this function, we do a quick
+    # lookup based on the name and signature of the function to immediately
+    # return the wrapper function.
+    quick_key = key.generate_quick_function_key(fn, args, kwargs)
+    if cache and quick_key in fun_cache:
+        return fun_cache[quick_key]
+
     # Compiles the IR AST using type information of the provided arguments and
     # the parallelization settings to determine how to generate parallel
     # low-level code.
-    if not cache or not compile.is_cached(key):
+    full_key = key.generate_function_key(fn, args, kwargs)
+    if not cache or not compile.is_cached(full_key):
         code = parir.compile_ir(ir_ast, args, par, debug)
-        compile.build_cuda_shared_library(key, code)
+        compile.build_cuda_shared_library(full_key, code)
 
     # Return a CUDA wrapper which ensures the arguments are passed correctly on
     # to the exposed shared library function.
-    return compile.get_cuda_wrapper(fn.__name__, key, cache)
+    wrap_fn = compile.get_cuda_wrapper(fn.__name__, full_key, cache)
+    fun_cache[quick_key] = wrap_fn
+    return wrap_fn
 
 def compile_string(fun_name, code, includes=[], libs=[], extra_flags=[]):
     k = "string_" + key.generate_code_key(code)
@@ -152,8 +163,7 @@ def jit(fun):
 
     def inner(*args, **kwargs):
         args = validate_arguments(args, kwargs)
-        k = key.generate_function_key(fun, args, kwargs)
-        compile_function(ir_ast, args, kwargs, fun, k)(*args)
+        compile_function(ir_ast, args, kwargs, fun)(*args)
     ir_asts[inner] = ir_ast
     inner.__name__ = fun.__name__
     return inner

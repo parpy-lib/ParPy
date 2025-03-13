@@ -32,11 +32,13 @@ def print_par_kwargs(kwargs):
     else:
         return ""
 
+def generate_quick_function_key(fn, args, kwargs):
+    return f"{fn.__name__}+{print_type_signature(args)}+{print_par_kwargs(kwargs)}"
+
 def generate_function_key(fn, args, kwargs):
-    mtime = os.path.getmtime(inspect.getfile(fn))
-    key_str = f"{mtime}+{fn.__name__}+{print_type_signature(args)}+{print_par_kwargs(kwargs)}"
     h = hashlib.new("sha256")
-    h.update(key_str.encode('ascii'))
+    h.update(generate_quick_function_key(fn, args, kwargs).encode("ascii"))
+    h.update(inspect.getsource(fn).encode("ascii"))
     return h.hexdigest()
 
 def generate_code_key(code):
