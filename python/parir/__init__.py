@@ -72,14 +72,14 @@ def compile_function(ir_ast, args, kwargs, fn):
     # If we recently generated a CUDA wrapper for this function, we do a quick
     # lookup based on the name and signature of the function to immediately
     # return the wrapper function.
-    quick_key = key.generate_quick_function_key(fn, args, kwargs)
+    quick_key = key.generate_quick_function_key(ir_ast, args, kwargs)
     if cache and quick_key in fun_cache:
         return fun_cache[quick_key]
 
     # Compiles the IR AST using type information of the provided arguments and
     # the parallelization settings to determine how to generate parallel
     # low-level code.
-    full_key = key.generate_function_key(fn, args, kwargs)
+    full_key = key.generate_function_key(quick_key)
     if not cache or not compile.is_cached(full_key):
         code = parir.compile_ir(ir_ast, args, par, debug)
         compile.build_cuda_shared_library(full_key, code)
