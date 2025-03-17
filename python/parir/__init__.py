@@ -72,7 +72,7 @@ def compile_function(ir_ast, args, kwargs, fn):
     # If we recently generated a CUDA wrapper for this function, we do a quick
     # lookup based on the name and signature of the function to immediately
     # return the wrapper function.
-    quick_key = key.generate_quick_function_key(ir_ast, args, kwargs)
+    quick_key = key.generate_quick_function_key(ir_ast, args, par)
     if cache and quick_key in fun_cache:
         return fun_cache[quick_key]
 
