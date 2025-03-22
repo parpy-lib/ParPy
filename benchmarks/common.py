@@ -26,12 +26,9 @@ def download_extracted_to(url, dst_path):
     response = requests.get(url, stream=True)
     content_length = int(response.headers["content-length"])
     download_file = "/tmp/data.tar.gz"
-    with open(download_file, "wb") as outfile, tqdm(
-        total=content_length, unit="B"
-    ) as pbar:
+    with open(download_file, "wb") as outfile:
         for chunk in response.iter_content(chunk_size=BATCH_SIZE):
             outfile.write(chunk)
-            pbar.update(BATCH_SIZE)
     with tarfile.open(download_file) as f:
         f.extractall(SUITESPARSE_PATH)
     os.unlink(download_file)

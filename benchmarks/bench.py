@@ -25,25 +25,28 @@ def incr(dst, key):
 
 def launch_bench(benchmark, config_args, timeout_s=3600):
     cmds = ["python3", f"{benchmark}.py"] + config_args
+    err_msgs = []
     try:
         res = subprocess.run(cmds, capture_output=True, timeout=timeout_s)
     except subprocess.TimeoutExpired:
-        with open(f"{benchmark}.stderr", "a") as f:
-            f.write(f"{config_args}\nBenchmark {benchmark} timed out\n\n")
+        err_msgs += [f"Benchmark {benchmark} timed out"]
         return
     out = res.stdout.decode('ascii')
     err = res.stderr.decode('ascii')
-    if res.returncode != 0:
+    r = res.returncode
+    if r != 0:
         framework = config_args[0]
-        if out.strip() == "OOM":
+        if r == 34:
             incr(bench_ooms, framework)
         else:
+            err_msgs += [f"Benchmark {benchmark} failed with exit code {r}"]
             incr(bench_fails, framework)
     if len(out) != 0:
         with open(f"{benchmark}.stdout", "a") as f:
             f.write(f"{config_args}\n{out}\n\n")
     if len(err) != 0:
         with open(f"{benchmark}.stderr", "a") as f:
+            err = ''.join([e + "\n" for e in err_msgs]) + err
             f.write(f"{config_args}\n{err}\n\n")
 
 def clear_log_output(benchmark):
@@ -141,8 +144,6 @@ def run_sddmm_benchmark():
 
     niters = len(matrices) * len(frameworks)
     for idx, matrix in enumerate(tqdm(matrices, desc=f"Running benchmarks")):
-        if idx < 2827:
-            continue
         for framework in frameworks:
             launch_bench("sddmm", [framework, matrix.name])
 

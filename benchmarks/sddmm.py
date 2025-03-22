@@ -11,6 +11,10 @@ import common
 
 torch.manual_seed(42)
 
+# We use exit code 34 to indicate we ran out of memory.
+def fail_oom():
+    exit(34)
+
 # Build the cuSPARSE library and initialize it when it is the selected
 # framework.
 r = subprocess.run(["make"], capture_output=True)
@@ -49,8 +53,7 @@ def cusparse_sddmm_init(B, C, D):
         A.values().data_ptr(), C.data_ptr(), D.data_ptr(), N, M, K, nnz
     )
     if res != 0:
-        print("OOM")
-        exit(1)
+        fail_oom()
     return A
 
 def cusparse_sddmm_deinit():
@@ -156,9 +159,8 @@ try:
     nnz = sparse_b._nnz()
     dense_c = torch.randn((sparse_b.shape[0], k), dtype=torch.float32, device='cuda')
     dense_d = torch.randn((k, sparse_b.shape[1]), dtype=torch.float32, device='cuda')
-except torch.OutOfMemoryError:
-    print("OOM")
-    exit(1)
+except torch.cuda.OutOfMemoryError:
+    fail_oom()
 
 # Validate output 
 cusparse_a = None
@@ -177,8 +179,8 @@ try:
         sparse_a = parir_sddmm_coo(sparse_b_coo, dense_c, dense_d)
     validate_sparse_result(cusparse_a, sparse_a)
     cusparse_sddmm_deinit()
-except torch.OutOfMemoryError:
-    pass
+except torch.cuda.OutOfMemoryError:
+    sys.stderr.write("Skipping validation due to insufficient GPU memory\n")
 del sparse_a
 del cusparse_a
 torch.cuda.empty_cache()
@@ -209,6 +211,5 @@ try:
     common.append_csv(common.SDDMM_CSV, results)
     if framework == "cuSPARSE":
         cusparse_sddmm_deinit()
-except torch.OutOfMemoryError:
-    print("OOM")
-    exit(1)
+except torch.cuda.OutOfMemoryError:
+    fail_oom()
