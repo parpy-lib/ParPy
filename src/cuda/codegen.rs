@@ -553,8 +553,8 @@ fn from_ir_stmt(
                         .collect::<Vec<Param>>();
                     let kernel = Top::FunDef {
                         attr: Attribute::Global, ret_ty: Type::Void,
-                        id: kernel_id.clone(), params: kernel_params,
-                        body: kernel_body
+                        bounds_attr: Some(m.grid.threads.prod()), id: kernel_id.clone(),
+                        params: kernel_params, body: kernel_body
                     };
                     kernels.push(kernel);
                     let args = fv.into_iter()
@@ -668,8 +668,8 @@ fn from_ir_fun_body(
     let (mut host_body, mut tops) = from_ir_stmts(&env, vec![], vec![], body)?;
     params_init.append(&mut host_body);
     tops.push(Top::FunDef {
-        attr: Attribute::Entry, ret_ty: Type::Void, id: env.id,
-        params: unwrapped_params, body: params_init
+        attr: Attribute::Entry, ret_ty: Type::Void, bounds_attr: None,
+        id: env.id, params: unwrapped_params, body: params_init
     });
     Ok(tops)
 }

@@ -162,10 +162,10 @@ fn transform_thread_independent_memory_writes_top(
     vars: &BTreeSet<Name>
 ) -> Top {
     match top {
-        Top::FunDef {attr: Attribute::Global, ret_ty, id, params, body} => {
+        Top::FunDef {attr: Attribute::Global, ret_ty, bounds_attr, id, params, body} => {
             let body = transform_thread_independent_memory_writes_stmts(body, vars);
             Top::FunDef {
-                attr: Attribute::Global, ret_ty, id, params, body
+                attr: Attribute::Global, ret_ty, bounds_attr, id, params, body
             }
         },
         Top::FunDef {..} | Top::Include {..} | Top::StructDef {..} => top,

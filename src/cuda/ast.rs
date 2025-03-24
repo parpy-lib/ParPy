@@ -246,6 +246,10 @@ impl Dim3 {
             Dim::Z => Dim3 {z: n, ..self}
         }
     }
+
+    pub fn prod(&self) -> i64 {
+        self.x * self.y * self.z
+    }
 }
 
 impl Default for Dim3 {
@@ -433,8 +437,8 @@ pub enum Top {
     Include {header: String},
     StructDef {id: Name, fields: Vec<Field>},
     FunDef {
-        attr: Attribute, ret_ty: Type, id: Name, params: Vec<Param>,
-        body: Vec<Stmt>
+        attr: Attribute, ret_ty: Type, bounds_attr: Option<i64>,
+        id: Name, params: Vec<Param>, body: Vec<Stmt>
     },
 }
 
@@ -446,9 +450,9 @@ impl SMapAccum<Stmt> for Top {
     ) -> Result<(A, Self), E> {
         match self {
             Top::Include {..} | Top::StructDef {..} => Ok((acc?, self)),
-            Top::FunDef {attr, ret_ty, id, params, body} => {
+            Top::FunDef {attr, ret_ty, bounds_attr, id, params, body} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Top::FunDef {attr, ret_ty, id, params, body}))
+                Ok((acc, Top::FunDef {attr, ret_ty, bounds_attr, id, params, body}))
             },
         }
     }

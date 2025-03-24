@@ -517,15 +517,19 @@ impl PrettyPrint for Top {
                 let env = env.decr_indent();
                 (env, format!("struct {id} {{\n{fields}\n}};"))
             },
-            Top::FunDef {attr, ret_ty, id, params, body, ..} => {
+            Top::FunDef {attr, ret_ty, bounds_attr, id, params, body, ..} => {
                 let (env, attr) = attr.pprint(env);
                 let (env, ret_ty) = ret_ty.pprint(env);
+                let bounds_annot = match bounds_attr {
+                    Some(tpb) => format!("\n__launch_bounds__({tpb})\n"),
+                    None => " ".to_string()
+                };
                 let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("{attr}\n{ret_ty} {id}({params}) {{\n{body}\n}}"))
+                (env, format!("{attr}\n{ret_ty}{bounds_annot}{id}({params}) {{\n{body}\n}}"))
             },
         }
     }
@@ -861,7 +865,8 @@ mod test {
     fn pprint_fun_def() {
         let def = Top::FunDef {
             ret_ty: Type::Void,
-            attr: Attribute::Global,
+            attr: Attribute::Entry,
+            bounds_attr: None,
             id: Name::new("f".to_string()),
             params: vec![],
             body: vec![
@@ -869,7 +874,24 @@ mod test {
             ]
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
-        let expected = format!("__global__\nvoid f() {{\n{0}x = y;\n}}", indent);
+        let expected = format!("extern \"C\"\nvoid f() {{\n{0}x = y;\n}}", indent);
+        assert_eq!(def.pprint_default(), expected);
+    }
+
+    #[test]
+    fn pprint_cuda_kernel() {
+        let def = Top::FunDef {
+            ret_ty: Type::Void,
+            attr: Attribute::Global,
+            bounds_attr: Some(256),
+            id: Name::new("f".to_string()),
+            params: vec![],
+            body: vec![
+                Stmt::Assign {dst: var("x"), expr: var("y")}
+            ]
+        };
+        let indent = " ".repeat(pprint::DEFAULT_INDENT);
+        let expected = format!("__global__\nvoid\n__launch_bounds__(256)\nf() {{\n{0}x = y;\n}}", indent);
         assert_eq!(def.pprint_default(), expected);
     }
 }
