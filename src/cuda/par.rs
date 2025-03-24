@@ -182,12 +182,16 @@ impl GpuMapping {
     }
 
     pub fn add_block_par(self, n: i64) -> Self {
-        if self.grid.blocks.x == 1 {
+        if n > 65535 {
             self.with_block_par(Dim::X, n)
-        } else if self.grid.blocks.y == 1 {
-            self.with_block_par(Dim::Y, n)
         } else {
-            self.with_block_par(Dim::Z, n)
+            if self.grid.blocks.y == 1 {
+                self.with_block_par(Dim::Y, n)
+            } else if self.grid.blocks.z == 1 {
+                self.with_block_par(Dim::Z, n)
+            } else {
+                self.with_block_par(Dim::X, n)
+            }
         }
     }
 
