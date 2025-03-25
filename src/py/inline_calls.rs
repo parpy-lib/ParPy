@@ -41,7 +41,8 @@ fn substitute_variables_expr(e: Expr, sub_map: &BTreeMap<Name, Expr>) -> Expr {
         Expr::Var {..} | Expr::String {..} | Expr::Bool {..} | Expr::Int {..} |
         Expr::Float {..} | Expr::UnOp {..} | Expr::BinOp {..} |
         Expr::IfExpr {..} | Expr::Subscript {..} | Expr::Slice {..} |
-        Expr::Tuple {..} | Expr::Builtin {..} | Expr::Convert {..} => {
+        Expr::Tuple {..} | Expr::NeutralElement {..} | Expr::Builtin {..} |
+        Expr::Convert {..} => {
             e.smap(|e| substitute_variables_expr(e, sub_map))
         }
     }

@@ -189,6 +189,7 @@ struct ReduceData {
     pub niters: i64,
     pub var_id: Name,
     pub label: Option<String>,
+    pub op: BinOp,
     pub target_data: TargetData
 }
 
@@ -206,21 +207,23 @@ fn generate_for_loops(
             let mut l = r.label.map(|l| vec![l]).unwrap_or(vec![]);
             l.push(REDUCE_PAR_LABEL.to_string());
             if r.niters > 0 {
-                // We compute the result of the first iteration outside the loop, and use this as
-                // our initial value. This avoids issues with typing, as we would need to infer the
-                // type of the neutral element before looking at the loop.
+                // We use the expression produced in the first iteration in the type-checker to
+                // determine the type of the neutral element.
                 let expr = sub_var_stmt_rhs(stmt.clone(), &r.var_id, &int(0))?;
+                let ne = Expr::NeutralElement {
+                    op: r.op.clone(), tyof: Box::new(expr), i: i.clone()
+                };
                 stmt = Stmt::For {
-                    var: r.var_id, lo: int(1), hi: int(r.niters), step: 1,
+                    var: r.var_id, lo: int(0), hi: int(r.niters), step: 1,
                     body: vec![stmt], labels: l, i: i.clone()
                 };
                 let pre_stmt = match r.target_data {
                     TargetData::Def(id) => {
                         let ty = Type::Unknown;
-                        Stmt::Definition {ty, id, expr, labels: vec![], i: i.clone()}
+                        Stmt::Definition {ty, id, expr: ne, labels: vec![], i: i.clone()}
                     },
                     TargetData::Assign(dst) => {
-                        Stmt::Assign {dst, expr, labels: vec![], i: i.clone()}
+                        Stmt::Assign {dst, expr: ne, labels: vec![], i: i.clone()}
                     }
                 };
                 stmt = Stmt::Scope {body: vec![pre_stmt, stmt], i: i.clone()};
@@ -338,8 +341,8 @@ fn replace_slices_assignment(
                 };
                 let (op, rhs) = extract_reduction_data(rhs)?;
                 let rhs = Expr::BinOp {
-                    lhs: Box::new(lhs.clone()), op, rhs: Box::new(rhs),
-                    ty: Type::Unknown, i: i.clone()
+                    lhs: Box::new(lhs.clone()), op: op.clone(),
+                    rhs: Box::new(rhs), ty: Type::Unknown, i: i.clone()
                 };
                 let inner_stmt = Stmt::Assign {
                     dst: lhs, expr: rhs, labels: vec![], i
@@ -347,7 +350,7 @@ fn replace_slices_assignment(
                 let reduce_data = ReduceData {
                     niters: reduce_dim,
                     var_id: reduce_id,
-                    label, target_data
+                    label, op, target_data
                 };
                 generate_for_loops(inner_stmt, dims, labels, Some(reduce_data))
             },
@@ -358,8 +361,8 @@ fn replace_slices_assignment(
                 let reduce_id = Name::sym_str("reduce_dim");
                 let rhs = replace_ids_with_shape_expr(rhs, &reduce_id, &dims);
                 let rhs = Expr::BinOp {
-                    lhs: Box::new(lhs.clone()), op, rhs: Box::new(rhs),
-                    ty: Type::Unknown, i: i.clone()
+                    lhs: Box::new(lhs.clone()), op: op.clone(),
+                    rhs: Box::new(rhs), ty: Type::Unknown, i: i.clone()
                 };
                 let inner_stmt = Stmt::Assign {
                     dst: lhs, expr: rhs, labels: vec![], i
@@ -373,7 +376,7 @@ fn replace_slices_assignment(
                 let reduce_data = ReduceData {
                     niters: reduce_dim,
                     var_id: reduce_id,
-                    label, target_data
+                    label, op, target_data
                 };
                 generate_for_loops(inner_stmt, vec![], vec![], Some(reduce_data))
             },

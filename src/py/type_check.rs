@@ -5,6 +5,8 @@ use crate::py_type_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
+use crate::utils::pprint::PrettyPrint;
+use crate::utils::reduce;
 use crate::utils::smap::{SFold, SMapAccum};
 
 use pyo3::PyTypeInfo;
@@ -819,6 +821,25 @@ pub fn type_check_expr(
                 .collect::<Vec<Type>>();
             let ty = Type::Tuple {elems: elem_types};
             Ok(Expr::Tuple {elems, ty, i})
+        },
+        Expr::NeutralElement {op, tyof, i} => {
+            let tyof = type_check_expr(env, *tyof)?;
+            match tyof.get_type() {
+                Type::Tensor {sz, ..} => {
+                    match reduce::neutral_element(&op, &sz, &i) {
+                        Some(ne) => Ok(ne),
+                        None => {
+                            let op_str = op.pprint_default();
+                            py_type_error!(i, "Failed to find neutral element \
+                                               for operation {op_str}")
+                        }
+                    }
+                },
+                _ => {
+                    py_type_error!(i, "Failed to find neutral element of \
+                                       non-tensor value")
+                }
+            }
         },
         Expr::Builtin {func, args, axis, i, ..} => {
             let args = type_check_exprs(env, args)?;
