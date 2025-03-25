@@ -422,9 +422,9 @@ mod test {
         let mapping = GpuMapping {
             grid: LaunchArgs::default()
                 .with_threads_dim(&Dim::X, 128)
-                .with_blocks_dim(&Dim::X, 64),
+                .with_blocks_dim(&Dim::Y, 64),
             mapping: vec![
-                GpuMap::Block {n: 64, dim: Dim::X, mult: 1},
+                GpuMap::Block {n: 64, dim: Dim::Y, mult: 1},
                 GpuMap::Thread {n: 128, dim: Dim::X, mult: 1}
             ],
             tpb: DEFAULT_TPB
@@ -457,11 +457,11 @@ mod test {
         let mapping = GpuMapping {
             grid: LaunchArgs::default()
                 .with_threads_dim(&Dim::X, 1024)
-                .with_blocks_dim(&Dim::X, 2)
+                .with_blocks_dim(&Dim::X, 2*64)
                 .with_blocks_dim(&Dim::Y, 128)
-                .with_blocks_dim(&Dim::Z, 512*64),
+                .with_blocks_dim(&Dim::Z, 512),
             mapping: vec![
-                GpuMap::Block {n: 64, dim: Dim::Z, mult: 512},
+                GpuMap::Block {n: 64, dim: Dim::X, mult: 2},
                 GpuMap::Block {n: 512, dim: Dim::Z, mult: 1},
                 GpuMap::Block {n: 128, dim: Dim::Y, mult: 1},
                 GpuMap::ThreadBlock {n: 1682, nthreads: 1024, nblocks: 2, dim: Dim::X}
