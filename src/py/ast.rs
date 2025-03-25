@@ -144,7 +144,7 @@ impl fmt::Display for Type {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Builtin {
     Exp, Inf, Log, Max, Min, Abs, Cos, Sin, Sqrt, Tanh, Atan2,
-    Sum, Prod, Any, All,
+    Sum, Prod,
     Convert {sz: ElemSize}, Label, GpuContext, Ext {id: String}
 }
 

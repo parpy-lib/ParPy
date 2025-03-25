@@ -167,10 +167,6 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Builtin> 
                 Ok(Builtin::Sum)
             } else if e.eq(parir.getattr("prod")?)? {
                 Ok(Builtin::Prod)
-            } else if e.eq(parir.getattr("any")?)? {
-                Ok(Builtin::Any)
-            } else if e.eq(parir.getattr("all")?)? {
-                Ok(Builtin::All)
             } else if e.eq(parir.getattr("float16")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::F16})
             } else if e.eq(parir.getattr("float32")?)? {
@@ -695,9 +691,7 @@ mod test {
     #[test]
     fn lookup_builtin_reduce_ops() -> PyResult<()> {
         lookup_builtin_ok("parir.sum", Builtin::Sum)?;
-        lookup_builtin_ok("parir.prod", Builtin::Prod)?;
-        lookup_builtin_ok("parir.any", Builtin::Any)?;
-        lookup_builtin_ok("parir.all", Builtin::All)
+        lookup_builtin_ok("parir.prod", Builtin::Prod)
     }
 
     #[test]

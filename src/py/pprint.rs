@@ -19,8 +19,6 @@ impl PrettyPrint for Builtin {
             Builtin::Atan2 => "atan2",
             Builtin::Sum => "sum",
             Builtin::Prod => "prod",
-            Builtin::Any => "any",
-            Builtin::All => "all",
             Builtin::Convert {..} => "<convert>",
             Builtin::Label => "<label>",
             Builtin::GpuContext => "<gpu_context>",

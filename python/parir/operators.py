@@ -38,18 +38,6 @@ def prod(x, axis=None):
     else:
         return torch.prod(x, dim=axis)
 
-def any(x, axis=None):
-    if axis is None:
-        return torch.any(x)
-    else:
-        return torch.any(x, dim=axis)
-
-def all(x, axis=None):
-    if axis is None:
-        return torch.all(x)
-    else:
-        return torch.all(x, axis=axis)
-
 def float16(x):
     return float(x)
 

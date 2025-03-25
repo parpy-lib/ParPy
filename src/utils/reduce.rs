@@ -82,8 +82,6 @@ pub fn neutral_element<T: ExprLit>(
         BinOp::Mul => Some(T::generate_literal(1.0, sz, i)),
         BinOp::Max => Some(T::generate_literal(f64::NEG_INFINITY, sz, i)),
         BinOp::Min => Some(T::generate_literal(f64::INFINITY, sz, i)),
-        BinOp::BitAnd => Some(T::generate_literal(1.0, sz, i)),
-        BinOp::BitOr => Some(T::generate_literal(0.0, sz, i)),
         _ => None
     }
 }
@@ -92,8 +90,6 @@ pub fn builtin_to_reduction_op(func: &Builtin) -> Option<BinOp> {
     match func {
         Builtin::Sum => Some(BinOp::Add),
         Builtin::Prod => Some(BinOp::Mul),
-        Builtin::Any => Some(BinOp::Or),
-        Builtin::All => Some(BinOp::And),
         Builtin::Max => Some(BinOp::Max),
         Builtin::Min => Some(BinOp::Min),
         _ => None
