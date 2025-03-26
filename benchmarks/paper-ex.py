@@ -1,3 +1,6 @@
+# Assumes this script runs from the root of the repository
+import sys
+sys.path.append("test/")
 from test_reduce import sum_rows
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -5,7 +8,6 @@ import math
 import numpy as np
 import parir
 import statistics
-import sys
 import torch
 
 def sum_rows_wrap(x, p):
@@ -131,9 +133,11 @@ for idx, version in enumerate(["V2", "V3"]):
     label = "(c)" if version == "V2" else "(d)"
     rects = axs.bar(ofs + width * idx, rts, width, label=label)
 m_labels = [f"$10^{int(math.log10(M))}$" for M in M_values]
-axs.set_xlabel("M")
+axs.set_xlabel("M", fontsize=16)
 axs.set_xticks(ofs + 0.5 * width, m_labels)
 axs.set_yscale("log")
-axs.set_ylabel("Execution time (s)")
-axs.legend(loc="upper left", fontsize=20)
+axs.set_ylabel("Execution time (s)", fontsize=16)
+axs.tick_params(axis='both', which='major', labelsize=16)
+axs.tick_params(axis='both', which='minor', labelsize=14)
+axs.legend(loc="upper left", fontsize=16)
 fig.savefig(f"mot-ex-perf.pdf", bbox_inches="tight", pad_inches=0.05)
