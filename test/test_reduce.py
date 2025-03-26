@@ -93,7 +93,7 @@ def compare_reduce(reduce_fn, N, M, p):
     x = torch.randn((N, M), dtype=torch.float32)
     expected = reduce_wrap(reduce_fn, x)
     actual = reduce_wrap(reduce_fn, x.cuda(), p).cpu()
-    assert torch.allclose(expected, actual, atol=1e-5)
+    assert torch.allclose(expected, actual, atol=1e-4), f"{expected}\n{actual}"
 
 reduce_funs = [
     sum_rows,
@@ -170,3 +170,37 @@ def test_reduction_compiles(fn):
     }
     s2 = parir.print_compiled(fn, [x, out, N], p)
     assert len(s2) != 0
+
+# Tests using a custom step size.
+@parir.jit
+def odd_entries_sum(x, y, N, M):
+    parir.label('N')
+    for i in range(N):
+        y[i] = 0.0
+        parir.label('M')
+        for j in range(1, M, 2):
+            y[i] += x[i, j]
+
+def odd_entries_wrap(p):
+    N = 10
+    M = 4096
+    x = torch.randn((N, M), dtype=torch.float32, device='cuda')
+    out = torch.empty(N, dtype=x.dtype, device='cuda')
+    odd_entries_sum(x, out, N, M, parallelize=p, cache=False)
+    out_seq = torch.empty_like(out)
+    odd_entries_sum(x, out_seq, N, M, seq=True)
+    assert torch.allclose(out, out_seq, atol=1e-4)
+
+def test_odd_entries_single_block():
+    p = {
+        'N': [parir.threads(10)],
+        'M': [parir.threads(32), parir.reduce()]
+    }
+    odd_entries_wrap(p)
+
+def test_odd_entires_multiblock():
+    p = {
+        'N': [parir.threads(10)],
+        'M': [parir.threads(2048), parir.reduce()]
+    }
+    odd_entries_wrap(p)

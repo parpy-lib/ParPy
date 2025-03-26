@@ -151,22 +151,56 @@ fn inner_multi_block_reduce_loop(
     i: &Info
 ) -> Stmt {
     let i64_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
+    let int_lit = |v| Expr::Int {v, ty: i64_ty.clone(), i: i.clone()};
     let block = Expr::Var {id: block_idx, ty: i64_ty.clone(), i: i.clone()};
+    let block_ofs = Expr::BinOp {
+        lhs: Box::new(Expr::BinOp {
+            lhs: Box::new(Expr::BinOp {
+                lhs: Box::new(hi.clone()),
+                op: BinOp::Sub,
+                rhs: Box::new(lo.clone()),
+                ty: i64_ty.clone(), i: i.clone()
+            }),
+            op: BinOp::Add,
+            rhs: Box::new(Expr::BinOp {
+                lhs: Box::new(int_lit(nblocks)),
+                op: BinOp::Sub,
+                rhs: Box::new(int_lit(1)),
+                ty: i64_ty.clone(), i: i.clone()
+            }),
+            ty: i64_ty.clone(), i: i.clone()
+        }),
+        op: BinOp::FloorDiv,
+        rhs: Box::new(int_lit(nblocks)),
+        ty: i64_ty.clone(), i: i.clone()
+    };
     let lo_expr = Expr::BinOp {
         lhs: Box::new(lo),
         op: BinOp::Add,
         rhs: Box::new(Expr::BinOp {
-            lhs: Box::new(block),
+            lhs: Box::new(block_ofs.clone()),
             op: BinOp::Mul,
-            rhs: Box::new(Expr::Int {
-                v: step * par::DEFAULT_TPB,
+            rhs: Box::new(block.clone()),
+            ty: i64_ty.clone(), i: i.clone()
+        }),
+        ty: i64_ty.clone(), i: i.clone()
+    };
+    let hi_expr = Expr::BinOp {
+        lhs: Box::new(Expr::Convert {
+            e: Box::new(Expr::BinOp {
+                lhs: Box::new(lo_expr.clone()),
+                op: BinOp::Add,
+                rhs: Box::new(block_ofs),
                 ty: i64_ty.clone(), i: i.clone()
             }),
-            ty: i64_ty.clone(),
-            i: i.clone()
+            ty: i64_ty.clone()
         }),
-        ty: i64_ty.clone(),
-        i: i.clone()
+        op: BinOp::Min,
+        rhs: Box::new(Expr::Convert {
+            e: Box::new(hi),
+            ty: i64_ty.clone()
+        }),
+        ty: i64_ty.clone(), i: i.clone()
     };
     let assign = Stmt::Assign {
         dst: lhs.clone(),
@@ -177,7 +211,7 @@ fn inner_multi_block_reduce_loop(
         i: i.clone()
     };
     Stmt::For {
-        var: loop_idx, lo: lo_expr, hi, step: step * nblocks,
+        var: loop_idx, lo: lo_expr, hi: hi_expr, step: step,
         body: vec![assign],
         par: LoopParallelism {nthreads: par::DEFAULT_TPB, reduction: true},
         i: i.clone()

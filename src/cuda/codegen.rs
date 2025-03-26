@@ -115,13 +115,14 @@ fn determine_loop_bounds(
         ty: Type::Boolean,
         i: i.clone()
     };
+    let step = Expr::Int {
+        v: step_size, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
+    };
     let fn_incr = |v| Expr::BinOp {
         lhs: Box::new(var_e),
         op: BinOp::Add,
         rhs: Box::new(Expr::BinOp {
-            lhs: Box::new(Expr::Int {
-                v: step_size, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
-            }),
+            lhs: Box::new(step.clone()),
             op: BinOp::Mul,
             rhs: Box::new(Expr::Int {
                 v, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
@@ -136,7 +137,13 @@ fn determine_loop_bounds(
             let idx = Expr::ThreadIdx {dim, ty: ty.clone(), i: i.clone()};
             let rhs = remainder_if_shared_dimension(idx, tot, n, mult);
             let init = Expr::BinOp {
-                lhs: Box::new(init), op: BinOp::Add, rhs: Box::new(rhs),
+                lhs: Box::new(init), op: BinOp::Add,
+                rhs: Box::new(Expr::BinOp {
+                    lhs: Box::new(step.clone()),
+                    op: BinOp::Mul,
+                    rhs: Box::new(rhs),
+                    ty: ty.clone(), i: i.clone()
+                }),
                 ty: ty.clone(), i: i.clone()
             };
             Ok((init, cond, fn_incr(n)))
@@ -146,7 +153,13 @@ fn determine_loop_bounds(
             let idx = Expr::BlockIdx {dim, ty: ty.clone(), i: i.clone()};
             let rhs = remainder_if_shared_dimension(idx, tot, n, mult);
             let init = Expr::BinOp {
-                lhs: Box::new(init), op: BinOp::Add, rhs: Box::new(rhs),
+                lhs: Box::new(init), op: BinOp::Add,
+                rhs: Box::new(Expr::BinOp {
+                    lhs: Box::new(step.clone()),
+                    op: BinOp::Mul,
+                    rhs: Box::new(rhs),
+                    ty: ty.clone(), i: i.clone()
+                }),
                 ty: ty.clone(), i: i.clone()
             };
             Ok((init, cond, fn_incr(n)))
