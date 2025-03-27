@@ -4,12 +4,25 @@ Parir is a Python library performing GPU acceleration of Python functions contai
 
 ## Installation
 
-The dependencies of Parir can either be installed manually, or you can use the provided `Dockerfile`, which installs Parir and includes all dependencies needed to run tests and benchmarks. Below, we refer to the main dependencies and where to find installation instructions for them.
+The dependencies of Parir can either be installed manually, or you can use the provided `Dockerfile`, which installs Parir and includes all dependencies needed to run tests and benchmarks. As Parir currently only generates CUDA code, you need an Nvidia GPU to be able to run the JIT-compiled code.
 
-Once the external dependencies have been installed, you can install Parir along with its Python dependencies using
+### Docker/Podman setup
+
+In order to get this setup working, you need to install CUDA drivers supporting version 12.0 or a more recent version. In addition, you need to set up Docker to work with CUDA.
+
+To build and run the image using `docker`, we run
+```bash
+docker build --force-rm --tag=pyparir .
+docker run --rm -it --gpus all pyparir
 ```
-pip install .
+
+Alternatively, we can build the image and run it using `podman` as
+```bash
+podman build --force-rm --format=docker --tag=pyparir .
+podman run --rm -it --device "nvidia.com/gpu=all" pyparir
 ```
+
+After launching a container, run `nvidia-smi`. This should list all available CUDA compatible GPUs on the machine.
 
 ### Manual Install
 

@@ -17,8 +17,7 @@ authors = [
 dependencies = [
   "numpy",
   "pytest",
-  "torch",
-  "h5py"
+  "torch"
 ]
 [tool.maturin]
 features = ["pyo3/extension-module"]

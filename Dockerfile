@@ -31,6 +31,13 @@ RUN source /root/.venv/bin/activate \
  && pip install -r requirements.txt \
  && pip install .
 
-# Copy over this repo
-COPY . /src/pyparir
+# Install Parir
+RUN source /root/.venv/bin/activate \
+ && source /root/.cargo/env \
+ && cd /src \
+ && git clone https://github.com/larshum/pyparir.git \
+ && cd /src/pyparir \
+ && pip install h5py ssgetpy \
+ && pip install .
+
 WORKDIR /src/pyparir
