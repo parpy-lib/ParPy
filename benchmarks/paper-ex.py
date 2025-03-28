@@ -136,7 +136,7 @@ m_labels = [f"$10^{int(math.log10(M))}$" for M in M_values]
 axs.set_xlabel("M", fontsize=16)
 axs.set_xticks(ofs + 0.5 * width, m_labels)
 axs.set_yscale("log")
-axs.set_ylabel("Execution time (s)", fontsize=16)
+axs.set_ylabel("Execution time (ms)", fontsize=16)
 axs.tick_params(axis='both', which='major', labelsize=16)
 axs.tick_params(axis='both', which='minor', labelsize=14)
 axs.legend(loc="upper left", fontsize=16)
