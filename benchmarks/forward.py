@@ -458,35 +458,39 @@ class TritonTuned:
     def __name__(self):
         return "TritonTuned"
 
-framework = sys.argv[1]
-k = int(sys.argv[2])
-config_id = int(sys.argv[3])
-
-if framework == "parir":
-    base_fn = forward_parir
-elif framework == "triton":
-    base_fn = forward_triton
-else:
-    sys.stderr.write(f"Unknown framework: {framework}\n")
-    exit(1)
-
-hmm, seqs = read_trellis_inputs(f"{k}mer-model.hdf5", "signals.hdf5")
-expected = read_expected_output(f"{k}mer-expected.txt")
-
-if config_id == 1:
-    fn = lambda: base_fn(hmm, seqs, 1024)
-elif config_id == 2:
-    fn = lambda: base_fn(hmm, seqs, hmm["num_states"])
-elif config_id == 3:
+def run_forward(framework, k, config_id):
     if framework == "parir":
-        fn = ParirTuned(hmm, seqs)
+        base_fn = forward_parir
+    elif framework == "triton":
+        base_fn = forward_triton
     else:
-        fn = TritonTuned(hmm, seqs)
+        sys.stderr.write(f"Unknown framework: {framework}\n")
+        return 1
 
-def mk_framework_entry(fw, config, k, t):
-    return {"framework": fw, "configuration": config, "k": k, "time": t}
+    hmm, seqs = read_trellis_inputs(f"{k}mer-model.hdf5", "signals.hdf5")
+    expected = read_expected_output(f"{k}mer-expected.txt")
 
-config = f"{framework.capitalize()}-{config_id}-{k}"
-times = common.bench(config, fn, expected)
-results = [mk_framework_entry(framework, config_id, k, t) for t in times]
-common.append_csv(common.FORWARD_CSV, results)
+    if config_id == 1:
+        fn = lambda: base_fn(hmm, seqs, 1024)
+    elif config_id == 2:
+        fn = lambda: base_fn(hmm, seqs, hmm["num_states"])
+    elif config_id == 3:
+        if framework == "parir":
+            fn = ParirTuned(hmm, seqs)
+        else:
+            fn = TritonTuned(hmm, seqs)
+
+    def mk_framework_entry(fw, config, k, t):
+        return {"framework": fw, "configuration": config, "k": k, "time": t}
+
+    config = f"{framework.capitalize()}-{config_id}-{k}"
+    times = common.bench(config, fn, expected)
+    results = [mk_framework_entry(framework, config_id, k, t) for t in times]
+    common.append_csv(f"{common.FORWARD_NAME}.csv", results)
+    return 0
+
+if __name__ == "__main__":
+    framework = sys.argv[1]
+    k = int(sys.argv[2])
+    config_id = int(sys.argv[3])
+    run_forward(framework, k, config_id)

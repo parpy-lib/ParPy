@@ -2,6 +2,8 @@ import matplotlib as mpl
 mpl.use('Agg')
 
 import matplotlib.pyplot as plt
+import contextlib
+import io
 import os
 import pandas as pd
 import ssgetpy
@@ -11,6 +13,11 @@ import sys
 from tqdm import tqdm
 
 import common
+import forward
+import sddmm
+
+class obj(object):
+    pass
 
 # Record the number of times each framework failed due to running out of memory
 # (OOM) or failing in another way (e.g., due to a floating-point exception).
@@ -23,17 +30,27 @@ def incr(dst, key):
     else:
         dst[key] = 1
 
-def launch_bench(benchmark, config_args, timeout_s=3600):
+def launch_bench(benchmark, config_args, timeout_s=3600, fn=None):
     cmds = ["python3", f"{benchmark}.py"] + config_args
     err_msgs = []
-    try:
-        res = subprocess.run(cmds, capture_output=True, timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        err_msgs += [f"Benchmark {benchmark} timed out"]
-        return
-    out = res.stdout.decode('ascii')
-    err = res.stderr.decode('ascii')
-    r = res.returncode
+    if fn is not None:
+        _stdout = io.StringIO()
+        _stderr = io.StringIO()
+        with contextlib.redirect_stdout(_stdout), contextlib.redirect_stderr(_stderr):
+            code = fn()
+            res = obj()
+            out = _stdout.getvalue()
+            err = _stderr.getvalue()
+            r = code
+    else:
+        try:
+            res = subprocess.run(cmds, capture_output=True, timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            err_msgs += [f"Benchmark {benchmark} timed out"]
+            return
+        out = res.stdout.decode('ascii')
+        err = res.stderr.decode('ascii')
+        r = res.returncode
     if r != 0:
         framework = config_args[0]
         if r == 34:
@@ -93,7 +110,7 @@ def run_forward_benchmark():
     frameworks = ["parir", "triton"]
     configurations = [1, 2, 3]
     kmer = [5, 7]
-    csv_file = common.FORWARD_CSV
+    csv_file = f"{common.FORWARD_NAME}.csv"
 
     # Only run the benchmarks if the CSV data file does not exist.
     if not os.path.isfile(csv_file):
@@ -113,7 +130,7 @@ def run_forward_benchmark():
     # Generate a LaTeX table based on the results.
     produce_forward_output(csv_file, frameworks, configurations, kmer)
 
-def produce_sddmm_output(csv_file, frameworks):
+def produce_sddmm_output(csv_file, frameworks, k):
     results_df = pd.read_csv(csv_file)
     fig, axs = plt.subplots(layout="constrained")
     for framework in frameworks:
@@ -125,11 +142,11 @@ def produce_sddmm_output(csv_file, frameworks):
     axs.set_xlabel("Number of non-zero values")
     axs.set_ylabel("Execution time (ms)")
     axs.legend(loc="upper left")
-    fig.savefig("sddmm.pdf", bbox_inches="tight", pad_inches=0.05)
+    fig.savefig(f"sddmm-{k}.pdf", bbox_inches="tight", pad_inches=0.05)
 
-def run_sddmm_benchmark():
-    frameworks = ["cuSPARSE", "PyTorch", "Parir-CSR", "Parir-COO"]
-    csv_file = common.SDDMM_CSV
+def run_sddmm_benchmark(k):
+    frameworks = ["PyTorch", "Parir-CSR", "Parir-COO"]
+    csv_file = f"{common.SDDMM_NAME}-{k}.csv"
 
     # 1. Download all matrices
     matrices = ssgetpy.search(limit=3000, nzbounds=(None, 10**9))
@@ -145,7 +162,8 @@ def run_sddmm_benchmark():
     niters = len(matrices) * len(frameworks)
     for idx, matrix in enumerate(tqdm(matrices, desc=f"Running benchmarks")):
         for framework in frameworks:
-            launch_bench("sddmm", [framework, matrix.name])
+            fn = lambda: sddmm.run_sddmm(framework, matrix.name, k)
+            launch_bench("sddmm", [framework, matrix.name], fn=fn)
 
     # After running all benchmarks, we report the number of benchmarks
     # failed by the respective framework and whether it failed due to OOM
@@ -155,17 +173,16 @@ def run_sddmm_benchmark():
             print(f"Framework {framework} ran out of memory in {bench_ooms[framework]} benchmarks.")
         if framework in bench_fails:
             print(f"Framework {framework} failed {bench_fails[framework]} benchmarks.")
-    #else:
-    #    print("CSV results found - skipping benchmarks and plotting results")
 
     # 4. Generate a plot based on the results.
-    produce_sddmm_output(csv_file, frameworks)
+    produce_sddmm_output(csv_file, frameworks, k)
 
 benchmark_id = sys.argv[1]
 if benchmark_id == "all":
     run_forward_benchmark()
-    run_sddmm_benchmark()
+    run_sddmm_benchmark(64)
 if benchmark_id == "forward":
     run_forward_benchmark()
 elif benchmark_id == "sddmm":
-    run_sddmm_benchmark()
+    k = int(sys.argv[2])
+    run_sddmm_benchmark(k)

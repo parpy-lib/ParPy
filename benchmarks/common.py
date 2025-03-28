@@ -16,8 +16,8 @@ warnings.filterwarnings("ignore", "Sparse CSR tensor support is in beta state.*"
 URL_BASE = "https://sparse.tamu.edu"
 SUITESPARSE_PATH = os.environ.get("SUITESPARSE_PATH", "/src/suitesparse")
 
-FORWARD_CSV = "forward-results.csv"
-SDDMM_CSV = "sddmm-results.csv"
+FORWARD_NAME = "forward-results"
+SDDMM_NAME = "sddmm-results"
 
 BATCH_SIZE = 16384
 

@@ -10,93 +10,43 @@ import sys
 import common
 
 torch.manual_seed(42)
+alpha = 1.5
+beta = 2.0
 
-# We use exit code 34 to indicate we ran out of memory.
-def fail_oom():
-    exit(34)
-
-# Build the cuSPARSE library and initialize it when it is the selected
-# framework.
-r = subprocess.run(["make"], capture_output=True)
-if r.returncode != 0:
-    print("Could not build cuSPARSE wrapper library")
-    print(r.stdout.decode('ascii'))
-    print(r.stderr.decode('ascii'))
-    exit(r.returncode)
-lib = ctypes.cdll.LoadLibrary("./sddmm_cusparse.so")
-lib.cusparse_init_handle()
-lib.sddmm_init.restype = ctypes.c_int
-lib.sddmm_init.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-    ctypes.c_int64,
-    ctypes.c_int64,
-    ctypes.c_int64,
-    ctypes.c_int64,
-]
-lib.sddmm.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-    ctypes.c_int64,
-]
-
-def cusparse_sddmm_init(B, C, D):
-    A = torch.empty_like(B)
-    N, K = C.shape
-    K, M = D.shape
-    nnz = B._nnz()
-    res = lib.sddmm_init(
-        A.crow_indices().data_ptr(), A.col_indices().data_ptr(),
-        A.values().data_ptr(), C.data_ptr(), D.data_ptr(), N, M, K, nnz
-    )
-    if res != 0:
-        fail_oom()
-    return A
-
-def cusparse_sddmm_deinit():
-    lib.sddmm_deinit()
-
-def cusparse_sddmm(A, B):
-    nnz = B._nnz()
-    lib.sddmm(A.values().data_ptr(), B.values().data_ptr(), nnz)
-    return A
-
-def torch_sddmm(B, C, D):
-    A = torch.sparse.sampled_addmm(B, C, D, beta=0.0)
-    A *= B
-    return A
+def torch_sddmm(A, B, C):
+    return torch.sparse.sampled_addmm(C, A, B, alpha=alpha, beta=beta)
 
 @parir.jit
-def parir_sddmm_csr_kernel(A, B, C, D, K, N):
+def parir_sddmm_decompress_csr(C_crows, C_rows, N):
+    parir.label('N')
+    for row in range(N):
+        parir.label('M')
+        for i in range(C_crows[row], C_crows[row+1]):
+            C_rows[i] = row
+
+@parir.jit
+def parir_sddmm_csr_kernel(A, B, C, D, N, alpha, beta):
     # Convert CSR to a COO representation by decompressing the rows. This
     # allows us to naively parallelize across all non-zero values without the
     # need to do load-balancing, as we would need to using CSR (or binary
     # search, which is costly).
-    parir.label('N')
-    for row in range(N):
-        parir.label('M')
-        for i in range(B["crows"][row], B["crows"][row+1]):
-            B["rows"][i] = row
+    parir_sddmm_decompress_csr(C["crows"], C["rows"], N)
     parir.label('nnz')
-    for i in range(B["nnz"]):
-        row = B["rows"][i]
-        col = B["cols"][i]
-        t = parir.sum(C[row, :] * D[:, col])
-        A[i] = B["values"][i] * t
+    for i in range(C["nnz"]):
+        row = C["rows"][i]
+        col = C["cols"][i]
+        t = parir.sum(A[row, :] * B[:, col])
+        D[i] = alpha * t + beta * C["values"][i]
 
-def parir_sddmm_csr(B, C, D):
-    A = torch.empty_like(B)
-    N, _ = A.shape
-    _, K = C.shape
-    nnz = B._nnz()
-    B_dict = {
-        "crows": B.crow_indices(),
-        "rows": torch.empty_like(B.col_indices()),
-        "cols": B.col_indices(),
-        "values": B.values(),
+def parir_sddmm_csr(A, B, C):
+    D = torch.empty_like(C)
+    N, K = A.shape
+    nnz = C._nnz()
+    C_dict = {
+        "crows": C.crow_indices(),
+        "rows": torch.empty_like(C.col_indices()),
+        "cols": C.col_indices(),
+        "values": C.values(),
         "nnz": nnz
     }
     p = {
@@ -104,112 +54,123 @@ def parir_sddmm_csr(B, C, D):
         "M": [parir.threads(32)],
         "nnz": [parir.threads(nnz)],
     }
-    parir_sddmm_csr_kernel(A.values(), B_dict, C, D, K, N, parallelize=p)
-    return A
+    parir_sddmm_csr_kernel(A, B, C_dict, D.values(), N, alpha, beta, parallelize=p)
+    return D
 
 @parir.jit
-def parir_sddmm_coo_kernel(A, B, C, D):
+def parir_sddmm_coo_kernel(A, B, C, D, alpha, beta):
     parir.label('nnz')
-    for i in range(B["nnz"]):
-        row = B["rows"][i]
-        col = B["cols"][i]
-        t = parir.sum(C[row, :] * D[:, col])
-        A[i] = B["values"][i] * t
+    for i in range(C["nnz"]):
+        row = C["rows"][i]
+        col = C["cols"][i]
+        t = parir.sum(A[row, :] * B[:, col])
+        D[i] = alpha * t + beta * C["values"][i]
 
-def parir_sddmm_coo(B, C, D):
-    A = B.detach().clone()
-    nnz = B._nnz()
-    B_dict = {
-        "rows": B.indices()[0],
-        "cols": B.indices()[1],
-        "values": B.values(),
+def parir_sddmm_coo(A, B, C, C_rows):
+    D = C.detach().clone()
+    _, K = A.shape
+    nnz = C._nnz()
+    C_dict = {
+        "rows": C_rows,
+        "cols": C.col_indices(),
+        "values": C.values(),
         "nnz": nnz
     }
     p = {"nnz": [parir.threads(nnz)]}
-    parir_sddmm_coo_kernel(A.values(), B_dict, C, D, parallelize=p)
-    return A
+    parir_sddmm_coo_kernel(A, B, C_dict, D.values(), alpha, beta, parallelize=p)
+    return D
 
 def validate_sparse_result(A, actual_A):
     if actual_A is None:
-        return
+        return True
     diff = torch.abs(A.values() - actual_A.values())
-    rows = A.crow_indices()
-    cols = A.col_indices()
-    failed = False
     atol = 1e-5
     rtol = 1e-5
     rhs = atol + rtol * torch.abs(actual_A.values())
     nfailed = len(actual_A.values()[diff > rhs])
     if nfailed >= 0.05 * A._nnz():
-        sys.stderr.write(f"Fatal: validation failure for {nfailed} out of {A._nnz()}\n")
-        print(A)
-        print(actual_A)
-        exit(1)
+        sys.stderr.write(f"Fatal: validation failed for {nfailed} out of {A._nnz()} elements\n")
+        sys.stdout.write(f"{A}\n{actual_A}\n")
+        return False
     if nfailed > 0:
         sys.stderr.write(f"Validation failed for {nfailed} out of {A._nnz()} elements\n")
+    return True
 
-framework = sys.argv[1]
-matrix_id = sys.argv[2]
-k = 64
+# Compute the decompressed rows of a CSR matrix and pass this along with the
+# CSR matrix. We do it this way because converting to a COO matrix uses more
+# memory for some reason.
+def csr_rows(csr_matrix):
+    crows = csr_matrix.crow_indices()
+    rows = torch.empty_like(csr_matrix.col_indices())
+    N = len(crows)-1
+    p = {"N": [parir.threads(N)], "M": [parir.threads(32)]}
+    parir_sddmm_decompress_csr(crows, rows, N, parallelize=p)
+    return rows
 
-# Allocate tensors involved in the SDDMM operation. If this fails, we report an
-# OOM error.
-try:
-    sparse_b = common.ssgetpy_matrix_to_csr(matrix_id)
-    nnz = sparse_b._nnz()
-    dense_c = torch.randn((sparse_b.shape[0], k), dtype=torch.float32, device='cuda')
-    dense_d = torch.randn((k, sparse_b.shape[1]), dtype=torch.float32, device='cuda')
-except torch.cuda.OutOfMemoryError:
-    fail_oom()
+def run_sddmm(framework, matrix_id, k):
+    # Allocate tensors involved in the SDDMM operation. If this fails, we report an
+    # OOM error.
+    try:
+        sparse_c = common.ssgetpy_matrix_to_csr(matrix_id)
+        nnz = sparse_c._nnz()
+        dense_a = torch.randn((sparse_c.shape[0], k), dtype=torch.float32, device='cuda')
+        dense_b = torch.randn((k, sparse_c.shape[1]), dtype=torch.float32, device='cuda')
+    except torch.cuda.OutOfMemoryError:
+        return 34
 
-# Validate output 
-cusparse_a = None
-sparse_a = None
-try:
-    cusparse_a = cusparse_sddmm_init(sparse_b, dense_c, dense_d)
-    cusparse_a = cusparse_sddmm(cusparse_a, sparse_b)
-# Use the cuSPARSE result as a baseline, and compare the output if using a
-# Parir framework.
-    if framework == "cuSPARSE" or framework == "PyTorch":
-        sparse_a = None
-    elif framework == "Parir-CSR":
-        sparse_a = parir_sddmm_csr(sparse_b, dense_c, dense_d)
-    elif framework == "Parir-COO":
-        sparse_b_coo = sparse_b.to_sparse_coo()
-        sparse_a = parir_sddmm_coo(sparse_b_coo, dense_c, dense_d)
-    validate_sparse_result(cusparse_a, sparse_a)
-    cusparse_sddmm_deinit()
-except torch.cuda.OutOfMemoryError:
-    sys.stderr.write("Skipping validation due to insufficient GPU memory\n")
-del sparse_a
-del cusparse_a
-torch.cuda.empty_cache()
+    # Validate output
+    torch_d = None
+    sparse_d = None
+    try:
+        torch_d = torch_sddmm(dense_a, dense_b, sparse_c)
+        # Use the cuSPARSE result as a baseline, and compare the output if using a
+        # Parir framework.
+        if framework == "PyTorch":
+            sparse_d = None
+        elif framework == "Parir-CSR":
+            sparse_d = parir_sddmm_csr(dense_a, dense_b, sparse_c)
+        elif framework == "Parir-COO":
+            # Convert from CSR to COO on the CPU to reduce peak memory usage on
+            # the GPU, which is typically the limiting factor.
+            sparse_c_rows = csr_rows(sparse_c)
+            sparse_d = parir_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
+            del sparse_c_rows
+        if not validate_sparse_result(torch_d, sparse_d):
+            return 1
+    except torch.cuda.OutOfMemoryError:
+        sys.stderr.write("Skipping validation due to insufficient GPU memory\n")
+    del sparse_d
+    del torch_d
+    torch.cuda.empty_cache()
 
-def mk_framework_entry(framework, t):
-    return {
-        "framework": framework,
-        "benchmark": matrix_id,
-        "time": t,
-        "nnz": nnz
-    }
+    def mk_framework_entry(framework, t):
+        return {
+            "framework": framework,
+            "benchmark": matrix_id,
+            "time": t,
+            "nnz": nnz
+        }
 
-# Run the selected benchmark and report the results immediately
-try:
-    if framework == "cuSPARSE":
-        sparse_a = cusparse_sddmm_init(sparse_b, dense_c, dense_d)
-        fn = lambda: cusparse_sddmm(sparse_a, sparse_b)
-    elif framework == "PyTorch":
-        fn = lambda: torch_sddmm(sparse_b, dense_c, dense_d)
-    elif framework == "Parir-CSR":
-        fn = lambda: parir_sddmm_csr(sparse_b, dense_c, dense_d)
-    elif framework == "Parir-COO":
-        sparse_b_coo = sparse_b.to_sparse_coo()
-        del sparse_b
-        fn = lambda: parir_sddmm_coo(sparse_b_coo, dense_c, dense_d)
-    times = common.bench(matrix_id, fn, nwarmup=1)
-    results = [mk_framework_entry(framework, t) for t in times]
-    common.append_csv(common.SDDMM_CSV, results)
-    if framework == "cuSPARSE":
-        cusparse_sddmm_deinit()
-except torch.cuda.OutOfMemoryError:
-    fail_oom()
+    # Run the selected benchmark and report the results immediately
+    try:
+        if framework == "PyTorch":
+            fn = lambda: torch_sddmm(dense_a, dense_b, sparse_c)
+        elif framework == "Parir-CSR":
+            fn = lambda: parir_sddmm_csr(dense_a, dense_b, sparse_c)
+        elif framework == "Parir-COO":
+            sparse_c_rows = csr_rows(sparse_c)
+            fn = lambda: parir_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
+        times = common.bench(matrix_id, fn, nwarmup=1)
+        results = [mk_framework_entry(framework, t) for t in times]
+        common.append_csv(f"{common.SDDMM_NAME}-{k}.csv", results)
+        if framework == "Parir-COO":
+            del sparse_c_rows
+    except torch.cuda.OutOfMemoryError:
+        return 34
+    return 0
+
+if __name__ == "__main__":
+    framework = sys.argv[1]
+    matrix_id = sys.argv[2]
+    k = int(sys.argv[3]) if len(sys.argv) > 3 else 64
+    run_sddmm(framework, matrix_id, k)
