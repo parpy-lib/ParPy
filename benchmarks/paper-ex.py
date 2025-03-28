@@ -64,6 +64,7 @@ def bench(fn, arg):
         e2.record()
         torch.cuda.synchronize()
         times += [e1.elapsed_time(e2)]
+    torch.cuda.empty_cache()
     return times
 
 # Parallelization of the outer loop, should only run each on a separate thread.
@@ -102,15 +103,15 @@ def run_test(N, M):
     print(f"{N} {M}")
     x = torch.randn((N, M), dtype=torch.float32, device='cuda')
     result = []
-    #t1 = bench(version1, x)
-    #print_times(t1)
-    #result += [entry("V1", N, M, t) for t in t1]
+    t1 = bench(version1, x)
+    print_times(t1)
+    result += [entry(1, N, M, t) for t in t1]
     t2 = bench(version2, x)
     print_times(t2)
-    result += [entry("V2", N, M, t) for t in t2]
+    result += [entry(2, N, M, t) for t in t2]
     t3 = bench(version3, x)
     print_times(t3)
-    result += [entry("V3", N, M, t) for t in t3]
+    result += [entry(3, N, M, t) for t in t3]
     return result
 
 # Run the benchmarks for many combinations of N and M.
@@ -122,19 +123,32 @@ for M in M_values:
     results += run_test(N, M)
 ofs = np.arange(len(M_values))
 
+def version_to_label(v):
+    if v == 1:
+        return "(b)"
+    elif v == 2:
+        return "(c)"
+    elif v == 3:
+        return "(d)"
+    else:
+        print(f"Unknown version: {v}")
+        exit(1)
+
 # Produce a plot for the results using a particular value of N
 df = pd.DataFrame(results)
-df.to_csv("example.csv", mode='a', index=False, header=False)
+#pd.to_csv("example.csv", index=False)
 n_res = df[df["N"] == N]
 width = 0.25
-for idx, version in enumerate(["V2", "V3"]):
+for idx, version in enumerate([1, 2, 3]):
     m_res = n_res[n_res["version"] == version].groupby("M")
-    rts = m_res["time"].median()
-    label = "(c)" if version == "V2" else "(d)"
+    rts = m_res["time"].mean()
+    std = m_res["time"].std()
+    label = version_to_label(version)
     rects = axs.bar(ofs + width * idx, rts, width, label=label)
+    axs.errorbar(ofs + width * idx, rts, yerr=std, fmt="o", capsize=3, color="black")
 m_labels = [f"$10^{int(math.log10(M))}$" for M in M_values]
 axs.set_xlabel("M", fontsize=16)
-axs.set_xticks(ofs + 0.5 * width, m_labels)
+axs.set_xticks(ofs + width, m_labels)
 axs.set_yscale("log")
 axs.set_ylabel("Execution time (ms)", fontsize=16)
 axs.tick_params(axis='both', which='major', labelsize=16)
