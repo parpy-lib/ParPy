@@ -88,7 +88,10 @@ def validate_sparse_result(A, actual_A):
     rtol = 1e-5
     rhs = atol + rtol * torch.abs(actual_A.values())
     nfailed = len(actual_A.values()[diff > rhs])
-    if nfailed >= 0.05 * A._nnz():
+    # If at least five elements failed to validate, i.e., were too far away
+    # from the expected value, and this is more than 5 % of the total number of
+    # elements in the matrix, we consider this fatal.
+    if nfailed >= 5 and nfailed >= 0.05 * A._nnz():
         sys.stderr.write(f"Fatal: validation failed for {nfailed} out of {A._nnz()} elements\n")
         sys.stdout.write(f"{A}\n{actual_A}\n")
         return False

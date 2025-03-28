@@ -30,7 +30,7 @@ def incr(dst, key):
     else:
         dst[key] = 1
 
-def launch_bench(benchmark, config_args, timeout_s=3600, fn=None):
+def launch_bench(benchmark, config_args, timeout_s=1800, fn=None):
     cmds = ["python3", f"{benchmark}.py"] + config_args
     err_msgs = []
     if fn is not None:
@@ -161,9 +161,11 @@ def produce_sddmm_output(csv_file, frameworks, k):
         axs.scatter(runtimes.index, runtimes, s=8, label=framework)
     axs.set_xscale("log")
     axs.set_yscale("log")
-    axs.set_xlabel("Number of non-zero values")
-    axs.set_ylabel("Execution time (ms)")
-    axs.legend(loc="upper left")
+    axs.set_xlabel("Number of non-zero values", fontsize=16)
+    axs.set_ylabel("Execution time (ms)", fontsize=16)
+    axs.tick_params(axis="both", which="major", labelsize=16)
+    axs.tick_params(axis="both", which="minor", labelsize=14)
+    axs.legend(loc="upper left", fontsize=16)
     fig.savefig(f"sddmm-{k}.pdf", bbox_inches="tight", pad_inches=0.05)
 
 def run_sddmm_benchmark(k):
@@ -177,24 +179,24 @@ def run_sddmm_benchmark(k):
 
     # 2. Run the benchmark on each matrix for each of the frameworks and store
     # the results in a file.
-    # Before running the benchmarks, clear the stdout and stderr logs from
-    # any previous runs.
-    clear_log_output("sddmm")
+    if not os.path.isfile(csv_file):
+        clear_log_output("sddmm")
+        niters = len(matrices) * len(frameworks)
+        for idx, matrix in enumerate(tqdm(matrices, desc=f"Running benchmarks")):
+            for framework in frameworks:
+                fn = lambda: sddmm.run_sddmm(framework, matrix.name, k)
+                launch_bench("sddmm", [framework, matrix.name], fn=fn)
 
-    niters = len(matrices) * len(frameworks)
-    for idx, matrix in enumerate(tqdm(matrices, desc=f"Running benchmarks")):
+        # After running all benchmarks, we report the number of benchmarks
+        # failed by the respective framework and whether it failed due to OOM
+        # or another reason.
         for framework in frameworks:
-            fn = lambda: sddmm.run_sddmm(framework, matrix.name, k)
-            launch_bench("sddmm", [framework, matrix.name], fn=fn)
-
-    # After running all benchmarks, we report the number of benchmarks
-    # failed by the respective framework and whether it failed due to OOM
-    # or another reason.
-    for framework in frameworks:
-        if framework in bench_ooms:
-            print(f"Framework {framework} ran out of memory in {bench_ooms[framework]} benchmarks.")
-        if framework in bench_fails:
-            print(f"Framework {framework} failed {bench_fails[framework]} benchmarks.")
+            if framework in bench_ooms:
+                print(f"Framework {framework} ran out of memory in {bench_ooms[framework]} benchmarks.")
+            if framework in bench_fails:
+                print(f"Framework {framework} failed {bench_fails[framework]} benchmarks.")
+    else:
+        print("CSV results found - skipping benchmarks and plotting results")
 
     # 4. Generate a plot based on the results.
     produce_sddmm_output(csv_file, frameworks, k)
