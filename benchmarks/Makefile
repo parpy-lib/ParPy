@@ -1,12 +1,13 @@
-CUDA_TOOLKIT := $(shell dirname $$(command -v nvcc))/..
-INC          := -I$(CUDA_TOOLKIT)/include
-LIBS         := -lcusparse
+all: 5mer/libhmm.so 7mer/libhmm.so
 
-sddmm_cusparse.so: sddmm_cusparse.cu
-	nvcc $(INC) $< -O3 -arch=native -Xcompiler -fPIC --shared -o $@ $(LIBS)
+5mer/libhmm.so: 5mer/hmm.cu
+	nvcc $< -O3 -arch=native -Xcompiler -fPIC --shared -o $@
+
+7mer/libhmm.so: 7mer/hmm.cu
+	nvcc $< -O3 -arch=native -Xcompiler -fPIC --shared -o $@
 
 clean:
-	rm -rf *.stdout *.stderr sddmm.pdf sddmm_cusparse.so __pycache__
+	rm -rf *.stdout *.stderr *.pdf 5mer/libhmm.so 7mer/libhmm.so __pycache__
 
 clean-all: clean
-	rm -f *-results.csv
+	rm -f *results*.csv

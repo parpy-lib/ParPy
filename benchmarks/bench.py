@@ -97,33 +97,55 @@ def produce_forward_output(csv_file, frameworks, configurations, kmer):
     print("\\hline")
     for framework in frameworks:
         results_fw = results_df[results_df["framework"] == framework]
-        for configuration in configurations:
-            results_config = results_fw[results_fw["configuration"] == configuration]
-            print(f"{framework.capitalize()} ({configuration})", end="")
+        # Trellis only runs one configuration
+        if framework == "trellis":
+            print(f"{framework.capitalize()}", end="")
             for k in kmer:
-                times = results_config[results_config["k"] == k]["time"]
+                times = results_fw[results_fw["k"] == k]["time"]
                 print(f" & ${print_mean_pm_stddev(list(times))}$", end="")
             print("\\\\")
+        else:
+            for configuration in configurations:
+                results_config = results_fw[results_fw["configuration"] == configuration]
+                print(f"{framework.capitalize()} ({configuration})", end="")
+                for k in kmer:
+                    times = results_config[results_config["k"] == k]["time"]
+                    print(f" & ${print_mean_pm_stddev(list(times))}$", end="")
+                print("\\\\")
     print("\\end{tabular}")
 
+def compile_trellis_shared_libs():
+    r = subprocess.run(["make"], capture_output=True)
+    if r.returncode != 0:
+        out = r.stdout.decode("ascii")
+        err = r.stderr.decode("ascii")
+        print(f"Failed to compile shared libraries: {out} | {err}")
+        exit(r.returncode)
+
 def run_forward_benchmark():
-    frameworks = ["parir", "triton"]
+    frameworks = ["parir", "triton", "trellis"]
     configurations = [1, 2, 3]
     kmer = [5, 7]
     csv_file = f"{common.FORWARD_NAME}.csv"
+
+    # Compile the shared libraries for the generated Trellis code if they do
+    # not yet exist.
+    compile_trellis_shared_libs()
 
     # Only run the benchmarks if the CSV data file does not exist.
     if not os.path.isfile(csv_file):
         clear_log_output("forward")
 
         # Run the benchmarks over all possible configurations.
-        for k in kmer:
-            niters = len(frameworks) * len(configurations)
-            with tqdm(total=niters, desc=f"Benchmarking {k}mer model") as pbar:
+        with tqdm(total=len(kmer) * len(frameworks)) as pbar:
+            for k in kmer:
                 for framework in frameworks:
-                    for configuration in configurations:
-                        launch_bench("forward", [framework, str(k), str(configuration)])
-                        pbar.update(1)
+                    if framework == "trellis":
+                        launch_bench("forward", [framework, str(k)])
+                    else:
+                        for configuration in configurations:
+                            launch_bench("forward", [framework, str(k), str(configuration)])
+                    pbar.update(1)
     else:
         print("CSV results found - skipping benchmarks and plotting results")
 

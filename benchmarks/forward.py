@@ -1,6 +1,7 @@
 import h5py
 import numpy as np
 from math import inf
+import os
 import pandas as pd
 import parir
 import pytest
@@ -458,11 +459,24 @@ class TritonTuned:
     def __name__(self):
         return "TritonTuned"
 
+def forward_trellis(tables, signals, k):
+    cwd = os.getcwd()
+    if k == 5:
+        path = f"{cwd}/5mer"
+    elif k == 7:
+        path = f"{cwd}/7mer"
+    sys.path.append(path)
+    from trellis import HMM
+    hmm = HMM(tables)
+    return hmm.forward(signals)
+
 def run_forward(framework, k, config_id):
     if framework == "parir":
         base_fn = forward_parir
     elif framework == "triton":
         base_fn = forward_triton
+    elif framework == "trellis":
+        pass
     else:
         sys.stderr.write(f"Unknown framework: {framework}\n")
         return 1
@@ -470,7 +484,19 @@ def run_forward(framework, k, config_id):
     hmm, seqs = read_trellis_inputs(f"{k}mer-model.hdf5", "signals.hdf5")
     expected = read_expected_output(f"{k}mer-expected.txt")
 
-    if config_id == 1:
+    if framework == "trellis":
+        tables = {
+            'gamma': hmm['gamma'].cpu().numpy(),
+            'trans1': hmm['trans1'].cpu().numpy(),
+            'trans2': hmm['trans2'].cpu().numpy(),
+            'outputProb': hmm['output_prob'].cpu().numpy(),
+            'initialProb': hmm['initial_prob'].cpu().numpy()
+        }
+        signals = len(seqs['lens']) * [None]
+        for i in range(len(signals)):
+            signals[i] = seqs['data'][i, :seqs['lens'][i]].cpu().numpy()
+        fn = lambda: forward_trellis(tables, signals, k)
+    elif config_id == 1:
         fn = lambda: base_fn(hmm, seqs, 1024)
     elif config_id == 2:
         fn = lambda: base_fn(hmm, seqs, hmm["num_states"])
@@ -492,5 +518,5 @@ def run_forward(framework, k, config_id):
 if __name__ == "__main__":
     framework = sys.argv[1]
     k = int(sys.argv[2])
-    config_id = int(sys.argv[3])
+    config_id = int(sys.argv[3]) if len(sys.argv) > 3 else 0
     run_forward(framework, k, config_id)
