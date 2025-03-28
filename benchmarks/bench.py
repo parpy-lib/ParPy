@@ -91,9 +91,9 @@ def forward_config_id(config):
 def produce_forward_output(csv_file, frameworks, configurations, kmer):
     results_df = pd.read_csv(csv_file)
     print("LaTeX table output:\n\n")
-    print(f"\\begin{{tabular}}{{l|{'k' * len(kmer)}}}")
+    print(f"\\begin{{tabular}}{{l|{'c' * len(kmer)}}}")
     kmer_header = " & ".join([f"{k}mer" for k in kmer])
-    print("Model & {kmer_header}\\\\")
+    print(f"Model & {kmer_header}\\\\")
     print("\\hline")
     for framework in frameworks:
         results_fw = results_df[results_df["framework"] == framework]
