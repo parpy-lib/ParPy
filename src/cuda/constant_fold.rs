@@ -1,7 +1,8 @@
 use super::ast::*;
 use crate::utils::constant_fold::*;
 use crate::utils::info::Info;
-use crate::utils::smap::SMapAccum;
+use crate::utils::name::Name;
+use crate::utils::smap::{SFold, SMapAccum};
 
 impl CFExpr<Type> for Expr {
     fn mk_unop(op: UnOp, arg: Expr, ty: Type, i: Info) -> Expr {
@@ -95,49 +96,129 @@ fn fold_expr(e: Expr) -> Expr {
     }
 }
 
-fn fold_stmt(s: Stmt) -> Stmt {
+enum LitValue { True, False, Unknown }
+
+fn literal_bool_value(cond: &Expr) -> LitValue {
+    match cond {
+        Expr::Bool {v, ..} if *v => LitValue::True,
+        Expr::Bool {v, ..} if !*v => LitValue::False,
+        Expr::Int {v, ..} if *v != 0 => LitValue::True,
+        Expr::Int {v, ..} if *v == 0 => LitValue::False,
+        _ => LitValue::Unknown
+    }
+}
+
+fn replace_thread_block_indices_with_zero(e: Expr) -> Expr {
+    match e {
+        Expr::ThreadIdx {ty, i, ..} => Expr::Int {v: 0, ty, i},
+        Expr::BlockIdx {ty, i, ..} => Expr::Int {v: 0, ty, i},
+        _ => e.smap(replace_thread_block_indices_with_zero)
+    }
+}
+
+fn is_zero_value(init: &Expr) -> bool {
+    let init = fold_expr(replace_thread_block_indices_with_zero(init.clone()));
+    match init {
+        Expr::Int {v, ..} if v == 0 => true,
+        _ => false
+    }
+}
+
+fn cond_upper_bound(var: &Name, cond: &Expr) -> Option<i64> {
+    match cond {
+        Expr::BinOp {lhs, op: BinOp::Lt, rhs, ..} => {
+            match (lhs.as_ref(), rhs.as_ref()) {
+                (Expr::Var {id, ..}, Expr::Int {v, ..}) if id == var => Some(*v),
+                _ => None
+            }
+        },
+        _ => None
+    }
+}
+
+fn incr_rhs(var: &Name, incr: &Expr) -> Option<i64> {
+    match incr {
+        Expr::BinOp {lhs, op: BinOp::Add, rhs, ..} => {
+            match (lhs.as_ref(), rhs.as_ref()) {
+                (Expr::Var {id, ..}, Expr::Int {v, ..}) if id == var => Some(*v),
+                _ => None
+            }
+        },
+        _ => None
+    }
+}
+
+// A for-loop is considered to be bijective if every iteration of the for-loop is executed by a
+// unique combination of block and thread index. In this case, we can eliminate the for-loop
+// itself, to simplify the generated code.
+fn is_bijective_loop(var: &Name, init: &Expr, cond: &Expr, incr: &Expr) -> bool {
+    if is_zero_value(init) {
+        match (cond_upper_bound(var, cond), incr_rhs(var, incr)) {
+            (Some(l), Some(r)) if l == r => true,
+            _ => false
+        }
+    } else {
+        false
+    }
+}
+
+fn fold_stmt_acc(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
     match s {
+        Stmt::For {var_ty, var, init, cond, incr, body} => {
+            let init = fold_expr(init);
+            let cond = fold_expr(cond);
+            let incr = fold_expr(incr);
+            if is_bijective_loop(&var, &init, &cond, &incr) {
+                acc.push(Stmt::Definition {ty: var_ty, id: var, expr: init});
+                body.sfold_owned(acc, fold_stmt_acc)
+            } else {
+                let body = fold_stmts(body);
+                acc.push(Stmt::For {var_ty, var, init, cond, incr, body});
+                acc
+            }
+        },
         Stmt::If {cond, thn, els} => {
-            match fold_expr(cond) {
-                Expr::Bool {v, ..} => {
-                    let body = if v {
-                        thn.smap(fold_stmt)
-                    } else {
-                        els.smap(fold_stmt)
-                    };
-                    Stmt::Scope {body}
-                },
-                // Integer values are allowed in conditions to be consistent with how it works in
-                // Python and in CUDA C++.
-                Expr::Int {v, ..} => {
-                    let body = if v == 0 {
-                        els.smap(fold_stmt)
-                    } else {
-                        thn.smap(fold_stmt)
-                    };
-                    Stmt::Scope {body}
-                },
-                cond => {
-                    let thn = thn.smap(fold_stmt);
-                    let els = els.smap(fold_stmt);
-                    Stmt::If {cond, thn, els}
+            let cond = fold_expr(cond);
+            match literal_bool_value(&cond) {
+                LitValue::True => thn.sfold_owned(acc, fold_stmt_acc),
+                LitValue::False => els.sfold_owned(acc, fold_stmt_acc),
+                LitValue::Unknown => {
+                    let thn = fold_stmts(thn);
+                    let els = fold_stmts(els);
+                    acc.push(Stmt::If {cond, thn, els});
+                    acc
                 }
             }
         },
-        Stmt::For {body, ..} if body.is_empty() => {
-            Stmt::Scope {body}
+        Stmt::While {cond, body} => {
+            let cond = fold_expr(cond);
+            let body = fold_stmts(body);
+            acc.push(Stmt::While {cond, body});
+            acc
         },
+        Stmt::Scope {body} => body.sfold_owned(acc, fold_stmt_acc),
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
-        Stmt::For {..} | Stmt::While {..} | Stmt::Syncthreads {} |
-        Stmt::Dim3Definition {..} | Stmt::KernelLaunch {..} |
-        Stmt::MallocAsync {..} | Stmt::FreeAsync {..} | Stmt::Scope {..} => {
-            s.smap(fold_stmt).smap(fold_expr)
+        Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
+        Stmt::KernelLaunch {..} | Stmt::MallocAsync {..} |
+        Stmt::FreeAsync {..} => {
+            acc.push(s.smap(fold_expr));
+            acc
         }
     }
 }
 
+fn fold_stmts(stmts: Vec<Stmt>) -> Vec<Stmt> {
+    stmts.sfold_owned(vec![], fold_stmt_acc)
+}
+
 fn fold_top(top: Top) -> Top {
-    top.smap(fold_stmt)
+    match top {
+        Top::FunDef {attr, ret_ty, bounds_attr, id, params, body} => {
+            let body = fold_stmts(body);
+            Top::FunDef {attr, ret_ty, bounds_attr, id, params, body}
+        },
+        Top::Include {..} | Top::StructDef {..} => top
+    }
 }
 
 pub fn fold(ast: Ast) -> Ast {
@@ -334,8 +415,8 @@ mod test {
         Stmt::Assign {dst, expr}
     }
 
-    fn cfs(stmt: &Stmt) -> Stmt {
-        fold_stmt(stmt.clone())
+    fn cfs(stmt: Stmt) -> Vec<Stmt> {
+        fold_stmt_acc(vec![], stmt)
     }
 
     #[test]
@@ -346,6 +427,32 @@ mod test {
             binop(int(1), BinOp::Eq, int(2), Some(Type::Boolean)),
             thn.clone(), els.clone()
         );
-        assert_eq!(cfs(&s), Stmt::Scope {body: els});
+        assert_eq!(cfs(s), els);
+    }
+
+    #[test]
+    fn eliminate_trivial_for_loop() {
+        let v = Name::sym_str("i");
+        let i64_ty = Type::Scalar {sz: ElemSize::I64};
+        let v_exp = Expr::Var {id: v.clone(), ty: i64_ty.clone(), i: Info::default()};
+        let init = Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: Info::default()};
+        let cond = binop(v_exp.clone(), BinOp::Lt, int(100), Some(i64_ty.clone()));
+        let incr = binop(v_exp.clone(), BinOp::Add, int(100), Some(i64_ty.clone()));
+        let body_sum = binop(var("s"), BinOp::Add, Expr::ArrayAccess {
+            target: Box::new(var("x")),
+            idx: Box::new(v_exp.clone()),
+            ty: i64_ty.clone(),
+            i: Info::default()
+        }, Some(i64_ty.clone()));
+        let body = vec![
+            Stmt::Assign {dst: var("s"), expr: body_sum}
+        ];
+        let s = Stmt::For {
+            var_ty: i64_ty.clone(), var: v.clone(), init: init.clone(), cond,
+            incr, body: body.clone()
+        };
+        let mut expected = body.clone();
+        expected.insert(0, Stmt::Definition {ty: i64_ty, id: v, expr: init});
+        assert_eq!(cfs(s), expected);
     }
 }

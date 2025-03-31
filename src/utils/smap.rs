@@ -20,7 +20,7 @@ pub trait SMapAccum<T: Clone> {
         Ok(t)
     }
 
-    fn smap(self, f: impl Fn(T) -> T) -> Self  where Self: Sized {
+    fn smap(self, f: impl Fn(T) -> T) -> Self where Self: Sized {
         let (_, res) = self.smap_accum_l::<()>((), |_, x| ((), f(x)));
         res
     }
@@ -32,6 +32,10 @@ pub trait SFold<T: Clone> {
         acc: Result<A, E>,
         f: impl Fn(A, &T) -> Result<A, E>
     ) -> Result<A, E> where Self: Sized;
+
+    fn sfold_owned<A>(self, acc: A, f: impl Fn(A, T) -> A) -> A where Self: Sized {
+        self.sfold_result(Ok(acc), |acc, t| Ok::<A, ()>(f(acc, t.clone()))).unwrap()
+    }
 
     fn sfold<A>(&self, acc: A, f: impl Fn(A, &T) -> A) -> A where Self: Sized {
         self.sfold_result(Ok(acc), |acc, t| Ok::<A, ()>(f(acc, t))).unwrap()
