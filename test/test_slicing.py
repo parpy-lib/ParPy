@@ -138,7 +138,7 @@ fun_specs = [
     (slice_assignment, [tensor(10, 10)]),
     (slice_multi_dim_sum, [tensor(12, 14), tensor(1)]),
     (slice_multi_dim_interspersed_sum, [tensor(8, 10, 12, 14), tensor(1)]),
-    (slice_assign_to_new_var, [tensor(10)], RuntimeError, r".*assigned to fresh variable y.*"),
+    (slice_assign_to_new_var, [tensor(10)], RuntimeError, r".*Slice statements cannot have more slice dim.*"),
     ( slice_assign_invalid_dims, [tensor(10, 12, 14), tensor(12)]
     , TypeError, r".*incompatible shapes.*" ),
     ( slice_reduce_incompatible_shapes, [tensor(10, 12), tensor(10), tensor(1)]
@@ -146,7 +146,7 @@ fun_specs = [
     ( slice_reduce_in_loop, [tensor(10, 10), tensor(10, 10), 10, tensor(10)]),
     ( slice_invalid_reduce_assignment
     , [tensor(10, 10), tensor(10, 10), tensor(10, 10), 10]
-    , RuntimeError, r".*Broadcasting a scalar reduction.*" ),
+    , RuntimeError, r"When reducing along all dimensions,.*" ),
 ]
 
 def slice_assign_invalid_dims(x, y):

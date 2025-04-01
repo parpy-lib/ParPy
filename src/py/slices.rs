@@ -265,33 +265,22 @@ fn extract_reduction_data(e: Expr) -> PyResult<(BinOp, Expr)> {
     }
 }
 
-fn validate_label_count(
+fn validate_nlabels(
     nlabels: usize,
-    nslices: i64,
-    reduce_all: bool,
-    i: &Info
+    expected: i64,
+    i: &Info,
+    msg: &str
 ) -> PyResult<()> {
-    let nlabels = nlabels as i64;
-    if !(nlabels == 0 || (reduce_all && nlabels == 1) || (!reduce_all && nlabels == nslices)) {
-        let msg = format!(
-            "Statement has {0} slices but found {1} labels.\nSlice statements \
-             must have zero labels, exactly one label per dimension of the \
-             slice operation, or one label if the slice operation is a \
-             multi-dimensional reduction.",
-             nslices, nlabels
-        );
-        py_runtime_error!(i, "{}", msg)
-    } else {
+    if nlabels == 0 || nlabels as i64 == expected {
         Ok(())
+    } else {
+        py_runtime_error!(i, "{}", msg)
     }
 }
 
-fn assert_slice_count(ok: bool, i: &Info) -> PyResult<()> {
+fn assert_slice_count(ok: bool, i: &Info, msg: &str) -> PyResult<()> {
     if !ok {
-        py_runtime_error!(i, "Broadcasting a scalar reduction result to a \
-                              slice expression is not allowed. Try storing \
-                              the reduction result in a local variable and \
-                              broadcast this value on the left-hand side.")
+        py_runtime_error!(i, "{}", msg)
     } else {
         Ok(())
     }
@@ -330,8 +319,15 @@ fn replace_slices_assignment(
         };
         match find_reduce_dim(&rhs) {
             ReduceDim::One(n) => {
-                assert_slice_count(lslices == rslices - 1, &i)?;
-                validate_label_count(labels.len(), nslices, false, &i)?;
+                let msg = "When reducing along one dimension, the number of \
+                           slice dimensions of the left-hand side expression \
+                           must be one less than in the right-hand side.";
+                assert_slice_count(lslices == rslices - 1, &i, msg)?;
+                let msg = format!(
+                    "Expected zero or {nslices} labels, found {0}",
+                    labels.len()
+                );
+                validate_nlabels(labels.len(), nslices, &i, &msg)?;
                 let idx = n.rem_euclid(nslices) as usize;
                 let (reduce_id, reduce_dim) = dims.remove(idx);
                 let label = if idx < labels.len() {
@@ -355,8 +351,14 @@ fn replace_slices_assignment(
                 generate_for_loops(inner_stmt, dims, labels, Some(reduce_data))
             },
             ReduceDim::All => {
-                assert_slice_count(lslices == 0, &i)?;
-                validate_label_count(labels.len(), nslices, true, &i)?;
+                let msg = "When reducing along all dimensions, the left-hand \
+                           side expression must be a scalar.";
+                assert_slice_count(lslices == 0, &i, msg)?;
+                let msg = format!(
+                    "Expected zero or one labels for full reduction \
+                     operation, found {0}", labels.len()
+                );
+                validate_nlabels(labels.len(), 1, &i, &msg)?;
                 let (op, rhs) = extract_reduction_data(rhs)?;
                 let reduce_id = Name::sym_str("reduce_dim");
                 let rhs = replace_ids_with_shape_expr(rhs, &reduce_id, &dims);
@@ -381,7 +383,14 @@ fn replace_slices_assignment(
                 generate_for_loops(inner_stmt, vec![], vec![], Some(reduce_data))
             },
             ReduceDim::None => {
-                validate_label_count(labels.len(), nslices, false, &i)?;
+                let msg = "Slice statements cannot have more slice dimensions \
+                           in the right-hand side expression than in the \
+                           left-hand side expression.";
+                assert_slice_count(lslices >= rslices, &i, msg)?;
+                let msg = format!(
+                    "Expected zero or {nslices} labels, found {0}", labels.len()
+                );
+                validate_nlabels(labels.len(), nslices, &i, &msg)?;
                 match def_id {
                     None => {
                         let inner_stmt = Stmt::Assign {
