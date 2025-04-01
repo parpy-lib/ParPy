@@ -1,4 +1,4 @@
-import h5py
+import importlib
 import numpy as np
 from math import inf
 import parir
@@ -27,6 +27,7 @@ def transform_output_probs(obs, k):
     return output_probs.transpose()
 
 def read_trellis_inputs(model_path, signals_path, device):
+    import h5py
     with h5py.File(model_path, "r") as f:
         with np.errstate(divide="ignore"):
             obs = np.log(f['Tables']['ObservationProbabilities'][:])
@@ -172,6 +173,7 @@ def run_forw_test(hmm, seqs, expected, p):
     probs = forward(hmm, seqs, p)
     assert torch.allclose(probs, expected, atol=1e-5), f"{probs}\n{expected}"
 
+@pytest.mark.skipif(importlib.util.find_spec('h5py') is None, reason="Test requires h5py")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_forward_single_block():
     hmm, seqs, expected = read_test_data('cuda')
@@ -181,6 +183,7 @@ def test_forward_single_block():
     }
     run_forw_test(hmm, seqs, expected, p)
 
+@pytest.mark.skipif(importlib.util.find_spec('h5py') is None, reason="Test requires h5py")
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_forward_multi_block():
     hmm, seqs, expected = read_test_data('cuda')
@@ -190,6 +193,7 @@ def test_forward_multi_block():
     }
     run_forw_test(hmm, seqs, expected, p)
 
+@pytest.mark.skipif(importlib.util.find_spec('h5py') is None, reason="Test requires h5py")
 def test_forward_compiles():
     # Load data on the CPU since these tests should run without a GPU.
     hmm, seqs, _ = read_test_data('cpu')
