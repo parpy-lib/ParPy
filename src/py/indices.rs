@@ -36,29 +36,23 @@ fn resolve_index_entries(
     idx: Expr,
     shape: &Vec<i64>
 ) -> PyResult<Expr> {
-    match idx {
-        Expr::Tuple {elems, ty, i} => {
-            if shape.len() == elems.len() {
-                let elems = elems.into_iter()
-                    .zip(shape.iter())
-                    .map(|(e, dim)| resolve_index_entry(e, *dim))
-                    .collect::<PyResult<Vec<Expr>>>()?;
-                Ok(Expr::Tuple {elems, ty, i})
-            } else {
-                py_runtime_error!(i, "Unexpected shape of subscript target \
-                                      (expected {0} dimensions based on its \
-                                      type but {1} indices were provided",
-                                      shape.len(), elems.len())
-            }
-        },
+    let (dims, ty, i) = match idx {
+        Expr::Tuple {elems, ty, i} => (elems, ty, i),
         _ => {
-            if shape.len() >= 1 {
-                resolve_index_entry(idx, shape[0])
-            } else {
-                println!("{idx}\n{shape:?}");
-                py_runtime_error!(idx.get_info(), "Invalid shape of index target")
-            }
+            let ty = idx.get_type().clone();
+            let i = idx.get_info();
+            (vec![idx], ty, i)
         }
+    };
+    if dims.len() <= shape.len() {
+        let elems = dims.into_iter()
+            .zip(shape.iter())
+            .map(|(e, dim)| resolve_index_entry(e, *dim))
+            .collect::<PyResult<Vec<Expr>>>()?;
+        Ok(Expr::Tuple {elems, ty, i})
+    } else {
+        py_runtime_error!(i, "Received too many indices ({0} indices for a \
+                              tensor of {1} dimensions).", dims.len(), shape.len())
     }
 }
 
