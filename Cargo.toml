@@ -9,7 +9,7 @@ name = "parir"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.23.1"
+pyo3 = "0.24.1"
 rand = "0.8.5"
 strum = "0.26"
 strum_macros = "0.26"
