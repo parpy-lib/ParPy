@@ -18,10 +18,10 @@ fn slice_err<T>(i: &Info, spec_msg: &str) -> PyResult<T> {
          Two primary kinds of slice operations are supported:\n\
          1. Mapping operations where the left- and right-hand sides both \
          refer to all dimensions:\n\
-           x[0:N,0:M] = y[0:N,0:M] * z[0:N,0:M]\n\
+           x[:,:] = y[:,:] * z[:,:]\n\
          2. Reducing operations where the left-hand side has fewer dimensions \
          than the right-hand side:\n\
-           x[0:N] = sum(y[0:N,0:M], z[0:N,0:M], axis=1)";
+           x[:] = sum(y[:,:], z[:,:], axis=1)";
     py_runtime_error!(i, "{spec_msg}\n{msg}")
 }
 
@@ -45,6 +45,76 @@ fn count_slices_expr(acc: i64, e: &Expr) -> i64 {
 
 fn is_reduction_op(op: &Builtin) -> bool {
     reduce::builtin_to_reduction_op(op).is_some()
+}
+
+fn assert_target_is_variable(target: &Expr, i: &Info) -> PyResult<()> {
+    match target {
+        Expr::Var {..} => Ok(()),
+        Expr::Subscript {target, ..} => assert_target_is_variable(target, i),
+        _ => py_runtime_error!(i, "Target of slice must be a variable.")
+    }
+}
+
+fn assert_all_dimensions_addressed(target_ty: &Type, idx: &Expr, i: &Info) -> PyResult<()> {
+    if let Type::Tensor {shape, ..} = target_ty {
+        let dims = match idx {
+            Expr::Tuple {elems, ..} => elems,
+            _ => &vec![idx.clone()]
+        };
+        if dims.len() == shape.len() {
+            Ok(())
+        } else {
+            py_runtime_error!(i, "Subscript operations containing slices must \
+                                  refer to all dimensions of the target. \
+                                  Target has {0} dimensions, but only {1} \
+                                  dimensions are addressed by the index.",
+                                  shape.len(), dims.len())
+        }
+    } else {
+        py_runtime_error!(i, "Target of slice subscript operation has invalid type.")
+    }
+}
+
+fn validate_slices_expr(acc: (), e: &Expr) -> PyResult<()> {
+    match e {
+        Expr::Subscript {target, idx, i, ..} if count_slices_subscript_index(0, idx) > 0 => {
+            assert_target_is_variable(target, i)?;
+            assert_all_dimensions_addressed(target.get_type(), idx, i)?;
+            Ok(acc)
+        },
+        _ => e.sfold_result(Ok(acc), validate_slices_expr)
+    }
+}
+
+fn contains_no_slices_expr(acc: (), e: &Expr) -> PyResult<()> {
+    if count_slices_expr(0, e) > 0 {
+        py_runtime_error!(e.get_info(), "Slice expressions are only allowed in \
+                                         assignment statements.")
+    } else {
+        Ok(acc)
+    }
+}
+
+/// Validates all slices found within the provided body. This validation ensures slices are:
+/// - Only used in a definition or assignment.
+/// - The target of a subscript containing a slice must be a variable.
+/// - Slices refer to all dimensions of the target.
+fn validate_slices_stmt(acc: (), s: &Stmt) -> PyResult<()> {
+    match s {
+        Stmt::Definition {expr, ..} => validate_slices_expr(acc, expr),
+        Stmt::Assign {dst, expr, ..} => {
+            validate_slices_expr(acc, dst)?;
+            validate_slices_expr((), expr)
+        },
+        _ => {
+            let acc = s.sfold_result(Ok(acc), validate_slices_stmt);
+            s.sfold_result(acc, contains_no_slices_expr)
+        }
+    }
+}
+
+fn validate_slices(body: &Vec<Stmt>) -> PyResult<()> {
+    body.sfold_result(Ok(()), validate_slices_stmt)
 }
 
 enum ReduceDim {
@@ -105,9 +175,8 @@ fn insert_slice_dim_ids(
 ) -> PyResult<Expr> {
     match e {
         Expr::Subscript {target, idx, ty, i} => {
-            let target = insert_slice_dim_ids(ids, *target)?;
             let (_, idx) = insert_slice_dim_ids_index(&ids[..], *idx);
-            Ok(Expr::Subscript {target: Box::new(target), idx: Box::new(idx), ty, i})
+            Ok(Expr::Subscript {target, idx: Box::new(idx), ty, i})
         },
         _ => e.smap_result(|e| insert_slice_dim_ids(ids, e))
     }
@@ -471,27 +540,6 @@ fn eliminate_scopes_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
     acc
 }
 
-fn unsupported_slice_error(i: &Info) -> PyResult<()> {
-    let msg =
-        "Found slice expression in unsupported position.\n\
-         Slicing statements should be used in assignments, where all dimensions \
-         are mentioned on the right-hand side, and at most one is omitted in \
-         the left-hand side expression.";
-    py_runtime_error!(i, "{}", msg)
-}
-
-fn ensure_no_remaining_slices_expr(acc: (), e: &Expr) -> PyResult<()> {
-    match e {
-        Expr::Slice {i, ..} => unsupported_slice_error(i),
-        _ => e.sfold_result(Ok(acc), ensure_no_remaining_slices_expr)
-    }
-}
-
-fn ensure_no_remaining_slices_stmt(acc: (), s: &Stmt) -> PyResult<()> {
-    let _ = s.sfold_result(Ok(acc), ensure_no_remaining_slices_stmt)?;
-    s.sfold_result(Ok(acc), ensure_no_remaining_slices_expr)
-}
-
 fn ensure_no_remaining_reduction_ops_expr(acc: (), e: &Expr) -> PyResult<()> {
     match e {
         Expr::Builtin {func, args, i, ..} if is_reduction_op(func) && args.len() == 1 => {
@@ -512,9 +560,9 @@ fn ensure_no_remaining_reduction_ops_stmt(acc: (), s: &Stmt) -> PyResult<()> {
 }
 
 pub fn replace_slices_with_for_loops(fun: FunDef) -> PyResult<FunDef> {
+    validate_slices(&fun.body)?;
     let body = fun.body.smap_result(replace_slices_with_for_loops_stmt)?;
     let body = body.into_iter().fold(vec![], eliminate_scopes_stmt);
-    body.sfold_result(Ok(()), ensure_no_remaining_slices_stmt)?;
     body.sfold_result(Ok(()), ensure_no_remaining_reduction_ops_stmt)?;
     Ok(FunDef {body, ..fun})
 }

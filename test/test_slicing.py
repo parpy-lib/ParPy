@@ -83,6 +83,23 @@ def slice_invalid_reduce_assignment(x, y, z, N):
     for i in range(N):
         x[i,:] = parir.min(y[i,:] + z[:,i])
 
+@parir.jit
+def slice_invalid_dims(x, y, N):
+    parir.label('N')
+    for i in range(N):
+        x[i,:] = y[i,:,:]
+
+@parir.jit
+def slice_in_range(x, y):
+    parir.label('N')
+    for i in range(parir.sum(y[:])):
+        x[i] = i
+
+@parir.jit
+def temp_slices(x, y, z):
+    parir.label('N')
+    x[:] = (y[1:] + z[:-1])[1:-1]
+
 def run_slicing_test(compile_only, spec):
     def move_to_device(arg, device):
         if isinstance(arg, torch.Tensor):
@@ -147,6 +164,12 @@ fun_specs = [
     ( slice_invalid_reduce_assignment
     , [tensor(10, 10), tensor(10, 10), tensor(10, 10), 10]
     , RuntimeError, r"When reducing along all dimensions,.*" ),
+    ( slice_invalid_dims, [tensor(10, 10), tensor(10, 10), 10]
+    , TypeError, r"Indexing with 3 dimensions on tensor of shape .*" ),
+    ( slice_in_range, [tensor(10), tensor(10)], RuntimeError
+    , r"Slice expressions are only allowed in assignment.*"),
+    ( temp_slices, [tensor(7), tensor(10), tensor(10)], RuntimeError
+    , r"Target of slice must be a variable." )
 ]
 
 def slice_assign_invalid_dims(x, y):
