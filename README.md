@@ -66,7 +66,7 @@ sum_rows(x, out, N, M)
 ```
 we update it by providing a dictionary mapping labels to a parallel specification using the `parallelize` keyword:
 ```python
-p = {'N': [parir.threads(N)]}
+p = {'N': parir.threads(N)}
 sum_rows(x, out, N, M, parallelize=p)
 ```
 
@@ -86,7 +86,7 @@ def sum_rows(x, out, N, M):
 
 Second, we specify how to parallelize the reduction. The compiler currently does not automatically identify reductions, so we need to specify that we want it to perform a parallel reduction in the parallelization specification:
 ```python
-p = {'N': [parir.threads(N)], 'M': [parir.threads(M), parir.reduce()]}
+p = {'N': parir.threads(N), 'M': parir.threads(M).reduce()}
 sum_rows(x, out, N, M, parallelize=p)
 ```
 
@@ -213,7 +213,7 @@ There are many low-level concepts that are critical to achieving high performanc
 
 For instance, consider the `sum_rows` function presented as an example above. To print the resulting CUDA code from compiling this function, we can use
 ```python
-p = {'N': [parir.threads(32)], 'M': [parir.threads(128), parir.reduce()]}
+p = {'N': parir.threads(32), 'M': parir.threads(128).reduce()}
 print(parir.print_compiled(sum_rows, [x, out, N, M], p))
 ```
 
