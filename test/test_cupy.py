@@ -15,5 +15,5 @@ def test_call_cupy():
     a = cupy.random.randn(10)
     b = cupy.random.randn(10)
     c = cupy.ndarray(10)
-    add(a, b, c, 10, parallelize={'N': [parir.threads(10)]}, cache=False)
+    add(a, b, c, 10, parallelize={'N': parir.threads(10)}, cache=False)
     assert cupy.allclose(a + b, c)

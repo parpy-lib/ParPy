@@ -42,14 +42,14 @@ def compare_softmax(p):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_softmax_seq_reduce():
-    p = { "N" : [parir.threads(256)] }
+    p = { "N" : parir.threads(256) }
     compare_softmax(p)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_softmax_gpu():
     p = {
-        "N" : [parir.threads(256)],
-        "M": [parir.threads(128)],
+        "N" : parir.threads(256),
+        "M": parir.threads(128),
     }
     compare_softmax(p)
 
@@ -58,8 +58,8 @@ def test_softmax_compiles():
     x = torch.randn((N, M), dtype=torch.float32)
     out = torch.empty_like(x)
     p = {
-        "N" : [parir.threads(256)],
-        "M": [parir.threads(128)],
+        "N" : parir.threads(256),
+        "M": parir.threads(128),
     }
     s = parir.print_compiled(softmax, [x, N, M, out], p)
     assert len(s) != 0

@@ -30,7 +30,7 @@ def add_3d_inplace(x, y, N, M, K):
 def test_call():
     x = torch.randn(10, 15, device='cuda')
     y = torch.zeros_like(x)
-    p = {'2d': [parir.threads(10)], '1d': [parir.threads(15)]}
+    p = {'2d': parir.threads(10), '1d': parir.threads(15)}
     add_2d_inplace(x, y, 10, 15, parallelize=p, cache=False)
     assert torch.allclose(x, y)
 
@@ -40,7 +40,7 @@ def test_call_different_types():
     y = torch.zeros_like(x)
     z = torch.randint(0, 10, (10, 15), dtype=torch.int32, device='cuda')
     w = torch.zeros_like(z)
-    p = {'2d': [parir.threads(10)], '1d': [parir.threads(15)]}
+    p = {'2d': parir.threads(10), '1d': parir.threads(15)}
     add_2d_inplace_x2(x, y, z, w, 10, 15, parallelize=p, cache=False)
     assert torch.allclose(x, y)
     assert torch.allclose(z, w)
@@ -50,9 +50,9 @@ def test_nested_call_dependency():
     x = torch.randn(10, 20, 30, device='cuda')
     y = torch.zeros_like(x)
     p = {
-        '3d': [parir.threads(10)],
-        '2d': [parir.threads(20)],
-        '1d': [parir.threads(30)]
+        '3d': parir.threads(10),
+        '2d': parir.threads(20),
+        '1d': parir.threads(30)
     }
     add_3d_inplace(x, y, 10, 20, 30, parallelize=p, cache=False)
     assert torch.allclose(x, y)

@@ -4,7 +4,6 @@ use crate::parir_compile_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::par::ParKind;
 use crate::py::ast as py_ast;
 
 use itertools::Itertools;
@@ -13,13 +12,13 @@ use std::collections::BTreeMap;
 
 pub struct IREnv {
     structs: BTreeMap<py_ast::Type, Name>,
-    par: BTreeMap<String, Vec<ParKind>>,
+    par: BTreeMap<String, LoopPar>,
 }
 
 impl IREnv {
     pub fn new(
         structs: BTreeMap<py_ast::Type, Name>,
-        par: BTreeMap<String, Vec<ParKind>>
+        par: BTreeMap<String, LoopPar>
     ) -> Self {
         IREnv {structs, par}
     }
@@ -299,28 +298,15 @@ fn to_ir_expr(
     }
 }
 
-fn convert_par_spec(
-    acc: Option<LoopParallelism>,
-    p: Option<&Vec<ParKind>>
-) -> Option<LoopParallelism> {
-    p.unwrap_or(&vec![])
-        .clone()
-        .into_iter()
-        .fold(acc, |acc, kind| match kind {
-            ParKind::GpuThreads(n) => acc?.with_threads(n),
-            ParKind::GpuReduction {} => Some(acc?.with_reduction())
-        })
-}
-
 fn lookup_labels(
-    par: &BTreeMap<String, Vec<ParKind>>,
+    par: &BTreeMap<String, LoopPar>,
     labels: Vec<String>,
     i: &Info
-) -> CompileResult<LoopParallelism> {
+) -> CompileResult<LoopPar> {
     let par = labels.clone()
         .into_iter()
         .map(|l| par.get(&l))
-        .fold(Some(LoopParallelism::default()), convert_par_spec);
+        .fold(Some(LoopPar::default()), |acc, p| acc?.try_merge(p));
     match par {
         Some(p) => Ok(p),
         None => {
@@ -376,7 +362,7 @@ fn to_ir_stmt(
             let lo = Expr::Int {v: 0, ty: int64_ty.clone(), i: i.clone()};
             let hi = Expr::Int {v: 1, ty: int64_ty.clone(), i: i.clone()};
             let body = to_ir_stmts(env, body)?;
-            let par = LoopParallelism::default().with_threads(1).unwrap();
+            let par = LoopPar::default().threads(1).unwrap();
             Ok(Stmt::For {var, lo, hi, step: 1, body, par, i})
         },
         py_ast::Stmt::Scope {i, ..} => {

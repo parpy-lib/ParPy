@@ -24,20 +24,18 @@ def print_versions(N, M):
     y = torch.tensor((N,), dtype=torch.float32, device='cuda')
     args = [x, y, N]
 
-    p1 = {
-        'outer': [parir.threads(N)]
-    }
+    p1 = { 'outer': parir.threads(N) }
     print("Version #1:")
     print_sum_rows(args, p1)
     p2 = {
-        'outer': [parir.threads(N)],
-        'inner': [parir.threads(1024)],
+        'outer': parir.threads(N),
+        'inner': parir.threads(1024),
     }
     print("\nVersion #2:")
     print_sum_rows(args, p2)
     p3 = {
-        'outer': [parir.threads(N)],
-        'inner': [parir.threads(32 * 1024)],
+        'outer': parir.threads(N),
+        'inner': parir.threads(32 * 1024),
     }
     print("\nVersion #3:")
     print_sum_rows(args, p3)
@@ -70,7 +68,7 @@ def bench(fn, arg):
 # Parallelization of the outer loop, should only run each on a separate thread.
 def version1(x):
     N, M = x.shape
-    p = { 'outer': [parir.threads(N)] }
+    p = { 'outer': parir.threads(N) }
     if N <= 1024:
         return sum_rows_wrap(x, p)
     else:
@@ -79,13 +77,13 @@ def version1(x):
 # Parallelize both loops, using at most one full block for the inner loop.
 def version2(x):
     N, M = x.shape
-    p = { 'outer': [parir.threads(N)], 'inner': [parir.threads(1024)] }
+    p = { 'outer': parir.threads(N), 'inner': parir.threads(1024) }
     return sum_rows_wrap(x, p)
 
 # Parallelize both loops so that each thread processes one element.
 def version3(x):
     N, M = x.shape
-    p = { 'outer': [parir.threads(N)], 'inner': [parir.threads(32 * 1024)] }
+    p = { 'outer': parir.threads(N), 'inner': parir.threads(32 * 1024) }
     return sum_rows_wrap(x, p)
 
 def print_times(times):

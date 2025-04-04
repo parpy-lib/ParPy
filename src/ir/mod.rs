@@ -5,7 +5,7 @@ mod pprint;
 mod struct_types;
 
 use ast::*;
-use crate::par::ParKind;
+use crate::par::LoopPar;
 use crate::par::REDUCE_PAR_LABEL;
 use crate::py::ast as py_ast;
 use crate::utils::debug::*;
@@ -15,12 +15,12 @@ use std::collections::BTreeMap;
 
 pub fn from_python(
     def: py_ast::FunDef,
-    mut par: BTreeMap<String, Vec<ParKind>>,
+    mut par: BTreeMap<String, LoopPar>,
     debug_env: &DebugEnv
 ) -> CompileResult<Ast> {
     // Insert the special label associated with a reduction into the parallelization mapping. This
     // is used in slicing involving reduction operations.
-    par.insert(REDUCE_PAR_LABEL.to_string(), vec![ParKind::GpuReduction {}]);
+    par.insert(REDUCE_PAR_LABEL.to_string(), LoopPar::default().reduce());
 
     let structs = struct_types::find_dict_types(&def).to_named_structs();
     let env = from_py_ast::IREnv::new(structs.clone(), par);
@@ -98,8 +98,8 @@ pub mod ir_builder {
         Stmt::Assign {dst: lhs, expr: rhs, i: Info::default()}
     }
 
-    pub fn loop_par(n: i64) -> LoopParallelism {
-        LoopParallelism::default().with_threads(n).unwrap()
+    pub fn loop_par(n: i64) -> LoopPar {
+        LoopPar::default().with_threads(n).unwrap()
     }
 
     fn for_loop_complete(
@@ -107,7 +107,7 @@ pub mod ir_builder {
         lo: Expr,
         hi: Expr,
         step: i64,
-        par: LoopParallelism,
+        par: LoopPar,
         body: Vec<Stmt>
     ) -> Stmt {
         Stmt::For {var, lo, hi, step, body, par, i: Info::default()}

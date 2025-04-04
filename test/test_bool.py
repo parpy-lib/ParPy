@@ -39,14 +39,14 @@ def test_bool_gpu():
     x, y, N = bool_test_data()
     expected = bool_wrap(x, y)
 
-    p = {'i': [parir.threads(N)]}
+    p = {'i': parir.threads(N)}
     actual = bool_wrap(x.cuda(), y.cuda(), p).cpu()
     assert torch.allclose(expected, actual, atol=1e-5)
 
 def test_bool_compiles():
     x, y, N = bool_test_data()
     tmp = torch.empty_like(x, dtype=torch.bool)
-    p = {'i': [parir.threads(64)]}
+    p = {'i': parir.threads(64)}
     s = parir.print_compiled(store_gt, [x, y, tmp, N], p)
     assert len(s) != 0
 

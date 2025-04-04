@@ -1,6 +1,6 @@
 use super::ast::*;
 use crate::py_runtime_error;
-use crate::par::ParKind;
+use crate::par::LoopPar;
 use crate::utils::err::*;
 use crate::utils::smap::SFold;
 
@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 fn ensure_parallelism_stmt(
     acc: bool,
     s: &Stmt,
-    par: &BTreeMap<String, Vec<ParKind>>
+    par: &BTreeMap<String, LoopPar>
 ) -> bool {
     match s {
         Stmt::Definition {labels, ..} | Stmt::Assign {labels, ..} |
@@ -33,7 +33,7 @@ fn ensure_parallelism_stmt(
 /// not, we produce a clear error message explaining what the problem is and how to fix it.
 pub fn ensure_parallelism(
     ast: &FunDef,
-    par: &BTreeMap<String, Vec<ParKind>>
+    par: &BTreeMap<String, LoopPar>
 ) -> PyResult<()> {
     let contains_parallelism = ast.body.sfold(false, |acc, s| {
         ensure_parallelism_stmt(acc, s, par)

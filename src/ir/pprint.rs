@@ -70,9 +70,9 @@ impl PrettyPrint for Expr {
     }
 }
 
-impl PrettyPrint for LoopParallelism {
+impl PrettyPrint for LoopPar {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let LoopParallelism {nthreads, reduction} = self;
+        let LoopPar {nthreads, reduction} = self;
         (env, format!("{{nthreads = {nthreads}, reduction = {reduction}}}"))
     }
 }

@@ -2,6 +2,8 @@ use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::smap::{SFold, SMapAccum};
 
+pub use crate::par::LoopPar;
+
 // Reuse the definition of element sizes from the Python AST.
 pub use crate::py::ast::ElemSize;
 pub use crate::py::ast::UnOp;
@@ -171,43 +173,13 @@ impl SFold<Expr> for Expr {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct LoopParallelism {
-    pub nthreads: i64,
-    pub reduction: bool
-}
-
-impl LoopParallelism {
-    pub fn with_threads(self, nthreads: i64) -> Option<Self> {
-        if self.nthreads == 0 {
-            Some(LoopParallelism {nthreads, ..self})
-        } else {
-            None
-        }
-    }
-
-    pub fn with_reduction(self) -> Self {
-        LoopParallelism {reduction: true, ..self}
-    }
-
-    pub fn is_parallel(&self) -> bool {
-        self.nthreads > 0
-    }
-}
-
-impl Default for LoopParallelism {
-    fn default() -> Self {
-        LoopParallelism {nthreads: 0, reduction: false}
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr, i: Info},
     Assign {dst: Expr, expr: Expr, i: Info},
     SyncPoint {block_local: bool, i: Info},
     For {
         var: Name, lo: Expr, hi: Expr, step: i64, body: Vec<Stmt>,
-        par: LoopParallelism, i: Info
+        par: LoopPar, i: Info
     },
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},

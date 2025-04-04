@@ -178,8 +178,8 @@ def run_forw_test(hmm, seqs, expected, p):
 def test_forward_single_block():
     hmm, seqs, expected = read_test_data('cuda')
     p = {
-        'inst': [parir.threads(seqs["num_instances"])],
-        'state': [parir.threads(512)],
+        'inst': parir.threads(seqs["num_instances"]),
+        'state': parir.threads(512),
     }
     run_forw_test(hmm, seqs, expected, p)
 
@@ -188,8 +188,8 @@ def test_forward_single_block():
 def test_forward_multi_block():
     hmm, seqs, expected = read_test_data('cuda')
     p = {
-        'inst': [parir.threads(seqs["num_instances"])],
-        'state': [parir.threads(2048)],
+        'inst': parir.threads(seqs["num_instances"]),
+        'state': parir.threads(2048),
     }
     run_forw_test(hmm, seqs, expected, p)
 
@@ -201,8 +201,8 @@ def test_forward_compiles():
     alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
     alpha2 = torch.empty_like(alpha1)
     p = {
-        'inst': [parir.threads(seqs["num_instances"])],
-        'state': [parir.threads(hmm["num_states"])]
+        'inst': parir.threads(seqs["num_instances"]),
+        'state': parir.threads(hmm["num_states"])
     }
     s = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], p)
     assert len(s) != 0

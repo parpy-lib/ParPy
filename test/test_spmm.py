@@ -76,9 +76,9 @@ def test_spmm():
     A, B = spmm_test_data('cuda')
     expected = A["original"].matmul(B["values"])
     p = {
-        'i': [parir.threads(A["nrows"])],
-        'j': [parir.threads(B["ncols"])],
-        'aidx': [parir.threads(32), parir.reduce()]
+        'i': parir.threads(A["nrows"]),
+        'j': parir.threads(B["ncols"]),
+        'aidx': parir.threads(32).reduce()
     }
     C = spmm_wrap(A, B, spmm_cell, p=p)
     assert torch.allclose(C, expected, atol=1e-5), f"{C}\n{expected}"
@@ -87,23 +87,21 @@ def test_spmm_compiles():
     A, B = spmm_test_data('cpu')
     del A["original"]
     C = torch.zeros((A["nrows"], B["ncols"]), dtype=torch.float32)
+    p = { 'i': parir.threads(A["nrows"]) }
+    s = parir.print_compiled(spmm_cell, [A, B, C], p)
+    assert len(s) != 0
+
     p = {
-        'i': [parir.threads(A["nrows"])]
+        'i': parir.threads(A["nrows"]),
+        'j': parir.threads(B["ncols"])
     }
     s = parir.print_compiled(spmm_cell, [A, B, C], p)
     assert len(s) != 0
 
     p = {
-        'i': [parir.threads(A["nrows"])],
-        'j': [parir.threads(B["ncols"])]
-    }
-    s = parir.print_compiled(spmm_cell, [A, B, C], p)
-    assert len(s) != 0
-
-    p = {
-        'i': [parir.threads(A["nrows"])],
-        'j': [parir.threads(B["ncols"])],
-        'aidx': [parir.threads(32), parir.reduce()]
+        'i': parir.threads(A["nrows"]),
+        'j': parir.threads(B["ncols"]),
+        'aidx': parir.threads(32).reduce()
     }
     s = parir.print_compiled(spmm_cell, [A, B, C], p)
     assert len(s) != 0

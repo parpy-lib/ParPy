@@ -115,7 +115,7 @@ reduce_funs = [
 def test_reduce_outer_parallel_gpu(fn):
     N = 100
     M = 50
-    p = {'outer': [parir.threads(N)]}
+    p = {'outer': parir.threads(N)}
     compare_reduce(fn, N, M, p)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -124,8 +124,8 @@ def test_reduce_inner_and_outer_parallel_gpu(fn):
     N = 100
     M = 50
     p = {
-        'outer': [parir.threads(N)],
-        'inner': [parir.threads(128)]
+        'outer': parir.threads(N),
+        'inner': parir.threads(128)
     }
     compare_reduce(fn, N, M, p)
 
@@ -138,8 +138,8 @@ def test_irregular_reduction(fn):
     N = 100
     M = 83
     p = {
-        'outer': [parir.threads(N)],
-        'inner': [parir.threads(M)]
+        'outer': parir.threads(N),
+        'inner': parir.threads(M)
     }
     compare_reduce(fn, N, M, p)
 
@@ -149,8 +149,8 @@ def test_multi_block_reduction(fn):
     N = 100
     M = 2048
     p = {
-        'outer': [parir.threads(N)],
-        'inner': [parir.threads(M)]
+        'outer': parir.threads(N),
+        'inner': parir.threads(M)
     }
     compare_reduce(fn, N, M, p)
 
@@ -160,13 +160,13 @@ def test_reduction_compiles(fn):
     M = 50
     x = torch.randn((N, M), dtype=torch.float32)
     out = torch.empty(N, dtype=x.dtype)
-    p = {'outer': [parir.threads(N)]}
+    p = {'outer': parir.threads(N)}
     s1 = parir.print_compiled(fn, [x, out, N], p)
     assert len(s1) != 0
 
     p = {
-        'outer': [parir.threads(N)],
-        'inner': [parir.threads(128)]
+        'outer': parir.threads(N),
+        'inner': parir.threads(128)
     }
     s2 = parir.print_compiled(fn, [x, out, N], p)
     assert len(s2) != 0
@@ -193,14 +193,14 @@ def odd_entries_wrap(p):
 
 def test_odd_entries_single_block():
     p = {
-        'N': [parir.threads(10)],
-        'M': [parir.threads(32), parir.reduce()]
+        'N': parir.threads(10),
+        'M': parir.threads(32).reduce()
     }
     odd_entries_wrap(p)
 
 def test_odd_entires_multiblock():
     p = {
-        'N': [parir.threads(10)],
-        'M': [parir.threads(2048), parir.reduce()]
+        'N': parir.threads(10),
+        'M': parir.threads(2048).reduce()
     }
     odd_entries_wrap(p)

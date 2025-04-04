@@ -30,7 +30,7 @@ def test_axpy_gpu():
     expected = axpy_wrap(a, x, y, N)
 
     # Run each iteration of the 'i' loop on a separate GPU thread.
-    p = {'i': [parir.threads(128)]}
+    p = {'i': parir.threads(128)}
     actual = axpy_wrap(a.cuda(), x.cuda(), y.cuda(), N, p).cpu()
     torch.cuda.synchronize()
     assert torch.allclose(expected, actual, atol=1e-5)
@@ -45,6 +45,6 @@ def test_axpy_compile_fails_no_parallelism():
 def test_axpy_compiles_with_parallelism():
     N, a, x, y = axpy_test_data()
     out = torch.empty_like(x)
-    p = {'i': [parir.threads(128)]}
+    p = {'i': parir.threads(128)}
     s = parir.print_compiled(axpy, [a, x, y, out, N], p)
     assert len(s) != 0

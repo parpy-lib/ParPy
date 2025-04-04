@@ -6,12 +6,12 @@ ir_asts = {}
 fun_cache = {}
 
 def threads(n):
-    from .parir import ParKind
-    return ParKind.GpuThreads(n)
+    from .parir import LoopPar
+    return LoopPar().threads(n)
 
 def reduce():
-    from .parir import ParKind
-    return ParKind.GpuReduction()
+    from .parir import LoopPar
+    return LoopPar().reduce()
 
 def convert_python_function_to_ir(fn):
     import ast as python_ast

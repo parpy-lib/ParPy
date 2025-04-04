@@ -31,7 +31,7 @@ def negative_step_range(x, N):
 def range_helper(fn, compile_only):
     N = 100
     x = torch.zeros((N,), dtype=torch.int64)
-    p = {'i': [parir.threads(32)]}
+    p = {'i': parir.threads(32)}
     if compile_only:
         s = parir.print_compiled(fn, [x, N], p)
         assert len(s) != 0

@@ -12,7 +12,7 @@ mod symbolize;
 mod type_check;
 
 use symbolize::Symbolize;
-use crate::par::ParKind;
+use crate::par::LoopPar;
 use crate::utils::debug;
 
 use pyo3::prelude::*;
@@ -35,7 +35,7 @@ pub fn parse_untyped_ast<'py>(
 pub fn specialize_ast_on_arguments<'py>(
     ast: ast::FunDef,
     args: Vec<Bound<'py, PyAny>>,
-    par: &BTreeMap<String, Vec<ParKind>>,
+    par: &BTreeMap<String, LoopPar>,
     debug_env: &debug::DebugEnv
 ) -> PyResult<ast::FunDef> {
     // Ensure the AST contains any degree of parallelism - otherwise, there is no point in using

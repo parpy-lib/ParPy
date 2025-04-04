@@ -186,8 +186,8 @@ def forward_parir(hmm, seqs, nthreads):
     alpha1 = torch.zeros((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32, device='cuda')
     alpha2 = torch.zeros_like(alpha1)
     p = {
-        'inst': [parir.threads(seqs["num_instances"])],
-        'state': [parir.threads(nthreads)],
+        'inst': parir.threads(seqs["num_instances"]),
+        'state': parir.threads(nthreads),
     }
     forward_kernel(hmm, seqs, result, alpha1, alpha2, parallelize=p)
     return result

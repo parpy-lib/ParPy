@@ -55,15 +55,15 @@ def compare_spmv(N, M, p=None):
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_spmv_seq_reduce():
     N, M = 256, 4096
-    p = { "row": [parir.threads(N)] }
+    p = { "row": parir.threads(N) }
     compare_spmv(N, M, p)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_spmv_gpu():
     N, M = 256, 4096
     p = {
-        "row": [parir.threads(N)],
-        "i": [parir.threads(128), parir.reduce()]
+        "row": parir.threads(N),
+        "i": parir.threads(128).reduce()
     }
     compare_spmv(N, M, p)
 
@@ -80,8 +80,8 @@ def test_spmv_compiles():
     }
     y = torch.empty((A["nrows"],), dtype=x.dtype)
     p = {
-        "row": [parir.threads(N)],
-        "i": [parir.threads(128), parir.reduce()]
+        "row": parir.threads(N),
+        "i": parir.threads(128).reduce()
     }
     s = parir.print_compiled(spmv_row, [A, x, y], p)
     assert len(s) != 0

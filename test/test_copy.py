@@ -17,14 +17,14 @@ def copy_wrap(x, p):
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_copy_gpu():
     x = torch.randn(10, dtype=torch.float32, device='cuda')
-    p = {'i': [parir.threads(1024)]}
+    p = {'i': parir.threads(1024)}
     y = copy_wrap(x, p)
     assert torch.allclose(x, y)
 
 def test_copy_compiles():
     x = torch.randn(10, dtype=torch.float32)
     y = torch.empty_like(x)
-    p = {'i': [parir.threads(1024)]}
+    p = {'i': parir.threads(1024)}
     s = parir.print_compiled(copy, [x, y], p)
     assert len(s) != 0
 
@@ -32,7 +32,7 @@ def test_copy_compiles():
 def test_copy_run_compiled_string():
     x = torch.randn(10, dtype=torch.float32, device='cuda')
     y = torch.empty_like(x)
-    p = {'i': [parir.threads(1024)]}
+    p = {'i': parir.threads(1024)}
     code = parir.print_compiled(copy, [x, y], p)
     fn = parir.compile_string(copy.__name__, code)
     fn(x, y)

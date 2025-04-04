@@ -213,7 +213,7 @@ fn inner_multi_block_reduce_loop(
     Stmt::For {
         var: loop_idx, lo: lo_expr, hi: hi_expr, step: step,
         body: vec![assign],
-        par: LoopParallelism {nthreads: par::DEFAULT_TPB, reduction: true},
+        par: LoopPar {nthreads: par::DEFAULT_TPB, reduction: true},
         i: i.clone()
     }
 }
@@ -239,7 +239,7 @@ fn outer_multi_block_reduce_loop(
         hi: Expr::Int {v: nblocks as i64, ty: i64_ty.clone(), i: i.clone()},
         step: 1,
         body: vec![init_stmt, inner_loop],
-        par: LoopParallelism {nthreads: nblocks as i64, reduction: false},
+        par: LoopPar {nthreads: nblocks as i64, reduction: false},
         i: i.clone()
     }
 }
@@ -266,7 +266,7 @@ fn single_block_reduce_loop(
     };
     // Use the number of blocks, or at most 1024 threads, to ensure the loop is mapped to a single
     // block.
-    let par = LoopParallelism {
+    let par = LoopPar {
         nthreads: i64::min(nblocks as i64, 1024),
         reduction: true
     };
@@ -279,7 +279,7 @@ fn single_block_reduce_loop(
 }
 
 fn split_inter_block_parallel_reductions_stmt(s: Stmt) -> CompileResult<Stmt> {
-    let is_inter_block_reduction = |par: &LoopParallelism| {
+    let is_inter_block_reduction = |par: &LoopPar| {
         par.reduction && par.nthreads > par::DEFAULT_TPB
     };
     match s {
@@ -388,7 +388,7 @@ fn hoist_chunk(
     lo: Expr,
     hi: Expr,
     step: i64,
-    par: LoopParallelism,
+    par: LoopPar,
     i: Info,
     chunk: &[Stmt]
 ) -> CompileResult<Vec<Stmt>> {
@@ -470,7 +470,7 @@ fn hoist_seq_loops(
     hi: Expr,
     step: i64,
     body: Vec<Stmt>,
-    par: LoopParallelism,
+    par: LoopPar,
     i: Info
 ) -> CompileResult<Vec<Stmt>> {
     Ok(body.split_inclusive(is_seq_loop_with_inter_block_sync_point)

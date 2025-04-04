@@ -30,13 +30,13 @@ def collatz_wrap(N, device='cpu', p=None):
 def test_collatz_gpu():
     N = 1000
     expected = collatz_wrap(N)
-    p = {'i': [parir.threads(256)]}
+    p = {'i': parir.threads(256)}
     actual = collatz_wrap(N, 'cuda', p=p)
     assert torch.allclose(expected, actual.cpu())
 
 def test_collatz_compiles_with_parallelism():
     N = 1000
     out = torch.zeros(N+1, dtype=torch.int32)
-    p = {'i': [parir.threads(128)]}
+    p = {'i': parir.threads(128)}
     s = parir.print_compiled(collatz, [out, N], p)
     assert len(s) != 0

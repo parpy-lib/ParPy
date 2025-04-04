@@ -50,9 +50,9 @@ def parir_sddmm_csr(A, B, C):
         "nnz": nnz
     }
     p = {
-        "N": [parir.threads(N)],
-        "M": [parir.threads(32)],
-        "nnz": [parir.threads(nnz)],
+        "N": parir.threads(N),
+        "M": parir.threads(32),
+        "nnz": parir.threads(nnz),
     }
     parir_sddmm_csr_kernel(A, B, C_dict, D.values(), N, alpha, beta, parallelize=p)
     return D
@@ -76,7 +76,7 @@ def parir_sddmm_coo(A, B, C, C_rows):
         "values": C.values(),
         "nnz": nnz
     }
-    p = {"nnz": [parir.threads(nnz)]}
+    p = {"nnz": parir.threads(nnz)}
     parir_sddmm_coo_kernel(A, B, C_dict, D.values(), alpha, beta, parallelize=p)
     return D
 
@@ -106,7 +106,7 @@ def csr_rows(csr_matrix):
     crows = csr_matrix.crow_indices()
     rows = torch.empty_like(csr_matrix.col_indices())
     N = len(crows)-1
-    p = {"N": [parir.threads(N)], "M": [parir.threads(32)]}
+    p = {"N": parir.threads(N), "M": parir.threads(32)}
     parir_sddmm_decompress_csr(crows, rows, N, parallelize=p)
     return rows
 

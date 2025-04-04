@@ -6,12 +6,12 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParNode {
-    pub value: LoopParallelism,
+    pub value: LoopPar,
     pub children: BTreeMap<Name, ParNode>
 }
 
 impl ParNode {
-    pub fn new(value: LoopParallelism) -> ParNode {
+    pub fn new(value: LoopPar) -> ParNode {
         ParNode {value, children: BTreeMap::new()}
     }
 

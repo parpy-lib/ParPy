@@ -120,9 +120,9 @@ def run_slicing_test(compile_only, spec):
     device = torch.device('cpu') if compile_only else torch.device('cuda')
     args = [move_to_device(arg, device) for arg in args]
     p = {
-        'N': [parir.threads(32)],
-        'M': [parir.threads(32)],
-        'K': [parir.threads(32)]
+        'N': parir.threads(32),
+        'M': parir.threads(32),
+        'K': parir.threads(32)
     }
     if compile_only:
         if err:
