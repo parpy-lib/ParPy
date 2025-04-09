@@ -1,5 +1,6 @@
 import parir
 import pytest
+import re
 import torch
 
 torch.manual_seed(1234)
@@ -109,6 +110,7 @@ reduce_funs = [
     max_2d,
     min_2d,
 ]
+multi_dim_reduce_funs = set([sum_2d, prod_2d, max_2d, min_2d])
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 @pytest.mark.parametrize('fn', reduce_funs)
@@ -146,11 +148,14 @@ def test_irregular_reduction(fn):
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 @pytest.mark.parametrize('fn', reduce_funs)
 def test_multi_block_reduction(fn):
+    # Request more than 1024 threads, so that the compiler generates the
+    # multi-block reduction approach. In addition, we request the number of
+    # threads per block as 512.
     N = 100
     M = 2048
     p = {
         'outer': parir.threads(N),
-        'inner': parir.threads(M)
+        'inner': parir.threads(M).tpb(512)
     }
     compare_reduce(fn, N, M, p)
 
@@ -162,14 +167,34 @@ def test_reduction_compiles(fn):
     out = torch.empty(N, dtype=x.dtype)
     p = {'outer': parir.threads(N)}
     s1 = parir.print_compiled(fn, [x, out, N], p)
-    assert len(s1) != 0
+    if not fn in multi_dim_reduce_funs:
+        pat = r"dim3 threads\(128, 1, 1\);.*dim3 blocks\(1, 1, 1\);"
+        assert re.search(pat, s1, re.DOTALL) is not None
+    else:
+        assert len(s1) != 0
 
     p = {
         'outer': parir.threads(N),
         'inner': parir.threads(128)
     }
     s2 = parir.print_compiled(fn, [x, out, N], p)
-    assert len(s2) != 0
+    if not fn in multi_dim_reduce_funs:
+        pat = r"dim3 threads\(128, 1, 1\);.*dim3 blocks\(1, 100, 1\);"
+        assert re.search(pat, s2, re.DOTALL) is not None
+    else:
+        assert len(s2) != 0
+
+    p = {
+        'outer': parir.threads(N),
+        'inner': parir.threads(1024).tpb(128)
+    }
+    s3 = parir.print_compiled(fn, [x, out, N], p)
+    if not fn in multi_dim_reduce_funs:
+        pat = r"dim3 threads\(128, 1, 1\);.*dim3 blocks\(1, 8, 100\);"
+        print(s3)
+        assert re.search(pat, s3, re.DOTALL) is not None
+    else:
+        assert len(s3) != 0
 
 # Tests using a custom step size.
 @parir.jit
