@@ -2,6 +2,7 @@
 /// GPU grid using a straightforward approach.
 
 use super::ast::{Dim, LaunchArgs};
+use crate::par;
 use crate::parir_compile_error;
 use crate::ir::ast::*;
 use crate::utils::err::*;
@@ -13,19 +14,37 @@ use itertools::Itertools;
 
 use std::collections::BTreeMap;
 
-pub const DEFAULT_TPB: i64 = 1024;
 pub const WARP_SIZE: i64 = 32;
 
-type ParResult = CompileResult<BTreeMap<Name, Vec<i64>>>;
+#[derive(Debug, PartialEq)]
+pub struct ParEntry {
+    tpb: i64,
+    p: Vec<i64>
+}
+
+impl ParEntry {
+    pub fn new(tpb: i64, p: Vec<i64>) -> Self {
+        ParEntry {tpb, p}
+    }
+}
+
+type ParResult = CompileResult<BTreeMap<Name, ParEntry>>;
 
 struct Par {
     n: Vec<i64>,
+    tpb: i64,
     i: Info
+}
+
+impl Par {
+    pub fn new(n: Vec<i64>, i: Info) -> Par {
+        Par {n, tpb: par::DEFAULT_TPB, i}
+    }
 }
 
 impl PartialEq for Par {
     fn eq(&self, other: &Self) -> bool {
-        self.n.eq(&other.n)
+        self.n.eq(&other.n) && (self.tpb.eq(&other.tpb))
     }
 }
 
@@ -53,7 +72,7 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
         Stmt::Definition {i, ..} | Stmt::Assign {i, ..} |
         Stmt::SyncPoint {i, ..} | Stmt::Alloc {i, ..} |
         Stmt::Free {i, ..} => {
-            Ok(Par {n: vec![], i: i.clone()})
+            Ok(Par::new(vec![], i.clone()))
         },
         Stmt::If {thn, els, i, ..} => {
             let thn = find_parallel_structure_stmts_par(thn)?;
@@ -62,7 +81,7 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
             // structure. That is, we do not allow parallelism only in one branch - this is due to
             // the performance implications this might have.
             if thn.n.eq(&els.n) {
-                Ok(Par {n: thn.n, i: i.clone()})
+                Ok(Par::new(thn.n, i.clone()))
             } else {
                 let lhs = thn.n.iter().join(", ");
                 let rhs = els.n.iter().join(", ");
@@ -89,15 +108,14 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
 }
 
 fn find_parallel_structure_stmts_par(stmts: &Vec<Stmt>) -> CompileResult<Par> {
+    let p = Par::new(vec![], Info::default());
     stmts.iter()
         .map(find_parallel_structure_stmt_par)
-        .fold(Ok(Par {n: vec![], i: Info::default()}), |acc, stmt_par| {
-            unify_par(acc?, stmt_par?)
-        })
+        .fold(Ok(p), |acc, stmt_par| unify_par(acc?, stmt_par?))
 }
 
 fn find_parallel_structure_stmt_seq(
-    mut acc: BTreeMap<Name, Vec<i64>>,
+    mut acc: BTreeMap<Name, ParEntry>,
     stmt: &Stmt
 ) -> ParResult {
     match stmt {
@@ -112,7 +130,7 @@ fn find_parallel_structure_stmt_seq(
                 Some(n) => *n = ((*n + WARP_SIZE - 1) / WARP_SIZE) * WARP_SIZE,
                 None => ()
             };
-            acc.insert(var.clone(), p.n);
+            acc.insert(var.clone(), ParEntry::new(par.tpb, p.n));
             Ok(acc)
         },
         Stmt::For {body, ..} => find_parallel_structure_stmts_seq(acc, body),
@@ -124,7 +142,7 @@ fn find_parallel_structure_stmt_seq(
 }
 
 fn find_parallel_structure_stmts_seq(
-    acc: BTreeMap<Name, Vec<i64>>,
+    acc: BTreeMap<Name, ParEntry>,
     stmts: &Vec<Stmt>
 ) -> ParResult {
     stmts.sfold_result(Ok(acc), find_parallel_structure_stmt_seq)
@@ -153,6 +171,14 @@ pub struct GpuMapping {
 }
 
 impl GpuMapping {
+    pub fn new(tpb: i64) -> Self {
+        GpuMapping {
+            grid: LaunchArgs::default(),
+            mapping: vec![],
+            tpb
+        }
+    }
+
     pub fn add_parallelism(self, n: i64) -> Self {
         match self.mapping.last() {
             Some(_) => self.add_block_par(n),
@@ -214,28 +240,20 @@ impl GpuMapping {
     }
 }
 
-impl Default for GpuMapping {
-    fn default() -> Self {
-        GpuMapping {
-            grid: LaunchArgs::default(),
-            mapping: vec![],
-            tpb: DEFAULT_TPB}
-    }
-}
-
 fn add_par_to_grid(m: GpuMapping, n: i64) -> GpuMapping {
     m.add_parallelism(n)
 }
 
-fn par_to_gpu_mapping(par: Vec<i64>) -> GpuMapping {
-    par.into_iter()
+fn par_to_gpu_mapping(par: ParEntry) -> GpuMapping {
+    let ParEntry {tpb, p} = par;
+    p.into_iter()
         .rev()
-        .fold(GpuMapping::default(), add_par_to_grid)
+        .fold(GpuMapping::new(tpb), add_par_to_grid)
         .rev_mapping()
 }
 
 pub fn map_gpu_grid(
-    par: BTreeMap<Name, Vec<i64>>
+    par: BTreeMap<Name, ParEntry>
 ) -> BTreeMap<Name, GpuMapping> {
     par.into_iter()
         .map(|(id, par)| (id, par_to_gpu_mapping(par)))
@@ -252,7 +270,7 @@ mod test {
         ir_builder::id(s).with_new_sym()
     }
 
-    fn find_structure(def: FunDef) -> BTreeMap<Name, Vec<i64>> {
+    fn find_structure(def: FunDef) -> BTreeMap<Name, ParEntry> {
         find_parallel_structure_fun_def(&def).unwrap()
     }
 
@@ -270,7 +288,7 @@ mod test {
     fn single_par_loop() {
         let x = id("x");
         let def = fun_def(vec![for_loop(x.clone(), 10, vec![])]);
-        let expected = to_map(vec![(x, vec![32])]);
+        let expected = to_map(vec![(x, ParEntry::new(par::DEFAULT_TPB, vec![32]))]);
         assert_eq!(find_structure(def), expected);
     }
 
@@ -282,7 +300,7 @@ mod test {
             vec![for_loop(id("z"), 3, vec![for_loop(id("w"), 0, vec![])])],
         )])]);
         let expected = to_map(vec![
-            (x, vec![2, 32])
+            (x, ParEntry::new(par::DEFAULT_TPB, vec![2, 32]))
         ]);
         assert_eq!(find_structure(def), expected);
     }
@@ -314,7 +332,7 @@ mod test {
             for_loop(x.clone(), 10, vec![for_loop(id("y"), 15, vec![for_loop(id("z"), 0, vec![])])])
         ]);
         let expected = to_map(vec![
-            (x, vec![10, 32])
+            (x, ParEntry::new(par::DEFAULT_TPB, vec![10, 32]))
         ]);
         assert_eq!(find_structure(def), expected);
     }
@@ -329,7 +347,7 @@ mod test {
             )])
         ]);
         let expected = to_map(vec![
-            (x, vec![10, 32])
+            (x, ParEntry::new(par::DEFAULT_TPB, vec![10, 32]))
         ]);
         assert_eq!(find_structure(def), expected);
     }
@@ -354,8 +372,8 @@ mod test {
             for_loop(x2.clone(), 7, vec![])
         ]);
         let expected = to_map(vec![
-            (x1, vec![32]),
-            (x2, vec![32])
+            (x1, ParEntry::new(par::DEFAULT_TPB, vec![32])),
+            (x2, ParEntry::new(par::DEFAULT_TPB, vec![32]))
         ]);
         assert_eq!(find_structure(def), expected);
     }
@@ -374,13 +392,13 @@ mod test {
             for_loop(x2.clone(), 7, vec![for_loop(id("w"), 42, vec![])])
         ]);
         let expected = to_map(vec![
-            (x1, vec![5, 32]),
-            (x2, vec![7, 64])
+            (x1, ParEntry::new(par::DEFAULT_TPB, vec![5, 32])),
+            (x2, ParEntry::new(par::DEFAULT_TPB, vec![7, 64]))
         ]);
         assert_eq!(find_structure(def), expected);
     }
 
-    fn assert_par_mapping(par: Vec<i64>, mapping: GpuMapping) {
+    fn assert_par_mapping(par: ParEntry, mapping: GpuMapping) {
         let x = id("x");
         let par = to_map(vec![(x.clone(), par)]);
         let expected = to_map(vec![(x, mapping)]);
@@ -394,31 +412,44 @@ mod test {
 
     #[test]
     fn map_threads_single_par() {
-        let par = vec![128];
+        let par = ParEntry::new(par::DEFAULT_TPB, vec![128]);
         let mapping = GpuMapping {
             grid: LaunchArgs::default().with_threads_dim(&Dim::X, 128),
             mapping: vec![GpuMap::Thread {n: 128, dim: Dim::X, mult: 1}],
-            tpb: DEFAULT_TPB
+            tpb: par::DEFAULT_TPB
         };
         assert_par_mapping(par, mapping);
     }
 
     #[test]
     fn map_many_threads_to_grid() {
-        let par = vec![2048];
+        let par = ParEntry::new(par::DEFAULT_TPB, vec![2048]);
         let mapping = GpuMapping {
             grid: LaunchArgs::default()
                 .with_threads_dim(&Dim::X, 1024)
                 .with_blocks_dim(&Dim::X, 2),
             mapping: vec![GpuMap::ThreadBlock {n: 2048, nthreads: 1024, nblocks: 2, dim: Dim::X}],
-            tpb: DEFAULT_TPB
+            tpb: par::DEFAULT_TPB
+        };
+        assert_par_mapping(par, mapping);
+    }
+
+    #[test]
+    fn map_many_threads_to_grid_custom_tpb() {
+        let par = ParEntry::new(512, vec![2048]);
+        let mapping = GpuMapping {
+            grid: LaunchArgs::default()
+                .with_threads_dim(&Dim::X, 512)
+                .with_blocks_dim(&Dim::X, 4),
+            mapping: vec![GpuMap::ThreadBlock {n: 2048, nthreads: 512, nblocks: 4, dim: Dim::X}],
+            tpb: 512
         };
         assert_par_mapping(par, mapping);
     }
 
     #[test]
     fn map_par_threads_and_blocks() {
-        let par = vec![64, 128];
+        let par = ParEntry::new(par::DEFAULT_TPB, vec![64, 128]);
         let mapping = GpuMapping {
             grid: LaunchArgs::default()
                 .with_threads_dim(&Dim::X, 128)
@@ -427,14 +458,14 @@ mod test {
                 GpuMap::Block {n: 64, dim: Dim::Y, mult: 1},
                 GpuMap::Thread {n: 128, dim: Dim::X, mult: 1}
             ],
-            tpb: DEFAULT_TPB
+            tpb: par::DEFAULT_TPB
         };
         assert_par_mapping(par, mapping);
     }
 
     #[test]
     fn map_multi_blocks() {
-        let par = vec![512, 128, 1682];
+        let par = ParEntry::new(par::DEFAULT_TPB, vec![512, 128, 1682]);
         let mapping = GpuMapping {
             grid: LaunchArgs::default()
                 .with_threads_dim(&Dim::X, 1024)
@@ -446,14 +477,14 @@ mod test {
                 GpuMap::Block {n: 128, dim: Dim::Y, mult: 1},
                 GpuMap::ThreadBlock {n: 1682, nthreads: 1024, nblocks: 2, dim: Dim::X}
             ],
-            tpb: DEFAULT_TPB
+            tpb: par::DEFAULT_TPB
         };
         assert_par_mapping(par, mapping);
     }
 
     #[test]
     fn map_overlapping_dim_blocks() {
-        let par = vec![64, 512, 128, 1682];
+        let par = ParEntry::new(par::DEFAULT_TPB, vec![64, 512, 128, 1682]);
         let mapping = GpuMapping {
             grid: LaunchArgs::default()
                 .with_threads_dim(&Dim::X, 1024)
@@ -466,7 +497,7 @@ mod test {
                 GpuMap::Block {n: 128, dim: Dim::Y, mult: 1},
                 GpuMap::ThreadBlock {n: 1682, nthreads: 1024, nblocks: 2, dim: Dim::X}
             ],
-            tpb: DEFAULT_TPB
+            tpb: par::DEFAULT_TPB
         };
         assert_par_mapping(par, mapping);
     }

@@ -3,6 +3,7 @@ mod constant_fold;
 mod from_py_ast;
 mod pprint;
 mod struct_types;
+mod tpb;
 
 use ast::*;
 use crate::par::LoopPar;
@@ -30,6 +31,7 @@ pub fn from_python(
     let fun = from_py_ast::to_ir_def(&env, def)?;
     let ast = Ast {structs, fun};
     debug_env.print("Initial IR AST", &ast);
+    let ast = tpb::propagate_configuration(ast)?;
     let ast = constant_fold::fold(ast);
     Ok(ast)
 }
@@ -99,7 +101,7 @@ pub mod ir_builder {
     }
 
     pub fn loop_par(n: i64) -> LoopPar {
-        LoopPar::default().with_threads(n).unwrap()
+        LoopPar::default().threads(n).unwrap()
     }
 
     fn for_loop_complete(

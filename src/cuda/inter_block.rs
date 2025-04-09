@@ -1,5 +1,5 @@
-use super::par;
 use super::par_tree;
+use crate::par;
 use crate::parir_compile_error;
 use crate::ir::ast::*;
 use crate::utils::err::*;
@@ -58,13 +58,13 @@ fn classify_synchronization_points_par_stmt(
         Stmt::SyncPoint {block_local, i} => {
             let prev_stmt_is_block_local_for = match acc.last() {
                 Some(Stmt::For {par, ..}) => {
-                    par.nthreads > 0 && par.nthreads <= par::DEFAULT_TPB
+                    par.nthreads > 0 && par.nthreads <= par.tpb
                 },
                 _ => false
             };
             // When the synchronization statement is found in the innermost level of parallelism,
             // and the preceding for-loop is a parallel for-loop with at most the default number of
-            // threads per block (par::DEFAULT_TPB), we consider this synchronization point to be
+            // threads per block (par.tpb), we consider this synchronization point to be
             // block-local. In this case, we can use a CUDA intrinsic instead of splitting up the
             // kernel.
             let s = if node.innermost_parallelism() && prev_stmt_is_block_local_for {
@@ -144,6 +144,7 @@ fn inner_multi_block_reduce_loop(
     hi: Expr,
     step: i64,
     nblocks: i64,
+    tpb: i64,
     block_idx: Name,
     lhs: Expr,
     op: BinOp,
@@ -213,7 +214,7 @@ fn inner_multi_block_reduce_loop(
     Stmt::For {
         var: loop_idx, lo: lo_expr, hi: hi_expr, step: step,
         body: vec![assign],
-        par: LoopPar {nthreads: par::DEFAULT_TPB, reduction: true},
+        par: LoopPar {nthreads: tpb, reduction: true, tpb},
         i: i.clone()
     }
 }
@@ -224,6 +225,7 @@ fn outer_multi_block_reduce_loop(
     ne: Expr,
     var: Name,
     nblocks: usize,
+    tpb: i64,
     i: &Info
 ) -> Stmt {
     let i64_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
@@ -239,7 +241,7 @@ fn outer_multi_block_reduce_loop(
         hi: Expr::Int {v: nblocks as i64, ty: i64_ty.clone(), i: i.clone()},
         step: 1,
         body: vec![init_stmt, inner_loop],
-        par: LoopPar {nthreads: nblocks as i64, reduction: false},
+        par: LoopPar {nthreads: nblocks as i64, reduction: false, tpb},
         i: i.clone()
     }
 }
@@ -264,11 +266,13 @@ fn single_block_reduce_loop(
         },
         i: i.clone()
     };
-    // Use the number of blocks, or at most 1024 threads, to ensure the loop is mapped to a single
-    // block.
+    // For this reduction, we use one block with at most as many threads as in the default number
+    // of threads per block. Note that we ignore the user-configured threads per block in this part
+    // because more threads should be beneficial performance-wise.
     let par = LoopPar {
-        nthreads: i64::min(nblocks as i64, 1024),
-        reduction: true
+        nthreads: i64::min(nblocks as i64, par::DEFAULT_TPB),
+        reduction: true,
+        tpb: par::DEFAULT_TPB
     };
     Stmt::For {
         var,
@@ -280,12 +284,12 @@ fn single_block_reduce_loop(
 
 fn split_inter_block_parallel_reductions_stmt(s: Stmt) -> CompileResult<Stmt> {
     let is_inter_block_reduction = |par: &LoopPar| {
-        par.reduction && par.nthreads > par::DEFAULT_TPB
+        par.reduction && par.nthreads > par.tpb
     };
     match s {
         Stmt::For {var, lo, hi, step, body, par, i} if is_inter_block_reduction(&par) => {
-            if par.nthreads % par::DEFAULT_TPB == 0 {
-                let nblocks = (par.nthreads / par::DEFAULT_TPB) as usize;
+            if par.nthreads % par.tpb == 0 {
+                let nblocks = (par.nthreads / par.tpb) as usize;
                 let (lhs, op, rhs, sz, i) = reduce::extract_reduction_operands(body, &i)?;
                 let ty = Type::Tensor {sz: sz.clone(), shape: vec![]};
                 let ne = extract_neutral_element(&op, &sz, &i)?;
@@ -300,11 +304,11 @@ fn split_inter_block_parallel_reductions_stmt(s: Stmt) -> CompileResult<Stmt> {
                     id: temp_id.clone(), ty: ty.clone(), i: i.clone()
                 };
                 let l1 = inner_multi_block_reduce_loop(
-                    var, lo, hi, step, nblocks as i64,
+                    var, lo, hi, step, nblocks as i64, par.tpb,
                     id.clone(), temp_access.clone(), op.clone(), rhs, &i
                 );
                 let l2 = outer_multi_block_reduce_loop(
-                    l1, temp_id, ne, id.clone(), nblocks, &i
+                    l1, temp_id, ne, id.clone(), nblocks, par.tpb, &i
                 );
                 let l3 = single_block_reduce_loop(
                     id, nblocks, lhs, op, temp_access, &i
@@ -320,7 +324,7 @@ fn split_inter_block_parallel_reductions_stmt(s: Stmt) -> CompileResult<Stmt> {
             } else {
                 parir_compile_error!(i, "Multi-block reductions must use a \
                                          multiple of {0} threads.",
-                                         par::DEFAULT_TPB)
+                                         par.tpb)
             }
         },
         _ => s.smap_result(split_inter_block_parallel_reductions_stmt)

@@ -72,8 +72,8 @@ impl PrettyPrint for Expr {
 
 impl PrettyPrint for LoopPar {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let LoopPar {nthreads, reduction} = self;
-        (env, format!("{{nthreads = {nthreads}, reduction = {reduction}}}"))
+        let LoopPar {nthreads, reduction, tpb} = self;
+        (env, format!("{{nthreads = {nthreads}, reduction = {reduction}, tpb = {tpb}}}"))
     }
 }
 
