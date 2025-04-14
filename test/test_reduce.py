@@ -216,6 +216,7 @@ def odd_entries_wrap(p):
     odd_entries_sum(x, out_seq, N, M, seq=True)
     assert torch.allclose(out, out_seq, atol=1e-4)
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_odd_entries_single_block():
     p = {
         'N': parir.threads(10),
@@ -223,7 +224,8 @@ def test_odd_entries_single_block():
     }
     odd_entries_wrap(p)
 
-def test_odd_entires_multiblock():
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
+def test_odd_entries_multiblock():
     p = {
         'N': parir.threads(10),
         'M': parir.threads(2048).reduce()
