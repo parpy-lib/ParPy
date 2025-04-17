@@ -155,10 +155,11 @@ def run_forward_benchmark():
 def produce_sddmm_output(csv_file, frameworks, k):
     results_df = pd.read_csv(csv_file)
     fig, axs = plt.subplots(layout="constrained")
-    for framework in frameworks:
+    markers = ['x', '|', '_']
+    for i, framework in enumerate(frameworks):
         fw_res = results_df[results_df["framework"] == framework]
         runtimes = fw_res.groupby("nnz")["time"].median()
-        axs.scatter(runtimes.index, runtimes, s=8, label=framework)
+        axs.scatter(runtimes.index, runtimes, s=8, marker=markers[i], label=framework, alpha=0.75)
     axs.set_xscale("log")
     axs.set_yscale("log")
     axs.set_xlabel("Number of non-zero values", fontsize=16)
