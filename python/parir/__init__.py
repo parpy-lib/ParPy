@@ -56,6 +56,9 @@ def compile_function(ir_ast, args, kwargs, fn):
     cache = check_kwarg(kwargs, "cache", True, bool)
     seq = check_kwarg(kwargs, "seq", False, bool)
     debug = check_kwarg(kwargs, "debug", False, bool)
+    # Explicitly prevent caching if debug is enabled.
+    if debug:
+        cache = False
 
     # Any keyword arguments remaining after processing the known ones above are
     # considered unknown.
