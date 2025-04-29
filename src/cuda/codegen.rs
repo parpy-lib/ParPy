@@ -351,7 +351,7 @@ fn generate_parallel_reduction(
             i: i.clone()
         };
         let var_id = Name::sym_str("i");
-        let var = Expr::Var {id: var_id.clone(), ty: ty.clone(), i: i.clone()};
+        let var = Expr::Var {id: var_id.clone(), ty: i64_ty.clone(), i: i.clone()};
         acc.push(Stmt::For {
             var_ty: i64_ty.clone(),
             var: var_id.clone(),
