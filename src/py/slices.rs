@@ -229,7 +229,7 @@ fn replace_ids_with_shape_expr(
         id: reduce_id.clone(), ty: Type::Unknown, i: i.clone()
     };
     let mut sub_map = BTreeMap::new();
-    for (id, sh) in dims.iter().rev() {
+    for (id, sh) in dims[1..].iter().rev() {
         let sub_expr = Expr::BinOp {
             lhs: Box::new(reduce_expr.clone()),
             op: BinOp::Rem,
@@ -246,6 +246,8 @@ fn replace_ids_with_shape_expr(
             i: i.clone()
         };
     }
+    let (last_id, _) = &dims[0];
+    sub_map.insert(last_id.clone(), reduce_expr);
     sub_vars_expr(e, &sub_map)
 }
 
