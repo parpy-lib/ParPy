@@ -149,14 +149,12 @@ def forward_step_inst(hmm, seqs, alpha1, alpha2, inst, t):
             lsexp = parir.max(lsexp, parir.float32(-parir.inf))
 
             alpha_dst[inst, state] = lsexp + hmm["output_prob"][o, state % num_kmers]
-        elif t == seqs["lens"][inst]:
-            alpha_dst[inst, state] = alpha_src[inst, state]
 
 @parir.jit
 def forward_lse_inst(hmm, seqs, result, alpha1, alpha2, inst):
     # Summation of final alpha values
     alpha = alpha2
-    if seqs["maxlen"] & 1 != 0:
+    if seqs["lens"][inst] & 1 != 0:
         alpha = alpha1
 
     parir.label('state')
