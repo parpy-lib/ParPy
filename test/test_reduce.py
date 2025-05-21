@@ -3,6 +3,8 @@ import pytest
 import re
 import torch
 
+from common import *
+
 torch.manual_seed(1234)
 
 @parir.jit
@@ -85,9 +87,9 @@ def reduce_wrap(reduce_fn, x, p=None):
     N, M = x.shape
     out = torch.zeros(N, dtype=x.dtype, device=x.device)
     if p is None:
-        reduce_fn(x, out, N, seq=True)
+        reduce_fn(x, out, N, opts=seq_opts())
     else:
-        reduce_fn(x, out, N, parallelize=p, cache=False)
+        reduce_fn(x, out, N, opts=par_opts(p))
     return out
 
 def compare_reduce(reduce_fn, N, M, p):
@@ -166,7 +168,7 @@ def test_reduction_compiles(fn):
     x = torch.randn((N, M), dtype=torch.float32)
     out = torch.empty(N, dtype=x.dtype)
     p = {'outer': parir.threads(N)}
-    s1 = parir.print_compiled(fn, [x, out, N], p)
+    s1 = parir.print_compiled(fn, [x, out, N], par_opts(p))
     if not fn in multi_dim_reduce_funs:
         pat = r"dim3 threads\(128, 1, 1\);.*dim3 blocks\(1, 1, 1\);"
         assert re.search(pat, s1, re.DOTALL) is not None
@@ -177,7 +179,7 @@ def test_reduction_compiles(fn):
         'outer': parir.threads(N),
         'inner': parir.threads(128)
     }
-    s2 = parir.print_compiled(fn, [x, out, N], p)
+    s2 = parir.print_compiled(fn, [x, out, N], par_opts(p))
     if not fn in multi_dim_reduce_funs:
         pat = r"dim3 threads\(128, 1, 1\);.*dim3 blocks\(1, 100, 1\);"
         assert re.search(pat, s2, re.DOTALL) is not None
@@ -188,7 +190,7 @@ def test_reduction_compiles(fn):
         'outer': parir.threads(N),
         'inner': parir.threads(1024).tpb(128)
     }
-    s3 = parir.print_compiled(fn, [x, out, N], p)
+    s3 = parir.print_compiled(fn, [x, out, N], par_opts(p))
     if not fn in multi_dim_reduce_funs:
         pat = r"dim3 threads\(128, 1, 1\);.*dim3 blocks\(1, 8, 100\);"
         print(s3)
@@ -211,9 +213,9 @@ def odd_entries_wrap(p):
     M = 4096
     x = torch.randn((N, M), dtype=torch.float32, device='cuda')
     out = torch.empty(N, dtype=x.dtype, device='cuda')
-    odd_entries_sum(x, out, N, M, parallelize=p, cache=False)
+    odd_entries_sum(x, out, N, M, opts=par_opts(p))
     out_seq = torch.empty_like(out)
-    odd_entries_sum(x, out_seq, N, M, seq=True)
+    odd_entries_sum(x, out_seq, N, M, opts=seq_opts())
     assert torch.allclose(out, out_seq, atol=1e-4)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")

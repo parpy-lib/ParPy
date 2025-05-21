@@ -3,6 +3,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 @parir.jit
 def syrk(alpha, beta, C, A, N, M):
     parir.label('i')
@@ -39,13 +41,13 @@ def syrk_run_par(nthreads):
 
     # Run sequentially to produce a reference solution
     C_ref = C.clone()
-    syrk(alpha, beta, C_ref, A, N, M, seq=True)
+    syrk(alpha, beta, C_ref, A, N, M, opts=seq_opts())
 
     # Run in parallel using the specified number of threads and validate the
     # result
     p = syrk_par_spec(N, nthreads)
     C_cu = C.clone().cuda()
-    syrk(alpha, beta, C_cu, A.cuda(), N, M, parallelize=p, cache=False)
+    syrk(alpha, beta, C_cu, A.cuda(), N, M, opts=par_opts(p))
 
     assert torch.allclose(C_ref, C_cu.cpu()), f"Run failed using {nthreads} threads"
 

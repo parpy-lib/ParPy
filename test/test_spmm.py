@@ -5,6 +5,8 @@ import pytest
 import torch
 import warnings
 
+from common import *
+
 torch.manual_seed(1234)
 np.random.seed(1234)
 
@@ -28,7 +30,7 @@ def spmm_wrap(A, B, target, p=None):
     N = A["nrows"]
     K = B["ncols"]
     C = torch.zeros((N, K), dtype=torch.float32, device='cuda')
-    target(A, B, C, parallelize=p, cache=False)
+    target(A, B, C, opts=par_opts(p))
     return C
 
 def uniform_random_csr_f32_i64(N, M, d, device):
@@ -88,14 +90,14 @@ def test_spmm_compiles():
     del A["original"]
     C = torch.zeros((A["nrows"], B["ncols"]), dtype=torch.float32)
     p = { 'i': parir.threads(A["nrows"]) }
-    s = parir.print_compiled(spmm_cell, [A, B, C], p)
+    s = parir.print_compiled(spmm_cell, [A, B, C], par_opts(p))
     assert len(s) != 0
 
     p = {
         'i': parir.threads(A["nrows"]),
         'j': parir.threads(B["ncols"])
     }
-    s = parir.print_compiled(spmm_cell, [A, B, C], p)
+    s = parir.print_compiled(spmm_cell, [A, B, C], par_opts(p))
     assert len(s) != 0
 
     p = {
@@ -103,5 +105,5 @@ def test_spmm_compiles():
         'j': parir.threads(B["ncols"]),
         'aidx': parir.threads(32).reduce()
     }
-    s = parir.print_compiled(spmm_cell, [A, B, C], p)
+    s = parir.print_compiled(spmm_cell, [A, B, C], par_opts(p))
     assert len(s) != 0

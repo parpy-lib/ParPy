@@ -2,6 +2,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 @parir.jit
 def normalize_rows(t, nrows, ncols):
     parir.label('i')
@@ -15,7 +17,7 @@ def normalize_rows(t, nrows, ncols):
 def normalize_wrap(t, p=None):
     nrows, ncols = t.shape
     out = t.clone()
-    normalize_rows(out, nrows, ncols, parallelize=p, cache=False)
+    normalize_rows(out, nrows, ncols, opts=par_opts(p))
     return out
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -61,5 +63,5 @@ def test_normalize_print_ast():
         "j1": parir.threads(128).reduce(),
         "j2": parir.threads(128)
     }
-    s = parir.print_compiled(normalize_rows_no_annot, args, p)
+    s = parir.print_compiled(normalize_rows_no_annot, args, par_opts(p))
     assert len(s) != 0

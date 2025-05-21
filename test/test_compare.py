@@ -3,6 +3,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 torch.manual_seed(1234)
 
 @parir.jit
@@ -62,8 +64,8 @@ def compare_dtype(fn, arg_dtype, compile_only):
         assert len(s) != 0
     else:
         dst_cu = torch.empty_like(dst).cuda()
-        fn(dst_cu, a.cuda(), b.cuda(), cache=False)
-        fn(dst, a, b, seq=True)
+        fn(dst_cu, a.cuda(), b.cuda(), opts=par_opts({}))
+        fn(dst, a, b, opts=seq_opts())
         assert dst == dst_cu.cpu()
 
 functions = [

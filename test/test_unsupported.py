@@ -6,6 +6,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 def test_while_else_rejected():
     with pytest.raises(RuntimeError) as e_info:
         @parir.jit
@@ -16,7 +18,7 @@ def test_while_else_rejected():
                 i += 1
             else:
                 y[i] = 0.0
-    assert e_info.match(r".*lines 14-18.*")
+    assert e_info.match(r".*lines 16-20.*")
 
 def test_for_else_rejected():
     with pytest.raises(RuntimeError) as e_info:
@@ -26,7 +28,7 @@ def test_for_else_rejected():
                 y[i] = x[i]
             else:
                 y[0] += 1
-    assert e_info.match(r".*lines 25-28.*")
+    assert e_info.match(r".*lines 27-30.*")
 
 def test_with_unsupported_context():
     with pytest.raises(RuntimeError) as e_info:
@@ -34,7 +36,7 @@ def test_with_unsupported_context():
         def with_context():
             with 5:
                 pass
-    assert e_info.match(r".*lines 35-36.*")
+    assert e_info.match(r".*lines 37-38.*")
 
 def test_with_as():
     with pytest.raises(RuntimeError) as e_info:
@@ -42,7 +44,7 @@ def test_with_as():
         def with_as():
             with parir.gpu as x:
                 a = x + 1
-    assert e_info.match(r".*lines 43-44.*")
+    assert e_info.match(r".*lines 45-46.*")
 
 def test_dict_with_non_string_keys():
     @parir.jit
@@ -76,7 +78,7 @@ def test_add_cpu_args():
     b = torch.randn(10)
     c = torch.randn(10)
     with pytest.raises(RuntimeError) as e_info:
-        add(a, b, c, 10, parallelize={'N': parir.threads(10)}, cache=False)
+        add(a, b, c, 10, opts=par_opts({'N': parir.threads(10)}))
     assert e_info.match(r".*is on device.*expected to be on device.*")
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -85,5 +87,5 @@ def test_add_numpy_array_arg():
     b = torch.randn(10, device='cuda')
     c = np.ndarray(10)
     with pytest.raises(RuntimeError) as e_info:
-        add(a, b, c, 10, parallelize={'N': parir.threads(10)}, cache=False)
+        add(a, b, c, 10, opts=par_opts({'N': parir.threads(10)}))
     assert e_info.match(r".*unsupported type.*")

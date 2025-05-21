@@ -2,6 +2,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 torch.manual_seed(1234)
 
 @parir.jit
@@ -127,20 +129,20 @@ def run_slicing_test(compile_only, spec):
     if compile_only:
         if err:
             with pytest.raises(err) as e_info:
-                s = parir.print_compiled(fn, args, p)
+                s = parir.print_compiled(fn, args, par_opts(p))
             assert e_info.match(err_msg)
         else:
-            s = parir.print_compiled(fn, args, p)
+            s = parir.print_compiled(fn, args, par_opts(p))
             assert len(s) != 0
     else:
         if err:
             with pytest.raises(err) as e_info:
-                fn(*args, parallelize=p, cache=False)
+                fn(*args, opts=par_opts(p))
             assert e_info.match(err_msg)
         else:
             seq_args = [clone_arg(arg) for arg in args]
-            fn(*args, parallelize=p, cache=False)
-            fn(*seq_args, seq=True)
+            fn(*args, opts=par_opts(p))
+            fn(*seq_args, opts=seq_opts())
             assert torch.allclose(args[-1], seq_args[-1], atol=1e-5)
 
 def tensor(*shapes):

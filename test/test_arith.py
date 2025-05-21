@@ -3,6 +3,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 torch.manual_seed(1234)
 
 @parir.jit
@@ -95,8 +97,8 @@ def arith_binop_dtype(fn, ldtype, rdtype, compile_only):
         assert len(s) != 0
     else:
         dst_cu = torch.zeros_like(dst).cuda()
-        fn(dst_cu, a.cuda(), b.cuda(), cache=False)
-        fn(dst, a, b, seq=True)
+        fn(dst_cu, a.cuda(), b.cuda(), opts=par_opts({}))
+        fn(dst, a, b, opts=seq_opts())
         assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
 
 bitwise_funs = [
@@ -207,8 +209,8 @@ def arith_unop_dtype(fn, dtype, compile_only):
         assert len(s) != 0
     else:
         dst_cu = torch.empty_like(dst).cuda()
-        fn(dst_cu, src.cuda(), cache=False)
-        fn(dst, src, seq=True)
+        fn(dst_cu, src.cuda(), opts=par_opts({}))
+        fn(dst, src, opts=seq_opts())
         assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
 
 float_funs = [parir_cos, parir_sin, parir_tanh, parir_atan2, parir_sqrt]

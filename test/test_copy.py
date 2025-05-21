@@ -2,6 +2,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 torch.manual_seed(1234)
 
 @parir.jit
@@ -11,7 +13,7 @@ def copy(x, y):
 
 def copy_wrap(x, p):
     y = torch.empty_like(x)
-    copy(x, y, parallelize=p, cache=False)
+    copy(x, y, opts=par_opts(p))
     return y
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -25,7 +27,7 @@ def test_copy_compiles():
     x = torch.randn(10, dtype=torch.float32)
     y = torch.empty_like(x)
     p = {'i': parir.threads(1024)}
-    s = parir.print_compiled(copy, [x, y], p)
+    s = parir.print_compiled(copy, [x, y], par_opts(p))
     assert len(s) != 0
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -33,7 +35,7 @@ def test_copy_run_compiled_string():
     x = torch.randn(10, dtype=torch.float32, device='cuda')
     y = torch.empty_like(x)
     p = {'i': parir.threads(1024)}
-    code = parir.print_compiled(copy, [x, y], p)
+    code = parir.print_compiled(copy, [x, y], par_opts(p))
     fn = parir.compile_string(copy.__name__, code)
     fn(x, y)
     assert torch.allclose(x, y)

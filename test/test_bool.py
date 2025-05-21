@@ -2,6 +2,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 torch.manual_seed(1234)
 
 @parir.jit
@@ -24,12 +26,12 @@ def bool_wrap(x, y, p=None):
     N, = x.shape
     tmp = torch.empty(N, dtype=torch.bool, device=x.device)
     if p is None:
-        store_gt(x, y, tmp, N, seq=True)
+        store_gt(x, y, tmp, N, opts=seq_opts())
     else:
-        store_gt(x, y, tmp, N, parallelize=p, cache=False)
+        store_gt(x, y, tmp, N, opts=par_opts(p))
     out = torch.empty(1, dtype=torch.bool, device=x.device)
     if p is None:
-        reduce_and(tmp, out, seq=True)
+        reduce_and(tmp, out, opts=seq_opts())
     else:
         reduce_and(tmp, out)
     return out
@@ -47,7 +49,7 @@ def test_bool_compiles():
     x, y, N = bool_test_data()
     tmp = torch.empty_like(x, dtype=torch.bool)
     p = {'i': parir.threads(64)}
-    s = parir.print_compiled(store_gt, [x, y, tmp, N], p)
+    s = parir.print_compiled(store_gt, [x, y, tmp, N], par_opts(p))
     assert len(s) != 0
 
     res = torch.empty(1, dtype=torch.bool)

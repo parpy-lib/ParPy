@@ -2,6 +2,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 torch.manual_seed(1234)
 
 @parir.jit
@@ -21,9 +23,9 @@ def collatz(out, N):
 def collatz_wrap(N, device='cpu', p=None):
     out = torch.zeros(N+1, dtype=torch.int32, device=device)
     if p is None:
-        collatz(out, N, seq=True)
+        collatz(out, N, opts=seq_opts())
     else:
-        collatz(out, N, parallelize=p, cache=False)
+        collatz(out, N, opts=par_opts(p))
     return out
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -38,5 +40,5 @@ def test_collatz_compiles_with_parallelism():
     N = 1000
     out = torch.zeros(N+1, dtype=torch.int32)
     p = {'i': parir.threads(128)}
-    s = parir.print_compiled(collatz, [out, N], p)
+    s = parir.print_compiled(collatz, [out, N], par_opts(p))
     assert len(s) != 0

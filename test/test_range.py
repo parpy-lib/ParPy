@@ -2,6 +2,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 torch.manual_seed(1234)
 
 @parir.jit
@@ -33,12 +35,12 @@ def range_helper(fn, compile_only):
     x = torch.zeros((N,), dtype=torch.int64)
     p = {'i': parir.threads(32)}
     if compile_only:
-        s = parir.print_compiled(fn, [x, N], p)
+        s = parir.print_compiled(fn, [x, N], par_opts(p))
         assert len(s) != 0
     else:
         x_cu = x.detach().clone().cuda()
-        upper_bound_range(x_cu, N, parallelize=p, cache=False)
-        upper_bound_range(x, N, seq=True)
+        upper_bound_range(x_cu, N, opts=par_opts(p))
+        upper_bound_range(x, N, opts=seq_opts())
         assert torch.allclose(x, x_cu.cpu())
 
 range_funs = [upper_bound_range, no_step_range, step_range, negative_step_range]

@@ -5,6 +5,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 # I/O handling for the model and the observation sequences
 def generate_init_probs(k):
     init_probs = np.zeros((16, 4**k), dtype=np.float32)
@@ -158,8 +160,8 @@ def forward(hmm, seqs, par):
     alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32, device='cuda')
     alpha2 = torch.empty_like(alpha1)
     result = torch.empty(seqs["num_instances"], dtype=torch.float32, device='cuda')
-    code = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], par)
-    forward_kernel(hmm, seqs, alpha1, alpha2, result, parallelize=par, cache=False)
+    code = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], par_opts(par))
+    forward_kernel(hmm, seqs, alpha1, alpha2, result, opts=par_opts(par))
     return result
 
 def read_test_data(device):
@@ -204,5 +206,5 @@ def test_forward_compiles():
         'inst': parir.threads(seqs["num_instances"]),
         'state': parir.threads(hmm["num_states"])
     }
-    s = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], p)
+    s = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], par_opts(p))
     assert len(s) != 0

@@ -187,7 +187,7 @@ def forward_parir(hmm, seqs, nthreads):
         'inst': parir.threads(seqs["num_instances"]),
         'state': parir.threads(nthreads),
     }
-    forward_kernel(hmm, seqs, result, alpha1, alpha2, parallelize=p)
+    forward_kernel(hmm, seqs, result, alpha1, alpha2, opts=parir.parallelize(p))
     return result
 
 class ParirTuned:

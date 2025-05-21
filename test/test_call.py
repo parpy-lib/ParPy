@@ -2,6 +2,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 @parir.jit
 def add_inplace(x, y, M):
     parir.label("1d")
@@ -31,7 +33,7 @@ def test_call():
     x = torch.randn(10, 15, device='cuda')
     y = torch.zeros_like(x)
     p = {'2d': parir.threads(10), '1d': parir.threads(15)}
-    add_2d_inplace(x, y, 10, 15, parallelize=p, cache=False)
+    add_2d_inplace(x, y, 10, 15, opts=par_opts(p))
     assert torch.allclose(x, y)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
@@ -41,7 +43,7 @@ def test_call_different_types():
     z = torch.randint(0, 10, (10, 15), dtype=torch.int32, device='cuda')
     w = torch.zeros_like(z)
     p = {'2d': parir.threads(10), '1d': parir.threads(15)}
-    add_2d_inplace_x2(x, y, z, w, 10, 15, parallelize=p, cache=False)
+    add_2d_inplace_x2(x, y, z, w, 10, 15, opts=par_opts(p))
     assert torch.allclose(x, y)
     assert torch.allclose(z, w)
 
@@ -54,7 +56,7 @@ def test_nested_call_dependency():
         '2d': parir.threads(20),
         '1d': parir.threads(30)
     }
-    add_3d_inplace(x, y, 10, 20, 30, parallelize=p, cache=False)
+    add_3d_inplace(x, y, 10, 20, 30, opts=par_opts(p))
     assert torch.allclose(x, y)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")

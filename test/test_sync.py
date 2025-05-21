@@ -2,6 +2,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 @parir.jit
 def sum_rows(x, N, out):
     parir.label('N')
@@ -17,12 +19,12 @@ def test_reduce_multi_block():
     # Parallelize reduction within a single block (n = 1024)
     out1 = torch.empty(N, dtype=x.dtype, device=x.device)
     p1 = {'N': parir.threads(N), 'M': parir.threads(1024)}
-    sum_rows(x, N, out1, parallelize=p1, cache=False)
+    sum_rows(x, N, out1, opts=par_opts(p1))
 
     # Parallelize reduction across multiple blocks (n > 1024)
     out2 = torch.empty_like(out1)
     p2 = {'N': parir.threads(N), 'M': parir.threads(2048)}
-    sum_rows(x, N, out2, parallelize=p2, cache=False)
+    sum_rows(x, N, out2, opts=par_opts(p2))
 
     assert torch.allclose(out1, out2, atol=1e-6)
 
@@ -45,7 +47,7 @@ def test_varying_parallelism():
         'M_1': parir.threads(128),
         'M_2': parir.threads(64)
     }
-    normalize(x, N, parallelize=p, cache=False)
+    normalize(x, N, opts=par_opts(p))
     assert torch.allclose(torch.sum(x, axis=-1), torch.ones(N))
 
 @parir.jit
@@ -66,9 +68,9 @@ def sum_exp_3d_wrap(par):
     x = torch.randn(N, M, K, dtype=torch.float32, device='cuda')
     x_2 = x.detach().clone()
     out = torch.empty(N, M, dtype=x.dtype, device=x.device)
-    sum_exp_3d(x, N, M, out, parallelize=par, cache=False)
+    sum_exp_3d(x, N, M, out, opts=par_opts(par))
     ref_out = torch.empty_like(out)
-    sum_exp_3d(x_2, N, M, ref_out, seq=True)
+    sum_exp_3d(x_2, N, M, ref_out, opts=seq_opts())
     assert torch.allclose(out, ref_out, atol=1e-5)
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")

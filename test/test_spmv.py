@@ -2,8 +2,9 @@ import numpy as np
 import parir
 import pytest
 import torch
-
 import warnings
+
+from common import *
 
 torch.manual_seed(1234)
 np.random.seed(1234)
@@ -24,7 +25,7 @@ def spmv_wrap(A, x, N, p):
         'nrows': N
     }
     y = torch.zeros((A["nrows"],), dtype=x.dtype, device=x.device)
-    spmv_row(A, x, y, parallelize=p, cache=False)
+    spmv_row(A, x, y, opts=par_opts(p))
     return y
 
 def uniform_random_csr_f32_i64(N, M, d, device):
@@ -83,5 +84,5 @@ def test_spmv_compiles():
         "row": parir.threads(N),
         "i": parir.threads(128).reduce()
     }
-    s = parir.print_compiled(spmv_row, [A, x, y], p)
+    s = parir.print_compiled(spmv_row, [A, x, y], par_opts(p))
     assert len(s) != 0

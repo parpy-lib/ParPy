@@ -3,6 +3,8 @@ import parir
 import pytest
 import torch
 
+from common import *
+
 torch.manual_seed(1234)
 np.random.seed(1234)
 
@@ -28,9 +30,9 @@ def softmax_wrap(x, p=None):
     N, M = x.shape
     out = torch.empty_like(x)
     if p is None:
-        softmax(x, N, M, out, seq=True)
+        softmax(x, N, M, out, opts=seq_opts())
     else:
-        softmax(x, N, M, out, parallelize=p, cache=False)
+        softmax(x, N, M, out, opts=par_opts(p))
     return out
 
 def compare_softmax(p):
@@ -61,5 +63,5 @@ def test_softmax_compiles():
         "N" : parir.threads(256),
         "M": parir.threads(128),
     }
-    s = parir.print_compiled(softmax, [x, N, M, out], p)
+    s = parir.print_compiled(softmax, [x, N, M, out], par_opts(p))
     assert len(s) != 0

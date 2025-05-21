@@ -54,7 +54,8 @@ def parir_sddmm_csr(A, B, C):
         "M": parir.threads(32),
         "nnz": parir.threads(nnz),
     }
-    parir_sddmm_csr_kernel(A, B, C_dict, D.values(), N, alpha, beta, parallelize=p)
+    opts = parir.parallelize(p)
+    parir_sddmm_csr_kernel(A, B, C_dict, D.values(), N, alpha, beta, opts=opts)
     return D
 
 @parir.jit
@@ -76,8 +77,8 @@ def parir_sddmm_coo(A, B, C, C_rows):
         "values": C.values(),
         "nnz": nnz
     }
-    p = {"nnz": parir.threads(nnz)}
-    parir_sddmm_coo_kernel(A, B, C_dict, D.values(), alpha, beta, parallelize=p)
+    opts = parir.parallelize({"nnz": parir.threads(nnz)})
+    parir_sddmm_coo_kernel(A, B, C_dict, D.values(), alpha, beta, opts=opts)
     return D
 
 def validate_sparse_result(A, actual_A):
@@ -107,7 +108,7 @@ def csr_rows(csr_matrix):
     rows = torch.empty_like(csr_matrix.col_indices())
     N = len(crows)-1
     p = {"N": parir.threads(N), "M": parir.threads(32)}
-    parir_sddmm_decompress_csr(crows, rows, N, parallelize=p)
+    parir_sddmm_decompress_csr(crows, rows, N, opts=parir.parallelize(p))
     return rows
 
 def run_sddmm(framework, matrix_id, k):
