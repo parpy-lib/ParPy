@@ -1,6 +1,8 @@
 from . import compile, key, parir
 from .compile import clear_cache
 from .operators import *
+from .parir import parallelize
+from .parir import CompileBackend, CompileOptions
 
 ir_asts = {}
 fun_cache = {}
@@ -49,56 +51,53 @@ def check_kwarg(kwargs, key, default_value, expected_ty):
     else:
         raise RuntimeError(f"The keyword argument {key} should be of type {ty}")
 
-def compile_function(ir_ast, args, kwargs, fn):
-    # Extract provided keyword arguments if available and ensure they have the
-    # correct types.
-    par = check_kwarg(kwargs, "parallelize", {}, dict)
-    cache = check_kwarg(kwargs, "cache", True, bool)
-    seq = check_kwarg(kwargs, "seq", False, bool)
-    debug = check_kwarg(kwargs, "debug", False, bool)
-    # Explicitly prevent caching if debug is enabled.
-    if debug:
-        cache = False
+def check_kwargs(kwargs):
+    default_opts = parir.CompileOptions()
+    opts = check_kwarg(kwargs, "opts", default_opts, type(default_opts))
 
-    # Any keyword arguments remaining after processing the known ones above are
-    # considered unknown.
+    # If the compiler is given any other keyword arguments than those specified
+    # above, it reports an error specifying which keyword arguments were not
+    # supported.
     if len(kwargs) > 0:
-        raise RuntimeError(f"Received unknown keyword arguments: {kwargs}")
+        raise RuntimeError(f"Received unsupported keyword arguments: {kwargs}")
 
+    return opts
+
+def compile_function(ir_ast, args, opts, fn):
     # If the user explicitly requests sequential execution by setting the 'seq'
     # keyword argument to True, we return the original Python function. This is
     # useful for debugging, as it avoids the need to remove the function
     # decorator.
-    if seq:
+    if opts.seq:
         return fn
 
     # If we recently generated a CUDA wrapper for this function, we do a quick
     # lookup based on the name and signature of the function to immediately
     # return the wrapper function.
-    quick_key = key.generate_quick_function_key(ir_ast, args, par)
-    if cache and quick_key in fun_cache:
+    quick_key = key.generate_quick_function_key(ir_ast, args, opts.parallelize)
+    if opts.cache and quick_key in fun_cache:
         return fun_cache[quick_key]
 
     # Compiles the IR AST using type information of the provided arguments and
     # the parallelization settings to determine how to generate parallel
     # low-level code.
     full_key = key.generate_function_key(quick_key)
-    if not cache or not compile.is_cached(full_key):
-        code = parir.compile_ir(ir_ast, args, par, debug)
-        compile.build_cuda_shared_library(full_key, code)
+    if not opts.cache or not compile.is_cached(full_key):
+        code = parir.compile_ir(ir_ast, args, opts)
+        compile.build_cuda_shared_library(full_key, code, opts)
 
     # Return a CUDA wrapper which ensures the arguments are passed correctly on
     # to the exposed shared library function.
-    wrap_fn = compile.get_cuda_wrapper(fn.__name__, full_key, cache)
+    wrap_fn = compile.get_cuda_wrapper(fn.__name__, full_key, opts.cache)
     fun_cache[quick_key] = wrap_fn
     return wrap_fn
 
-def compile_string(fun_name, code, includes=[], libs=[], extra_flags=[]):
+def compile_string(fun_name, code, opts=parir.CompileOptions()):
     k = "string_" + key.generate_code_key(code)
-    compile.build_cuda_shared_library(k, code, includes, libs, extra_flags)
+    compile.build_cuda_shared_library(k, code, opts)
     return compile.get_cuda_wrapper(fun_name, k, False)
 
-def print_compiled(fun, args, par=None, debug=False):
+def print_compiled(fun, args, opts=parir.CompileOptions()):
     """
     Compile the provided Python function with respect to the given function
     arguments and parallelization arguments. Returns the resulting CUDA C++
@@ -108,15 +107,13 @@ def print_compiled(fun, args, par=None, debug=False):
         ir_ast = ir_asts[fun]
     else:
         ir_ast = convert_python_function_to_ir(fun)
-    if par is None:
-        par = {}
-    return parir.compile_ir(ir_ast, args, par, debug)
+    return parir.compile_ir(ir_ast, args, opts)
 
 # Validate all arguments, ensuring that they have a supported type and that
 # all tensor data is contiguous and allocated on the GPU.
-def validate_arguments(args, kwargs):
-    seq = check_kwarg(kwargs, "seq", False, bool)
-    kwargs["seq"] = seq
+# TODO: This validation needs to be specialized to each target backend - the
+# current approach is specific to CUDA.
+def validate_arguments(args, opts):
     def check_arg(arg, i, in_dict):
         import torch
         if isinstance(arg, int) or isinstance(arg, float):
@@ -134,7 +131,7 @@ def validate_arguments(args, kwargs):
             # If we are to run the code sequentially (in the Python
             # interpreter), it doesn't matter where the tensors are
             # allocated or whether they are contiguous.
-            if seq:
+            if opts.seq:
                 return arg
             if arg.ndim > 0 and arg.get_device() != torch.cuda.current_device():
                 msg = [
@@ -165,8 +162,9 @@ def jit(fun):
     ir_ast = convert_python_function_to_ir(fun)
 
     def inner(*args, **kwargs):
-        args = validate_arguments(args, kwargs)
-        compile_function(ir_ast, args, kwargs, fun)(*args)
+        opts = check_kwargs(kwargs)
+        args = validate_arguments(args, opts)
+        compile_function(ir_ast, args, opts, fun)(*args)
     ir_asts[inner] = ir_ast
     inner.__name__ = fun.__name__
     return inner

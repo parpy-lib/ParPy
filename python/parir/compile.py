@@ -20,7 +20,7 @@ def is_cached(key):
     libpath = get_library_path(key)
     return os.path.isfile(libpath)
 
-def build_cuda_shared_library(key, source, includes=[], libs=[], extra_flags=[]):
+def build_cuda_shared_library(key, source, opts):
     libpath = get_library_path(key)
     if not torch.cuda.is_available():
         raise RuntimeError(f"Torch was not built with CUDA support")
@@ -37,13 +37,13 @@ def build_cuda_shared_library(key, source, includes=[], libs=[], extra_flags=[])
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
-        include_cmd = flatten([["-I", include] for include in includes])
-        lib_cmd = flatten([["-L", lib] for lib in libs])
+        include_cmd = flatten([["-I", include] for include in opts.includes])
+        lib_cmd = flatten([["-L", lib] for lib in opts.libs])
         commands = [
             "-O3", "--shared", "-Xcompiler", "-fPIC", f"-arch={arch}",
             "-x", "cu", f"{tmp.name}", "-o", f"{libpath}"
         ]
-        cmd = flatten([["nvcc"], extra_flags, include_cmd, lib_cmd, commands])
+        cmd = flatten([["nvcc"], opts.extra_flags, include_cmd, lib_cmd, commands])
         r = subprocess.run(cmd, capture_output=True)
         if r.returncode != 0:
             import uuid

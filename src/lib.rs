@@ -1,5 +1,6 @@
 mod cuda;
 mod ir;
+mod option;
 mod par;
 mod py;
 mod utils;
@@ -46,21 +47,20 @@ fn print_ir_ast<'py>(ir_ast_cap: Bound<'py, PyCapsule>) -> String {
 fn compile_ir<'py>(
     ir_ast_cap: Bound<'py, PyCapsule>,
     args: Vec<Bound<'py, PyAny>>,
-    par: BTreeMap<String, par::LoopPar>,
-    debug_flag: bool
+    opts: option::CompileOptions
 ) -> PyResult<String> {
     // Extract a reference to the untyped AST parsed earlier.
     let untyped_ir_def : &py::ast::FunDef = unsafe {
         ir_ast_cap.reference()
     };
 
-    let debug_env = utils::debug::init(debug_flag);
+    let debug_env = utils::debug::init(&opts);
     debug_env.print("Untyped Python-like AST", untyped_ir_def);
 
     // Specialize the Python-like AST based on the provided arguments, inferring the types of all
     // expressions and inlining scalar argument values directly into the AST.
     let py_ast = untyped_ir_def.clone();
-    let py_ast = py::specialize_ast_on_arguments(py_ast, args, &par, &debug_env)?;
+    let py_ast = py::specialize_ast_on_arguments(py_ast, args, &opts.parallelize, &debug_env)?;
     debug_env.print("Specialized Python-like AST", &py_ast);
 
     // Converts the Python-like AST to an IR by removing or simplifying concepts from Python. For
@@ -68,14 +68,17 @@ fn compile_ir<'py>(
     // * Inserts top-level struct definitions for each Python dictionary.
     // * Replaces uses of tuples for indexing with an integer expression.
     // * Adds the parallelization arguments directly to the AST.
-    let ir_ast = ir::from_python(py_ast, par, &debug_env)?;
+    let ir_ast = ir::from_python(py_ast, opts.parallelize, &debug_env)?;
     debug_env.print("IR AST", &ir_ast);
 
-    // Convert the IR AST to CUDA code, based on the parallel annotations on for-loops.
-    let ast = cuda::codegen(ir_ast, &debug_env)?;
-    debug_env.print("Target AST", &ast);
-
-    Ok(ast.pprint_default())
+    match opts.backend {
+        option::CompileBackend::Cuda => {
+            // Convert the IR AST to CUDA code, based on the parallel annotations on for-loops.
+            let ast = cuda::codegen(ir_ast, &debug_env)?;
+            debug_env.print("Target AST", &ast);
+            Ok(ast.pprint_default())
+        }
+    }
 }
 
 #[pymodule]
@@ -83,6 +86,9 @@ fn parir(m : &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(python_to_ir, m)?)?;
     m.add_function(wrap_pyfunction!(print_ir_ast, m)?)?;
     m.add_function(wrap_pyfunction!(compile_ir, m)?)?;
+    m.add_function(wrap_pyfunction!(option::parallelize, m)?)?;
     m.add_class::<par::LoopPar>()?;
+    m.add_class::<option::CompileBackend>()?;
+    m.add_class::<option::CompileOptions>()?;
     Ok(())
 }

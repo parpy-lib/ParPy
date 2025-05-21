@@ -1,24 +1,33 @@
+use crate::option::CompileOptions;
 use crate::utils::pprint::PrettyPrint;
 
 use std::time;
 
 pub struct DebugEnv {
-    debug: bool,
+    debug_perf: bool,
+    debug_print: bool,
     start: time::Instant
 }
 
 impl DebugEnv {
     pub fn print<T: PrettyPrint>(&self, msg: &str, ast: &T) {
-        if self.debug {
+        let bounds = "=".repeat(5);
+        if self.debug_perf {
             let now = time::Instant::now();
             let t = now.duration_since(self.start).as_micros();
-            let bounds = "=".repeat(5);
+            println!("{0} {msg} (time: {t} us)", bounds);
+        }
+        if self.debug_print {
             let ast = ast.pprint_default();
-            println!("{0} {msg} (time: {t} us) {0}\n{ast}", bounds);
+            println!("\n{ast}");
         }
     }
 }
 
-pub fn init(debug_flag: bool) -> DebugEnv {
-    DebugEnv {debug: debug_flag, start: time::Instant::now()}
+pub fn init(opts: &CompileOptions) -> DebugEnv {
+    DebugEnv {
+        debug_perf: opts.debug_perf,
+        debug_print: opts.debug_print,
+        start: time::Instant::now()
+    }
 }
