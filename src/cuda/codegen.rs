@@ -3,6 +3,7 @@ use super::free_vars;
 use super::par::{GpuMap, GpuMapping};
 use super::pprint;
 use crate::parir_compile_error;
+use crate::gpu::ast as gpu_ast;
 use crate::ir::ast as ir_ast;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -751,4 +752,8 @@ pub fn from_ir(
     tops.append(&mut structs);
     tops.append(&mut from_ir_fun_def(env, ast.fun)?);
     Ok(tops)
+}
+
+pub fn from_gpu_ir(ast: gpu_ast::Ast) -> CompileResult<Ast> {
+    todo!()
 }

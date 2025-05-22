@@ -2,20 +2,34 @@ use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::smap::{SFold, SMapAccum};
 
-// Re-use nodes from the GPU IR AST.
-pub use crate::gpu::ast::ElemSize;
-pub use crate::gpu::ast::UnOp;
-pub use crate::gpu::ast::BinOp;
-pub use crate::gpu::ast::Dim;
-pub use crate::gpu::ast::Dim3;
-pub use crate::gpu::ast::LaunchArgs;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MemSpace {
+    // Global memory on the device (GPU)
+    Device,
+
+    // Memory shared among threads of a thread-block (CUDA terminology)
+    Shared,
+
+    // Memory allocated on the host (CPU)
+    Host,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Dim {
+    X, Y, Z
+}
+
+// Reuse definitions from the IR AST.
+pub use crate::ir::ast::ElemSize;
+pub use crate::ir::ast::UnOp;
+pub use crate::ir::ast::BinOp;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Void,
     Boolean,
     Scalar {sz: ElemSize},
-    Pointer {ty: Box<Type>},
+    Pointer {ty: Box<Type>, mem: MemSpace},
     Struct {id: Name},
 }
 
@@ -36,14 +50,17 @@ pub enum Expr {
     Float {v: f64, ty: Type, i: Info},
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
-    Ternary {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
+    IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
-    Struct {id: Name, fields: Vec<(String, Expr)>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 
-    // CUDA-specific nodes
-    ShflXorSync {value: Box<Expr>, idx: Box<Expr>, ty : Type, i: Info},
+    // Represents a warp-level reduction, whose exact implementation is determined by the selected
+    // GPU backend.
+    WarpReduce {value: Box<Expr>, op: BinOp, ty: Type, i: Info},
+
+    // Expressions referring to the thread index and thread block index of an executing thread, in
+    // either of the three dimensions.
     ThreadIdx {dim: Dim, ty: Type, i: Info},
     BlockIdx {dim: Dim, ty: Type, i: Info},
 }
@@ -57,12 +74,11 @@ impl Expr {
             Expr::Float {ty, ..} => ty,
             Expr::UnOp {ty, ..} => ty,
             Expr::BinOp {ty, ..} => ty,
-            Expr::Ternary {ty, ..} => ty,
+            Expr::IfExpr {ty, ..} => ty,
             Expr::StructFieldAccess {ty, ..} => ty,
             Expr::ArrayAccess {ty, ..} => ty,
-            Expr::Struct {ty, ..} => ty,
             Expr::Convert {ty, ..} => ty,
-            Expr::ShflXorSync {ty, ..} => ty,
+            Expr::WarpReduce {ty, ..} => ty,
             Expr::ThreadIdx {ty, ..} => ty,
             Expr::BlockIdx {ty, ..} => ty,
         }
@@ -87,12 +103,11 @@ impl InfoNode for Expr {
             Expr::Float {i, ..} => i.clone(),
             Expr::UnOp {i, ..} => i.clone(),
             Expr::BinOp {i, ..} => i.clone(),
-            Expr::Ternary {i, ..} => i.clone(),
+            Expr::IfExpr {i, ..} => i.clone(),
             Expr::StructFieldAccess {i, ..} => i.clone(),
             Expr::ArrayAccess {i, ..} => i.clone(),
-            Expr::Struct {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
-            Expr::ShflXorSync {i, ..} => i.clone(),
+            Expr::WarpReduce {i, ..} => i.clone(),
             Expr::ThreadIdx {i, ..} => i.clone(),
             Expr::BlockIdx {i, ..} => i.clone(),
         }
@@ -112,8 +127,8 @@ impl PartialEq for Expr {
             ( Expr::BinOp {lhs: llhs, op: lop, rhs: lrhs, ..}
             , Expr::BinOp {lhs: rlhs, op: rop, rhs: rrhs, ..} ) =>
                 llhs.eq(rlhs) && lop.eq(rop) && lrhs.eq(rrhs),
-            ( Expr::Ternary {cond: lcond, thn: lthn, els: lels, ..}
-            , Expr::Ternary {cond: rcond, thn: rthn, els: rels, ..} ) =>
+            ( Expr::IfExpr {cond: lcond, thn: lthn, els: lels, ..}
+            , Expr::IfExpr {cond: rcond, thn: rthn, els: rels, ..} ) =>
                 lcond.eq(rcond) && lthn.eq(rthn) && lels.eq(rels),
             ( Expr::StructFieldAccess {target: ltarget, label: llabel, ..}
             , Expr::StructFieldAccess {target: rtarget, label: rlabel, ..} ) =>
@@ -121,14 +136,10 @@ impl PartialEq for Expr {
             ( Expr::ArrayAccess {target: ltarget, idx: lidx, ..}
             , Expr::ArrayAccess {target: rtarget, idx: ridx, ..} ) =>
                 ltarget.eq(rtarget) && lidx.eq(ridx),
-            ( Expr::Struct {id: lid, fields: lfields, ..}
-            , Expr::Struct {id: rid, fields: rfields, ..} ) =>
-                lid.eq(rid) && lfields.eq(rfields),
             (Expr::Convert {e: le, ..}, Expr::Convert {e: re, ..}) => le.eq(re),
-            ( Expr::ShflXorSync {value: lval, idx: lidx, ..}
-            , Expr::ShflXorSync {value: rval, idx: ridx, ..} ) => {
-                lval.eq(rval) && lidx.eq(ridx)
-            },
+            ( Expr::WarpReduce {value: lv, op: lop, ..}
+            , Expr::WarpReduce {value: rv, op: rop, ..} ) =>
+                lv.eq(rv) && lop.eq(rop),
             (Expr::ThreadIdx {dim: ldim, ..}, Expr::ThreadIdx {dim: rdim, ..}) =>
                 ldim.eq(rdim),
             (Expr::BlockIdx {dim: ldim, ..}, Expr::BlockIdx {dim: rdim, ..}) =>
@@ -156,11 +167,11 @@ impl SMapAccum<Expr> for Expr {
                     lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i
                 }))
             },
-            Expr::Ternary {cond, thn, els, ty, i} => {
+            Expr::IfExpr {cond, thn, els, ty, i} => {
                 let (acc, cond) = f(acc?, *cond)?;
                 let (acc, thn) = f(acc, *thn)?;
                 let (acc, els) = f(acc, *els)?;
-                Ok((acc, Expr::Ternary {
+                Ok((acc, Expr::IfExpr {
                     cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
                 }))
             },
@@ -177,20 +188,13 @@ impl SMapAccum<Expr> for Expr {
                     target: Box::new(target), idx: Box::new(idx), ty, i
                 }))
             },
-            Expr::Struct {id, fields, ty, i} => {
-                let (acc, fields) = fields.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Expr::Struct {id, fields, ty, i}))
-            },
             Expr::Convert {e, ty} => {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
             },
-            Expr::ShflXorSync {value, idx, ty, i} => {
+            Expr::WarpReduce {value, op, ty, i} => {
                 let (acc, value) = f(acc?, *value)?;
-                let (acc, idx) = f(acc, *idx)?;
-                Ok((acc, Expr::ShflXorSync {
-                    value: Box::new(value), idx: Box::new(idx), ty, i
-                }))
+                Ok((acc, Expr::WarpReduce {value: Box::new(value), op, ty, i}))
             },
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
             Expr::ThreadIdx {..} | Expr::BlockIdx {..} => Ok((acc?, self)),
@@ -207,35 +211,102 @@ impl SFold<Expr> for Expr {
         match self {
             Expr::UnOp {arg, ..} => f(acc?, arg),
             Expr::BinOp {lhs, rhs, ..} => f(f(acc?, lhs)?, rhs),
-            Expr::Ternary {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
+            Expr::IfExpr {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
             Expr::StructFieldAccess {target, ..} => f(acc?, target),
             Expr::ArrayAccess {target, idx, ..} => f(f(acc?, target)?, idx),
-            Expr::Struct {fields, ..} => fields.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
-            Expr::ShflXorSync {value, idx, ..} => f(f(acc?, value)?, idx),
+            Expr::WarpReduce {value, ..} => f(acc?, value),
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => acc,
         }
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Dim3 {
+    pub x: i64,
+    pub y: i64,
+    pub z: i64,
+}
+
+impl Dim3 {
+    pub fn get_dim(&self, dim: &Dim) -> i64 {
+        match dim {
+            Dim::X => self.x,
+            Dim::Y => self.y,
+            Dim::Z => self.z,
+        }
+    }
+
+    pub fn with_dim(self, dim: &Dim, n: i64) -> Dim3 {
+        match dim {
+            Dim::X => Dim3 {x: n, ..self},
+            Dim::Y => Dim3 {y: n, ..self},
+            Dim::Z => Dim3 {z: n, ..self},
+        }
+    }
+
+    pub fn prod(&self) -> i64 {
+        self.x * self.y * self.z
+    }
+}
+
+impl Default for Dim3 {
+    fn default() -> Self {
+        Dim3 {x: 1, y: 1, z: 1}
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
+pub struct LaunchArgs {
+    pub blocks: Dim3,
+    pub threads: Dim3
+}
+
+impl LaunchArgs {
+    pub fn with_blocks_dim(mut self, dim: &Dim, n: i64) -> Self {
+        self.blocks = self.blocks.with_dim(dim, n);
+        self
+    }
+
+    pub fn with_threads_dim(mut self, dim: &Dim, n: i64) -> Self {
+        self.threads = self.threads.with_dim(dim, n);
+        self
+    }
+}
+
+impl Default for LaunchArgs {
+    fn default() -> Self {
+        LaunchArgs {blocks: Dim3::default(), threads: Dim3::default()}
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr},
     Assign {dst: Expr, expr: Expr},
-    AllocShared {ty: Type, id: Name, sz: i64},
     For {
         var_ty: Type, var: Name, init: Expr, cond: Expr,
         incr: Expr, body: Vec<Stmt>
     },
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>},
     While {cond: Expr, body: Vec<Stmt>},
-    Syncthreads {},
-    Dim3Definition {id: Name, args: Dim3},
-    KernelLaunch {id: Name, blocks: Name, threads: Name, args: Vec<Expr>},
-    MallocAsync {id: Name, elem_ty: Type, sz: usize},
-    FreeAsync {id: Name},
     Scope {body: Vec<Stmt>},
+
+    // Synchronization among all threads of the same thread block, ensuring all writes to memory
+    // are completed before continuing.
+    SynchronizeBlock {},
+
+    // Represents the launch of a kernel with a specified name invoked with the provided vector of
+    // arguments and the specified launch arguments, controlling the number of blocks and threads
+    // of the executing grid.
+    KernelLaunch {id: Name, args: Vec<Expr>, grid: LaunchArgs},
+
+    // Allocation of memory in the specified memory space.
+    Alloc {id: Name, elem_ty: Type, sz: usize, mem: MemSpace},
+
+    // Deallocation of memory previously allocated in the specified memory space.
+    Dealloc {id: Name, mem: MemSpace},
 }
 
 impl SMapAccum<Expr> for Stmt {
@@ -268,13 +339,12 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, cond) = f(acc?, cond)?;
                 Ok((acc, Stmt::While {cond, body}))
             },
-            Stmt::KernelLaunch {id, blocks, threads, args} => {
+            Stmt::KernelLaunch {id, args, grid} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Stmt::KernelLaunch {id, blocks, threads, args}))
+                Ok((acc, Stmt::KernelLaunch {id, args, grid}))
             },
-            Stmt::AllocShared {..} | Stmt::Syncthreads {..} |
-            Stmt::Dim3Definition {..} | Stmt::MallocAsync {..} |
-            Stmt::FreeAsync {..} | Stmt::Scope {..} => Ok((acc?, self)),
+            Stmt::Scope {..} | Stmt::SynchronizeBlock {} |
+            Stmt::Alloc {..} | Stmt::Dealloc {..} => Ok((acc?, self)),
         }
     }
 }
@@ -292,9 +362,8 @@ impl SFold<Expr> for Stmt {
             Stmt::If {cond, ..} => f(acc?, cond),
             Stmt::While {cond, ..} => f(acc?, cond),
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
-            Stmt::AllocShared {..} | Stmt::Syncthreads {} |
-            Stmt::Dim3Definition {..} | Stmt::MallocAsync {..} |
-            Stmt::FreeAsync {..} | Stmt::Scope {..} => acc,
+            Stmt::Scope {..} | Stmt::SynchronizeBlock {} |
+            Stmt::Alloc {..} | Stmt::Dealloc {..} => acc,
         }
     }
 }
@@ -323,10 +392,9 @@ impl SMapAccum<Stmt> for Stmt {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::Scope {body}))
             },
-            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
-            Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
-            Stmt::MallocAsync {..} | Stmt::FreeAsync {..} |
-            Stmt::KernelLaunch {..} => Ok((acc?, self))
+            Stmt::Definition {..} | Stmt::Assign {..} |
+            Stmt::SynchronizeBlock {} | Stmt::KernelLaunch {..} |
+            Stmt::Alloc {..} | Stmt::Dealloc {..} => Ok((acc?, self)),
         }
     }
 }
@@ -342,41 +410,24 @@ impl SFold<Stmt> for Stmt {
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
             Stmt::Scope {body} => body.sfold_result(acc, &f),
-            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
-            Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
-            Stmt::MallocAsync {..} | Stmt::FreeAsync {..} |
-            Stmt::KernelLaunch {..} => acc,
+            Stmt::Definition {..} | Stmt::Assign {..} |
+            Stmt::SynchronizeBlock {} | Stmt::KernelLaunch {..} |
+            Stmt::Alloc {..} | Stmt::Dealloc {..} => acc,
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Attribute {
-    Global, Entry
-}
-
-#[derive(Clone, Debug)]
-pub struct Field {
-    pub ty: Type,
-    pub id: String,
-    pub i: Info
 }
 
 #[derive(Clone, Debug)]
 pub struct Param {
     pub id: Name,
     pub ty: Type,
-    pub i: Info
+    pub i: Info,
 }
 
 #[derive(Clone, Debug)]
 pub enum Top {
-    Include {header: String},
-    StructDef {id: Name, fields: Vec<Field>},
-    FunDef {
-        attr: Attribute, ret_ty: Type, bounds_attr: Option<i64>,
-        id: Name, params: Vec<Param>, body: Vec<Stmt>
-    },
+    DeviceFunDef {maxthreads: i64, id: Name, params: Vec<Param>, body: Vec<Stmt>},
+    HostFunDef {ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>}
 }
 
 impl SMapAccum<Stmt> for Top {
@@ -386,11 +437,14 @@ impl SMapAccum<Stmt> for Top {
         f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
     ) -> Result<(A, Self), E> {
         match self {
-            Top::Include {..} | Top::StructDef {..} => Ok((acc?, self)),
-            Top::FunDef {attr, ret_ty, bounds_attr, id, params, body} => {
+            Top::DeviceFunDef {maxthreads, id, params, body} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Top::FunDef {attr, ret_ty, bounds_attr, id, params, body}))
+                Ok((acc, Top::DeviceFunDef {maxthreads, id, params, body}))
             },
+            Top::HostFunDef {ret_ty, id, params, body} => {
+                let (acc, body) = body.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Top::HostFunDef {ret_ty, id, params, body}))
+            }
         }
     }
 }

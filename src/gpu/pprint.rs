@@ -7,15 +7,67 @@ use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
+impl PrettyPrint for ElemSize {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let s = match self {
+            ElemSize::Bool => "bool",
+            ElemSize::I8 => "int8_t",
+            ElemSize::I16 => "int16_t",
+            ElemSize::I32 => "int32_t",
+            ElemSize::I64 => "int64_t",
+            ElemSize::F16 => "half",
+            ElemSize::F32 => "float",
+            ElemSize::F64 => "double",
+        };
+        (env, s.to_string())
+    }
+}
+
+impl<T: PrettyPrint> PrettyPrint for BTreeMap<String, T> {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let (env, s) = self.iter()
+            .fold((env, vec![]), |(env, mut strs), (id, v)| {
+                let (env, s) = v.pprint(env);
+                let s = format!("{0}: {1}", id, s);
+                strs.push(s);
+                (env, strs)
+            });
+        (env, s.into_iter().join(", "))
+    }
+}
+
+impl PrettyPrint for MemSpace {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let s = match self {
+            MemSpace::Device => "device",
+            MemSpace::Shared => "shared",
+            MemSpace::Host => "host",
+        };
+        (env, s.to_string())
+    }
+}
+
+impl PrettyPrint for Dim {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let s = match self {
+            Dim::X => "x",
+            Dim::Y => "y",
+            Dim::Z => "z",
+        };
+        (env, s.to_string())
+    }
+}
+
 impl PrettyPrint for Type {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
             Type::Void => (env, "void".to_string()),
             Type::Boolean => (env, "bool".to_string()),
             Type::Scalar {sz} => sz.pprint(env),
-            Type::Pointer {ty} => {
+            Type::Pointer {ty, mem} => {
                 let (env, ty) = ty.pprint(env);
-                (env, format!("{ty}*"))
+                let (env, mem) = mem.pprint(env);
+                (env, format!("{mem} {ty}*"))
             },
             Type::Struct {id, ..} => {
                 let (env, id) = id.pprint(env);
@@ -241,7 +293,7 @@ impl PrettyPrint for Expr {
                     (env, format!("{op_str}({lhs_str}, {rhs_str})"))
                 }
             },
-            Expr::Ternary {cond, thn, els, ..} => {
+            Expr::IfExpr {cond, thn, els, ..} => {
                 let (env, cond) = cond.pprint(env);
                 let (env, thn) = thn.pprint(env);
                 let (env, els) = els.pprint(env);
@@ -256,21 +308,6 @@ impl PrettyPrint for Expr {
                 let (env, idx) = idx.pprint(env);
                 (env, format!("{target}[{idx}]"))
             },
-            Expr::Struct {id, fields, ..} => {
-                let (env, id) = id.pprint(env);
-                let (env, fields) = fields.iter()
-                    .fold((env, vec![]), |(env, mut strs), (id, e)| {
-                        let (env, e) = e.pprint(env);
-                        strs.push(format!("{id}: {e}"));
-                        (env, strs)
-                    });
-                let outer_indent = env.print_indent();
-                let env = env.incr_indent();
-                let indent = env.print_indent();
-                let fields = fields.into_iter().join(&format!(",\n{indent}"));
-                let env = env.decr_indent();
-                (env, format!("{id} {{\n{indent}{fields}\n{outer_indent}}}"))
-            },
             Expr::Convert {e, ty} => {
                 let (env, e_str) = e.pprint(env);
                 let (env, ty) = ty.pprint(env);
@@ -281,10 +318,10 @@ impl PrettyPrint for Expr {
                 };
                 (env, s)
             },
-            Expr::ShflXorSync {value, idx, ..} => {
+            Expr::WarpReduce {value, op, ..} => {
                 let (env, value) = value.pprint(env);
-                let (env, idx) = idx.pprint(env);
-                (env, format!("__shfl_xor_sync(0xFFFFFFFF, {value}, {idx})"))
+                let (env, op) = op.pprint(env);
+                (env, format!("warp_reduce({value}, {op})"))
             },
             Expr::ThreadIdx {dim, ..} => {
                 let (env, dim) = dim.pprint(env);
@@ -295,6 +332,23 @@ impl PrettyPrint for Expr {
                 (env, format!("blockIdx.{dim}"))
             },
         }
+    }
+}
+
+impl PrettyPrint for Dim3 {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let Dim3 {x, y, z} = self;
+        (env, format!("{x}, {y}, {z}"))
+    }
+}
+
+impl PrettyPrint for LaunchArgs {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let LaunchArgs {blocks, threads} = self;
+        let (env, blocks) = blocks.pprint(env);
+        let (env, threads) = threads.pprint(env);
+        let indent = env.print_indent();
+        (env, format!("{indent}{{blocks: ({blocks}), threads: ({threads})}};"))
     }
 }
 
@@ -312,11 +366,6 @@ impl PrettyPrint for Stmt {
                 let (env, dst) = dst.pprint(env);
                 let (env, expr) = expr.pprint(env);
                 (env, format!("{indent}{dst} = {expr};"))
-            },
-            Stmt::AllocShared {ty, id, sz} => {
-                let (env, ty) = ty.pprint(env);
-                let (env, id) = id.pprint(env);
-                (env, format!("{indent}__shared__ {ty} {id}[{sz}];"))
             },
             Stmt::For {var_ty, var, init, cond, incr, body} => {
                 let (env, var_ty) = var_ty.pprint(env);
@@ -376,56 +425,28 @@ impl PrettyPrint for Stmt {
                 let s = format!("{0}while ({1}) {{\n{2}\n{0}}}", indent, cond, body);
                 (env, s)
             },
-            Stmt::Syncthreads {} => {
-                (env, format!("{indent}__syncthreads();"))
-            },
-            Stmt::Dim3Definition {id, args} => {
-                let (env, id) = id.pprint(env);
-                let (env, args) = args.pprint(env);
-                (env, format!("{indent}dim3 {id}({args});"))
-            },
-            Stmt::KernelLaunch {id, blocks, threads, args} => {
-                let (env, id) = id.pprint(env);
-                let (env, blocks) = blocks.pprint(env);
-                let (env, threads) = threads.pprint(env);
-                let (env, args) = pprint_iter(args.iter(), env, ", ");
-                (env, format!("{indent}{id}<<<{blocks}, {threads}>>>({args});"))
-            },
-            Stmt::MallocAsync {id, elem_ty, sz} => {
-                let (env, id) = id.pprint(env);
-                let (env, elem_ty) = elem_ty.pprint(env);
-                (env, format!("{indent}cudaMallocAsync(&{id}, {sz} * sizeof({elem_ty}), 0);"))
-            },
-            Stmt::FreeAsync {id} => {
-                let (env, id) = id.pprint(env);
-                (env, format!("{indent}cudaFreeAsync({id}, 0);"))
-            },
             Stmt::Scope {body} => {
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
                 (env, format!("{0}{{\n{1}\n{0}}}", indent, body))
             },
+            Stmt::SynchronizeBlock {} => {
+                (env, format!("{indent}sync_block();"))
+            },
+            Stmt::KernelLaunch {id, args, grid} => {
+                let (env, id) = id.pprint(env);
+                let (env, args) = pprint_iter(args.iter(), env, ", ");
+                let (env, grid) = grid.pprint(env);
+                (env, format!("{indent}launch({id}, [{args}], {grid})"))
+            },
+            Stmt::Alloc {id, elem_ty, sz, mem} => {
+                todo!()
+            },
+            Stmt::Dealloc {id, mem} => {
+                todo!()
+            },
         }
-    }
-}
-
-impl PrettyPrint for Attribute {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let s = match self {
-            Attribute::Global => "__global__",
-            Attribute::Entry => "extern \"C\"",
-        };
-        (env, s.to_string())
-    }
-}
-
-impl PrettyPrint for Field {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Field {id, ty, ..} = self;
-        let (env, ty) = ty.pprint(env);
-        let indent = env.print_indent();
-        (env, format!("{indent}{ty} {id};"))
     }
 }
 
@@ -446,29 +467,22 @@ impl PrettyPrint for Param {
 impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
-            Top::Include {header} => {
-                (env, format!("#include {header}"))
-            },
-            Top::StructDef {id, fields, ..} => {
-                let (env, id) = id.pprint(env);
-                let env = env.incr_indent();
-                let (env, fields) = pprint_iter(fields.iter(), env, "\n");
-                let env = env.decr_indent();
-                (env, format!("struct {id} {{\n{fields}\n}};"))
-            },
-            Top::FunDef {attr, ret_ty, bounds_attr, id, params, body, ..} => {
-                let (env, attr) = attr.pprint(env);
-                let (env, ret_ty) = ret_ty.pprint(env);
-                let bounds_annot = match bounds_attr {
-                    Some(tpb) => format!("\n__launch_bounds__({tpb})\n"),
-                    None => " ".to_string()
-                };
+            Top::DeviceFunDef {maxthreads, id, params, body} => {
                 let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("{attr}\n{ret_ty}{bounds_annot}{id}({params}) {{\n{body}\n}}"))
+                (env, format!("maxthreads({maxthreads})\nvoid {id}({params}) {{\n{body}\n}}"))
+            },
+            Top::HostFunDef {ret_ty, id, params, body} => {
+                let (env, ret_ty) = ret_ty.pprint(env);
+                let (env, id) = id.pprint(env);
+                let (env, params) = pprint_iter(params.iter(), env, ", ");
+                let env = env.incr_indent();
+                let (env, body) = pprint_iter(body.iter(), env, "\n");
+                let env = env.decr_indent();
+                (env, format!("{ret_ty} {id}({params}) {{\n{body}\n}}"))
             },
         }
     }
@@ -623,21 +637,6 @@ mod test {
         assert_eq!(&s, "max(x, y)");
     }
 
-    #[test]
-    fn pprint_struct_literal() {
-        let s = Expr::Struct {
-            id: Name::sym_str("id"),
-            fields: vec![
-                ("x".to_string(), int(5)),
-                ("y".to_string(), int(25)),
-                ("z".to_string(), var("q"))
-            ],
-            ty: Type::Struct {id: Name::sym_str("ty")},
-            i: Info::default()
-        };
-        assert_eq!(&s.pprint_default(), "id {\n  x: 5,\n  y: 25,\n  z: q\n}");
-    }
-
     fn convert(e: Expr, ty: Type) -> Expr {
         Expr::Convert {e: Box::new(e), ty}
     }
@@ -661,9 +660,21 @@ mod test {
     }
 
     #[test]
-    fn pprint_syncthreads() {
-        let s = Stmt::Syncthreads {}.pprint_default();
-        assert_eq!(&s, "__syncthreads();");
+    fn pprint_launch_args() {
+        let args = LaunchArgs::default()
+            .with_blocks_dim(&Dim::Y, 2)
+            .with_blocks_dim(&Dim::Z, 3)
+            .with_threads_dim(&Dim::X, 4)
+            .with_threads_dim(&Dim::Y, 5)
+            .with_threads_dim(&Dim::Z, 6);
+        let s = args.pprint_default();
+        assert_eq!(&s, "{blocks: (1, 2, 3), threads: (4, 5, 6)};");
+    }
+
+    #[test]
+    fn pprint_syncblock() {
+        let s = Stmt::SynchronizeBlock {}.pprint_default();
+        assert_eq!(&s, "sync_block();");
     }
 
     #[test]
@@ -758,68 +769,36 @@ mod test {
         let id = "kernel";
         let kernel = Stmt::KernelLaunch {
             id: Name::new(id.to_string()),
-            blocks: Name::new("blocks".to_string()),
-            threads: Name::new("threads".to_string()),
             args: vec![var("x"), var("y")],
+            grid: LaunchArgs::default()
         };
-        let expected = format!("{id}<<<blocks, threads>>>(x, y);");
+        let grid_str = LaunchArgs::default().pprint_default();
+        let expected = format!("launch({id}, [x, y], {grid_str})");
         assert_eq!(kernel.pprint_default(), expected);
     }
 
     #[test]
-    fn pprint_struct_def() {
-        let def = Top::StructDef {
-            id: Name::new("point".to_string()),
-            fields: vec![
-                Field {id: "x".to_string(), ty: scalar_ty(ElemSize::F32), i: Info::default()},
-                Field {id: "y".to_string(), ty: scalar_ty(ElemSize::F32), i: Info::default()},
-            ]
-        };
-        let indent = " ".repeat(pprint::DEFAULT_INDENT);
-        let expected = format!(
-            "struct point {{\n{0}float x;\n{0}float y;\n}};", indent
-        );
-        assert_eq!(def.pprint_default(), expected)
-    }
-
-    #[test]
-    fn pprint_attributes() {
-        assert_eq!(Attribute::Global.pprint_default(), "__global__");
-        assert_eq!(Attribute::Entry.pprint_default(), "extern \"C\"");
-    }
-
-    #[test]
-    fn pprint_fun_def() {
-        let def = Top::FunDef {
-            ret_ty: Type::Void,
-            attr: Attribute::Entry,
-            bounds_attr: None,
+    fn pprint_device_fun_def() {
+        let def = Top::DeviceFunDef {
+            maxthreads: 1024,
             id: Name::new("f".to_string()),
             params: vec![],
-            body: vec![
-                Stmt::Assign {dst: var("x"), expr: var("y")}
-            ]
+            body: vec![Stmt::Assign {dst: var("x"), expr: var("y")}]
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
-        let expected = format!("extern \"C\"\nvoid f() {{\n{0}x = y;\n}}", indent);
-        assert_eq!(def.pprint_default(), expected);
+        let expected = format!("void f() {{\n{0}x = y;\n}}", indent);
     }
 
     #[test]
-    fn pprint_cuda_kernel() {
-        let def = Top::FunDef {
+    fn pprint_host_fun_def() {
+        let def = Top::HostFunDef {
             ret_ty: Type::Void,
-            attr: Attribute::Global,
-            bounds_attr: Some(256),
             id: Name::new("f".to_string()),
             params: vec![],
-            body: vec![
-                Stmt::Assign {dst: var("x"), expr: var("y")}
-            ]
+            body: vec![Stmt::Assign {dst: var("x"), expr: var("y")}]
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
-        let expected = format!("__global__\nvoid\n__launch_bounds__(256)\nf() {{\n{0}x = y;\n}}", indent);
-        assert_eq!(def.pprint_default(), expected);
+        let expected = format!("void f() {{\n{0}x = y;\n}}", indent);
     }
 }
 

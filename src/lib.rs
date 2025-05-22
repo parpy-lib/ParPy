@@ -1,4 +1,5 @@
 mod cuda;
+mod gpu;
 mod ir;
 mod option;
 mod par;
@@ -75,7 +76,7 @@ fn compile_ir<'py>(
         option::CompileBackend::Cuda => {
             // Convert the IR AST to CUDA code, based on the parallel annotations on for-loops.
             let ast = cuda::codegen(ir_ast, &debug_env)?;
-            debug_env.print("Target AST", &ast);
+            debug_env.print("CUDA AST", &ast);
             Ok(ast.pprint_default())
         }
     }
