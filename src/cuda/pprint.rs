@@ -5,7 +5,6 @@ use itertools::Itertools;
 
 use std::borrow::Borrow;
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
 
 impl PrettyPrint for Type {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
@@ -379,17 +378,12 @@ impl PrettyPrint for Stmt {
             Stmt::Syncthreads {} => {
                 (env, format!("{indent}__syncthreads();"))
             },
-            Stmt::Dim3Definition {id, args} => {
-                let (env, id) = id.pprint(env);
-                let (env, args) = args.pprint(env);
-                (env, format!("{indent}dim3 {id}({args});"))
-            },
             Stmt::KernelLaunch {id, blocks, threads, args} => {
                 let (env, id) = id.pprint(env);
                 let (env, blocks) = blocks.pprint(env);
                 let (env, threads) = threads.pprint(env);
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
-                (env, format!("{indent}{id}<<<{blocks}, {threads}>>>({args});"))
+                (env, format!("{indent}{id}<<<dim3({blocks}), dim3({threads})>>>({args});"))
             },
             Stmt::MallocAsync {id, elem_ty, sz} => {
                 let (env, id) = id.pprint(env);
@@ -399,13 +393,7 @@ impl PrettyPrint for Stmt {
             Stmt::FreeAsync {id} => {
                 let (env, id) = id.pprint(env);
                 (env, format!("{indent}cudaFreeAsync({id}, 0);"))
-            },
-            Stmt::Scope {body} => {
-                let env = env.incr_indent();
-                let (env, body) = pprint_iter(body.iter(), env, "\n");
-                let env = env.decr_indent();
-                (env, format!("{0}{{\n{1}\n{0}}}", indent, body))
-            },
+            }
         }
     }
 }
@@ -758,11 +746,15 @@ mod test {
         let id = "kernel";
         let kernel = Stmt::KernelLaunch {
             id: Name::new(id.to_string()),
-            blocks: Name::new("blocks".to_string()),
-            threads: Name::new("threads".to_string()),
+            blocks: Dim3::default()
+                .with_dim(&Dim::X, 4)
+                .with_dim(&Dim::Z, 2),
+            threads: Dim3::default()
+                .with_dim(&Dim::Y, 6)
+                .with_dim(&Dim::Z, 7),
             args: vec![var("x"), var("y")],
         };
-        let expected = format!("{id}<<<blocks, threads>>>(x, y);");
+        let expected = format!("{id}<<<dim3(4, 1, 2), dim3(1, 6, 7)>>>(x, y);");
         assert_eq!(kernel.pprint_default(), expected);
     }
 
@@ -771,8 +763,8 @@ mod test {
         let def = Top::StructDef {
             id: Name::new("point".to_string()),
             fields: vec![
-                Field {id: "x".to_string(), ty: scalar_ty(ElemSize::F32), i: Info::default()},
-                Field {id: "y".to_string(), ty: scalar_ty(ElemSize::F32), i: Info::default()},
+                Field {id: "x".to_string(), ty: scalar_ty(ElemSize::F32)},
+                Field {id: "y".to_string(), ty: scalar_ty(ElemSize::F32)},
             ]
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);

@@ -43,8 +43,8 @@ fn fv_stmt(mut env: FVEnv, s: &Stmt) -> FVEnv {
             env
         },
         Stmt::For {var, init, cond, incr, body, ..} => {
-            env.bound.insert(var.clone(), init.get_type().clone());
             let env = fv_expr(env, init);
+            env.bound.insert(var.clone(), init.get_type().clone());
             let env = fv_expr(env, cond);
             let env = fv_expr(env, incr);
             body.iter().fold(env, fv_stmt)

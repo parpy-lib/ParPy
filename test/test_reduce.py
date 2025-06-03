@@ -170,7 +170,7 @@ def test_reduction_compiles(fn):
     p = {'outer': parir.threads(N)}
     s1 = parir.print_compiled(fn, [x, out, N], par_opts(p))
     if not fn in multi_dim_reduce_funs:
-        pat = r"dim3 threads\(128, 1, 1\);.*dim3 blocks\(1, 1, 1\);"
+        pat = r".*<<<dim3\(1, 1, 1\), dim3\(128, 1, 1\)>>>\(.*\);"
         assert re.search(pat, s1, re.DOTALL) is not None
     else:
         assert len(s1) != 0
@@ -181,7 +181,7 @@ def test_reduction_compiles(fn):
     }
     s2 = parir.print_compiled(fn, [x, out, N], par_opts(p))
     if not fn in multi_dim_reduce_funs:
-        pat = r"dim3 threads\(128, 1, 1\);.*dim3 blocks\(1, 100, 1\);"
+        pat = r".*<<<dim3\(1, 100, 1\), dim3\(128, 1, 1\)>>>\(.*\);"
         assert re.search(pat, s2, re.DOTALL) is not None
     else:
         assert len(s2) != 0
@@ -192,8 +192,7 @@ def test_reduction_compiles(fn):
     }
     s3 = parir.print_compiled(fn, [x, out, N], par_opts(p))
     if not fn in multi_dim_reduce_funs:
-        pat = r"dim3 threads\(128, 1, 1\);.*dim3 blocks\(1, 8, 100\);"
-        print(s3)
+        pat = r".*<<<dim3\(1, 8, 100\), dim3\(128, 1, 1\)>>>\(.*\);"
         assert re.search(pat, s3, re.DOTALL) is not None
     else:
         assert len(s3) != 0

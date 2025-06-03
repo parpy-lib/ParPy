@@ -23,7 +23,10 @@ fn fv_expr(mut env: FVEnv, e: &Expr) -> FVEnv {
             };
             env
         },
-        _ => todo!()
+        Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} | Expr::UnOp {..} |
+        Expr::BinOp {..} | Expr::IfExpr {..} | Expr::StructFieldAccess {..} |
+        Expr::ArrayAccess {..} | Expr::Convert {..} | Expr::Struct {..} |
+        Expr::ThreadIdx {..} | Expr::BlockIdx {..} => e.sfold(env, fv_expr)
     }
 }
 
@@ -34,7 +37,23 @@ fn fv_stmt(mut env: FVEnv, s: &Stmt) -> FVEnv {
             env.bound.insert(id.clone(), expr.get_type().clone());
             env
         },
-        _ => todo!()
+        Stmt::For {var, init, cond, incr, body, ..} => {
+            let mut env = fv_expr(env, init);
+            env.bound.insert(var.clone(), init.get_type().clone());
+            let env = fv_expr(env, cond);
+            let env = fv_expr(env, incr);
+            body.iter().fold(env, fv_stmt)
+        },
+        Stmt::Alloc {elem_ty, id, ..} => {
+            env.bound.insert(id.clone(), elem_ty.clone());
+            env
+        },
+        Stmt::Assign {..} | Stmt::If {..} | Stmt::While {..} | Stmt::Scope {..} |
+        Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
+        Stmt::KernelLaunch {..} | Stmt::Dealloc {..} => {
+            let env = s.sfold(env, fv_expr);
+            s.sfold(env, fv_stmt)
+        }
     }
 }
 

@@ -8,7 +8,6 @@ pub use crate::gpu::ast::UnOp;
 pub use crate::gpu::ast::BinOp;
 pub use crate::gpu::ast::Dim;
 pub use crate::gpu::ast::Dim3;
-pub use crate::gpu::ast::LaunchArgs;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -223,7 +222,7 @@ impl SFold<Expr> for Expr {
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr},
     Assign {dst: Expr, expr: Expr},
-    AllocShared {ty: Type, id: Name, sz: i64},
+    AllocShared {ty: Type, id: Name, sz: usize},
     For {
         var_ty: Type, var: Name, init: Expr, cond: Expr,
         incr: Expr, body: Vec<Stmt>
@@ -231,11 +230,9 @@ pub enum Stmt {
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>},
     While {cond: Expr, body: Vec<Stmt>},
     Syncthreads {},
-    Dim3Definition {id: Name, args: Dim3},
-    KernelLaunch {id: Name, blocks: Name, threads: Name, args: Vec<Expr>},
+    KernelLaunch {id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>},
     MallocAsync {id: Name, elem_ty: Type, sz: usize},
-    FreeAsync {id: Name},
-    Scope {body: Vec<Stmt>},
+    FreeAsync {id: Name}
 }
 
 impl SMapAccum<Expr> for Stmt {
@@ -273,8 +270,7 @@ impl SMapAccum<Expr> for Stmt {
                 Ok((acc, Stmt::KernelLaunch {id, blocks, threads, args}))
             },
             Stmt::AllocShared {..} | Stmt::Syncthreads {..} |
-            Stmt::Dim3Definition {..} | Stmt::MallocAsync {..} |
-            Stmt::FreeAsync {..} | Stmt::Scope {..} => Ok((acc?, self)),
+            Stmt::MallocAsync {..} | Stmt::FreeAsync {..} => Ok((acc?, self))
         }
     }
 }
@@ -293,8 +289,7 @@ impl SFold<Expr> for Stmt {
             Stmt::While {cond, ..} => f(acc?, cond),
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
             Stmt::AllocShared {..} | Stmt::Syncthreads {} |
-            Stmt::Dim3Definition {..} | Stmt::MallocAsync {..} |
-            Stmt::FreeAsync {..} | Stmt::Scope {..} => acc,
+            Stmt::MallocAsync {..} | Stmt::FreeAsync {..} => acc,
         }
     }
 }
@@ -319,14 +314,9 @@ impl SMapAccum<Stmt> for Stmt {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::While {cond, body}))
             },
-            Stmt::Scope {body} => {
-                let (acc, body) = body.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Stmt::Scope {body}))
-            },
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
-            Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
-            Stmt::MallocAsync {..} | Stmt::FreeAsync {..} |
-            Stmt::KernelLaunch {..} => Ok((acc?, self))
+            Stmt::Syncthreads {} | Stmt::MallocAsync {..} |
+            Stmt::FreeAsync {..} | Stmt::KernelLaunch {..} => Ok((acc?, self))
         }
     }
 }
@@ -341,10 +331,8 @@ impl SFold<Stmt> for Stmt {
             Stmt::For {body, ..} => body.sfold_result(acc, &f),
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
-            Stmt::Scope {body} => body.sfold_result(acc, &f),
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
-            Stmt::Syncthreads {} | Stmt::Dim3Definition {..} |
-            Stmt::MallocAsync {..} | Stmt::FreeAsync {..} |
+            Stmt::Syncthreads {} | Stmt::MallocAsync {..} | Stmt::FreeAsync {..} |
             Stmt::KernelLaunch {..} => acc,
         }
     }
@@ -358,15 +346,13 @@ pub enum Attribute {
 #[derive(Clone, Debug)]
 pub struct Field {
     pub ty: Type,
-    pub id: String,
-    pub i: Info
+    pub id: String
 }
 
 #[derive(Clone, Debug)]
 pub struct Param {
     pub id: Name,
-    pub ty: Type,
-    pub i: Info
+    pub ty: Type
 }
 
 #[derive(Clone, Debug)]

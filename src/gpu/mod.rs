@@ -9,13 +9,9 @@ mod par_tree;
 mod pprint;
 
 use ast::*;
-use par::GpuMapping;
 use crate::ir::ast as ir_ast;
 use crate::utils::debug::*;
 use crate::utils::err::*;
-use crate::utils::name::Name;
-
-use std::collections::BTreeMap;
 
 pub fn from_general_ir(
     ast: ir_ast::Ast,
