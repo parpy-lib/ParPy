@@ -1,9 +1,11 @@
+use crate::py::ast::BinOp;
 use crate::utils::name::Name;
 
 use itertools::Itertools;
 use rand::distributions::{Alphanumeric, DistString};
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::cmp::Ordering;
 
 pub const DEFAULT_INDENT: usize = 2;
 
@@ -88,6 +90,99 @@ pub fn pprint_iter<'a, T: PrettyPrint + 'a, I: Iterator<Item=&'a T>>(
             (env, strs)
         });
     (env, strs.into_iter().join(separator))
+}
+
+// Reusable functionality for printing floating-point numbers, properly parenthesized expressions
+// with respect to operator precedence, and nested if-statements.
+
+pub fn print_float(
+    env: PrettyPrintEnv,
+    v: &f64,
+    inf_str: &str
+) -> (PrettyPrintEnv, String) {
+    if v.is_infinite() {
+        if v.is_sign_negative() {
+            (env, format!("-{inf_str}"))
+        } else {
+            (env, inf_str.to_string())
+        }
+    } else {
+        // Debug printing adds a trailing '.0' to floats without a decimal component, which is what
+        // we want to distinguish them from integers.
+        (env, format!("{v:?}"))
+    }
+}
+
+fn parenthesize_if_predicate(
+    inner_op_opt: Option<BinOp>,
+    outer_op: &BinOp,
+    s: String,
+    p: impl Fn(Ordering) -> bool
+) -> String {
+    match inner_op_opt {
+        Some(inner_op) => {
+            if p(inner_op.precedence().cmp(&outer_op.precedence())) {
+                format!("({s})")
+            } else {
+                s
+            }
+        },
+        None => s
+    }
+}
+
+pub fn parenthesize_if_lower_precedence(
+    inner_op_opt: Option<BinOp>,
+    outer_op: &BinOp,
+    s: String
+) -> String {
+    parenthesize_if_predicate(inner_op_opt, outer_op, s, |p| p == Ordering::Less)
+}
+
+pub fn parenthesize_if_lower_or_same_precedence(
+    inner_op_opt: Option<BinOp>,
+    outer_op: &BinOp,
+    s: String
+) -> String {
+    parenthesize_if_predicate(inner_op_opt, outer_op, s, |p| p != Ordering::Greater)
+}
+
+pub fn print_if_condition<'a, E: PrettyPrint + 'a, S: Clone + PrettyPrint + 'a>(
+    env: PrettyPrintEnv,
+    cond: &E,
+    thn: &'a Vec<S>,
+    els: &'a Vec<S>,
+    extract_elseif: impl Fn(Vec<S>) -> Option<(E, Vec<S>, Vec<S>)>
+) -> (PrettyPrintEnv, String) {
+    let indent = env.print_indent();
+    let (env, cond) = cond.pprint(env);
+    let env = env.incr_indent();
+    let (env, thn_str) = pprint_iter(thn.iter(), env, "\n");
+    let (env, thn, els) = match extract_elseif(els.clone()) {
+        Some((elif_cond, elif_thn, elif_els)) => {
+            let (env, elif_cond) = elif_cond.pprint(env);
+            let (env, elif_thn) = pprint_iter(elif_thn.iter(), env, "\n");
+            let s = format!(
+                "{0}\n{1}}} else if ({2}) {{\n{3}",
+                thn_str, indent, elif_cond, elif_thn
+            );
+            (env, s, elif_els)
+        },
+        None => (env, thn_str, els.clone())
+    };
+    let (env, s) = if els.is_empty() {
+        let s = format!("{0}if ({1}) {{\n{2}\n{0}}}", indent, cond, thn);
+        (env, s)
+    } else {
+        let (env, els) = pprint_iter(els.iter(), env, "\n");
+        let s = format!(
+            "{0}if ({1}) {{\n{2}\n{0}}} else {{\n{3}\n{0}}}",
+            indent, cond, thn, els
+        );
+        (env, s)
+    };
+    let env = env.decr_indent();
+    (env, s)
 }
 
 #[cfg(test)]

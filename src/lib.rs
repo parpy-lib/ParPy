@@ -1,6 +1,7 @@
 mod cuda;
 mod gpu;
 mod ir;
+mod metal;
 mod option;
 mod par;
 mod py;
@@ -74,9 +75,13 @@ fn compile_ir<'py>(
 
     match opts.backend {
         option::CompileBackend::Cuda => {
-            // Convert the IR AST to CUDA code, based on the parallel annotations on for-loops.
             let ast = cuda::codegen(ir_ast, &debug_env)?;
             debug_env.print("CUDA AST", &ast);
+            Ok(ast.pprint_default())
+        },
+        option::CompileBackend::Metal => {
+            let ast = metal::codegen(ir_ast, &debug_env)?;
+            debug_env.print("Metal AST", &ast);
             Ok(ast.pprint_default())
         }
     }

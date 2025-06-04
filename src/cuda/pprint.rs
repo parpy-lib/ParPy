@@ -4,7 +4,6 @@ use crate::utils::pprint::*;
 use itertools::Itertools;
 
 use std::borrow::Borrow;
-use std::cmp::Ordering;
 
 impl PrettyPrint for Type {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
@@ -146,40 +145,6 @@ fn try_get_binop(e: &Box<Expr>) -> Option<BinOp> {
     }
 }
 
-fn parenthesize_if_pred(
-    inner_op_opt: Option<BinOp>,
-    outer_op: &BinOp,
-    s: String,
-    pred: impl Fn(Ordering) -> bool
-) -> String {
-    match inner_op_opt {
-        Some(inner_op) => {
-            if pred(inner_op.precedence().cmp(&outer_op.precedence())) {
-                format!("({s})")
-            } else {
-                s
-            }
-        },
-        None => s
-    }
-}
-
-fn parenthesize_if_lower_precedence(
-    inner_op_opt: Option<BinOp>,
-    outer_op: &BinOp,
-    s: String
-) -> String {
-    parenthesize_if_pred(inner_op_opt, outer_op, s, |p| p == Ordering::Less)
-}
-
-fn parenthesize_if_lower_or_same_precedence(
-    inner_op_opt: Option<BinOp>,
-    outer_op: &BinOp,
-    s: String
-) -> String {
-    parenthesize_if_pred(inner_op_opt, outer_op, s, |p| p != Ordering::Greater)
-}
-
 fn is_infix(op: &BinOp, ty: &Type) -> bool {
     let is_f16 = match ty.get_scalar_elem_size() {
         Some(ElemSize::F16) => true,
@@ -200,23 +165,13 @@ impl PrettyPrint for Expr {
             Expr::Bool {v, ..} => (env, v.to_string()),
             Expr::Int {v, ..} => (env, v.to_string()),
             Expr::Float {v, ty, ..} => {
-                if v.is_infinite() {
-                    let s = match ty.get_scalar_elem_size() {
-                        Some(ElemSize::F16) => "CUDART_INF_FP16",
-                        Some(ElemSize::F32) => "HUGE_VALF",
-                        Some(ElemSize::F64) => "HUGE_VAL",
-                        _ => panic!("Invalid type of floating-point literal")
-                    };
-                    if v.is_sign_negative() {
-                        (env, format!("-{s}"))
-                    } else {
-                        (env, s.to_string())
-                    }
-                } else {
-                    // Debug printing adds a trailing '.0' for floats with no decimal component,
-                    // which is what we want to have to distinguish them.
-                    (env, format!("{v:?}"))
-                }
+                let s = match ty.get_scalar_elem_size() {
+                    Some(ElemSize::F16) => "CUDART_INF_FP16",
+                    Some(ElemSize::F32) => "HUGE_VALF",
+                    Some(ElemSize::F64) => "HUGE_VAL",
+                    _ => panic!("Invalid type of floating-point literal")
+                };
+                print_float(env, v, s)
             },
             Expr::UnOp {op, arg, ty, ..} => {
                 let op_str = print_unop(&op, &ty);
@@ -333,39 +288,15 @@ impl PrettyPrint for Stmt {
                 (env, s)
             },
             Stmt::If {cond, thn, els} => {
-                let (env, cond) = cond.pprint(env);
-                let env = env.incr_indent();
-                let (env, thn_str) = pprint_iter(thn.iter(), env, "\n");
-                let (env, thn, els) = match &els[..] {
-                    [Stmt::If {
-                        cond: elif_cond, thn: elif_thn, els: elif_els
-                    }] if !elif_thn.is_empty() => {
-                        let (env, elif_cond) = elif_cond.pprint(env);
-                        let (env, elif_thn) = pprint_iter(elif_thn.iter(), env, "\n");
-                        let s = format!(
-                            "{0}\n{1}}} else if ({2}) {{\n{3}",
-                            thn_str, indent, elif_cond, elif_thn
-                        );
-                        (env, s, elif_els)
-                    },
-                    _ => (env, thn_str, els)
+                let f = |els: Vec<Stmt>| {
+                    match &els[..] {
+                        [Stmt::If {cond, thn, els}] if !thn.is_empty() => {
+                            Some((cond.clone(), thn.clone(), els.clone()))
+                        },
+                        _ => None
+                    }
                 };
-                let (env, s) = if els.is_empty() {
-                    let s = format!(
-                        "{0}if ({1}) {{\n{2}\n{0}}}",
-                        indent, cond, thn
-                    );
-                    (env, s)
-                } else {
-                    let (env, els) = pprint_iter(els.iter(), env, "\n");
-                    let s = format!(
-                        "{0}if ({1}) {{\n{2}\n{0}}} else {{\n{3}\n{0}}}",
-                        indent, cond, thn, els
-                    );
-                    (env, s)
-                };
-                let env = env.decr_indent();
-                (env, s)
+                print_if_condition(env, cond, thn, els, f)
             },
             Stmt::While {cond, body} => {
                 let (env, cond) = cond.pprint(env);

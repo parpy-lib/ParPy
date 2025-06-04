@@ -8,7 +8,7 @@ use std::fmt;
 enum ErrorKind {
     Compile,
     Name,
-    Type
+    Type,
 }
 
 impl fmt::Display for ErrorKind {
@@ -39,6 +39,11 @@ impl CompileError {
     pub fn type_err(msg: String) -> Self {
         CompileError {msg, kind: ErrorKind::Type}
     }
+
+    pub fn internal_err(msg: String) -> Self {
+        let msg = format!("Internal compiler error: {msg}");
+        CompileError {msg, kind: ErrorKind::Compile}
+    }
 }
 
 impl error::Error for CompileError {}
@@ -54,6 +59,13 @@ pub type CompileResult<T> = Result<T, CompileError>;
 macro_rules! parir_compile_error {
     ($i:expr,$($t:tt)*) => {{
         Err(CompileError::compile_err($i.error_msg(format!($($t)*))))
+    }}
+}
+
+#[macro_export]
+macro_rules! parir_internal_error {
+    ($i:expr,$($t:tt)*) => {{
+        Err(CompileError::internal_err($i.error_msg(format!($($t)*))))
     }}
 }
 

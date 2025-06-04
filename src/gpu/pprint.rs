@@ -4,7 +4,6 @@ use crate::utils::pprint::*;
 use itertools::Itertools;
 
 use std::borrow::Borrow;
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 impl PrettyPrint for ElemSize {
@@ -76,71 +75,30 @@ impl PrettyPrint for Type {
     }
 }
 
-pub fn print_unop(op: &UnOp, ty: &Type) -> String {
+pub fn print_unop(op: &UnOp) -> String {
     let s = match op {
         UnOp::Sub => "-",
         UnOp::Not => "!",
         UnOp::BitNeg => "~",
-        UnOp::Exp => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "hexp",
-            Some(ElemSize::F32) => "__expf",
-            Some(ElemSize::F64) => "exp",
-            _ => panic!("Invalid type of exp")
-        },
-        UnOp::Log => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "hlog",
-            Some(ElemSize::F32) => "__logf",
-            Some(ElemSize::F64) => "log",
-            _ => panic!("Invalid type of log")
-        },
-        UnOp::Cos => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "hcos",
-            Some(ElemSize::F32) => "__cosf",
-            Some(ElemSize::F64) => "cos",
-            _ => panic!("Invalid type of cos")
-        },
-        UnOp::Sin => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "hsin",
-            Some(ElemSize::F32) => "__sinf",
-            Some(ElemSize::F64) => "sin",
-            _ => panic!("Invalid type of sin")
-        },
-        UnOp::Sqrt => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "hsqrt",
-            Some(ElemSize::F32) => "sqrtf",
-            Some(ElemSize::F64) => "sqrt",
-            _ => panic!("Invalid type of sqrt")
-        },
-        UnOp::Tanh => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "htanh",
-            Some(ElemSize::F32) => "tanhf",
-            Some(ElemSize::F64) => "tanh",
-            _ => panic!("Invalid type of tanh")
-        },
-        UnOp::Abs => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__habs",
-            Some(ElemSize::F32) => "fabsf",
-            Some(ElemSize::F64) => "fabs",
-            Some(_) => "abs",
-            None => panic!("Invalid type of abs")
-        },
+        UnOp::Exp => "exp",
+        UnOp::Log => "log",
+        UnOp::Cos => "cos",
+        UnOp::Sin => "sin",
+        UnOp::Sqrt => "sqrt",
+        UnOp::Tanh => "tanh",
+        UnOp::Abs => "abs",
     };
     s.to_string()
 }
 
-pub fn print_binop(op: &BinOp, argty: &Type, ty: &Type) -> String {
+pub fn print_binop(op: &BinOp) -> String {
     let s = match op {
         BinOp::Add => "+",
         BinOp::Sub => "-",
         BinOp::Mul => "*",
         BinOp::FloorDiv | BinOp::Div => "/",
         BinOp::Rem => "%",
-        BinOp::Pow => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "hpow",
-            Some(ElemSize::F32) => "__powf",
-            Some(ElemSize::F64) => "pow",
-            _ => panic!("Invalid type of **")
-        },
+        BinOp::Pow => "pow",
         BinOp::And => "&&",
         BinOp::Or => "||",
         BinOp::BitAnd => "&",
@@ -148,44 +106,14 @@ pub fn print_binop(op: &BinOp, argty: &Type, ty: &Type) -> String {
         BinOp::BitXor => "^",
         BinOp::BitShl => "<<",
         BinOp::BitShr => ">>",
-        BinOp::Eq => match argty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__heq",
-            _ => "=="
-        },
-        BinOp::Neq => match argty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__hne",
-            _ => "!="
-        },
-        BinOp::Leq => match argty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__hle",
-            _ => "<="
-        }
-        BinOp::Geq => match argty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__hge",
-            _ => ">="
-        },
-        BinOp::Lt => match argty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__hlt",
-            _ => "<"
-        },
-        BinOp::Gt => match argty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__hgt",
-            _ => ">"
-        },
-        BinOp::Max => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__hmax",
-            Some(ElemSize::F32) => "fmaxf",
-            Some(ElemSize::F64) => "fmax",
-            Some(_) => "max",
-            None => panic!("Invalid type of max")
-        },
-        BinOp::Min => match ty.get_scalar_elem_size() {
-            Some(ElemSize::F16) => "__hmin",
-            Some(ElemSize::F32) => "fminf",
-            Some(ElemSize::F64) => "fmin",
-            Some(_) => "min",
-            None => panic!("Invalid type of min")
-        },
+        BinOp::Eq => "==",
+        BinOp::Neq => "!=",
+        BinOp::Leq => "<=",
+        BinOp::Geq => ">=",
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::Max => "max",
+        BinOp::Min => "min",
         BinOp::Atan2 => "atan2",
     };
     s.to_string()
@@ -196,40 +124,6 @@ fn try_get_binop(e: &Box<Expr>) -> Option<BinOp> {
         Expr::BinOp {op, ..} => Some(op.clone()),
         _ => None
     }
-}
-
-fn parenthesize_if_pred(
-    inner_op_opt: Option<BinOp>,
-    outer_op: &BinOp,
-    s: String,
-    pred: impl Fn(Ordering) -> bool
-) -> String {
-    match inner_op_opt {
-        Some(inner_op) => {
-            if pred(inner_op.precedence().cmp(&outer_op.precedence())) {
-                format!("({s})")
-            } else {
-                s
-            }
-        },
-        None => s
-    }
-}
-
-fn parenthesize_if_lower_precedence(
-    inner_op_opt: Option<BinOp>,
-    outer_op: &BinOp,
-    s: String
-) -> String {
-    parenthesize_if_pred(inner_op_opt, outer_op, s, |p| p == Ordering::Less)
-}
-
-fn parenthesize_if_lower_or_same_precedence(
-    inner_op_opt: Option<BinOp>,
-    outer_op: &BinOp,
-    s: String
-) -> String {
-    parenthesize_if_pred(inner_op_opt, outer_op, s, |p| p != Ordering::Greater)
 }
 
 fn is_infix(op: &BinOp, ty: &Type) -> bool {
@@ -251,33 +145,15 @@ impl PrettyPrint for Expr {
             Expr::Var {id, ..} => id.pprint(env),
             Expr::Bool {v, ..} => (env, v.to_string()),
             Expr::Int {v, ..} => (env, v.to_string()),
-            Expr::Float {v, ty, ..} => {
-                if v.is_infinite() {
-                    let s = match ty.get_scalar_elem_size() {
-                        Some(ElemSize::F16) => "CUDART_INF_FP16",
-                        Some(ElemSize::F32) => "HUGE_VALF",
-                        Some(ElemSize::F64) => "HUGE_VAL",
-                        _ => panic!("Invalid type of floating-point literal")
-                    };
-                    if v.is_sign_negative() {
-                        (env, format!("-{s}"))
-                    } else {
-                        (env, s.to_string())
-                    }
-                } else {
-                    // Debug printing adds a trailing '.0' for floats with no decimal component,
-                    // which is what we want to have to distinguish them.
-                    (env, format!("{v:?}"))
-                }
-            },
-            Expr::UnOp {op, arg, ty, ..} => {
-                let op_str = print_unop(&op, &ty);
+            Expr::Float {v, ..} => print_float(env, v, "inf"),
+            Expr::UnOp {op, arg, ..} => {
+                let op_str = print_unop(&op);
                 let (env, arg_str) = arg.pprint(env);
                 (env, format!("{op_str}({arg_str})"))
             },
-            Expr::BinOp {lhs, op, rhs, ty, ..} => {
+            Expr::BinOp {lhs, op, rhs, ..} => {
                 let (env, lhs_str) = lhs.pprint(env);
-                let op_str = print_binop(&op, lhs.get_type(), &ty);
+                let op_str = print_binop(&op);
                 let (env, rhs_str) = rhs.pprint(env);
 
                 // We consider the precedence of the left- and right-hand side operands and use
@@ -392,39 +268,15 @@ impl PrettyPrint for Stmt {
                 (env, s)
             },
             Stmt::If {cond, thn, els, ..} => {
-                let (env, cond) = cond.pprint(env);
-                let env = env.incr_indent();
-                let (env, thn_str) = pprint_iter(thn.iter(), env, "\n");
-                let (env, thn, els) = match &els[..] {
-                    [Stmt::If {
-                        cond: elif_cond, thn: elif_thn, els: elif_els, ..
-                    }] if !elif_thn.is_empty() => {
-                        let (env, elif_cond) = elif_cond.pprint(env);
-                        let (env, elif_thn) = pprint_iter(elif_thn.iter(), env, "\n");
-                        let s = format!(
-                            "{0}\n{1}}} else if ({2}) {{\n{3}",
-                            thn_str, indent, elif_cond, elif_thn
-                        );
-                        (env, s, elif_els)
-                    },
-                    _ => (env, thn_str, els)
+                let f = |els: Vec<Stmt>| {
+                    match &els[..] {
+                        [Stmt::If {cond, thn, els, ..}] if !thn.is_empty() => {
+                            Some((cond.clone(), thn.clone(), els.clone()))
+                        },
+                        _ => None
+                    }
                 };
-                let (env, s) = if els.is_empty() {
-                    let s = format!(
-                        "{0}if ({1}) {{\n{2}\n{0}}}",
-                        indent, cond, thn
-                    );
-                    (env, s)
-                } else {
-                    let (env, els) = pprint_iter(els.iter(), env, "\n");
-                    let s = format!(
-                        "{0}if ({1}) {{\n{2}\n{0}}} else {{\n{3}\n{0}}}",
-                        indent, cond, thn, els
-                    );
-                    (env, s)
-                };
-                let env = env.decr_indent();
-                (env, s)
+                print_if_condition(env, cond, thn, els, f)
             },
             Stmt::While {cond, body, ..} => {
                 let (env, cond) = cond.pprint(env);
@@ -643,19 +495,7 @@ mod test {
     #[test]
     fn pprint_exp_f32() {
         let s = exp(var("x"), scalar_ty(ElemSize::F32)).pprint_default();
-        assert_eq!(&s, "__expf(x)");
-    }
-
-    #[test]
-    #[should_panic]
-    fn pprint_exp_int_type_fails() {
-        exp(var("x"), scalar_ty(ElemSize::I32)).pprint_default();
-    }
-
-    #[test]
-    #[should_panic]
-    fn pprint_exp_invalid_type_fails() {
-        exp(var("x"), Type::Boolean).pprint_default();
+        assert_eq!(&s, "exp(x)");
     }
 
     #[test]
@@ -667,7 +507,7 @@ mod test {
     #[test]
     fn pprint_max_f32() {
         let s = max(var("x"), var("y"), scalar_ty(ElemSize::F32)).pprint_default();
-        assert_eq!(&s, "fmaxf(x, y)");
+        assert_eq!(&s, "max(x, y)");
     }
 
     #[test]

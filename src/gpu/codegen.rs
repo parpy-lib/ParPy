@@ -235,7 +235,6 @@ fn subtract_from_grid(grid: LaunchArgs, m: &GpuMap) -> LaunchArgs {
 
 fn reduction_op_neutral_element(
     op: &BinOp,
-    argty: &Type,
     ty: Type,
     i: Info
 ) -> CompileResult<Expr> {
@@ -243,7 +242,7 @@ fn reduction_op_neutral_element(
         match reduce::neutral_element(op, sz, &i) {
             Some(literal) => Ok(literal),
             None => {
-                let op = pprint::print_binop(op, argty, &ty);
+                let op = pprint::print_binop(op);
                 parir_compile_error!(i, "Parallel reductions not supported for operator {op}")
             }
         }
@@ -281,7 +280,7 @@ fn generate_parallel_reduction(
     let rhs = from_ir_expr(rhs)?;
     let ty = Type::Scalar {sz: sz.clone()};
     let mut acc = Vec::new();
-    let ne = reduction_op_neutral_element(&op, lhs.get_type(), ty.clone(), i.clone())?;
+    let ne = reduction_op_neutral_element(&op, ty.clone(), i.clone())?;
     let temp_id = Name::sym_str("t");
     let temp_var = Expr::Var {id: temp_id.clone(), ty: ty.clone(), i: i.clone()};
     // Generate code for a warp-local reduction

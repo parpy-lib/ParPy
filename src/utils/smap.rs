@@ -33,6 +33,14 @@ pub trait SFold<T: Clone> {
         f: impl Fn(A, &T) -> Result<A, E>
     ) -> Result<A, E> where Self: Sized;
 
+    fn sfold_owned_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, T) -> Result<A, E>
+    ) -> Result<A, E> where Self: Sized {
+        self.sfold_result(acc, |acc, t| f(acc, t.clone()))
+    }
+
     fn sfold_owned<A>(self, acc: A, f: impl Fn(A, T) -> A) -> A where Self: Sized {
         self.sfold_result(Ok(acc), |acc, t| Ok::<A, ()>(f(acc, t.clone()))).unwrap()
     }
