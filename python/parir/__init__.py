@@ -1,6 +1,7 @@
-from . import compile, key, parir, validate
+from . import buffer, compile, key, parir, validate
 from .compile import clear_cache
 from .operators import *
+from .state import set_metal_cpp_header_path
 from .parir import parallelize
 from .parir import CompileBackend, CompileOptions
 

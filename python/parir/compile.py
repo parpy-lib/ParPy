@@ -67,7 +67,12 @@ def build_metal_shared_library(key, source, opts):
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
-        include_cmd = flatten([["-I", include] for include in opts.includes])
+        if parir.metal_cpp_path is None:
+            raise RuntimeError(f"The path to the Metal C++ library must be provided \
+                                 via the 'parir.set_metal_cpp_header_path' function \
+                                 before using the Metal backend.")
+        includes = opts.includes + [parir.metal_cpp_path]
+        include_cmd = flatten([["-I", include] for include in includes])
         lib_cmd = flatten([["-L", lib] for lib in opts.libs])
         commands = [
             "-O3", "-shared", "-fpic", "-std=c++17", tmp.name, "-o", libpath
@@ -104,7 +109,7 @@ def torch_to_ctype(dtype):
     if dtype in mapping:
         return mapping[dtype]
     else:
-        raise RuntimeError(f"Unknown torch dtype: {dtype}")
+        raise RuntimeError(f"Unsupported Torch dtype: {dtype}")
 
 def get_cuda_wrapper(name, lib):
     def wrapper(*args):

@@ -10,9 +10,9 @@ static MTL::ComputeCommandEncoder *ce;
 static int64_t queue_cap = 0;
 static int64_t queue_size = 0;
 
-extern "C" void parir_metal_init(int64_t queue_capacity) {
+extern "C" void parir_init(int64_t queue_capacity) {
   if (device == nullptr) {
-    device == MTL::CreateSystemDefaultDevice();
+    device = MTL::CreateSystemDefaultDevice();
     queue_cap = queue_capacity;
     cq = device->newCommandQueue(queue_cap);
     if (cq == nullptr) {
@@ -22,7 +22,7 @@ extern "C" void parir_metal_init(int64_t queue_capacity) {
   }
 }
 
-extern "C" void parir_metal_sync() {
+extern "C" void parir_sync() {
   if (ce != nullptr) {
     ce->endEncoding();
   }
@@ -33,7 +33,7 @@ extern "C" void parir_metal_sync() {
   }
 }
 
-extern "C" MTL::Buffer *parir_metal_alloc_buffer(int64_t nbytes) {
+extern "C" MTL::Buffer *parir_alloc_buffer(int64_t nbytes) {
   MTL::Buffer *buf = device->newBuffer(nbytes, MTL::ResourceStorageModeShared);
   if (buf == nullptr) {
     fprintf(stderr, "Failed to allocate buffer of %lld bytes\n", nbytes);
@@ -43,11 +43,15 @@ extern "C" MTL::Buffer *parir_metal_alloc_buffer(int64_t nbytes) {
   return buf;
 }
 
-extern "C" void *parir_metal_ptr_buffer(MTL::Buffer *buf) {
+extern "C" void *parir_ptr_buffer(MTL::Buffer *buf) {
   return buf->contents();
 }
 
-extern "C" void parir_metal_free_buffer(MTL::Buffer*) {
+extern "C" void parir_memcpy(void *dst, void *src, int64_t nbytes) {
+  memcpy(dst, src, nbytes);
+}
+
+extern "C" void parir_free_buffer(MTL::Buffer *buf) {
   buf->release();
 }
 
@@ -114,7 +118,7 @@ namespace parir_metal {
       exit(1);
     }
     NS::UInteger maxthreads = state->maxTotalThreadsPerThreadgroup();
-    assert(threads_x * threads_y * threads_z <= maxthreads);
+    assert(thread_x * thread_y * thread_z <= maxthreads);
 
     MTL::Size grid_size = MTL::Size::Make(block_x * thread_x, block_y * thread_y, block_z * thread_z);
     MTL::Size block_size = MTL::Size::Make(thread_x, thread_y, thread_z);

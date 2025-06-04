@@ -7,11 +7,12 @@
 
 // Functions used by the Parir library when initializing, synchronizing with
 // running GPU code, and operating on buffers.
-extern "C" void parir_metal_init();
-extern "C" void parir_metal_sync();
-extern "C" MTL::Buffer *parir_metal_alloc_buffer(int64_t);
-extern "C" void *parir_metal_ptr_buffer(MTL::Buffer*);
-extern "C" void parir_metal_free_buffer(MTL::Buffer*);
+extern "C" void parir_init(int64_t);
+extern "C" void parir_sync();
+extern "C" MTL::Buffer *parir_alloc_buffer(int64_t);
+extern "C" void *parir_ptr_buffer(MTL::Buffer*);
+extern "C" void parir_memcpy(void*, void*, int64_t);
+extern "C" void parir_free_buffer(MTL::Buffer*);
 
 // The below functions are to be used in the generated kernel code from C++. We
 // wrap these in a namespace to avoid risk of name conflicts.
