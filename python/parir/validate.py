@@ -32,7 +32,7 @@ def check_cuda_arg(arg, i, in_dict, seq):
         # If the argument implements the CUDA array interface, such as a
         # CuPy array, we convert it to Torch and validate this, for
         # simplicity.
-        return check_arg(torch.as_tensor(arg), i, in_dict)
+        return check_cuda_arg(torch.as_tensor(arg), i, in_dict, seq)
     else:
         raise RuntimeError(f"Argument {i} is of unsupported type {type(arg)}")
 

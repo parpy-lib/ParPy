@@ -6,6 +6,8 @@ import torch
 import shutil
 import subprocess
 from pathlib import Path
+from .parir import CompileBackend
+
 cache_path = Path(f"{os.path.expanduser('~')}/.cache/parir")
 cache_path.mkdir(parents=True, exist_ok=True)
 
@@ -165,7 +167,7 @@ def get_wrapper(name, key, opts):
     libpath = get_library_path(key)
     lib = ctypes.cdll.LoadLibrary(libpath)
     # Remove the shared library if caching is not enabled
-    if not cache:
+    if not opts.cache:
         try:
             os.remove(libpath)
         except:
