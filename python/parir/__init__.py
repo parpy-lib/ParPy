@@ -1,4 +1,4 @@
-from . import compile, key, parir
+from . import compile, key, parir, validate
 from .compile import clear_cache
 from .operators import *
 from .parir import parallelize
@@ -71,10 +71,10 @@ def compile_function(ir_ast, args, opts, fn):
     if opts.seq:
         return fn
 
-    # If we recently generated a CUDA wrapper for this function, we do a quick
+    # If we recently generated a wrapper for this function, we do a quick
     # lookup based on the name and signature of the function to immediately
     # return the wrapper function.
-    quick_key = key.generate_quick_function_key(ir_ast, args, opts.parallelize)
+    quick_key = key.generate_quick_function_key(ir_ast, args, opts)
     if opts.cache and quick_key in fun_cache:
         return fun_cache[quick_key]
 
@@ -84,18 +84,19 @@ def compile_function(ir_ast, args, opts, fn):
     full_key = key.generate_function_key(quick_key)
     if not opts.cache or not compile.is_cached(full_key):
         code = parir.compile_ir(ir_ast, args, opts)
-        compile.build_cuda_shared_library(full_key, code, opts)
+        compile.build_shared_library(full_key, code, opts)
 
-    # Return a CUDA wrapper which ensures the arguments are passed correctly on
-    # to the exposed shared library function.
-    wrap_fn = compile.get_cuda_wrapper(fn.__name__, full_key, opts.cache)
+    # Return a wrapper function which ensures the arguments are passed
+    # correctly on to the exposed shared library function.
+    wrap_fn = compile.get_wrapper(fn.__name__, full_key, opts)
     fun_cache[quick_key] = wrap_fn
     return wrap_fn
 
 def compile_string(fun_name, code, opts=parir.CompileOptions()):
     k = "string_" + key.generate_code_key(code)
-    compile.build_cuda_shared_library(k, code, opts)
-    return compile.get_cuda_wrapper(fun_name, k, False)
+    compile.build_shared_library(k, code, opts)
+    opts.cache = False
+    return compile.get_wrapper(fun_name, k, opts)
 
 def print_compiled(fun, args, opts=parir.CompileOptions()):
     """
@@ -109,49 +110,6 @@ def print_compiled(fun, args, opts=parir.CompileOptions()):
         ir_ast = convert_python_function_to_ir(fun)
     return parir.compile_ir(ir_ast, args, opts)
 
-# Validate all arguments, ensuring that they have a supported type and that
-# all tensor data is contiguous and allocated on the GPU.
-# TODO: This validation needs to be specialized to each target backend - the
-# current approach is specific to CUDA.
-def validate_arguments(args, opts):
-    def check_arg(arg, i, in_dict):
-        import torch
-        if isinstance(arg, int) or isinstance(arg, float):
-            return arg
-        elif isinstance(arg, dict):
-            if in_dict:
-                raise RuntimeError(f"Argument {i} cannot be a nested dictionary")
-            for k, v in arg.items():
-                if isinstance(k, str):
-                    v = check_arg(v, f"{i}[\"{k}\"]", True)
-                else:
-                    raise RuntimeError(f"Argument {i} has a non-string key")
-            return arg
-        elif isinstance(arg, torch.Tensor):
-            # If we are to run the code sequentially (in the Python
-            # interpreter), it doesn't matter where the tensors are
-            # allocated or whether they are contiguous.
-            if opts.seq:
-                return arg
-            if arg.ndim > 0 and arg.get_device() != torch.cuda.current_device():
-                msg = [
-                    f"The data of tensor in argument {i} is on device ",
-                    f"{arg.get_device()}, while it was expected to be on device ",
-                    f"{torch.cuda.current_device()}"
-                ]
-                raise RuntimeError("".join(msg))
-            elif not arg.is_contiguous():
-                raise RuntimeError(f"Argument {i} contains non-contiguous data")
-            return arg
-        elif hasattr(arg, "__cuda_array_interface__"):
-            # If the argument implements the CUDA array interface, such as a
-            # CuPy array, we convert it to Torch and validate this, for
-            # simplicity.
-            return check_arg(torch.as_tensor(arg), i, in_dict)
-        else:
-            raise RuntimeError(f"Argument {i} has unsupported type {type(arg)}")
-    return [check_arg(arg, f"#{i+1}", False) for (i, arg) in enumerate(args)]
-
 def jit(fun):
     """
     Prepares the provided function for JIT-compilation. Initially, the Python
@@ -163,7 +121,7 @@ def jit(fun):
 
     def inner(*args, **kwargs):
         opts = check_kwargs(kwargs)
-        args = validate_arguments(args, opts)
+        args = validate.check_arguments(args, opts)
         compile_function(ir_ast, args, opts, fun)(*args)
     ir_asts[inner] = ir_ast
     inner.__name__ = fun.__name__

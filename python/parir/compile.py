@@ -20,6 +20,9 @@ def is_cached(key):
     libpath = get_library_path(key)
     return os.path.isfile(libpath)
 
+def flatten(xss):
+    return [x for xs in xss for x in xs]
+
 def build_cuda_shared_library(key, source, opts):
     libpath = get_library_path(key)
     if not torch.cuda.is_available():
@@ -30,8 +33,6 @@ def build_cuda_shared_library(key, source, opts):
     # Get the version of the current GPU and generate specialized code for it.
     # TODO: In the future, we should collect the versions of all GPUs on the
     # system and compile with all of these in mind.
-    def flatten(xss):
-        return [x for xs in xss for x in xs]
     major, minor = torch.cuda.get_device_capability()
     arch = f"sm_{major}{minor}"
     with tempfile.NamedTemporaryFile() as tmp:
@@ -41,7 +42,7 @@ def build_cuda_shared_library(key, source, opts):
         lib_cmd = flatten([["-L", lib] for lib in opts.libs])
         commands = [
             "-O3", "--shared", "-Xcompiler", "-fPIC", f"-arch={arch}",
-            "-x", "cu", f"{tmp.name}", "-o", f"{libpath}"
+            "-x", "cu", tmp.name, "-o", libpath
         ]
         cmd = flatten([["nvcc"], opts.extra_flags, include_cmd, lib_cmd, commands])
         r = subprocess.run(cmd, capture_output=True)
@@ -53,6 +54,40 @@ def build_cuda_shared_library(key, source, opts):
             stdout = r.stdout.decode('ascii')
             stderr = r.stderr.decode('ascii')
             raise RuntimeError(f"Compilation of generated CUDA code failed with exit code {r.returncode}:\nstdout:\n{stdout}\nstderr:\n{stderr}\nWrote generated code to file {temp_file}.")
+
+def build_metal_shared_library(key, source, opts):
+    libpath = get_library_path(key)
+    if not torch.mps.is_available():
+        raise RuntimeError(f"Torch was not built with Metal support")
+    if not shutil.which("clang++"):
+        raise RuntimeError(f"Could not find 'clang++' in path, which is required to compile the generated Metal code")
+
+    with tempfile.NamedTemporaryFile() as tmp:
+        with open(tmp.name, "w") as f:
+            f.write(source)
+        include_cmd = flatten([["-I", include] for include in opts.includes])
+        lib_cmd = flatten([["-L", lib] for lib in opts.libs])
+        commands = [
+            "-O3", "-shared", "-fpic", "-std=c++17", tmp.name, "-o", libpath
+        ]
+        cmd = flatten([["clang++"], opts.extra_flags, include_cmd, lib_cmd, commands])
+        r = subprocess.run(cmd, capture_output=True)
+        if r.returncode != 0:
+            import uuid
+            temp_file = f"{uuid.uuid4().hex}.cpp"
+            with open(temp_file, "w+") as f:
+                f.write(source)
+            stdout = r.stdout.decode('ascii')
+            stderr = r.stderr.decode('ascii')
+            raise RuntimeError(f"Compilation of generated Metal code failed with exit code {r.returncode}:\nstdout:\n{stdout}\nstderr:\n{stderr}\nWrote generated code to file {temp_file}.")
+
+def build_shared_library(key, source, opts):
+    if opts.backend == CompileBackend.Cuda:
+        build_cuda_shared_library(key, source, opts)
+    elif opts.backend == CompileBackend.Metal:
+        build_metal_shared_library(key, source, opts)
+    else:
+        raise RuntimeError(f"Cannot build for unsupported backend {opts.backend}")
 
 def torch_to_ctype(dtype):
     mapping = {
@@ -69,17 +104,7 @@ def torch_to_ctype(dtype):
     else:
         raise RuntimeError(f"Unknown torch dtype: {dtype}")
 
-def get_cuda_wrapper(name, key, cache):
-    libpath = get_library_path(key)
-    lib = ctypes.cdll.LoadLibrary(libpath)
-
-    # Remove the shared library if caching is not enabled
-    if not cache:
-        try:
-            os.remove(libpath)
-        except:
-            pass
-
+def get_cuda_wrapper(name, lib):
     def wrapper(*args):
         # Expand the arguments by making each field of a dictionary a separate argument
         def expand_arg(arg):
@@ -119,3 +144,34 @@ def get_cuda_wrapper(name, key, cache):
         getattr(lib, name)(*ptr_args)
     wrapper.__name__ = name
     return wrapper
+
+def get_metal_wrapper(name, lib):
+    def wrapper(*args):
+        def get_ctype(arg):
+            if isinstance(arg, int):
+                return ctypes.c_int64
+            elif isinstance(arg, float):
+                return ctypes.c_double
+            elif isinstance(arg, parir.Buffer):
+                return ctypes.c_void_p
+            else:
+                raise RuntimeError(f"Unsupported argument type: {arg}")
+        getattr(lib, name).argtypes = [get_ctype(arg) for arg in args]
+        getattr(lib, name)(*args)
+    wrapper.__name__ = name
+    return wrapper
+
+def get_wrapper(name, key, opts):
+    libpath = get_library_path(key)
+    lib = ctypes.cdll.LoadLibrary(libpath)
+    # Remove the shared library if caching is not enabled
+    if not cache:
+        try:
+            os.remove(libpath)
+        except:
+            pass
+
+    if opts.backend == CompileBackend.Cuda:
+        return get_cuda_wrapper(name, lib)
+    elif opts.backend == CompileBackend.Metal:
+        return get_metal_wrapper(name, lib)

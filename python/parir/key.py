@@ -29,9 +29,9 @@ def print_type_signature(args):
 def print_par_kwargs(par):
     return ",".join([f"{k}:{v}" for k, v in par.items()])
 
-def generate_quick_function_key(ir_ast, args, par):
+def generate_quick_function_key(ir_ast, args, opts):
     code = parir.print_ir_ast(ir_ast)
-    return f"{code}+{print_type_signature(args)}+{print_par_kwargs(par)}"
+    return f"{code}+{print_type_signature(args)}+{print_par_kwargs(opts.parallelize)}+{opts.backend}"
 
 def generate_function_key(quick_key):
     h = hashlib.new("sha256")
