@@ -1,6 +1,6 @@
 use super::ast::*;
-use crate::parir_compile_error;
 use crate::parir_internal_error;
+use crate::parir_type_error;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -44,9 +44,9 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
         gpu_ast::Type::Boolean => Ok(Type::Boolean),
         gpu_ast::Type::Scalar {sz} => {
             match sz {
-                ElemSize::F16 => {
-                    parir_compile_error!(i, "Metal does not support half-precision \
-                                             floating-point numbers.")
+                ElemSize::F64 => {
+                    parir_type_error!(i, "Metal does not support double-precision \
+                                          floating-point numbers.")
                 },
                 _ => Ok(Type::Scalar {sz})
             }

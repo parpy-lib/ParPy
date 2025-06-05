@@ -23,14 +23,7 @@ extern "C" void parir_init(int64_t queue_capacity) {
 }
 
 extern "C" void parir_sync() {
-  if (ce != nullptr) {
-    ce->endEncoding();
-  }
-  if (cb != nullptr) {
-    cb->waitUntilCompleted();
-    cb->release();
-    cb = nullptr;
-  }
+  parir_metal::sync();
 }
 
 extern "C" MTL::Buffer *parir_alloc_buffer(int64_t nbytes) {
@@ -56,8 +49,8 @@ extern "C" void parir_free_buffer(MTL::Buffer *buf) {
 }
 
 namespace parir_metal {
-  MTL::Library *load_library(const char *lib_id) {
-    NS::String *code = NS::String::string(lib_id, NS::ASCIIStringEncoding);
+  MTL::Library *load_library(const char *lib_str) {
+    NS::String *code = NS::String::string(lib_str, NS::ASCIIStringEncoding);
     NS::Error *err;
     MTL::Library *lib = device->newLibrary(code, nullptr, &err);
     if (lib == nullptr) {
@@ -135,6 +128,16 @@ namespace parir_metal {
       cb->commit();
       cb->waitUntilScheduled();
       ce = nullptr;
+      queue_size = 0;
+    }
+  }
+
+  void sync() {
+    submit_work();
+    if (cb != nullptr) {
+      cb->waitUntilCompleted();
+      cb->release();
+      cb = nullptr;
     }
   }
 }

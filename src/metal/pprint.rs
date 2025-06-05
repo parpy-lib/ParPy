@@ -248,7 +248,7 @@ impl PrettyPrint for Stmt {
                                {bx}, {by}, {bz}, {tx}, {ty}, {tz});"))
             },
             Stmt::SubmitWork {} => {
-                (env, format!("{indent}parir_metal::submit_work();"))
+                (env, format!("{indent}parir_metal::sync();"))
             }
         }
     }
@@ -256,7 +256,7 @@ impl PrettyPrint for Stmt {
 
 fn print_metal_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrintEnv, String) {
     let indent = env.print_indent();
-    let (env, strs) = params.iter()
+    let (env, mut strs) = params.iter()
         .enumerate()
         .fold((env, vec![]), |(env, mut strs), (i, Param {id, ty})| {
             let (env, id) = id.pprint(env);
@@ -264,6 +264,10 @@ fn print_metal_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrintE
             strs.push(format!("{indent}{ty} {id} [[buffer({i})]]"));
             (env, strs)
         });
+    // Hard-code the definition of special variables representing the thread
+    // and block index.
+    strs.push(format!("{indent}uint3 threadIdx [[thread_position_in_threadgroup]]"));
+    strs.push(format!("{indent}uint3 blockIdx [[threadgroup_position_in_grid]]"));
     (env, strs.iter().join(",\n"))
 }
 

@@ -23,4 +23,5 @@ namespace parir_metal {
       MTL::Function*, std::vector<MTL::Buffer*>, int64_t, int64_t, int64_t,
       int64_t, int64_t, int64_t);
   void submit_work();
+  void sync();
 }

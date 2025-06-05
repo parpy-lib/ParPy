@@ -58,6 +58,8 @@ def build_cuda_shared_library(key, source, opts):
             raise RuntimeError(f"Compilation of generated CUDA code failed with exit code {r.returncode}:\nstdout:\n{stdout}\nstderr:\n{stderr}\nWrote generated code to file {temp_file}.")
 
 def build_metal_shared_library(key, source, opts):
+    from .buffer import try_load_metal_base_lib, PARIR_METAL_PATH, PARIR_METAL_BASE_LIB_PATH
+    from .state import get_metal_cpp_header_path
     libpath = get_library_path(key)
     if not torch.mps.is_available():
         raise RuntimeError(f"Torch was not built with Metal support")
@@ -67,17 +69,21 @@ def build_metal_shared_library(key, source, opts):
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
-        if parir.metal_cpp_path is None:
+        try_load_metal_base_lib()
+        metal_cpp_path = get_metal_cpp_header_path()
+        if metal_cpp_path is None:
             raise RuntimeError(f"The path to the Metal C++ library must be provided \
                                  via the 'parir.set_metal_cpp_header_path' function \
                                  before using the Metal backend.")
-        includes = opts.includes + [parir.metal_cpp_path]
+        includes = opts.includes + [metal_cpp_path, str(PARIR_METAL_PATH)]
+        frameworks = ["-framework", "Metal", "-framework", "Foundation", "-framework", "MetalKit"]
         include_cmd = flatten([["-I", include] for include in includes])
         lib_cmd = flatten([["-L", lib] for lib in opts.libs])
         commands = [
-            "-O3", "-shared", "-fpic", "-std=c++17", tmp.name, "-o", libpath
+            "-O3", "-shared", "-fpic", "-std=c++17", str(PARIR_METAL_BASE_LIB_PATH),
+            "-x", "c++", tmp.name, "-o", str(libpath)
         ]
-        cmd = flatten([["clang++"], opts.extra_flags, include_cmd, lib_cmd, commands])
+        cmd = flatten([["clang++"], opts.extra_flags, frameworks, include_cmd, lib_cmd, commands])
         r = subprocess.run(cmd, capture_output=True)
         if r.returncode != 0:
             import uuid
@@ -154,17 +160,24 @@ def get_cuda_wrapper(name, lib):
 
 def get_metal_wrapper(name, lib):
     def wrapper(*args):
+        from .buffer import Buffer
         def get_ctype(arg):
             if isinstance(arg, int):
                 return ctypes.c_int64
             elif isinstance(arg, float):
                 return ctypes.c_double
-            elif isinstance(arg, parir.Buffer):
+            elif isinstance(arg, Buffer):
                 return ctypes.c_void_p
             else:
                 raise RuntimeError(f"Unsupported argument type: {arg}")
         getattr(lib, name).argtypes = [get_ctype(arg) for arg in args]
-        getattr(lib, name)(*args)
+        def value_or_ptr(arg):
+            if isinstance(arg, Buffer):
+                return arg.buf
+            else:
+                return arg
+        ptr_args = [value_or_ptr(arg) for arg in args]
+        getattr(lib, name)(*ptr_args)
     wrapper.__name__ = name
     return wrapper
 

@@ -1,7 +1,7 @@
 from . import buffer, compile, key, parir, validate
 from .compile import clear_cache
 from .operators import *
-from .state import set_metal_cpp_header_path
+from .state import *
 from .parir import parallelize
 from .parir import CompileBackend, CompileOptions
 
@@ -97,7 +97,14 @@ def compile_string(fun_name, code, opts=parir.CompileOptions()):
     k = "string_" + key.generate_code_key(code)
     compile.build_shared_library(k, code, opts)
     opts.cache = False
-    return compile.get_wrapper(fun_name, k, opts)
+    fn = compile.get_wrapper(fun_name, k, opts)
+    def inner(*args):
+        callbacks, args = validate.check_arguments(args, opts, True)
+        fn(*args)
+        for cb in callbacks:
+            cb()
+    inner.__name__ = fun_name
+    return inner
 
 def print_compiled(fun, args, opts=parir.CompileOptions()):
     """
@@ -109,6 +116,7 @@ def print_compiled(fun, args, opts=parir.CompileOptions()):
         ir_ast = ir_asts[fun]
     else:
         ir_ast = convert_python_function_to_ir(fun)
+    _, args = validate.check_arguments(args, opts, False)
     return parir.compile_ir(ir_ast, args, opts)
 
 def jit(fun):
@@ -122,8 +130,10 @@ def jit(fun):
 
     def inner(*args, **kwargs):
         opts = check_kwargs(kwargs)
-        args = validate.check_arguments(args, opts)
+        callbacks, args = validate.check_arguments(args, opts, True)
         compile_function(ir_ast, args, opts, fun)(*args)
+        for cb in callbacks:
+            cb()
     ir_asts[inner] = ir_ast
     inner.__name__ = fun.__name__
     return inner

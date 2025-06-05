@@ -71,49 +71,43 @@ impl TypeCheckEnv {
 }
 
 fn compile_elem_size<'py>(dtype: Bound<'py, PyAny>) -> PyResult<ElemSize> {
-    let torch = dtype.py().import("torch")?;
-    if dtype.eq(torch.getattr("bool")?)? {
+    let parir = dtype.py().import("parir.buffer")?;
+    let ty = dtype.getattr("ty")?;
+    if ty.eq(parir.getattr("bool")?)? {
         Ok(ElemSize::Bool)
-    } else if dtype.eq(torch.getattr("int8")?)? {
+    } else if ty.eq(parir.getattr("int8")?)? {
         Ok(ElemSize::I8)
-    } else if dtype.eq(torch.getattr("int16")?)? {
+    } else if ty.eq(parir.getattr("int16")?)? {
         Ok(ElemSize::I16)
-    } else if dtype.eq(torch.getattr("int32")?)? {
+    } else if ty.eq(parir.getattr("int32")?)? {
         Ok(ElemSize::I32)
-    } else if dtype.eq(torch.getattr("int64")?)? {
+    } else if ty.eq(parir.getattr("int64")?)? {
         Ok(ElemSize::I64)
-    } else if dtype.eq(torch.getattr("float16")?)? {
+    } else if ty.eq(parir.getattr("float16")?)? {
         Ok(ElemSize::F16)
-    } else if dtype.eq(torch.getattr("float32")?)? {
+    } else if ty.eq(parir.getattr("float32")?)? {
         Ok(ElemSize::F32)
-    } else if dtype.eq(torch.getattr("float64")?)? {
+    } else if ty.eq(parir.getattr("float64")?)? {
         Ok(ElemSize::F64)
     } else {
-        py_type_error!(Info::default(), "Unsupported element type: {dtype}")
+        py_type_error!(Info::default(), "Unsupported element type: {ty}")
     }
 }
 
-fn get_tensor_shape<'py>(
+fn get_buffer_shape<'py>(
     t: &Bound<'py, PyAny>
 ) -> PyResult<Vec<i64>> {
-    let py = t.py();
-    let ndims = t.getattr("ndim")?.extract::<i64>()?;
-    (0..ndims).into_iter()
-        .map(|i| {
-            let kwargs = [("dim", i)].into_py_dict(py)?;
-            t.call_method("size", (), Some(&kwargs))?.extract::<i64>()
-        })
-        .collect::<PyResult<Vec<i64>>>()
+    t.getattr("shape")?.extract::<Vec<i64>>()
 }
 
 fn convert_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
     let py = arg.py();
-    let torch = py.import("torch")?;
+    let buffer = py.import("parir.buffer")?;
     let ty = arg.get_type();
-    if ty.eq(torch.getattr("Tensor")?)? {
+    if ty.eq(buffer.getattr("Buffer")?)? {
         let dtype = arg.getattr("dtype")?;
         let sz = compile_elem_size(dtype)?;
-        let shape = get_tensor_shape(&arg)?;
+        let shape = get_buffer_shape(&arg)?;
         Ok(Type::Tensor {sz, shape})
     } else if arg.is_instance(&PyInt::type_object(arg.py()))? {
         Ok(Type::Tensor {sz: ElemSize::I64, shape: vec![]})
