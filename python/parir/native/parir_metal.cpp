@@ -79,6 +79,7 @@ namespace parir_metal {
       int64_t thread_x, int64_t thread_y, int64_t thread_z) {
     if (cb == nullptr || cb->status() != MTL::CommandBufferStatusNotEnqueued) {
       cb = cq->commandBuffer();
+      cb->retain();
       if (cb == nullptr) {
         fprintf(stderr, "Failed to set up command buffer\n");
         exit(1);
@@ -87,6 +88,7 @@ namespace parir_metal {
 
     if (ce == nullptr) {
       ce = cb->computeCommandEncoder();
+      ce->retain();
       if (ce == nullptr) {
         fprintf(stderr, "Failed to set up compute command encoder\n");
         exit(1);

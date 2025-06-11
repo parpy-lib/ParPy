@@ -248,7 +248,7 @@ impl PrettyPrint for Stmt {
                                {bx}, {by}, {bz}, {tx}, {ty}, {tz});"))
             },
             Stmt::SubmitWork {} => {
-                (env, format!("{indent}parir_metal::sync();"))
+                (env, format!("{indent}parir_metal::submit_work();"))
             }
         }
     }
