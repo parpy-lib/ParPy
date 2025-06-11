@@ -13,7 +13,7 @@ def arg_to_string(arg):
     from .buffer import Buffer
     if isinstance(arg, Buffer):
         if len(arg.shape) == 0:
-            return f"({arg.dtype}){arg.numpy()[0]}"
+            return f"({arg.dtype}){arg.numpy()}"
         else:
             dims = ",".join([str(n) for n in arg.shape])
             return f"<{arg.dtype},{dims}>"

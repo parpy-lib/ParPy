@@ -72,7 +72,7 @@ impl TypeCheckEnv {
 fn compile_elem_size<'py>(dtype: Bound<'py, PyAny>) -> PyResult<ElemSize> {
     let parir = dtype.py().import("parir.buffer")?;
     let ty = dtype.getattr("ty")?;
-    if ty.eq(parir.getattr("bool")?)? {
+    if ty.eq(parir.getattr("ty_bool")?)? {
         Ok(ElemSize::Bool)
     } else if ty.eq(parir.getattr("int8")?)? {
         Ok(ElemSize::I8)

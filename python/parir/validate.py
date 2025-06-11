@@ -4,65 +4,65 @@ from .buffer import Buffer
 def check_dummy_arg(arg, i, in_dict):
     array_attrs = ["__array__", "__array_interface__", "__cuda_array_interface__"]
     if isinstance(arg, int) or isinstance(arg, float):
-        return None, arg
+        return [], arg
     elif isinstance(arg, dict):
         if in_dict:
             raise RuntimeError(f"Dictionary argument {i} contains a nested dictionary")
-        for k, v in arg.items():
-            if isinstance(k, str):
-                v = check_dummy_arg(v, f"{i}[\"{k}\"]", in_dict)
-            else:
-                raise RuntimeError(f"Dictionary argument {i} contains non-string key")
-        return None, arg
+        if not all([isinstance(k, str) for k in arg.keys()]):
+            raise RuntimeError(f"Dictionary argument {i} contains non-string key")
+        results = [check_dummy_arg(v, f"{i}[\"{k}\"]", True) for k, v in arg.items()]
+        callbacks = [x for xs in results for x in xs[0]]
+        arg = {k: r[1] for k, r in zip(arg.keys(), results)}
+        return callbacks, arg
     elif isinstance(arg, Buffer):
-        return None, arg.numpy()
+        return [], arg.numpy()
     elif any([hasattr(arg, x) for x in array_attrs]):
-        return None, Buffer.from_array(arg, None)
+        return [], Buffer.from_array(arg, None)
     else:
         raise RuntimeError(f"Argument {i} is of unsupported type {type(arg)}")
 
 def check_cuda_arg(arg, i, in_dict, seq):
     if isinstance(arg, int) or isinstance(arg, float):
-        return None, arg
+        return [], arg
     elif isinstance(arg, dict):
         if in_dict:
             raise RuntimeError(f"Dictionary argument {i} contains a nested dictionary")
-        for k, v in arg.items():
-            if isinstance(k, str):
-                v = check_cuda_arg(v, f"{i}[\"{k}\"]", True, seq)
-            else:
-                raise RuntimeError(f"Dictionary argument {i} contains non-string key")
-        return None, arg
+        if not all([isinstance(k, str) for k in arg.keys()]):
+            raise RuntimeError(f"Dictionary argument {i} contains non-string key")
+        results = [check_cuda_arg(v, f"{i}[\"{k}\"]", True, seq) for k, v in arg.items()]
+        callbacks = [x for xs in results for x in xs[0]]
+        arg = {k: r[1] for k, r in zip(arg.keys(), results)}
+        return callbacks, arg
     elif isinstance(arg, Buffer):
         if seq:
-            return None, arg.numpy()
-        return None, arg
+            return [], arg.numpy()
+        return [], arg
     elif hasattr(arg, "__cuda_array_interface__"):
         if seq:
-            return None, arg
-        return None, Buffer.from_array(arg, CompileBackend.Cuda)
+            return [], arg
+        return [], Buffer.from_array(arg, CompileBackend.Cuda)
     elif hasattr(arg, "__array_interface__") or hasattr(arg, "__array__"):
         if seq:
-            return None, arg
+            return [], arg
         buf = Buffer.from_array(arg, CompileBackend.Cuda)
         callback = lambda: buf.cleanup()
-        return callback, buf
+        return [callback], buf
     else:
         raise RuntimeError(f"Argument {i} is of unsupported type {type(arg)}")
 
 def check_metal_arg(arg, i, seq):
     if isinstance(arg, int) or isinstance(arg, float):
-        return None, arg
+        return [], arg
     elif isinstance(arg, Buffer):
         if seq:
-            return None, arg.numpy()
-        return None, arg
+            return [], arg.numpy()
+        return [], arg
     elif hasattr(arg, "__array_interface__") or hasattr(arg, "__array__"):
         if seq:
-            return None, arg
+            return [], arg
         buf = Buffer.from_array(arg, CompileBackend.Metal)
         callback = lambda: buf.cleanup()
-        return callback, buf
+        return [callback], buf
     else:
         raise RuntimeError(f"Argument {i} is of unsupported type {type(arg)}")
 
@@ -91,7 +91,7 @@ def check_arguments(args, opts, execute):
         opts.backend = CompileBackend.Dummy
 
     callbacks, args = zip(*[check_arg(arg, f"#{i+1}", opts) for (i, arg) in enumerate(args)])
-    callbacks = [cb for cb in callbacks if cb is not None]
+    callbacks = [x for xs in callbacks for x in xs]
 
     # Restore the original backend for the code generation.
     if not execute:

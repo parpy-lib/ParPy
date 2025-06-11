@@ -2,6 +2,7 @@ import ctypes
 import pathlib
 import shutil
 import subprocess
+import numpy as np
 from operator import mul
 from functools import reduce
 import os
@@ -59,7 +60,7 @@ def try_load_metal_base_lib():
         lib.parir_init(DEFAULT_METAL_COMMAND_QUEUE_SIZE)
         metal_lib = lib
 
-bool = 0
+ty_bool = 0
 int8 = 1
 int16 = 2
 int32 = 3
@@ -68,7 +69,7 @@ float16 = 5
 float32 = 6
 float64 = 7
 typemap = {
-    bool: "b1",
+    ty_bool: "b1",
     int8: "i1",
     int16: "i2",
     int32: "i4",
@@ -77,6 +78,26 @@ typemap = {
     float32: "f4",
     float64: "f8",
 }
+np_typemap = {
+    ty_bool: bool,
+    int8: np.int8,
+    int16: np.int16,
+    int32: np.int32,
+    int64: np.int64,
+    float16: np.float16,
+    float32: np.float32,
+    float64: np.float64,
+}
+ctypemap = {
+    ty_bool: ctypes.c_bool,
+    int8: ctypes.c_int8,
+    int16: ctypes.c_int16,
+    int32: ctypes.c_int32,
+    int64: ctypes.c_int64,
+    float16: ctypes.c_int16,
+    float32: ctypes.c_float,
+    float64: ctypes.c_double,
+}
 
 def select_type(tystr):
     for k, v in typemap.items():
@@ -84,11 +105,14 @@ def select_type(tystr):
             return k
     raise RuntimeError(f"Found unsupported type of type string {tystr}")
 
-def print_type(ty):
-    if ty in typemap:
-        return typemap[ty]
+def lookup_type(ty, m):
+    if ty in m:
+        return m[ty]
     else:
         raise RuntimeError(f"Found unknown type {ty}")
+
+def print_type(ty):
+    return lookup_type(ty, typemap)
 
 class BufferDtype:
     def __init__(self, typestr):
@@ -98,13 +122,19 @@ class BufferDtype:
         self.itemsz = int(itemsz)
 
     def __str__(self):
-        return f"{self.bo}{self.ty}{self.itemsz}"
+        return f"{self.bo}{print_type(self.ty)}"
 
     def to_typestr(self):
         return self.bo + print_type(self.ty)
 
     def size(self):
         return self.itemsz
+
+    def to_numpy(self):
+        return lookup_type(self.ty, np_typemap)
+
+    def to_ctype(self):
+        return lookup_type(self.ty, ctypemap)
 
 def check_array_interface(intf):
     shape = intf["shape"]
@@ -210,7 +240,7 @@ class Buffer:
 
         from cuda.bindings import runtime
         nbytes = reduce(mul, shape, 1) * dtype.size()
-        [ptr] = check_cuda_errors(runtime.cudaMalloc(nbytes))
+        [ptr] = check_cuda_errors(runtime.cudaMallocAsync(nbytes, 0))
         check_cuda_errors(runtime.cudaMemcpyAsync(ptr, data_ptr, nbytes, runtime.cudaMemcpyKind.cudaMemcpyHostToDevice, 0))
         return Buffer(ptr, shape, dtype, CompileBackend.Cuda, data_ptr)
 
@@ -243,10 +273,12 @@ class Buffer:
         # We synchronize with the GPU before returning a NumPy array
         if self.backend == CompileBackend.Cuda:
             from cuda.bindings import runtime
-            a = np.ndarray(self.shape)
+            a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
+            print(a.__array_interface__)
             shape, dtype, data_ptr = check_array_interface(a.__array_interface__)
             nbytes = reduce(mul, shape, 1) * dtype.size()
-            check_cuda_errors(runtime.cudaMemcpyAsync(data_ptr, self.buf, nbytes, runtime.cudaMemcpyKind(2), 0))
+            print(f"copying {nbytes} bytes from {self.buf} (device) to {data_ptr} (host)")
+            check_cuda_errors(runtime.cudaMemcpyAsync(data_ptr, self.buf, nbytes, runtime.cudaMemcpyKind.cudaMemcpyDeviceToHost, 0))
             return a
         elif self.backend == CompileBackend.Metal:
             sync(self.backend)

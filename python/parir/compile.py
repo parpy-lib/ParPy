@@ -138,7 +138,7 @@ def get_cuda_wrapper(name, lib):
                 return ctypes.c_double
             elif isinstance(arg, Buffer):
                 if len(arg.shape) == 0:
-                    return arg.ctype
+                    return arg.dtype.to_ctype()
                 else:
                     return ctypes.c_void_p
             else:
@@ -149,7 +149,7 @@ def get_cuda_wrapper(name, lib):
         def value_or_ptr(arg):
             if isinstance(arg, Buffer):
                 if len(arg.shape) == 0:
-                    return arg.numpy()[0]
+                    return arg.numpy()
                 else:
                     return arg.buf
             else:
