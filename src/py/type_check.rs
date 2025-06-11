@@ -12,7 +12,6 @@ use crate::utils::smap::{SFold, SMapAccum};
 use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
 use pyo3::types::*;
-use pyo3::types::IntoPyDict;
 
 use std::collections::BTreeMap;
 

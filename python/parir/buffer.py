@@ -14,6 +14,15 @@ PARIR_METAL_BASE_LIB_PATH = PARIR_METAL_PATH / "parir_metal_lib.so"
 
 metal_lib = None
 
+# Inspired by the approach used in the cuda-python API documentation.
+def check_cuda_errors(result):
+    if result[0].value:
+        from cuda.bindings import runtime
+        _, s = runtime.cudaGetErrorString(result[0])
+        raise RuntimeError(f"CUDA error {s} (code={result[0].value})")
+    else:
+        return result[1:]
+
 def try_load_metal_base_lib():
     global metal_lib
     if metal_lib is None:
@@ -88,6 +97,9 @@ class BufferDtype:
         self.ty = select_type(ty + itemsz)
         self.itemsz = int(itemsz)
 
+    def __str__(self):
+        return f"{self.bo}{self.ty}{self.itemsz}"
+
     def to_typestr(self):
         return self.bo + print_type(self.ty)
 
@@ -121,6 +133,15 @@ def to_array_interface(ptr, dtype, shape):
         'version': 3
     }
 
+def sync(backend):
+    if backend == CompileBackend.Cuda:
+        from cuda.bindings import runtime
+        check_cuda_errors(runtime.cudaDeviceSynchronize())
+    elif backend == CompileBackend.Metal:
+        self.lib.sync()
+    else:
+        raise RuntimeError(f"Called sync on unsupported compiler backend {backend}")
+
 class Buffer:
     def __init__(self, buf, shape, dtype, backend, src_ptr=None):
         self.buf = buf
@@ -133,7 +154,7 @@ class Buffer:
             setattr(self, "__array_interface__", arr_intf)
         elif self.backend == CompileBackend.Cuda:
             cuda_intf = to_array_interface(self.buf, self.dtype, self.shape)
-            setattr(self, "__cuda_array_interface__", cuda_arr_intf)
+            setattr(self, "__cuda_array_interface__", cuda_intf)
         elif self.backend == CompileBackend.Metal:
             self.lib = metal_lib
             self.ptr = self.lib.parir_ptr_buffer(self.buf)
@@ -151,27 +172,23 @@ class Buffer:
         if self.backend == CompileBackend.Cuda:
             if self.src_ptr is not None:
                 from cuda.bindings import runtime
-                err = runtime.cudaMemcpy(self.src_ptr, self.buf, nbytes, runtime.cudaMemcpyKind(4))
-        if self.backend == CompileBackend.Metal:
+                check_cuda_errors(runtime.cudaMemcpyAsync(self.src_ptr, self.buf, nbytes, runtime.cudaMemcpyKind.cudaMemcpyDeviceToHost, 0))
+                check_cuda_errors(runtime.cudaFreeAsync(self.buf, 0))
+                self.buf = None
+        elif self.backend == CompileBackend.Metal:
             if self.buf is not None:
                 # Need to wait for kernels to complete before we copy data.
-                self.sync()
+                sync(self.backend)
                 if self.src_ptr is not None:
                     self.lib.parir_memcpy(self.src_ptr, self.ptr, nbytes)
                 self.lib.parir_free_buffer(self.buf)
                 self.buf = None
-
-    def sync(self):
-        if self.backend == CompileBackend.Metal:
-            self.lib.sync()
 
     def from_array_cpu(t):
         if hasattr(t, "__array_interface__"):
             shape, dtype, data_ptr = check_array_interface(t.__array_interface__)
         elif hasattr(t, "__array__"):
             shape, dtype, data_ptr = check_array_interface(t.__array__().__array_interface__)
-        elif hasattr(t, "__cuda_array_interface__"):
-            shape, dtype, data_ptr = check_array_interface(t.__cuda_array_interface__)
         else:
             raise RuntimeError(f"Cannot convert argument {t} to CPU buffer")
 
@@ -193,8 +210,8 @@ class Buffer:
 
         from cuda.bindings import runtime
         nbytes = reduce(mul, shape, 1) * dtype.size()
-        err, ptr = runtime.cudaMalloc(nbytes)
-        err = runtime.cudaMemcpy(ptr, data_ptr, nbytes, runtime.cudaMemcpyKind(4))
+        [ptr] = check_cuda_errors(runtime.cudaMalloc(nbytes))
+        check_cuda_errors(runtime.cudaMemcpyAsync(ptr, data_ptr, nbytes, runtime.cudaMemcpyKind.cudaMemcpyHostToDevice, 0))
         return Buffer(ptr, shape, dtype, CompileBackend.Cuda, data_ptr)
 
     def from_array_metal(t):
@@ -223,5 +240,16 @@ class Buffer:
             raise RuntimeError(f"Unsupported buffer backend {backend}")
 
     def numpy(self):
-        self._sync()
-        return np.asarray(self)
+        # We synchronize with the GPU before returning a NumPy array
+        if self.backend == CompileBackend.Cuda:
+            from cuda.bindings import runtime
+            a = np.ndarray(self.shape)
+            shape, dtype, data_ptr = check_array_interface(a.__array_interface__)
+            nbytes = reduce(mul, shape, 1) * dtype.size()
+            check_cuda_errors(runtime.cudaMemcpyAsync(data_ptr, self.buf, nbytes, runtime.cudaMemcpyKind(2), 0))
+            return a
+        elif self.backend == CompileBackend.Metal:
+            sync(self.backend)
+            return np.asarray(self)
+        else:
+            raise RuntimeError(f"Unsupported buffer backend {backend}")

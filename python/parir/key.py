@@ -10,9 +10,10 @@ import os
 import torch
 
 def arg_to_string(arg):
-    if isinstance(arg, torch.Tensor):
-        if arg.ndim == 0:
-            return f"({arg.dtype}){arg.item()}"
+    from .buffer import Buffer
+    if isinstance(arg, Buffer):
+        if len(arg.shape) == 0:
+            return f"({arg.dtype}){arg.numpy()[0]}"
         else:
             dims = ",".join([str(n) for n in arg.shape])
             return f"<{arg.dtype},{dims}>"

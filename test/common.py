@@ -24,7 +24,10 @@ def compiler_backend_is_enabled(backend):
 
 def run_if_backend_is_enabled(backend, fn):
     if compiler_backend_is_enabled(backend):
-        return fn()
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            return fn()
     else:
         pytest.skip(f"{backend} is not enabled")
 

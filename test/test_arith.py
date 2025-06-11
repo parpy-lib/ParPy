@@ -99,7 +99,7 @@ def arith_binop_dtype(fn, ldtype, rdtype, compile_only, backend):
         dst_cu = torch.zeros_like(dst)
         fn(dst_cu, a, b, opts=par_opts(backend, {}))
         fn(dst, a, b, opts=seq_opts(backend))
-        assert torch.allclose(dst, dst_cu.cpu(), atol=1e-5)
+        assert torch.allclose(dst, dst_cu, atol=1e-5)
 
 bitwise_funs = [
     parir_bit_and, parir_bit_or, parir_bit_xor, parir_bit_shl, parir_bit_shr

@@ -119,6 +119,7 @@ def torch_to_ctype(dtype):
 
 def get_cuda_wrapper(name, lib):
     def wrapper(*args):
+        from .buffer import Buffer
         # Expand the arguments by making each field of a dictionary a separate argument
         def expand_arg(arg):
             if isinstance(arg, dict):
@@ -135,9 +136,9 @@ def get_cuda_wrapper(name, lib):
                 return ctypes.c_int64
             elif isinstance(arg, float):
                 return ctypes.c_double
-            elif isinstance(arg, torch.Tensor):
-                if arg.ndim == 0:
-                    return torch_to_ctype(arg.dtype)
+            elif isinstance(arg, Buffer):
+                if len(arg.shape) == 0:
+                    return arg.ctype
                 else:
                     return ctypes.c_void_p
             else:
@@ -146,11 +147,11 @@ def get_cuda_wrapper(name, lib):
 
         # Extract the pointers or values of tensor arguments before passing to CUDA
         def value_or_ptr(arg):
-            if isinstance(arg, torch.Tensor):
-                if arg.ndim == 0:
-                    return arg.item()
+            if isinstance(arg, Buffer):
+                if len(arg.shape) == 0:
+                    return arg.numpy()[0]
                 else:
-                    return arg.data_ptr()
+                    return arg.buf
             else:
                 return arg
         ptr_args = [value_or_ptr(arg) for arg in args]

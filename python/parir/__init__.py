@@ -1,4 +1,5 @@
 from . import buffer, compile, key, parir, validate
+from .buffer import sync
 from .compile import clear_cache
 from .operators import *
 from .state import *
@@ -93,6 +94,12 @@ def compile_function(ir_ast, args, opts, fn):
     fun_cache[quick_key] = wrap_fn
     return wrap_fn
 
+def run_callbacks(callbacks, opts):
+    if len(callbacks) > 0:
+        sync(opts.backend)
+        for cb in callbacks:
+            cb()
+
 def compile_string(fun_name, code, opts=parir.CompileOptions()):
     k = "string_" + key.generate_code_key(code)
     compile.build_shared_library(k, code, opts)
@@ -101,8 +108,7 @@ def compile_string(fun_name, code, opts=parir.CompileOptions()):
     def inner(*args):
         callbacks, args = validate.check_arguments(args, opts, True)
         fn(*args)
-        for cb in callbacks:
-            cb()
+        run_callbacks(callbacks, opts)
     inner.__name__ = fun_name
     return inner
 
@@ -132,8 +138,7 @@ def jit(fun):
         opts = check_kwargs(kwargs)
         callbacks, args = validate.check_arguments(args, opts, True)
         compile_function(ir_ast, args, opts, fun)(*args)
-        for cb in callbacks:
-            cb()
+        run_callbacks(callbacks, opts)
     ir_asts[inner] = ir_ast
     inner.__name__ = fun.__name__
     return inner
