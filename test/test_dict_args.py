@@ -4,33 +4,36 @@ import torch
 
 from common import *
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_dict_args():
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_dict_args(backend):
     @parir.jit
     def dummy(x, y):
         with parir.gpu:
             y[0] = x["a"][0] + x["b"][0]
-    x = {
-        'a': torch.tensor([4], dtype=torch.int64, device='cuda'),
-        'b': torch.tensor([2], dtype=torch.int64, device='cuda')
-    }
-    y = torch.tensor([0], dtype=torch.int32, device='cuda')
-    dummy(x, y, opts=par_opts({}))
-    assert y[0] == 6
+    def helper():
+        x = {
+            'a': torch.tensor([4], dtype=torch.int64),
+            'b': torch.tensor([2], dtype=torch.int64)
+        }
+        y = torch.tensor([0], dtype=torch.int32)
+        dummy(x, y, opts=par_opts(backend, {}))
+        assert y[0] == 6
+    run_if_backend_is_enabled(backend, helper)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_nested_dict():
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_nested_dict(backend):
     @parir.jit
     def dummy(x, y):
         with parir.gpu:
             y[0] = x['a']['b']
-
-    x = {
-        'a': {
-            'b': torch.tensor([3], dtype=torch.int64, device='cuda')
+    def helper():
+        x = {
+            'a': {
+                'b': torch.tensor([3], dtype=torch.int64, device='cuda')
+            }
         }
-    }
-    y = torch.tensor([0], dtype=torch.int32, device='cuda')
-    with pytest.raises(RuntimeError) as e_info:
-        dummy(x, y, opts=par_opts({}))
-    assert e_info.match(r".*nested dictionary.*")
+        y = torch.tensor([0], dtype=torch.int32, device='cuda')
+        with pytest.raises(RuntimeError) as e_info:
+            dummy(x, y, opts=par_opts(backend, {}))
+        assert e_info.match(r".*nested dictionary.*")
+    run_if_backend_is_enabled(backend, helper)

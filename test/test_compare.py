@@ -55,18 +55,33 @@ def parir_gt(dst, a, b):
         else:
             dst[0] = 0
 
-def compare_dtype(fn, arg_dtype, compile_only):
-    a = torch.randint(1, 10, (1,), dtype=arg_dtype)
-    b = torch.randint(1, 10, (1,), dtype=arg_dtype)
+def set_expected_behavior(dtype, backend):
+    if dtype == torch.float64 and backend == parir.CompileBackend.Metal:
+        return True, r"Metal does not support double-precision floating-point numbers."
+    else:
+        return False, None
+
+def compare_dtype_helper(fn, dtype, backend, compile_only):
+    a = torch.randint(1, 10, (1,), dtype=dtype)
+    b = torch.randint(1, 10, (1,), dtype=dtype)
     dst = torch.empty((1,), dtype=torch.int32)
     if compile_only:
-        s = parir.print_compiled(fn, [dst, a, b])
+        s = parir.print_compiled(fn, [dst, a, b], seq_opts(backend))
         assert len(s) != 0
     else:
-        dst_cu = torch.empty_like(dst).cuda()
-        fn(dst_cu, a.cuda(), b.cuda(), opts=par_opts({}))
-        fn(dst, a, b, opts=seq_opts())
-        assert dst == dst_cu.cpu()
+        dst_device = torch.empty_like(dst)
+        fn(dst_device, a, b, opts=par_opts(backend, {}))
+        fn(dst, a, b, opts=seq_opts(backend))
+        assert dst == dst_device
+
+def compare_dtype(fn, arg_dtype, backend, compile_only):
+    should_fail, msg_regex = set_expected_behavior(arg_dtype, backend)
+    if should_fail:
+        with pytest.raises(TypeError) as e_info:
+            compare_dtype_helper(fn, arg_dtype, backend, compile_only)
+        assert e_info.match(msg_regex)
+    else:
+        compare_dtype_helper(fn, arg_dtype, backend, compile_only)
 
 functions = [
     parir_eq, parir_neq, parir_leq, parir_geq, parir_lt, parir_gt
@@ -78,11 +93,15 @@ cmp_dtypes = [
 
 @pytest.mark.parametrize('fn', functions)
 @pytest.mark.parametrize('dtype', cmp_dtypes)
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_compare(fn, dtype):
-    compare_dtype(fn, dtype, False)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_compare(fn, dtype, backend):
+    run_if_backend_is_enabled(
+        backend,
+        lambda: compare_dtype(fn, dtype, backend, False)
+    )
 
 @pytest.mark.parametrize('fn', functions)
 @pytest.mark.parametrize('dtype', cmp_dtypes)
-def test_compare_compiles(fn, dtype):
-    compare_dtype(fn, dtype, True)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_compare_compiles(fn, dtype, backend):
+    compare_dtype(fn, dtype, backend, True)

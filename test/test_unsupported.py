@@ -65,27 +65,3 @@ def test_dict_with_int_key():
     with pytest.raises(RuntimeError) as e_info:
         dict_arg({'x': 2, 2: 4})
     assert e_info.match(r".*non-string key.*")
-
-@parir.jit
-def add(a, b, c, N):
-    parir.label("N")
-    for i in range(N):
-        c[i] = a[i] + b[i]
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_add_cpu_args():
-    a = torch.randn(10)
-    b = torch.randn(10)
-    c = torch.randn(10)
-    with pytest.raises(RuntimeError) as e_info:
-        add(a, b, c, 10, opts=par_opts({'N': parir.threads(10)}))
-    assert e_info.match(r".*is on device.*expected to be on device.*")
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_add_numpy_array_arg():
-    a = torch.randn(10, device='cuda')
-    b = torch.randn(10, device='cuda')
-    c = np.ndarray(10)
-    with pytest.raises(RuntimeError) as e_info:
-        add(a, b, c, 10, opts=par_opts({'N': parir.threads(10)}))
-    assert e_info.match(r".*unsupported type.*")

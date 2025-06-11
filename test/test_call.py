@@ -28,38 +28,43 @@ def add_3d_inplace(x, y, N, M, K):
     for i in range(N):
         add_2d_inplace(x[i], y[i], M, K)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_call():
-    x = torch.randn(10, 15, device='cuda')
-    y = torch.zeros_like(x)
-    p = {'2d': parir.threads(10), '1d': parir.threads(15)}
-    add_2d_inplace(x, y, 10, 15, opts=par_opts(p))
-    assert torch.allclose(x, y)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_call(backend):
+    def helper():
+        x = torch.randn(10, 15)
+        y = torch.zeros_like(x)
+        p = {'2d': parir.threads(10), '1d': parir.threads(15)}
+        add_2d_inplace(x, y, 10, 15, opts=par_opts(backend, p))
+        assert torch.allclose(x, y)
+    run_if_backend_is_enabled(backend, helper)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_call_different_types():
-    x = torch.randn(10, 15, device='cuda')
-    y = torch.zeros_like(x)
-    z = torch.randint(0, 10, (10, 15), dtype=torch.int32, device='cuda')
-    w = torch.zeros_like(z)
-    p = {'2d': parir.threads(10), '1d': parir.threads(15)}
-    add_2d_inplace_x2(x, y, z, w, 10, 15, opts=par_opts(p))
-    assert torch.allclose(x, y)
-    assert torch.allclose(z, w)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_call_different_types(backend):
+    def helper():
+        x = torch.randn(10, 15)
+        y = torch.zeros_like(x)
+        z = torch.randint(0, 10, (10, 15), dtype=torch.int32)
+        w = torch.zeros_like(z)
+        p = {'2d': parir.threads(10), '1d': parir.threads(15)}
+        add_2d_inplace_x2(x, y, z, w, 10, 15, opts=par_opts(backend, p))
+        assert torch.allclose(x, y)
+        assert torch.allclose(z, w)
+    run_if_backend_is_enabled(backend, helper)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_nested_call_dependency():
-    x = torch.randn(10, 20, 30, device='cuda')
-    y = torch.zeros_like(x)
-    p = {
-        '3d': parir.threads(10),
-        '2d': parir.threads(20),
-        '1d': parir.threads(30)
-    }
-    add_3d_inplace(x, y, 10, 20, 30, opts=par_opts(p))
-    assert torch.allclose(x, y)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_nested_call_dependency(backend):
+    def helper():
+        x = torch.randn(10, 20, 30, device='cuda')
+        y = torch.zeros_like(x)
+        p = {
+            '3d': parir.threads(10),
+            '2d': parir.threads(20),
+            '1d': parir.threads(30)
+        }
+        add_3d_inplace(x, y, 10, 20, 30, opts=par_opts(backend, p))
+        assert torch.allclose(x, y)
+    run_if_backend_is_enabled(backend, helper)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_call_non_decorated_function_fails():
     # This function is intentionally not decorated with '@parir.jit'
     def non_decorated_add(x, y, M):
@@ -73,7 +78,6 @@ def test_call_non_decorated_function_fails():
                 non_decorated_add(x[i], y[i], M)
     assert e_info.match(r".*unknown function non_decorated_add.*")
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 def test_recursive_call_fails():
     with pytest.raises(RuntimeError) as e_info:
         @parir.jit

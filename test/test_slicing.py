@@ -102,12 +102,7 @@ def temp_slices(x, y, z):
     parir.label('N')
     x[:] = (y[1:] + z[:-1])[1:-1]
 
-def run_slicing_test(compile_only, spec):
-    def move_to_device(arg, device):
-        if isinstance(arg, torch.Tensor):
-            return arg.to(device)
-        else:
-            return arg
+def run_slicing_test(compile_only, spec, backend):
     def clone_arg(arg):
         if isinstance(arg, torch.Tensor):
             return arg.detach().clone()
@@ -119,8 +114,6 @@ def run_slicing_test(compile_only, spec):
         fn, args = spec
         err = None
         err_msg = None
-    device = torch.device('cpu') if compile_only else torch.device('cuda')
-    args = [move_to_device(arg, device) for arg in args]
     p = {
         'N': parir.threads(32),
         'M': parir.threads(32),
@@ -129,24 +122,24 @@ def run_slicing_test(compile_only, spec):
     if compile_only:
         if err:
             with pytest.raises(err) as e_info:
-                s = parir.print_compiled(fn, args, par_opts(p))
+                s = parir.print_compiled(fn, args, par_opts(backend, p))
             assert e_info.match(err_msg)
         else:
-            s = parir.print_compiled(fn, args, par_opts(p))
+            s = parir.print_compiled(fn, args, par_opts(backend, p))
             assert len(s) != 0
     else:
         if err:
             with pytest.raises(err) as e_info:
-                fn(*args, opts=par_opts(p))
+                fn(*args, opts=par_opts(backend, p))
             assert e_info.match(err_msg)
         else:
             seq_args = [clone_arg(arg) for arg in args]
-            fn(*args, opts=par_opts(p))
-            fn(*seq_args, opts=seq_opts())
+            fn(*args, opts=par_opts(backend, p))
+            fn(*seq_args, opts=seq_opts(backend))
             assert torch.allclose(args[-1], seq_args[-1], atol=1e-5)
 
 def tensor(*shapes):
-    return torch.randn(shapes, dtype=torch.float64)
+    return torch.randn(shapes, dtype=torch.float32)
 
 fun_specs = [
     (add_slices, [tensor(10), tensor(10), tensor(10)]),
@@ -174,14 +167,12 @@ fun_specs = [
     , r"Target of slice must be a variable." )
 ]
 
-def slice_assign_invalid_dims(x, y):
-    y[:] = parir.sum(x[:,:,:], axis=0)
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
 @pytest.mark.parametrize('spec', fun_specs)
-def test_run_slicing(spec):
-    run_slicing_test(False, spec)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_run_slicing(spec, backend):
+    run_if_backend_is_enabled(backend, lambda: run_slicing_test(False, spec, backend))
 
 @pytest.mark.parametrize('spec', fun_specs)
-def test_compile_slicing(spec):
-    run_slicing_test(True, spec)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_compile_slicing(spec, backend):
+    run_if_backend_is_enabled(backend, lambda: run_slicing_test(True, spec, backend))

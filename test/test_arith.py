@@ -96,10 +96,10 @@ def arith_binop_dtype(fn, ldtype, rdtype, compile_only, backend):
         s = parir.print_compiled(fn, [dst, a, b], seq_opts(backend))
         assert len(s) != 0
     else:
-        dst_cu = torch.zeros_like(dst)
-        fn(dst_cu, a, b, opts=par_opts(backend, {}))
+        dst_device = torch.zeros_like(dst)
+        fn(dst_device, a, b, opts=par_opts(backend, {}))
         fn(dst, a, b, opts=seq_opts(backend))
-        assert torch.allclose(dst, dst_cu, atol=1e-5)
+        assert torch.allclose(dst, dst_device, atol=1e-5)
 
 bitwise_funs = [
     parir_bit_and, parir_bit_or, parir_bit_xor, parir_bit_shl, parir_bit_shr
@@ -218,10 +218,10 @@ def arith_unop_dtype(fn, dtype, compile_only, backend):
         s = parir.print_compiled(fn, [src, dst], seq_opts(backend))
         assert len(s) != 0
     else:
-        dst_cu = torch.zeros_like(dst)
-        fn(dst_cu, src, opts=par_opts(backend, {}))
+        dst_device = torch.zeros_like(dst)
+        fn(dst_device, src, opts=par_opts(backend, {}))
         fn(dst, src, opts=seq_opts(backend))
-        assert torch.allclose(dst, dst_cu, atol=1e-5)
+        assert torch.allclose(dst, dst_device, atol=1e-5)
 
 float_funs = [parir_cos, parir_sin, parir_tanh, parir_atan2, parir_sqrt]
 float_tys = [torch.float16, torch.float32, torch.float64]

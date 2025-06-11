@@ -156,55 +156,61 @@ def forward_kernel(hmm, seqs, alpha1, alpha2, result):
 
         result[inst] = maxp + parir.log(psum)
 
-def forward(hmm, seqs, par):
-    alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32, device='cuda')
+def forward(hmm, seqs, opts):
+    alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
     alpha2 = torch.empty_like(alpha1)
-    result = torch.empty(seqs["num_instances"], dtype=torch.float32, device='cuda')
-    code = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], par_opts(par))
-    forward_kernel(hmm, seqs, alpha1, alpha2, result, opts=par_opts(par))
+    result = torch.empty(seqs["num_instances"], dtype=torch.float32)
+    code = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], opts)
+    forward_kernel(hmm, seqs, alpha1, alpha2, result, opts=opts)
     return result
 
-def read_test_data(device):
+def read_test_data():
     model = "test/data/3mer-model.hdf5"
     signals = "test/data/signals.hdf5"
-    hmm, seqs = read_trellis_inputs(model, signals, device)
-    expected = read_expected_output("test/data/3mer-expected.txt", device)
+    hmm, seqs = read_trellis_inputs(model, signals, 'cpu')
+    expected = read_expected_output("test/data/3mer-expected.txt", 'cpu')
     return hmm, seqs, expected
 
-def run_forw_test(hmm, seqs, expected, p):
-    probs = forward(hmm, seqs, p)
+def run_forw_test(hmm, seqs, expected, opts):
+    probs = forward(hmm, seqs, opts)
     assert torch.allclose(probs, expected, atol=1e-5), f"{probs}\n{expected}"
 
 @pytest.mark.skipif(importlib.util.find_spec('h5py') is None, reason="Test requires h5py")
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_forward_single_block():
-    hmm, seqs, expected = read_test_data('cuda')
-    p = {
-        'inst': parir.threads(seqs["num_instances"]),
-        'state': parir.threads(512),
-    }
-    run_forw_test(hmm, seqs, expected, p)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_forward_single_block(backend):
+    def helper():
+        hmm, seqs, expected = read_test_data()
+        p = {
+            'inst': parir.threads(seqs["num_instances"]),
+            'state': parir.threads(512),
+        }
+        run_forw_test(hmm, seqs, expected, par_opts(backend, p))
+    run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.skipif(importlib.util.find_spec('h5py') is None, reason="Test requires h5py")
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_forward_multi_block():
-    hmm, seqs, expected = read_test_data('cuda')
-    p = {
-        'inst': parir.threads(seqs["num_instances"]),
-        'state': parir.threads(2048),
-    }
-    run_forw_test(hmm, seqs, expected, p)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_forward_multi_block(backend):
+    def helper():
+        hmm, seqs, expected = read_test_data()
+        p = {
+            'inst': parir.threads(seqs["num_instances"]),
+            'state': parir.threads(2048),
+        }
+        run_forw_test(hmm, seqs, expected, par_opts(backend, p))
+    run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.skipif(importlib.util.find_spec('h5py') is None, reason="Test requires h5py")
-def test_forward_compiles():
-    # Load data on the CPU since these tests should run without a GPU.
-    hmm, seqs, _ = read_test_data('cpu')
-    result = torch.empty(seqs["num_instances"], dtype=torch.float32)
-    alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
-    alpha2 = torch.empty_like(alpha1)
-    p = {
-        'inst': parir.threads(seqs["num_instances"]),
-        'state': parir.threads(hmm["num_states"])
-    }
-    s = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], par_opts(p))
-    assert len(s) != 0
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_forward_compiles(backend):
+    def helper():
+        hmm, seqs, _ = read_test_data()
+        result = torch.empty(seqs["num_instances"], dtype=torch.float32)
+        alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
+        alpha2 = torch.empty_like(alpha1)
+        p = {
+            'inst': parir.threads(seqs["num_instances"]),
+            'state': parir.threads(hmm["num_states"])
+        }
+        s = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], par_opts(backend, p))
+        assert len(s) != 0
+    run_if_backend_is_enabled(backend, helper)

@@ -36,37 +36,39 @@ def syrk_par_spec(N, nthreads):
         'k': parir.threads(nthreads).reduce()
     }
 
-def syrk_run_par(nthreads):
-    alpha, beta, C, A, N, M = syrk_data()
+def syrk_run_par(backend, nthreads):
+    def helper():
+        alpha, beta, C, A, N, M = syrk_data()
 
-    # Run sequentially to produce a reference solution
-    C_ref = C.clone()
-    syrk(alpha, beta, C_ref, A, N, M, opts=seq_opts())
+        # Run sequentially to produce a reference solution
+        C_ref = C.clone()
+        syrk(alpha, beta, C_ref, A, N, M, opts=seq_opts(backend))
 
-    # Run in parallel using the specified number of threads and validate the
-    # result
-    p = syrk_par_spec(N, nthreads)
-    C_cu = C.clone().cuda()
-    syrk(alpha, beta, C_cu, A.cuda(), N, M, opts=par_opts(p))
+        # Run in parallel using the specified number of threads and validate the
+        # result
+        p = syrk_par_spec(N, nthreads)
+        C_device = C.clone()
+        syrk(alpha, beta, C_device, A, N, M, opts=par_opts(backend, p))
 
-    assert torch.allclose(C_ref, C_cu.cpu()), f"Run failed using {nthreads} threads"
+        assert torch.allclose(C_ref, C_device), f"Run failed using {nthreads} threads"
+    run_if_backend_is_enabled(backend, helper)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_syrk_parallel_64():
-    syrk_run_par(64)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_syrk_parallel_64(backend):
+    syrk_run_par(backend, 64)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_syrk_parallel_128():
-    syrk_run_par(128)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_syrk_parallel_128(backend):
+    syrk_run_par(backend, 128)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_syrk_parallel_256():
-    syrk_run_par(256)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_syrk_parallel_256(backend):
+    syrk_run_par(backend, 256)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_syrk_parallel_512():
-    syrk_run_par(512)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_syrk_parallel_512(backend):
+    syrk_run_par(backend, 512)
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_syrk_parallel_1024():
-    syrk_run_par(1024)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_syrk_parallel_1024(backend):
+    syrk_run_par(backend, 1024)
