@@ -162,7 +162,15 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             })
         },
         gpu_ast::Stmt::KernelLaunch {id, args, grid, ..} => {
+            let is_pointer_type = |ty: &gpu_ast::Type| match ty {
+                gpu_ast::Type::Pointer {..} => true,
+                _ => false
+            };
+            // NOTE: We only pass along the arguments that are pointers (i.e., which will be
+            // represented as buffers). The other arguments will already have been inlined in the
+            // code at an earlier stage.
             let args = args.into_iter()
+                .filter(|e| is_pointer_type(e.get_type()))
                 .map(|e| from_gpu_ir_expr(env, e))
                 .collect::<CompileResult<Vec<Expr>>>()?;
             let gpu_ast::LaunchArgs {blocks, threads} = grid;
