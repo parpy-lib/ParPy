@@ -29,10 +29,10 @@ def test_nested_dict(backend):
     def helper():
         x = {
             'a': {
-                'b': torch.tensor([3], dtype=torch.int64, device='cuda')
+                'b': torch.tensor([3], dtype=torch.int64)
             }
         }
-        y = torch.tensor([0], dtype=torch.int32, device='cuda')
+        y = torch.tensor([0], dtype=torch.int32)
         with pytest.raises(RuntimeError) as e_info:
             dummy(x, y, opts=par_opts(backend, {}))
         assert e_info.match(r".*nested dictionary.*")

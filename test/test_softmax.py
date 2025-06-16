@@ -34,7 +34,7 @@ def softmax_wrap(x, opts):
 
 def compare_softmax(opts):
     N, M = 256, 512
-    x = torch.randn((N, M), dtype=torch.float32, device='cuda')
+    x = torch.randn((N, M), dtype=torch.float32)
     y1 = torch.softmax(x, 1)
     y2 = softmax_wrap(x, opts)
     assert torch.allclose(y1, y2, atol=1e-5)

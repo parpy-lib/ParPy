@@ -40,7 +40,7 @@ def test_copy_run_compiled_string(backend):
         y = torch.empty_like(x)
         p = {'i': parir.threads(1024)}
         code = parir.print_compiled(copy, [x, y], par_opts(backend, p))
-        fn = parir.compile_string(copy.__name__, code)
+        fn = parir.compile_string(copy.__name__, code, par_opts(backend, p))
         fn(x, y)
         assert torch.allclose(x, y)
     run_if_backend_is_enabled(backend, helper)

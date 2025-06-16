@@ -23,10 +23,10 @@ def syrk_data():
     alpha = 1.5
     beta = 1.2
     C = torch.from_numpy(
-        np.fromfunction(lambda i,j: ((i * j + 2) % N) / M, (N, N), dtype=np.float64)
+        np.fromfunction(lambda i,j: ((i * j + 2) % N) / M, (N, N), dtype=np.float32)
     )
     A = torch.from_numpy(
-        np.fromfunction(lambda i,j: ((i * j + 2) % N) / N, (N, M), dtype=np.float64)
+        np.fromfunction(lambda i,j: ((i * j + 2) % N) / N, (N, M), dtype=np.float32)
     )
     return alpha, beta, C, A, N, M
 

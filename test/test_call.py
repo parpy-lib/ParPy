@@ -54,7 +54,7 @@ def test_call_different_types(backend):
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_nested_call_dependency(backend):
     def helper():
-        x = torch.randn(10, 20, 30, device='cuda')
+        x = torch.randn(10, 20, 30)
         y = torch.zeros_like(x)
         p = {
             '3d': parir.threads(10),

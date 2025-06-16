@@ -69,7 +69,7 @@ def sum_exp_3d(x, N, M, out):
 
 def sum_exp_3d_wrap(backend, par):
     N, M, K = 10, 20, 30
-    x = torch.randn(N, M, K, dtype=torch.float32, device='cuda')
+    x = torch.randn(N, M, K, dtype=torch.float32)
     x_2 = x.detach().clone()
     out = torch.empty(N, M, dtype=x.dtype, device=x.device)
     sum_exp_3d(x, N, M, out, opts=par_opts(backend, par))
@@ -90,8 +90,8 @@ def test_nested_imbalanced_parallelism(backend):
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.skip("Compiler does not currently support this kind of imbalanced parallelism")
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Test requires CUDA")
-def test_imbalanced_parallelism_in_sequential_for():
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_imbalanced_parallelism_in_sequential_for(backend):
     def helper():
         p = {
             'N': parir.threads(10),

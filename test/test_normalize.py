@@ -23,7 +23,7 @@ def normalize_wrap(t, opts):
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_normalize_single_row(backend):
     def helper():
-        t = torch.ones((1, 1024), dtype=torch.float32, device='cuda')
+        t = torch.ones((1, 1024), dtype=torch.float32)
         y1 = torch.nn.functional.normalize(t, p=1, dim=1)
         p = { "i": parir.threads(256) }
         y2 = normalize_wrap(t, par_opts(backend, p))
@@ -33,7 +33,7 @@ def test_normalize_single_row(backend):
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_normalize_multirow(backend):
     def helper():
-        t = torch.ones((256, 1024), dtype=torch.float32, device='cuda')
+        t = torch.ones((256, 1024), dtype=torch.float32)
         y1 = torch.nn.functional.normalize(t, p=1, dim=1)
         p = {
             "i": parir.threads(256),
