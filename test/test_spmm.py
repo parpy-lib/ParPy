@@ -75,15 +75,17 @@ def spmm_test_data():
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_spmm(backend):
-    A, B = spmm_test_data()
-    expected = A["original"].matmul(B["values"])
-    p = {
-        'i': parir.threads(A["nrows"]),
-        'j': parir.threads(B["ncols"]),
-        'aidx': parir.threads(32).reduce()
-    }
-    C = spmm_wrap(A, B, spmm_cell, par_opts(backend, p))
-    assert torch.allclose(C, expected, atol=1e-5), f"{C}\n{expected}"
+    def helper():
+        A, B = spmm_test_data()
+        expected = A["original"].matmul(B["values"])
+        p = {
+            'i': parir.threads(A["nrows"]),
+            'j': parir.threads(B["ncols"]),
+            'aidx': parir.threads(32).reduce()
+        }
+        C = spmm_wrap(A, B, spmm_cell, par_opts(backend, p))
+        assert torch.allclose(C, expected, atol=1e-5), f"{C}\n{expected}"
+    run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_spmm_compiles(backend):

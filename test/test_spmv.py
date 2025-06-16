@@ -54,18 +54,22 @@ def compare_spmv(N, M, opts):
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_spmv_seq_reduce(backend):
-    N, M = 256, 4096
-    p = { "row": parir.threads(N) }
-    compare_spmv(N, M, par_opts(backend, p))
+    def helper():
+        N, M = 256, 4096
+        p = { "row": parir.threads(N) }
+        compare_spmv(N, M, par_opts(backend, p))
+    run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_spmv_gpu(backend):
-    N, M = 256, 4096
-    p = {
-        "row": parir.threads(N),
-        "i": parir.threads(128).reduce()
-    }
-    compare_spmv(N, M, par_opts(backend, p))
+    def helper():
+        N, M = 256, 4096
+        p = {
+            "row": parir.threads(N),
+            "i": parir.threads(128).reduce()
+        }
+        compare_spmv(N, M, par_opts(backend, p))
+    run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_spmv_compiles(backend):
