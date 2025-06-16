@@ -211,8 +211,8 @@ class Buffer:
                 # Need to wait for kernels to complete before we copy data.
                 sync(self.backend)
                 if self.src_ptr is not None:
-                    self.lib.parir_memcpy(self.src_ptr, self.ptr, nbytes)
-                self.lib.parir_free_buffer(self.buf)
+                    metal_lib.parir_memcpy(self.src_ptr, self.ptr, nbytes)
+                metal_lib.parir_free_buffer(self.buf)
                 self.buf = None
 
     def from_array_cpu(t):

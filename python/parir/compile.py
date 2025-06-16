@@ -162,6 +162,14 @@ def get_cuda_wrapper(name, lib):
 def get_metal_wrapper(name, lib):
     def wrapper(*args):
         from .buffer import Buffer
+        def expand_arg(arg):
+            if isinstance(arg, dict):
+                return [v for (_, v) in sorted(arg.items())]
+            else:
+                return [arg]
+        if any([isinstance(arg, dict) for arg in args]):
+            args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
+
         def get_ctype(arg):
             if isinstance(arg, int):
                 return ctypes.c_int64
