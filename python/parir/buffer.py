@@ -187,8 +187,8 @@ class Buffer:
             cuda_intf = to_array_interface(self.buf, self.dtype, self.shape)
             setattr(self, "__cuda_array_interface__", cuda_intf)
         elif self.backend == CompileBackend.Metal:
-            self.lib = metal_lib
-            self.ptr = self.lib.parir_ptr_buffer(self.buf)
+            try_load_metal_base_lib()
+            self.ptr = metal_lib.parir_ptr_buffer(self.buf)
             arr_intf = to_array_interface(self.ptr, self.dtype, self.shape)
             setattr(self, "__array_interface__", arr_intf)
         else:

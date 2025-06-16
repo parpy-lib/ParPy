@@ -1,19 +1,22 @@
 from .parir import CompileBackend
 from .buffer import Buffer
 
+def check_dict(arg, i, in_dict, check_rec):
+    if in_dict:
+        raise RuntimeError(f"Dictionary argument {i} contains a nested dictionary")
+    if not all([isinstance(k, str) for k in arg.keys()]):
+        raise RuntimeError(f"Dictionary argument {i} contains non-string key")
+    results = [check_rec(v, f"{i}[\"{k}\"]", True) for k, v in arg.items()]
+    callbacks = [x for xs in results for x in xs[0]]
+    arg = {k: r[1] for k, r in zip(arg.keys(), results)}
+    return callbacks, arg
+
 def check_dummy_arg(arg, i, in_dict):
     array_attrs = ["__array__", "__array_interface__", "__cuda_array_interface__"]
     if isinstance(arg, int) or isinstance(arg, float):
         return [], arg
     elif isinstance(arg, dict):
-        if in_dict:
-            raise RuntimeError(f"Dictionary argument {i} contains a nested dictionary")
-        if not all([isinstance(k, str) for k in arg.keys()]):
-            raise RuntimeError(f"Dictionary argument {i} contains non-string key")
-        results = [check_dummy_arg(v, f"{i}[\"{k}\"]", True) for k, v in arg.items()]
-        callbacks = [x for xs in results for x in xs[0]]
-        arg = {k: r[1] for k, r in zip(arg.keys(), results)}
-        return callbacks, arg
+        return check_dict(arg, i, in_dict, check_dummy_arg)
     elif isinstance(arg, Buffer):
         return [], arg.numpy()
     elif any([hasattr(arg, x) for x in array_attrs]):
@@ -25,14 +28,9 @@ def check_cuda_arg(arg, i, in_dict, seq):
     if isinstance(arg, int) or isinstance(arg, float):
         return [], arg
     elif isinstance(arg, dict):
-        if in_dict:
-            raise RuntimeError(f"Dictionary argument {i} contains a nested dictionary")
-        if not all([isinstance(k, str) for k in arg.keys()]):
-            raise RuntimeError(f"Dictionary argument {i} contains non-string key")
-        results = [check_cuda_arg(v, f"{i}[\"{k}\"]", True, seq) for k, v in arg.items()]
-        callbacks = [x for xs in results for x in xs[0]]
-        arg = {k: r[1] for k, r in zip(arg.keys(), results)}
-        return callbacks, arg
+        def helper(arg, i, in_dict):
+            return check_cuda_arg(arg, i, in_dict, seq)
+        return check_dict(arg, i, in_dict, helper)
     elif isinstance(arg, Buffer):
         if seq:
             return [], arg.numpy()
@@ -50,9 +48,13 @@ def check_cuda_arg(arg, i, in_dict, seq):
     else:
         raise RuntimeError(f"Argument {i} is of unsupported type {type(arg)}")
 
-def check_metal_arg(arg, i, seq):
+def check_metal_arg(arg, i, in_dict, seq):
     if isinstance(arg, int) or isinstance(arg, float):
         return [], arg
+    elif isinstance(arg, dict):
+        def helper(arg, i, in_dict):
+            return check_metal_arg(arg, i, in_dict, seq)
+        return check_dict(arg, i, in_dict, helper)
     elif isinstance(arg, Buffer):
         if seq:
             return [], arg.numpy()
@@ -74,7 +76,7 @@ def check_arg(arg, i, opts):
     if opts.backend == CompileBackend.Cuda:
         return check_cuda_arg(arg, i, False, opts.seq)
     elif opts.backend == CompileBackend.Metal:
-        return check_metal_arg(arg, i, opts.seq)
+        return check_metal_arg(arg, i, False, opts.seq)
     else:
         raise RuntimeError(f"Unsupported compilation backend {opts.backend}")
 
