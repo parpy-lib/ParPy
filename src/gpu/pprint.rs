@@ -39,7 +39,6 @@ impl PrettyPrint for MemSpace {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
             MemSpace::Device => "device",
-            MemSpace::Shared => "shared",
         };
         (env, s.to_string())
     }
@@ -306,16 +305,19 @@ impl PrettyPrint for Stmt {
                 let (env, grid) = grid.pprint(env);
                 (env, format!("{indent}launch({id}, [{args}], {grid});"))
             },
-            Stmt::Alloc {id, elem_ty, sz, mem, ..} => {
+            Stmt::AllocDevice {id, elem_ty, sz, ..} => {
                 let (env, id) = id.pprint(env);
                 let (env, elem_ty) = elem_ty.pprint(env);
-                let (env, mem) = mem.pprint(env);
-                (env, format!("{indent}{id} = alloc({sz}, {elem_ty}, {mem});"))
+                (env, format!("{indent}{id} = alloc_device({sz}, {elem_ty});"))
             },
-            Stmt::Dealloc {id, mem, ..} => {
+            Stmt::AllocShared {id, elem_ty, sz, ..} => {
                 let (env, id) = id.pprint(env);
-                let (env, mem) = mem.pprint(env);
-                (env, format!("{indent}dealloc({id}, {mem});"))
+                let (env, elem_ty) = elem_ty.pprint(env);
+                (env, format!("{indent}shared {elem_ty} {id}[{sz}];"))
+            },
+            Stmt::FreeDevice {id, ..} => {
+                let (env, id) = id.pprint(env);
+                (env, format!("{indent}free({id});"))
             },
         }
     }

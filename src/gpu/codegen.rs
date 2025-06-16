@@ -313,8 +313,8 @@ fn generate_parallel_reduction(
         // Allocate shared memory and write to it
         let shared_id = Name::sym_str("stemp");
         let shared_var = Expr::Var {id: shared_id.clone(), ty: ty.clone(), i: i.clone()};
-        acc.push(Stmt::Alloc {
-            elem_ty: ty.clone(), id: shared_id, sz: 32, mem: MemSpace::Shared, i: i.clone()
+        acc.push(Stmt::AllocShared {
+            elem_ty: ty.clone(), id: shared_id, sz: 32, i: i.clone()
         });
         let thread_warp_idx = Expr::BinOp {
             lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()}),
@@ -570,11 +570,11 @@ fn from_ir_stmt(
             let ty = Type::Pointer {ty: Box::new(elem_ty.clone()), mem};
             let expr = Expr::Int {v: 0, ty: ty.clone(), i: i.clone()};
             host_body.push(Stmt::Definition {ty, id: id.clone(), expr, i: i.clone()});
-            host_body.push(Stmt::Alloc {id, elem_ty, sz, mem: mem.clone(), i});
+            host_body.push(Stmt::AllocDevice {id, elem_ty, sz, i});
             Ok(kernels)
         },
         ir_ast::Stmt::Free {id, i} => {
-            host_body.push(Stmt::Dealloc {id, mem: MemSpace::Device, i});
+            host_body.push(Stmt::FreeDevice {id, i});
             Ok(kernels)
         }
     }?;

@@ -149,19 +149,16 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             let gpu_ast::LaunchArgs {blocks, threads} = grid;
             Ok(Stmt::KernelLaunch {id, blocks, threads, args})
         },
-        gpu_ast::Stmt::Alloc {elem_ty, id, sz, mem, ..} => {
+        gpu_ast::Stmt::AllocDevice {elem_ty, id, sz, ..} => {
             let ty = from_gpu_ir_type(elem_ty);
-            match mem {
-                gpu_ast::MemSpace::Device => Ok(Stmt::MallocAsync {id, elem_ty: ty, sz}),
-                gpu_ast::MemSpace::Shared => Ok(Stmt::AllocShared {ty, id, sz})
-            }
+            Ok(Stmt::MallocAsync {id, elem_ty: ty, sz})
         },
-        gpu_ast::Stmt::Dealloc {id, mem, i} => {
-            match mem {
-                gpu_ast::MemSpace::Device => Ok(Stmt::FreeAsync {id}),
-                gpu_ast::MemSpace::Shared =>
-                    parir_compile_error!(i, "Cannot deallocate shared memory")
-            }
+        gpu_ast::Stmt::AllocShared {elem_ty, id, sz, ..} => {
+            let ty = from_gpu_ir_type(elem_ty);
+            Ok(Stmt::AllocShared {ty, id, sz})
+        },
+        gpu_ast::Stmt::FreeDevice {id, ..} => {
+            Ok(Stmt::FreeAsync {id})
         },
     }
 }

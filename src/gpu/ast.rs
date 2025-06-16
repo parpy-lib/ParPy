@@ -6,9 +6,6 @@ use crate::utils::smap::{SFold, SMapAccum};
 pub enum MemSpace {
     // Global memory on the device (GPU)
     Device,
-
-    // Memory shared among the threads of a thread-block
-    Shared,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -322,11 +319,12 @@ pub enum Stmt {
     // of the executing grid.
     KernelLaunch {id: Name, args: Vec<Expr>, grid: LaunchArgs, i: Info},
 
-    // Allocation of memory in the specified memory space.
-    Alloc {elem_ty: Type, id: Name, sz: usize, mem: MemSpace, i: Info},
-
-    // Deallocation of memory previously allocated in the specified memory space.
-    Dealloc {id: Name, mem: MemSpace, i: Info},
+    // Statements related to memory management. Note that we distinguish between different kinds of
+    // memory allocations as shared memory allocations introduce a new variable while device
+    // allocations refer to an existing variable.
+    AllocDevice {elem_ty: Type, id: Name, sz: usize, i: Info},
+    AllocShared {elem_ty: Type, id: Name, sz: usize, i: Info},
+    FreeDevice {id: Name, i: Info},
 }
 
 impl InfoNode for Stmt {
@@ -341,8 +339,9 @@ impl InfoNode for Stmt {
             Stmt::SynchronizeBlock {i} => i.clone(),
             Stmt::WarpReduce {i, ..} => i.clone(),
             Stmt::KernelLaunch {i, ..} => i.clone(),
-            Stmt::Alloc {i, ..} => i.clone(),
-            Stmt::Dealloc {i, ..} => i.clone(),
+            Stmt::AllocDevice {i, ..} => i.clone(),
+            Stmt::AllocShared {i, ..} => i.clone(),
+            Stmt::FreeDevice {i, ..} => i.clone(),
         }
     }
 }
@@ -386,7 +385,8 @@ impl SMapAccum<Expr> for Stmt {
                 Ok((acc, Stmt::KernelLaunch {id, args, grid, i}))
             },
             Stmt::Scope {..} | Stmt::SynchronizeBlock {..} |
-            Stmt::Alloc {..} | Stmt::Dealloc {..} => Ok((acc?, self)),
+            Stmt::AllocDevice {..} | Stmt::AllocShared {..} |
+            Stmt::FreeDevice {..} => Ok((acc?, self)),
         }
     }
 }
@@ -406,7 +406,8 @@ impl SFold<Expr> for Stmt {
             Stmt::WarpReduce {value, ..} => f(acc?, value),
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
             Stmt::Scope {..} | Stmt::SynchronizeBlock {..} |
-            Stmt::Alloc {..} | Stmt::Dealloc {..} => acc,
+            Stmt::AllocDevice {..} | Stmt::AllocShared {..} |
+            Stmt::FreeDevice {..} => acc,
         }
     }
 }
@@ -437,7 +438,8 @@ impl SMapAccum<Stmt> for Stmt {
             },
             Stmt::Definition {..} | Stmt::Assign {..} |
             Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
-            Stmt::KernelLaunch {..} | Stmt::Alloc {..} | Stmt::Dealloc {..} => {
+            Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
+            Stmt::AllocShared {..} | Stmt::FreeDevice {..} => {
                 Ok((acc?, self))
             }
         }
@@ -457,7 +459,8 @@ impl SFold<Stmt> for Stmt {
             Stmt::Scope {body, ..} => body.sfold_result(acc, &f),
             Stmt::Definition {..} | Stmt::Assign {..} |
             Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
-            Stmt::KernelLaunch {..} | Stmt::Alloc {..} | Stmt::Dealloc {..} => acc,
+            Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
+            Stmt::AllocShared {..} | Stmt::FreeDevice {..} => acc,
         }
     }
 }

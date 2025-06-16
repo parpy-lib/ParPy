@@ -74,8 +74,8 @@ fn find_thread_index_dependent_variables_stmt(
         },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
         Stmt::If {..} | Stmt::Scope {..} | Stmt::SynchronizeBlock {..} |
-        Stmt::WarpReduce {..} | Stmt::KernelLaunch {..} | Stmt::Alloc {..} |
-        Stmt::Dealloc {..} => {
+        Stmt::WarpReduce {..} | Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
+        Stmt::AllocShared {..} | Stmt::FreeDevice {..} => {
             stmt.sfold(Ok(acc), find_thread_index_dependent_variables_stmt)
         }
     }

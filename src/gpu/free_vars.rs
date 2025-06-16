@@ -42,15 +42,16 @@ fn fv_stmt(mut env: FVEnv, s: &Stmt) -> FVEnv {
             env.bound.insert(var.clone(), init.get_type().clone());
             let env = fv_expr(env, cond);
             let env = fv_expr(env, incr);
-            body.iter().fold(env, fv_stmt)
+            body.sfold(env, fv_stmt)
         },
-        Stmt::Alloc {elem_ty, id, ..} => {
+        Stmt::AllocShared {elem_ty, id, ..} => {
             env.bound.insert(id.clone(), elem_ty.clone());
             env
         },
         Stmt::Assign {..} | Stmt::If {..} | Stmt::While {..} | Stmt::Scope {..} |
         Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
-        Stmt::KernelLaunch {..} | Stmt::Dealloc {..} => {
+        Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
+        Stmt::FreeDevice {..} => {
             let env = s.sfold(env, fv_expr);
             s.sfold(env, fv_stmt)
         }
@@ -58,6 +59,6 @@ fn fv_stmt(mut env: FVEnv, s: &Stmt) -> FVEnv {
 }
 
 pub fn free_variables(s: &Vec<Stmt>) -> BTreeMap<Name, Type> {
-    let env = s.iter().fold(FVEnv::default(), fv_stmt);
+    let env = s.sfold(FVEnv::default(), fv_stmt);
     env.free
 }

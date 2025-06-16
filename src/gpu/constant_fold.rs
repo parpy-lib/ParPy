@@ -197,7 +197,8 @@ fn fold_stmt_acc(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
         Stmt::Scope {body, ..} => body.sfold_owned(acc, fold_stmt_acc),
         Stmt::Definition {..} | Stmt::Assign {..} |
         Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
-        Stmt::KernelLaunch {..} | Stmt::Alloc {..} | Stmt::Dealloc {..} => {
+        Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} | Stmt::AllocShared {..} |
+        Stmt::FreeDevice {..} => {
             acc.push(s.smap(fold_expr));
             acc
         }

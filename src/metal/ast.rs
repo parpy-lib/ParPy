@@ -11,7 +11,6 @@ pub use crate::gpu::ast::Dim3;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MemSpace {
     Device,
-    Threadgroup,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -65,8 +64,9 @@ impl Expr {
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr},
     Assign {dst: Expr, expr: Expr},
-    Alloc {elem_ty: Type, id: Name, sz: usize, mem: MemSpace},
-    Free {id: Name, mem: MemSpace},
+    AllocDevice {elem_ty: Type, id: Name, sz: usize},
+    AllocThreadgroup {elem_ty: Type, id: Name, sz: usize},
+    FreeDevice {id: Name},
     For {
         var_ty: Type, var: Name, init: Expr, cond: Expr,
         incr: Expr, body: Vec<Stmt>

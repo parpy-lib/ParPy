@@ -34,7 +34,6 @@ impl Default for TopsAcc {
 fn from_gpu_ir_mem(mem: gpu_ast::MemSpace) -> MemSpace {
     match mem {
         gpu_ast::MemSpace::Device => MemSpace::Device,
-        gpu_ast::MemSpace::Shared => MemSpace::Threadgroup,
     }
 }
 
@@ -171,14 +170,16 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             let gpu_ast::LaunchArgs {blocks, threads} = grid;
             Ok(Stmt::KernelLaunch {id, blocks, threads, args})
         },
-        gpu_ast::Stmt::Alloc {elem_ty, id, sz, mem, i} => {
+        gpu_ast::Stmt::AllocDevice {elem_ty, id, sz, i} => {
             let elem_ty = from_gpu_ir_type(env, elem_ty, &i)?;
-            let mem = from_gpu_ir_mem(mem);
-            Ok(Stmt::Alloc {elem_ty, id, sz, mem})
+            Ok(Stmt::AllocDevice {elem_ty, id, sz})
         },
-        gpu_ast::Stmt::Dealloc {id, mem, ..} => {
-            let mem = from_gpu_ir_mem(mem);
-            Ok(Stmt::Free {id, mem})
+        gpu_ast::Stmt::AllocShared {elem_ty, id, sz, i} => {
+            let elem_ty = from_gpu_ir_type(env, elem_ty, &i)?;
+            Ok(Stmt::AllocThreadgroup {elem_ty, id, sz})
+        },
+        gpu_ast::Stmt::FreeDevice {id, ..} => {
+            Ok(Stmt::FreeDevice {id})
         }
     }
 }

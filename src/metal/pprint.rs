@@ -9,7 +9,6 @@ impl PrettyPrint for MemSpace {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
             MemSpace::Device => "device",
-            MemSpace::Threadgroup => "threadgroup",
         };
         (env, s.to_string())
     }
@@ -185,22 +184,18 @@ impl PrettyPrint for Stmt {
                 let (env, expr) = expr.pprint(env);
                 (env, format!("{indent}{dst} = {expr};"))
             },
-            Stmt::Alloc {elem_ty, id, sz, mem} => {
+            Stmt::AllocDevice {elem_ty, id, sz} => {
                 let (env, ty) = elem_ty.pprint(env);
                 let (env, id) = id.pprint(env);
-                let s = match mem {
-                    MemSpace::Device => format!("{id} = parir_metal::alloc({sz} * sizeof({ty}))"),
-                    MemSpace::Threadgroup => format!("threadgroup {ty} {id}[{sz}]"),
-                };
-                (env, format!("{indent}{s};"))
+                (env, format!("{indent}{id} = parir_metal::alloc({sz} * sizeof({ty}))"))
             },
-            Stmt::Free {id, mem} => {
+            Stmt::AllocThreadgroup {elem_ty, id, sz} => {
+                let (env, ty) = elem_ty.pprint(env);
                 let (env, id) = id.pprint(env);
-                let s = match mem {
-                    MemSpace::Device => format!("parir_metal::free({id})"),
-                    MemSpace::Threadgroup => panic!("Cannot free threadgroup memory")
-                };
-                (env, format!("{indent}{s};"))
+                (env, format!("{indent}threadgroup {ty} {id}[{sz}];"))
+            },
+            Stmt::FreeDevice {id} => {
+                (env, format!("{indent}parir_metal::free({id});"))
             },
             Stmt::For {var_ty, var, init, cond, incr, body} => {
                 let (env, var_ty) = var_ty.pprint(env);
