@@ -189,7 +189,7 @@ impl PrettyPrint for Stmt {
                 let (env, ty) = elem_ty.pprint(env);
                 let (env, id) = id.pprint(env);
                 let s = match mem {
-                    MemSpace::Device => format!("{ty}* {id} = parir_metal::alloc({sz} * sizeof({ty}))"),
+                    MemSpace::Device => format!("{id} = parir_metal::alloc({sz} * sizeof({ty}))"),
                     MemSpace::Threadgroup => format!("threadgroup {ty} {id}[{sz}]"),
                 };
                 (env, format!("{indent}{s};"))
@@ -307,12 +307,17 @@ impl PrettyPrint for HostDef {
     }
 }
 
-fn generate_metal_function_definitions(metal_tops: &Vec<MetalDef>) -> String {
-    metal_tops.iter()
-        .map(|t| {
-            format!("MTL::Function* {0} = parir_metal::get_fun(lib, \"{0}\");", t.id)
-        })
-        .join("\n")
+fn generate_metal_function_definitions(
+    env: PrettyPrintEnv, metal_tops: &Vec<MetalDef>
+) -> (PrettyPrintEnv, String) {
+    let (env, tops) = metal_tops.iter()
+        .fold((env, vec![]), |(env, mut strs), t| {
+            let (env, id) = t.id.pprint(env);
+            let s = format!("MTL::Function* {id} = parir_metal::get_fun(lib, \"{id}\");");
+            strs.push(s);
+            (env, strs)
+        });
+    (env, tops.into_iter().join("\n"))
 }
 
 // Adds a backslash at the end of each line of the given string. This is required for the C++
@@ -332,7 +337,7 @@ impl PrettyPrint for Ast {
         let (env, metal_tops_str) = pprint_iter(metal_tops.iter(), env, "\n");
         let metal_tops_str = add_backslash_at_end_of_line(metal_tops_str);
         let (env, host_tops_str) = pprint_iter(host_tops.iter(), env, "\n");
-        let metal_fun_defs = generate_metal_function_definitions(metal_tops);
+        let (env, metal_fun_defs) = generate_metal_function_definitions(env, metal_tops);
         (env, format!("\
             {includes}\n\
             MTL::Library* lib = parir_metal::load_library(\"\\\n{metal_tops_str}\n\");\n\
