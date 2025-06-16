@@ -72,6 +72,14 @@ namespace parir_metal {
     return f;
   }
 
+  MTL::Buffer *alloc(int64_t nbytes) {
+    return parir_alloc_buffer(nbytes);
+  }
+
+  void free(MTL::Buffer *b) {
+    parir_free_buffer(b);
+  }
+
   void launch_kernel(
       MTL::Function *kernel,
       std::vector<MTL::Buffer*> args,
