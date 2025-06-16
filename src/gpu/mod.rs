@@ -1,6 +1,7 @@
 pub mod ast;
 mod codegen;
 mod constant_fold;
+pub mod flatten_structs;
 mod free_vars;
 mod global_mem;
 mod inter_block;
