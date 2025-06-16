@@ -44,7 +44,7 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
         gpu_ast::Type::Boolean => Ok(Type::Boolean),
         gpu_ast::Type::Scalar {sz} => {
             match sz {
-                ElemSize::F64 => {
+                ElemSize::F64 if env.on_device => {
                     parir_type_error!(i, "Metal does not support double-precision \
                                           floating-point numbers.")
                 },
@@ -69,12 +69,7 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
 }
 
 fn from_gpu_ir_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
-    // NOTE: We treat all floating-point literals as 32-bit as 64-bit floats are not supported in
-    // Metal.
-    let ty = match e {
-        gpu_ast::Expr::Float {..} => Type::Scalar {sz: ElemSize::F32},
-        _ => from_gpu_ir_type(env, e.get_type().clone(), &e.get_info())?
-    };
+    let ty = from_gpu_ir_type(env, e.get_type().clone(), &e.get_info())?;
     match e {
         gpu_ast::Expr::Var {id, i, ..} => Ok(Expr::Var {id, ty, i}),
         gpu_ast::Expr::Bool {v, i, ..} => Ok(Expr::Bool {v, ty, i}),
