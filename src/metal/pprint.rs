@@ -147,7 +147,7 @@ impl PrettyPrint for Expr {
                 let (env, arg) = arg.pprint(env);
                 let fun_str = match op {
                     BinOp::Add => "metal::simd_sum",
-                    BinOp::Mul => "metal::simd_prod",
+                    BinOp::Mul => "metal::simd_product",
                     BinOp::Max => "metal::simd_max",
                     BinOp::Min => "metal::simd_min",
                     _ => {
