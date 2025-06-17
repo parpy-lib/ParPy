@@ -66,7 +66,7 @@ def compare_dtype_helper(fn, dtype, backend, compile_only):
     b = torch.randint(1, 10, (1,), dtype=dtype)
     dst = torch.zeros((1,), dtype=torch.int32)
     if compile_only:
-        s = parir.print_compiled(fn, [dst, a, b], seq_opts(backend))
+        s = parir.print_compiled(fn, [dst, a, b], par_opts(backend, {}))
         assert len(s) != 0
     else:
         dst_device = torch.zeros_like(dst)

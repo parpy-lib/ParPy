@@ -93,7 +93,7 @@ def arith_binop_dtype(fn, ldtype, rdtype, compile_only, backend):
     b = torch.randint(1, 10, (1,), dtype=rdtype)
     dst = torch.zeros((1,), dtype=rdtype)
     if compile_only:
-        s = parir.print_compiled(fn, [dst, a, b], seq_opts(backend))
+        s = parir.print_compiled(fn, [dst, a, b], par_opts(backend, {}))
         assert len(s) != 0
     else:
         dst_device = torch.zeros_like(dst)
@@ -215,7 +215,7 @@ def arith_unop_dtype(fn, dtype, compile_only, backend):
     src = torch.tensor([0.5], dtype=dtype)
     dst = torch.zeros_like(src)
     if compile_only:
-        s = parir.print_compiled(fn, [src, dst], seq_opts(backend))
+        s = parir.print_compiled(fn, [src, dst], par_opts(backend, {}))
         assert len(s) != 0
     else:
         dst_device = torch.zeros_like(dst)

@@ -47,7 +47,6 @@ def test_bool_compiles(backend):
     p = {'i': parir.threads(64)}
     s = parir.print_compiled(store_gt, [x, y, tmp, N], par_opts(backend, p))
     assert len(s) != 0
-
     res = torch.zeros(1, dtype=torch.bool)
     s = parir.print_compiled(reduce_and, [tmp, res], seq_opts(backend))
     assert len(s) != 0

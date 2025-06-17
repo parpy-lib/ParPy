@@ -202,15 +202,13 @@ def test_forward_multi_block(backend):
 @pytest.mark.skipif(importlib.util.find_spec('h5py') is None, reason="Test requires h5py")
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_forward_compiles(backend):
-    def helper():
-        hmm, seqs, _ = read_test_data()
-        result = torch.zeros(seqs["num_instances"], dtype=torch.float32)
-        alpha1 = torch.zeros((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
-        alpha2 = torch.zeros_like(alpha1)
-        p = {
-            'inst': parir.threads(seqs["num_instances"]),
-            'state': parir.threads(hmm["num_states"])
-        }
-        s = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], par_opts(backend, p))
-        assert len(s) != 0
-    run_if_backend_is_enabled(backend, helper)
+    hmm, seqs, _ = read_test_data()
+    result = torch.zeros(seqs["num_instances"], dtype=torch.float32)
+    alpha1 = torch.zeros((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
+    alpha2 = torch.zeros_like(alpha1)
+    p = {
+        'inst': parir.threads(seqs["num_instances"]),
+        'state': parir.threads(hmm["num_states"])
+    }
+    s = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], par_opts(backend, p))
+    assert len(s) != 0
