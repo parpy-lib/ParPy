@@ -216,7 +216,13 @@ class Buffer:
                 self.buf = None
 
     def from_array_cpu(t):
-        if hasattr(t, "__array_interface__"):
+        # For the dummy backend, we just need any pointer to construct the
+        # Buffer, so we use a CUDA pointer if this is available to ensure no
+        # copying is performed (this Buffer is only used for validation
+        # purposes, it should never be dereferenced).
+        if hasattr(t, "__cuda_array_interface__"):
+            shape, dtype, data_ptr = check_array_interface(t.__cuda_array_interface__)
+        elif hasattr(t, "__array_interface__"):
             shape, dtype, data_ptr = check_array_interface(t.__array_interface__)
         elif hasattr(t, "__array__"):
             shape, dtype, data_ptr = check_array_interface(t.__array__().__array_interface__)
