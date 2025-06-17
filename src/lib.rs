@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use std::ffi::CString;
 
 use pyo3::prelude::*;
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::PyCapsule;
 
 #[pyfunction]
@@ -84,6 +85,10 @@ fn compile_ir<'py>(
             debug_env.print("Metal AST", &ast);
             Ok(ast.pprint_default())
         },
+        option::CompileBackend::Dummy => {
+            Err(PyRuntimeError::new_err("Code generation is not supported \
+                                         for the Dummy backend."))
+        }
     }
 }
 
