@@ -117,80 +117,9 @@ def torch_to_ctype(dtype):
     else:
         raise RuntimeError(f"Unsupported Torch dtype: {dtype}")
 
-def get_cuda_wrapper(name, lib):
-    def wrapper(*args):
-        from .buffer import Buffer
-        # Expand the arguments by making each field of a dictionary a separate argument
-        def expand_arg(arg):
-            if isinstance(arg, dict):
-                return [v for (_, v) in sorted(arg.items())]
-            else:
-                return [arg]
-        if any([isinstance(arg, dict) for arg in args]):
-            args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
-
-        # Extract the C type of each argument
-        def get_ctype(arg):
-            # We treat int and floats from Python as 64-bit values
-            if isinstance(arg, int):
-                return ctypes.c_int64
-            elif isinstance(arg, float):
-                return ctypes.c_double
-            elif isinstance(arg, Buffer):
-                if len(arg.shape) == 0:
-                    return arg.dtype.to_ctype()
-                else:
-                    return ctypes.c_void_p
-            else:
-                return ctypes.c_void_p
-        getattr(lib, name).argtypes = [get_ctype(arg) for arg in args]
-
-        # Extract the pointers or values of tensor arguments before passing to CUDA
-        def value_or_ptr(arg):
-            if isinstance(arg, Buffer):
-                if len(arg.shape) == 0:
-                    return arg.numpy()
-                else:
-                    return arg.buf
-            else:
-                return arg
-        ptr_args = [value_or_ptr(arg) for arg in args]
-        getattr(lib, name)(*ptr_args)
-    wrapper.__name__ = name
-    return wrapper
-
-def get_metal_wrapper(name, lib):
-    def wrapper(*args):
-        from .buffer import Buffer
-        def expand_arg(arg):
-            if isinstance(arg, dict):
-                return [v for (_, v) in sorted(arg.items())]
-            else:
-                return [arg]
-        if any([isinstance(arg, dict) for arg in args]):
-            args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
-
-        def get_ctype(arg):
-            if isinstance(arg, int):
-                return ctypes.c_int64
-            elif isinstance(arg, float):
-                return ctypes.c_double
-            elif isinstance(arg, Buffer):
-                return ctypes.c_void_p
-            else:
-                raise RuntimeError(f"Unsupported argument type: {arg}")
-        getattr(lib, name).argtypes = [get_ctype(arg) for arg in args]
-        def value_or_ptr(arg):
-            if isinstance(arg, Buffer):
-                return arg.buf
-            else:
-                return arg
-        ptr_args = [value_or_ptr(arg) for arg in args]
-        getattr(lib, name)(*ptr_args)
-    wrapper.__name__ = name
-    return wrapper
-
 def get_wrapper(name, key, opts):
+    from .buffer import Buffer
+
     libpath = get_library_path(key)
     lib = ctypes.cdll.LoadLibrary(libpath)
     # Remove the shared library if caching is not enabled
@@ -200,7 +129,42 @@ def get_wrapper(name, key, opts):
         except:
             pass
 
-    if opts.backend == CompileBackend.Cuda:
-        return get_cuda_wrapper(name, lib)
-    elif opts.backend == CompileBackend.Metal:
-        return get_metal_wrapper(name, lib)
+    # Expand arguments such that each value stored in a dictionary is passed as a
+    # separate argument.
+    def expand_arg(arg):
+        if isinstance(arg, dict):
+            return [v for (_, v) in sorted(arg.items())]
+        else:
+            return [arg]
+
+    # Return the ctypes type of an argument.
+    def get_ctype(arg):
+        if isinstance(arg, int):
+            return ctypes.c_int64
+        elif isinstance(arg, float):
+            return ctypes.c_double
+        elif isinstance(arg, Buffer):
+            if len(arg.shape) == 0:
+                return arg.dtype.to_ctype()
+            else:
+                return ctypes.c_void_p
+        else:
+            raise RuntimeError(f"Argument {arg} has unsupported type {type(arg)}")
+
+    # Extract the pointers or values of buffer arguments.
+    def value_or_ptr(arg):
+        if isinstance(arg, Buffer):
+            if len(arg.shape) == 0:
+                return arg.numpy()
+            else:
+                return arg.buf
+        else:
+            return arg
+
+    def wrapper(*args):
+        if any([isinstance(arg, dict) for arg in args]):
+            args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
+        getattr(lib, name).argtypes = [get_ctype(arg) for arg in args]
+        getattr(lib, name)(*[value_or_ptr(arg) for arg in args])
+    wrapper.__name__ = name
+    return wrapper
