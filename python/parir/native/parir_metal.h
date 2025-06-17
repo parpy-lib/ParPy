@@ -21,6 +21,7 @@ namespace parir_metal {
   MTL::Function *get_fun(MTL::Library*, const char*);
   MTL::Buffer *alloc(int64_t);
   void free(MTL::Buffer*);
+  void copy(void*, void*, int64_t, int64_t);
   void launch_kernel(
       MTL::Function*, std::vector<MTL::Buffer*>, int64_t, int64_t, int64_t,
       int64_t, int64_t, int64_t);

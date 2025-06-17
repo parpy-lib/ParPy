@@ -486,7 +486,7 @@ fn type_check_unop(
             }
         },
         UnOp::Exp | UnOp::Log | UnOp::Cos | UnOp::Sin | UnOp::Sqrt |
-        UnOp::Tanh | UnOp::Abs => {
+        UnOp::Tanh | UnOp::Abs | UnOp::Addressof => {
             py_type_error!(i, "Type-checking not implemented for this operator")
         }
     }

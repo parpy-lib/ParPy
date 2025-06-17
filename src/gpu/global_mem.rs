@@ -75,7 +75,7 @@ fn find_thread_index_dependent_variables_stmt(
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
         Stmt::If {..} | Stmt::Scope {..} | Stmt::SynchronizeBlock {..} |
         Stmt::WarpReduce {..} | Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
-        Stmt::AllocShared {..} | Stmt::FreeDevice {..} => {
+        Stmt::AllocShared {..} | Stmt::FreeDevice {..} | Stmt::CopyMemory {..} => {
             stmt.sfold(Ok(acc), find_thread_index_dependent_variables_stmt)
         }
     }

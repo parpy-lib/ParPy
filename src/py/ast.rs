@@ -184,7 +184,7 @@ impl SFold<Type> for Type {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UnOp {
-    Sub, Not, BitNeg, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
+    Sub, Not, BitNeg, Addressof, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

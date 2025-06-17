@@ -40,7 +40,8 @@ impl PrettyPrint for UnOp {
             UnOp::Sin => "sin",
             UnOp::Sqrt => "sqrt",
             UnOp::Tanh => "tanh",
-            UnOp::Abs => "abs"
+            UnOp::Abs => "abs",
+            UnOp::Addressof => "addressof"
         };
         (env, s.to_string())
     }

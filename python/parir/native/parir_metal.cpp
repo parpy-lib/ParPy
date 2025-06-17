@@ -80,6 +80,20 @@ namespace parir_metal {
     parir_free_buffer(b);
   }
 
+  void copy(void *dst, void *src, int64_t nbytes, int64_t k) {
+    // If an argument represents device memory, it is an MTL::Buffer pointer
+    // from which we need to extract the actual data pointer. Otherwise, we use
+    // the provided pointer immediately. We use 'k' to encode the memory types
+    // of the arguments:
+    //  0: both host
+    //  1: source is in host memory, destination on device
+    //  2: source is in device memory, destination on host
+    //  3: both device
+    dst = k & 1 ? ((MTL::Buffer*)dst)->contents() : dst;
+    src = k & 2 ? ((MTL::Buffer*)src)->contents() : src;
+    parir_memcpy(dst, src, nbytes);
+  }
+
   void launch_kernel(
       MTL::Function *kernel,
       std::vector<MTL::Buffer*> args,

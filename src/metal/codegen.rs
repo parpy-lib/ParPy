@@ -33,6 +33,7 @@ impl Default for TopsAcc {
 
 fn from_gpu_ir_mem(mem: gpu_ast::MemSpace) -> MemSpace {
     match mem {
+        gpu_ast::MemSpace::Host => MemSpace::Host,
         gpu_ast::MemSpace::Device => MemSpace::Device,
     }
 }
@@ -181,6 +182,14 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
         gpu_ast::Stmt::FreeDevice {id, ..} => {
             Ok(Stmt::FreeDevice {id})
         }
+        gpu_ast::Stmt::CopyMemory {elem_ty, src, src_mem, dst, dst_mem, sz, i} => {
+            let elem_ty = from_gpu_ir_type(env, elem_ty, &i)?;
+            let src = from_gpu_ir_expr(env, src)?;
+            let src_mem = from_gpu_ir_mem(src_mem);
+            let dst = from_gpu_ir_expr(env, dst)?;
+            let dst_mem = from_gpu_ir_mem(dst_mem);
+            Ok(Stmt::CopyMemory {elem_ty, src, src_mem, dst, dst_mem, sz})
+        },
     }
 }
 

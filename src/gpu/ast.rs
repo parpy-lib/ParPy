@@ -4,7 +4,10 @@ use crate::utils::smap::{SFold, SMapAccum};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MemSpace {
-    // Global memory on the device (GPU)
+    // Memory allocated on the host (CPU)
+    Host,
+
+    // Global memory on the device (e.g., a GPU)
     Device,
 }
 
@@ -33,6 +36,10 @@ impl Type {
             Type::Scalar {sz} => Some(sz),
             _ => None,
         }
+    }
+
+    pub fn is_scalar(&self) -> bool {
+        self.get_scalar_elem_size().is_some()
     }
 }
 
@@ -325,6 +332,10 @@ pub enum Stmt {
     AllocDevice {elem_ty: Type, id: Name, sz: usize, i: Info},
     AllocShared {elem_ty: Type, id: Name, sz: usize, i: Info},
     FreeDevice {id: Name, i: Info},
+    CopyMemory {
+        elem_ty: Type, src: Expr, src_mem: MemSpace,
+        dst: Expr, dst_mem: MemSpace, sz: usize, i: Info
+    }
 }
 
 impl InfoNode for Stmt {
@@ -342,6 +353,7 @@ impl InfoNode for Stmt {
             Stmt::AllocDevice {i, ..} => i.clone(),
             Stmt::AllocShared {i, ..} => i.clone(),
             Stmt::FreeDevice {i, ..} => i.clone(),
+            Stmt::CopyMemory {i, ..} => i.clone(),
         }
     }
 }
@@ -384,6 +396,11 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::KernelLaunch {id, args, grid, i}))
             },
+            Stmt::CopyMemory {elem_ty, src, dst, sz, src_mem, dst_mem, i} => {
+                let (acc, src) = f(acc?, src)?;
+                let (acc, dst) = f(acc, dst)?;
+                Ok((acc, Stmt::CopyMemory {elem_ty, src, dst, sz, src_mem, dst_mem, i}))
+            },
             Stmt::Scope {..} | Stmt::SynchronizeBlock {..} |
             Stmt::AllocDevice {..} | Stmt::AllocShared {..} |
             Stmt::FreeDevice {..} => Ok((acc?, self)),
@@ -405,6 +422,7 @@ impl SFold<Expr> for Stmt {
             Stmt::While {cond, ..} => f(acc?, cond),
             Stmt::WarpReduce {value, ..} => f(acc?, value),
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
+            Stmt::CopyMemory {src, dst, ..} => f(f(acc?, src)?, dst),
             Stmt::Scope {..} | Stmt::SynchronizeBlock {..} |
             Stmt::AllocDevice {..} | Stmt::AllocShared {..} |
             Stmt::FreeDevice {..} => acc,
@@ -439,7 +457,8 @@ impl SMapAccum<Stmt> for Stmt {
             Stmt::Definition {..} | Stmt::Assign {..} |
             Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
             Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
-            Stmt::AllocShared {..} | Stmt::FreeDevice {..} => {
+            Stmt::AllocShared {..} | Stmt::FreeDevice {..} |
+            Stmt::CopyMemory {..} => {
                 Ok((acc?, self))
             }
         }
@@ -460,7 +479,8 @@ impl SFold<Stmt> for Stmt {
             Stmt::Definition {..} | Stmt::Assign {..} |
             Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
             Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
-            Stmt::AllocShared {..} | Stmt::FreeDevice {..} => acc,
+            Stmt::AllocShared {..} | Stmt::FreeDevice {..} |
+            Stmt::CopyMemory {..} => acc,
         }
     }
 }

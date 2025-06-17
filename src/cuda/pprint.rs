@@ -28,6 +28,7 @@ pub fn print_unop(op: &UnOp, ty: &Type) -> String {
         UnOp::Sub => "-",
         UnOp::Not => "!",
         UnOp::BitNeg => "~",
+        UnOp::Addressof => "&",
         UnOp::Exp => match ty.get_scalar_elem_size() {
             Some(ElemSize::F16) => "hexp",
             Some(ElemSize::F32) => "__expf",

@@ -1,4 +1,5 @@
 pub mod ast;
+mod buffers;
 mod codegen;
 mod float;
 mod pprint;
@@ -21,6 +22,10 @@ pub fn codegen(ir_ast: ir_ast::Ast, debug_env: &DebugEnv) -> CompileResult<Ast> 
     // Convert all scalar 64-bit floating-point values to 32-bit to ensure compatibility with the
     // Metal backend as far as possible.
     let gpu_ast = float::convert_floats_to_32bit(gpu_ast);
+
+    // Transforms the code such that scalar parameters of kernels are passed via temporary buffers
+    // and treated as pointers inside kernel code.
+    let gpu_ast = buffers::transform_scalars_to_buffers(gpu_ast);
 
     // Convert the GPU AST to a Metal AST.
     codegen::from_gpu_ir(gpu_ast)

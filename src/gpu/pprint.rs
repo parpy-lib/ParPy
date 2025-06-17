@@ -38,6 +38,7 @@ impl<T: PrettyPrint> PrettyPrint for BTreeMap<String, T> {
 impl PrettyPrint for MemSpace {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
+            MemSpace::Host => "host",
             MemSpace::Device => "device",
         };
         (env, s.to_string())
@@ -86,6 +87,7 @@ pub fn print_unop(op: &UnOp) -> String {
         UnOp::Sqrt => "sqrt",
         UnOp::Tanh => "tanh",
         UnOp::Abs => "abs",
+        UnOp::Addressof => "&",
     };
     s.to_string()
 }
@@ -319,6 +321,14 @@ impl PrettyPrint for Stmt {
                 let (env, id) = id.pprint(env);
                 (env, format!("{indent}free({id});"))
             },
+            Stmt::CopyMemory {elem_ty, src, dst, sz, src_mem, dst_mem, ..} => {
+                let (env, elem_ty) = elem_ty.pprint(env);
+                let (env, src) = src.pprint(env);
+                let (env, dst) = dst.pprint(env);
+                let (env, src_mem) = src_mem.pprint(env);
+                let (env, dst_mem) = dst_mem.pprint(env);
+                (env, format!("{indent}memcpy({dst}: {dst_mem} <- {src}: {src_mem}, {sz}, {elem_ty});"))
+            }
         }
     }
 }

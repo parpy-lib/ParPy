@@ -1,5 +1,6 @@
 use super::ast::*;
 use crate::parir_compile_error;
+use crate::parir_internal_error;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::err::*;
 use crate::utils::name::Name;
@@ -159,6 +160,9 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
         },
         gpu_ast::Stmt::FreeDevice {id, ..} => {
             Ok(Stmt::FreeAsync {id})
+        },
+        gpu_ast::Stmt::CopyMemory {i, ..} => {
+            parir_internal_error!(i, "Memory copying not supported in CUDA backend")
         },
     }
 }

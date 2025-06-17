@@ -8,9 +8,19 @@ use std::borrow::Borrow;
 impl PrettyPrint for MemSpace {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
+            MemSpace::Host => "",
             MemSpace::Device => "device",
         };
         (env, s.to_string())
+    }
+}
+
+fn memcopy_kind(src: &MemSpace, dst: &MemSpace) -> usize {
+    match (src, dst) {
+        (MemSpace::Host, MemSpace::Host) => 0,
+        (MemSpace::Host, MemSpace::Device) => 1,
+        (MemSpace::Device, MemSpace::Host) => 2,
+        (MemSpace::Device, MemSpace::Device) => 3
     }
 }
 
@@ -35,6 +45,7 @@ pub fn print_unop(op: &UnOp) -> String {
         UnOp::Sub => "-",
         UnOp::Not => "!",
         UnOp::BitNeg => "~",
+        UnOp::Addressof => "&",
         UnOp::Exp => "metal::exp",
         UnOp::Log => "metal::log",
         UnOp::Cos => "metal::cos",
@@ -184,19 +195,6 @@ impl PrettyPrint for Stmt {
                 let (env, expr) = expr.pprint(env);
                 (env, format!("{indent}{dst} = {expr};"))
             },
-            Stmt::AllocDevice {elem_ty, id, sz} => {
-                let (env, ty) = elem_ty.pprint(env);
-                let (env, id) = id.pprint(env);
-                (env, format!("{indent}{id} = parir_metal::alloc({sz} * sizeof({ty}))"))
-            },
-            Stmt::AllocThreadgroup {elem_ty, id, sz} => {
-                let (env, ty) = elem_ty.pprint(env);
-                let (env, id) = id.pprint(env);
-                (env, format!("{indent}threadgroup {ty} {id}[{sz}];"))
-            },
-            Stmt::FreeDevice {id} => {
-                (env, format!("{indent}parir_metal::free({id});"))
-            },
             Stmt::For {var_ty, var, init, cond, incr, body} => {
                 let (env, var_ty) = var_ty.pprint(env);
                 let (env, var) = var.pprint(env);
@@ -244,7 +242,29 @@ impl PrettyPrint for Stmt {
             },
             Stmt::SubmitWork {} => {
                 (env, format!("{indent}parir_metal::submit_work();"))
-            }
+            },
+            Stmt::AllocDevice {elem_ty, id, sz} => {
+                let (env, ty) = elem_ty.pprint(env);
+                let (env, id) = id.pprint(env);
+                (env, format!("{indent}{id} = parir_metal::alloc({sz} * sizeof({ty}));"))
+            },
+            Stmt::AllocThreadgroup {elem_ty, id, sz} => {
+                let (env, ty) = elem_ty.pprint(env);
+                let (env, id) = id.pprint(env);
+                (env, format!("{indent}threadgroup {ty} {id}[{sz}];"))
+            },
+            Stmt::FreeDevice {id} => {
+                let (env, id) = id.pprint(env);
+                (env, format!("{indent}parir_metal::free({id});"))
+            },
+            Stmt::CopyMemory {elem_ty, src, src_mem, dst, dst_mem, sz} => {
+                let (env, ty) = elem_ty.pprint(env);
+                let (env, src) = src.pprint(env);
+                let (env, dst) = dst.pprint(env);
+                let k = memcopy_kind(&src_mem, &dst_mem);
+                (env, format!("{indent}parir_metal::copy((void*){dst}, \
+                               (void*){src}, {sz} * sizeof({ty}), {k});"))
+            },
         }
     }
 }
@@ -255,8 +275,8 @@ fn print_metal_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrintE
         .enumerate()
         .fold((env, vec![]), |(env, mut strs), (i, Param {id, ty})| {
             let (env, id) = id.pprint(env);
-            let (env, ty) = ty.pprint(env);
-            strs.push(format!("{indent}{ty} {id} [[buffer({i})]]"));
+            let (env, ty_str) = ty.pprint(env);
+            strs.push(format!("{indent}{ty_str} {id} [[buffer({i})]]"));
             (env, strs)
         });
     // Hard-code the definition of special variables representing the thread

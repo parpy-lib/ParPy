@@ -10,7 +10,7 @@ pub use crate::gpu::ast::Dim3;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MemSpace {
-    Device,
+    Host, Device,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -64,9 +64,6 @@ impl Expr {
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr},
     Assign {dst: Expr, expr: Expr},
-    AllocDevice {elem_ty: Type, id: Name, sz: usize},
-    AllocThreadgroup {elem_ty: Type, id: Name, sz: usize},
-    FreeDevice {id: Name},
     For {
         var_ty: Type, var: Name, init: Expr, cond: Expr,
         incr: Expr, body: Vec<Stmt>
@@ -76,6 +73,15 @@ pub enum Stmt {
     ThreadgroupBarrier {},
     KernelLaunch {id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>},
     SubmitWork {},
+
+    // Statements related to memory management.
+    AllocDevice {elem_ty: Type, id: Name, sz: usize},
+    AllocThreadgroup {elem_ty: Type, id: Name, sz: usize},
+    FreeDevice {id: Name},
+    CopyMemory {
+        elem_ty: Type, src: Expr, src_mem: MemSpace,
+        dst: Expr, dst_mem: MemSpace, sz: usize
+    },
 }
 
 #[derive(Clone, Debug)]

@@ -222,7 +222,6 @@ impl SFold<Expr> for Expr {
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr},
     Assign {dst: Expr, expr: Expr},
-    AllocShared {ty: Type, id: Name, sz: usize},
     For {
         var_ty: Type, var: Name, init: Expr, cond: Expr,
         incr: Expr, body: Vec<Stmt>
@@ -231,6 +230,7 @@ pub enum Stmt {
     While {cond: Expr, body: Vec<Stmt>},
     Syncthreads {},
     KernelLaunch {id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>},
+    AllocShared {ty: Type, id: Name, sz: usize},
     MallocAsync {id: Name, elem_ty: Type, sz: usize},
     FreeAsync {id: Name}
 }
