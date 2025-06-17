@@ -136,6 +136,12 @@ class BufferDtype:
     def to_ctype(self):
         return lookup_type(self.ty, ctypemap)
 
+    def is_integer(self):
+        return self.ty in [int8, int16, int32, int64]
+
+    def is_float(self):
+        return self.ty in [float16, float32, float64]
+
 def check_array_interface(intf):
     shape = intf["shape"]
     dtype = BufferDtype(intf["typestr"])
@@ -180,6 +186,7 @@ class Buffer:
         self.dtype = dtype
         self.backend = backend
         self.src_ptr = src_ptr
+
         if self.backend is None:
             arr_intf = to_array_interface(self.buf, self.dtype, self.shape)
             setattr(self, "__array_interface__", arr_intf)
@@ -198,11 +205,40 @@ class Buffer:
         if self.buf is not None:
             self.cleanup()
 
+    def __float__(self):
+        if len(self.shape) == 0:
+            return float(self.numpy().item())
+        else:
+            raise ValueError(f"Cannot convert buffer of shape {self.shape} to float")
+
+    def __int__(self):
+        if len(self.shape) == 0:
+            return int(self.numpy().item())
+        else:
+            raise ValueError(f"Cannot convert buffer of shape {self.shape} to int")
+
+    def __bool__(self):
+        if len(self.shape) == 0:
+            return bool(self.numpy().item())
+        else:
+            raise ValueError(f"Cannot convert buffer of shape {self.shape} to bool")
+
+    def __index__(self):
+        if len(self.shape) == 0:
+            if self.dtype.is_integer():
+                return self.__int__()
+        raise ValueError(f"Cannot use buffer of shape {self.shape} and type {self.dtype} as index")
+
     def cleanup(self):
         nbytes = reduce(mul, self.shape, 1) * self.dtype.size()
         if self.backend == CompileBackend.Cuda:
-            if self.src_ptr is not None:
+            try:
                 from cuda.bindings import runtime
+            except ImportError:
+                # If we cannot import the library the program is about to quit.
+                # In this case, the memory will be deallocated on exit anyway.
+                return
+            if self.src_ptr is not None:
                 check_cuda_errors(runtime.cudaMemcpyAsync(self.src_ptr, self.buf, nbytes, runtime.cudaMemcpyKind.cudaMemcpyDeviceToHost, 0))
                 check_cuda_errors(runtime.cudaFreeAsync(self.buf, 0))
                 self.buf = None
@@ -277,16 +313,15 @@ class Buffer:
             raise RuntimeError(f"Unsupported buffer backend {backend}")
 
     def numpy(self):
-        # We synchronize with the GPU before returning a NumPy array
         if self.backend == CompileBackend.Cuda:
             from cuda.bindings import runtime
             a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
             shape, dtype, data_ptr = check_array_interface(a.__array_interface__)
             nbytes = reduce(mul, shape, 1) * dtype.size()
-            check_cuda_errors(runtime.cudaMemcpyAsync(data_ptr, self.buf, nbytes, runtime.cudaMemcpyKind.cudaMemcpyDeviceToHost, 0))
+            check_cuda_errors(runtime.cudaMemcpy(data_ptr, self.buf, nbytes, runtime.cudaMemcpyKind.cudaMemcpyDeviceToHost))
             return a
         elif self.backend == CompileBackend.Metal:
             sync(self.backend)
             return np.asarray(self)
         else:
-            raise RuntimeError(f"Unsupported buffer backend {backend}")
+            raise RuntimeError(f"Unsupported buffer backend {self.backend}")

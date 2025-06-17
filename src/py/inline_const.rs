@@ -60,14 +60,17 @@ fn extract_scalar_value<'py>(
     i: &Info,
     sz: ElemSize
 ) -> PyResult<Expr> {
-    if sz.is_signed_integer() {
+    if sz == ElemSize::Bool {
+        let v = arg.extract::<bool>()?;
+        Ok(Expr::Bool {v, ty: Type::Tensor {sz, shape: vec![]}, i: i.clone()})
+    } else if sz.is_signed_integer() {
         let v = arg.extract::<i64>()?;
         Ok(Expr::Int {v, ty: Type::Tensor {sz, shape: vec![]}, i: i.clone()})
     } else if sz.is_floating_point() {
         let v = arg.extract::<f64>()?;
         Ok(Expr::Float {v, ty: Type::Tensor {sz, shape: vec![]}, i: i.clone()})
     } else {
-        py_runtime_error!(i, "Failed to extract literal value of type {sz}")
+        py_runtime_error!(i, "Invalid scalar of element type {sz}")
     }
 }
 
@@ -80,10 +83,15 @@ fn add_scalar_constant<'py>(
     let i = target.get_info();
     match ty {
         Type::Tensor {sz, shape} if shape.is_empty() => {
-            if let Ok(value) = extract_scalar_value(arg, &i, sz.clone()) {
-                acc.insert(target, value);
-            };
-            Ok(acc)
+            match extract_scalar_value(arg, &i, sz.clone()) {
+                Ok(value) => {
+                    acc.insert(target, value);
+                    Ok(acc)
+                },
+                Err(e) => {
+                    py_runtime_error!(i, "Extracting scalar value failed: {e}")
+                }
+            }
         },
         Type::Dict {fields} => {
             fields.iter()
@@ -158,6 +166,10 @@ mod test {
         Expr::Float {v, ty: scalar_ty(ElemSize::F64), i: Info::default()}
     }
 
+    fn bool(v: bool) -> Expr {
+        Expr::Bool {v, ty: scalar_ty(ElemSize::Bool), i: Info::default()}
+    }
+
     fn string(s: &str) -> Expr {
         Expr::String {v: s.to_string(), ty: Type::String, i: Info::default()}
     }
@@ -210,7 +222,7 @@ mod test {
         let b_expr = dict_lookup(&target, "b");
         let c_expr = dict_lookup(&target, "c");
         assert_eq!(env.get(&a_expr.unwrap()), Some(&int(3)));
-        assert_eq!(env.get(&b_expr.unwrap()), None);
+        assert_eq!(env.get(&b_expr.unwrap()), Some(&bool(false)));
         assert_eq!(env.get(&c_expr.unwrap()), Some(&float(2.0)));
     }
 
