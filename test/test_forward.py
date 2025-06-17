@@ -28,7 +28,7 @@ def transform_output_probs(obs, k):
             output_probs[i][j] = obs[j][idx]
     return output_probs.transpose()
 
-def read_trellis_inputs(model_path, signals_path, device):
+def read_trellis_inputs(model_path, signals_path):
     import h5py
     with h5py.File(model_path, "r") as f:
         with np.errstate(divide="ignore"):
@@ -46,39 +46,39 @@ def read_trellis_inputs(model_path, signals_path, device):
     synthetic_248 = np.log(np.exp(0.) - np.exp(tail_factor))
     num_states = 16 * 4**k
 
-    # Convert data to torch compatible format allocated on the selected device.
-    trans1 = torch.tensor(trans1, dtype=torch.float32, device=device)
-    trans2 = torch.tensor(duration, dtype=torch.float32, device=device)
-    out_prob = torch.tensor(out_prob, dtype=torch.float32, device=device)
-    init_prob = torch.tensor(init_probs, dtype=torch.float32, device=device)
+    # Convert data to torch compatible format
+    trans1 = torch.tensor(trans1, dtype=torch.float32)
+    trans2 = torch.tensor(duration, dtype=torch.float32)
+    out_prob = torch.tensor(out_prob, dtype=torch.float32)
+    init_prob = torch.tensor(init_probs, dtype=torch.float32)
     hmm = {
-        'gamma': torch.tensor(tail_factor, dtype=torch.float32, device=device),
+        'gamma': torch.tensor(tail_factor, dtype=torch.float32),
         'trans1': trans1.contiguous(),
         'trans2': trans2,
         'output_prob': out_prob.contiguous(),
         'initial_prob': init_prob.flatten(),
-        'synthetic_248': torch.tensor(synthetic_248, dtype=torch.float32, device=device),
-        'num_states': torch.tensor(num_states, dtype=torch.int64, device=device)
+        'synthetic_248': torch.tensor(synthetic_248, dtype=torch.float32),
+        'num_states': torch.tensor(num_states, dtype=torch.int64)
     }
 
     signal_lengths = [len(s) for s in signals]
     maxlen = max(signal_lengths)
-    torch_signals = torch.empty((len(signals), maxlen), dtype=torch.int8, device=device)
+    torch_signals = torch.zeros((len(signals), maxlen), dtype=torch.int8)
     for i, s in enumerate(signals):
-        torch_signals[i, 0:len(s)] = torch.tensor(s, dtype=torch.int8, device=device)
-    lens = torch.tensor(signal_lengths, dtype=torch.int64, device=device)
+        torch_signals[i, 0:len(s)] = torch.tensor(s, dtype=torch.int8)
+    lens = torch.tensor(signal_lengths, dtype=torch.int64)
     num_instances = len(lens)
     seqs = {
         'data': torch_signals,
         'lens': lens,
-        'maxlen': torch.tensor(maxlen, dtype=torch.int64, device=device),
-        'num_instances': torch.tensor(num_instances, dtype=torch.int64, device=device)
+        'maxlen': torch.tensor(maxlen, dtype=torch.int64),
+        'num_instances': torch.tensor(num_instances, dtype=torch.int64)
     }
     return hmm, seqs
 
-def read_expected_output(fname, device):
+def read_expected_output(fname):
   with open(fname) as f:
-    return torch.tensor([float(l) for l in f.readlines()], dtype=torch.float32, device=device)
+    return torch.tensor([float(l) for l in f.readlines()], dtype=torch.float32)
 
 @parir.jit
 def forward_kernel(hmm, seqs, alpha1, alpha2, result):
@@ -157,9 +157,9 @@ def forward_kernel(hmm, seqs, alpha1, alpha2, result):
         result[inst] = maxp + parir.log(psum)
 
 def forward(hmm, seqs, opts):
-    alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
-    alpha2 = torch.empty_like(alpha1)
-    result = torch.empty(seqs["num_instances"], dtype=torch.float32)
+    alpha1 = torch.zeros((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
+    alpha2 = torch.zeros_like(alpha1)
+    result = torch.zeros(seqs["num_instances"], dtype=torch.float32)
     code = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], opts)
     forward_kernel(hmm, seqs, alpha1, alpha2, result, opts=opts)
     return result
@@ -167,8 +167,8 @@ def forward(hmm, seqs, opts):
 def read_test_data():
     model = "test/data/3mer-model.hdf5"
     signals = "test/data/signals.hdf5"
-    hmm, seqs = read_trellis_inputs(model, signals, 'cpu')
-    expected = read_expected_output("test/data/3mer-expected.txt", 'cpu')
+    hmm, seqs = read_trellis_inputs(model, signals)
+    expected = read_expected_output("test/data/3mer-expected.txt")
     return hmm, seqs, expected
 
 def run_forw_test(hmm, seqs, expected, opts):
@@ -204,9 +204,9 @@ def test_forward_multi_block(backend):
 def test_forward_compiles(backend):
     def helper():
         hmm, seqs, _ = read_test_data()
-        result = torch.empty(seqs["num_instances"], dtype=torch.float32)
-        alpha1 = torch.empty((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
-        alpha2 = torch.empty_like(alpha1)
+        result = torch.zeros(seqs["num_instances"], dtype=torch.float32)
+        alpha1 = torch.zeros((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
+        alpha2 = torch.zeros_like(alpha1)
         p = {
             'inst': parir.threads(seqs["num_instances"]),
             'state': parir.threads(hmm["num_states"])

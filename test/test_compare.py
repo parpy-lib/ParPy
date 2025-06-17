@@ -64,12 +64,12 @@ def set_expected_behavior(dtype, backend):
 def compare_dtype_helper(fn, dtype, backend, compile_only):
     a = torch.randint(1, 10, (1,), dtype=dtype)
     b = torch.randint(1, 10, (1,), dtype=dtype)
-    dst = torch.empty((1,), dtype=torch.int32)
+    dst = torch.zeros((1,), dtype=torch.int32)
     if compile_only:
         s = parir.print_compiled(fn, [dst, a, b], seq_opts(backend))
         assert len(s) != 0
     else:
-        dst_device = torch.empty_like(dst)
+        dst_device = torch.zeros_like(dst)
         fn(dst_device, a, b, opts=par_opts(backend, {}))
         fn(dst, a, b, opts=seq_opts(backend))
         assert dst == dst_device

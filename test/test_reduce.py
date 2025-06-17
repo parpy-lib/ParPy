@@ -172,7 +172,7 @@ def test_reduction_compiles(fn, backend):
     N = 100
     M = 50
     x = torch.randn((N, M), dtype=torch.float32)
-    out = torch.empty(N, dtype=x.dtype)
+    out = torch.zeros(N, dtype=x.dtype)
     p = {'outer': parir.threads(N)}
     s1 = parir.print_compiled(fn, [x, out, N], par_opts(backend, p))
     if not fn in multi_dim_reduce_funs:
@@ -232,9 +232,9 @@ def odd_entries_wrap(backend, p):
     N = 10
     M = 4096
     x = torch.randn((N, M), dtype=torch.float32)
-    out = torch.empty(N, dtype=x.dtype)
+    out = torch.zeros(N, dtype=x.dtype)
     odd_entries_sum(x, out, N, M, opts=par_opts(backend, p))
-    out_seq = torch.empty_like(out)
+    out_seq = torch.zeros_like(out)
     odd_entries_sum(x, out_seq, N, M, opts=seq_opts(backend))
     assert torch.allclose(out, out_seq, atol=1e-4)
 

@@ -28,7 +28,7 @@ def softmax(x, N, M, out):
 
 def softmax_wrap(x, opts):
     N, M = x.shape
-    out = torch.empty_like(x)
+    out = torch.zeros_like(x)
     softmax(x, N, M, out, opts=opts)
     return out
 
@@ -56,7 +56,7 @@ def test_softmax_gpu(backend):
 def test_softmax_compiles(backend):
     N, M = 256, 512
     x = torch.randn((N, M), dtype=torch.float32)
-    out = torch.empty_like(x)
+    out = torch.zeros_like(x)
     p = {
         "N" : parir.threads(256),
         "M": parir.threads(128),

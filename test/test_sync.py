@@ -18,12 +18,12 @@ def test_reduce_multi_block(backend):
         x = torch.randn(N, M, dtype=torch.float32)
 
         # Parallelize reduction within a single block (n = 1024)
-        out1 = torch.empty(N, dtype=x.dtype)
+        out1 = torch.zeros(N, dtype=x.dtype)
         p1 = {'N': parir.threads(N), 'M': parir.threads(1024)}
         sum_rows(x, N, out1, opts=par_opts(backend, p1))
 
         # Parallelize reduction across multiple blocks (n > 1024)
-        out2 = torch.empty_like(out1)
+        out2 = torch.zeros_like(out1)
         p2 = {'N': parir.threads(N), 'M': parir.threads(2048)}
         sum_rows(x, N, out2, opts=par_opts(backend, p2))
 
@@ -71,9 +71,9 @@ def sum_exp_3d_wrap(backend, par):
     N, M, K = 10, 20, 30
     x = torch.randn(N, M, K, dtype=torch.float32)
     x_2 = x.detach().clone()
-    out = torch.empty(N, M, dtype=x.dtype, device=x.device)
+    out = torch.zeros(N, M, dtype=x.dtype)
     sum_exp_3d(x, N, M, out, opts=par_opts(backend, par))
-    ref_out = torch.empty_like(out)
+    ref_out = torch.zeros_like(out)
     sum_exp_3d(x_2, N, M, ref_out, opts=seq_opts(backend))
     assert torch.allclose(out, ref_out, atol=1e-5)
 

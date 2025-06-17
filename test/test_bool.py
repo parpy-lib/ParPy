@@ -24,9 +24,9 @@ def bool_test_data():
 
 def bool_wrap(x, y, opts):
     N, = x.shape
-    tmp = torch.empty(N, dtype=torch.bool, device=x.device)
+    tmp = torch.zeros(N, dtype=torch.bool)
     store_gt(x, y, tmp, N, opts=opts)
-    out = torch.empty(1, dtype=torch.bool, device=x.device)
+    out = torch.zeros(1, dtype=torch.bool)
     reduce_and(tmp, out, opts=opts)
     return out
 
@@ -43,11 +43,11 @@ def test_bool_gpu(backend):
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_bool_compiles(backend):
     x, y, N = bool_test_data()
-    tmp = torch.empty_like(x, dtype=torch.bool)
+    tmp = torch.zeros_like(x, dtype=torch.bool)
     p = {'i': parir.threads(64)}
     s = parir.print_compiled(store_gt, [x, y, tmp, N], par_opts(backend, p))
     assert len(s) != 0
 
-    res = torch.empty(1, dtype=torch.bool)
+    res = torch.zeros(1, dtype=torch.bool)
     s = parir.print_compiled(reduce_and, [tmp, res], seq_opts(backend))
     assert len(s) != 0

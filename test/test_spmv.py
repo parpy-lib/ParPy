@@ -83,7 +83,7 @@ def test_spmv_compiles(backend):
         'cols': A.col_indices(),
         'nrows': N
     }
-    y = torch.empty((A["nrows"],), dtype=x.dtype)
+    y = torch.zeros((A["nrows"],), dtype=x.dtype)
     p = {
         "row": parir.threads(N),
         "i": parir.threads(128).reduce()
