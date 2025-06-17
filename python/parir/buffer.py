@@ -275,10 +275,8 @@ class Buffer:
         if self.backend == CompileBackend.Cuda:
             from cuda.bindings import runtime
             a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
-            print(a.__array_interface__)
             shape, dtype, data_ptr = check_array_interface(a.__array_interface__)
             nbytes = reduce(mul, shape, 1) * dtype.size()
-            print(f"copying {nbytes} bytes from {self.buf} (device) to {data_ptr} (host)")
             check_cuda_errors(runtime.cudaMemcpyAsync(data_ptr, self.buf, nbytes, runtime.cudaMemcpyKind.cudaMemcpyDeviceToHost, 0))
             return a
         elif self.backend == CompileBackend.Metal:
