@@ -1,7 +1,5 @@
 # Assumes this script runs from the root of the repository
 import sys
-sys.path.append("test/")
-from test_reduce import sum_rows
 import pandas as pd
 import matplotlib.pyplot as plt
 import math
@@ -10,14 +8,21 @@ import parir
 import statistics
 import torch
 
+@parir.jit
+def sum_rows(x, out, N):
+    parir.label('outer')
+    for i in range(N):
+        parir.label('inner')
+        out[i] = parir.sum(x[i,:])
+
 def sum_rows_wrap(x, p):
     N, M = x.shape
     y = torch.zeros(N, dtype=torch.float32, device='cuda')
-    sum_rows(x, y, N, parallelize=p)
+    sum_rows(x, y, N, opts=parir.parallelize(p))
     return y
 
 def print_sum_rows(args, p):
-    print(parir.print_compiled(sum_rows, args, p))
+    print(parir.print_compiled(sum_rows, args, parir.parallelize(p)))
 
 def print_versions(N, M):
     x = torch.randn((N, M), dtype=torch.float32, device='cuda')
@@ -111,6 +116,9 @@ def run_test(N, M):
     print_times(t3)
     result += [entry(3, N, M, t) for t in t3]
     return result
+
+# Print the code of each version for N=128 and M=1024
+print_versions(128, 1024)
 
 # Run the benchmarks for many combinations of N and M.
 fig, axs = plt.subplots(layout="constrained")
