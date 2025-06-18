@@ -457,15 +457,7 @@ class TritonTuned:
     def __name__(self):
         return "TritonTuned"
 
-def forward_trellis(tables, signals, k):
-    cwd = os.getcwd()
-    if k == 5:
-        path = f"{cwd}/5mer"
-    elif k == 7:
-        path = f"{cwd}/7mer"
-    sys.path.append(path)
-    from trellis import HMM
-    hmm = HMM(tables)
+def forward_trellis(hmm, signals, k):
     return hmm.forward(signals)
 
 def run_forward(framework, k, config_id):
@@ -483,6 +475,13 @@ def run_forward(framework, k, config_id):
     expected = read_expected_output(f"{k}mer-expected.txt")
 
     if framework == "trellis":
+        cwd = os.getcwd()
+        if k == 5:
+            path = f"{cwd}/5mer"
+        elif k == 7:
+            path = f"{cwd}/7mer"
+        sys.path.append(path)
+        from trellis import HMM
         tables = {
             'gamma': hmm['gamma'].cpu().numpy(),
             'trans1': hmm['trans1'].cpu().numpy(),
@@ -490,10 +489,11 @@ def run_forward(framework, k, config_id):
             'outputProb': hmm['output_prob'].cpu().numpy(),
             'initialProb': hmm['initial_prob'].cpu().numpy()
         }
+        hmm = HMM(tables)
         signals = len(seqs['lens']) * [None]
         for i in range(len(signals)):
             signals[i] = seqs['data'][i, :seqs['lens'][i]].cpu().numpy()
-        fn = lambda: forward_trellis(tables, signals, k)
+        fn = lambda: forward_trellis(hmm, signals, k)
     elif config_id == 1:
         fn = lambda: base_fn(hmm, seqs, 1024)
     elif config_id == 2:
