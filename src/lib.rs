@@ -85,6 +85,11 @@ fn compile_ir<'py>(
             debug_env.print("Metal AST", &ast);
             Ok(ast.pprint_default())
         },
+        option::CompileBackend::Auto => {
+            Err(PyRuntimeError::new_err("Internal error: Auto backend should \
+                                         be resolved before being passed to \
+                                         the code generator."))
+        },
         option::CompileBackend::Dummy => {
             Err(PyRuntimeError::new_err("Code generation is not supported \
                                          for the Dummy backend."))

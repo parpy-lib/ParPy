@@ -8,7 +8,7 @@ use pyo3::exceptions::PyRuntimeError;
 #[pyclass(eq, eq_int)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompileBackend {
-    Cuda, Metal, Dummy
+    Auto, Cuda, Metal, Dummy
 }
 
 #[pyclass]
@@ -32,6 +32,11 @@ pub struct CompileOptions {
     // Python interpreter.
     #[pyo3(get, set)]
     pub seq: bool,
+
+    // When enabled, the front-end compiler will print detailed information on why each disabled
+    // backend is not considered to be available.
+    #[pyo3(get, set)]
+    pub verbose_backend_resolution: bool,
 
     ///////////////////
     // CODEGEN FLAGS //
@@ -74,7 +79,8 @@ impl Default for CompileOptions {
             parallelize: BTreeMap::new(),
             cache: true,
             seq: false,
-            backend: CompileBackend::Cuda,
+            verbose_backend_resolution: false,
+            backend: CompileBackend::Auto,
             debug_print: false,
             debug_perf: false,
             includes: vec![],

@@ -27,10 +27,6 @@ def flatten(xss):
 
 def build_cuda_shared_library(key, source, opts):
     libpath = get_library_path(key)
-    if not torch.cuda.is_available():
-        raise RuntimeError(f"Torch was not built with CUDA support")
-    if not shutil.which("nvcc"):
-        raise RuntimeError(f"Could not find 'nvcc' in path, which is required to compile the generated CUDA code")
 
     # Get the version of the current GPU and generate specialized code for it.
     # TODO: In the future, we should collect the versions of all GPUs on the
@@ -61,20 +57,11 @@ def build_metal_shared_library(key, source, opts):
     from .buffer import try_load_metal_base_lib, PARIR_METAL_PATH, PARIR_METAL_BASE_LIB_PATH
     from .state import get_metal_cpp_header_path
     libpath = get_library_path(key)
-    if not torch.mps.is_available():
-        raise RuntimeError(f"Torch was not built with Metal support")
-    if not shutil.which("clang++"):
-        raise RuntimeError(f"Could not find 'clang++' in path, which is required to compile the generated Metal code")
-
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
         try_load_metal_base_lib()
         metal_cpp_path = get_metal_cpp_header_path()
-        if metal_cpp_path is None:
-            raise RuntimeError(f"The path to the Metal C++ library must be provided \
-                                 via the 'parir.set_metal_cpp_header_path' function \
-                                 before using the Metal backend.")
         includes = opts.includes + [metal_cpp_path, str(PARIR_METAL_PATH)]
         frameworks = ["-framework", "Metal", "-framework", "Foundation", "-framework", "MetalKit"]
         include_cmd = flatten([["-I", include] for include in includes])

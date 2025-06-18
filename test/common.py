@@ -3,27 +3,20 @@ import parir
 import pytest
 import torch
 
-# We produce lists of the backends that should be tested. The compilation
-# backends include the backends for which the target machine should support
-# end-to-end compilation. The codegen backends include all compiler backends.
+# Use all backends declared in the library
+compiler_backends = parir.backend.backends
 
-metal_cpp_header_path = os.getenv("METAL_CPP_HEADER_PATH")
-if metal_cpp_header_path is not None:
-    parir.set_metal_cpp_header_path(metal_cpp_header_path)
-
-compiler_backends = [
-    parir.CompileBackend.Cuda,
-    parir.CompileBackend.Metal,
-]
-
-def compiler_backend_is_enabled(backend):
-    if backend == parir.CompileBackend.Cuda:
-        return torch.cuda.is_available()
-    elif backend == parir.CompileBackend.Metal:
-        return torch.mps.is_available() and metal_cpp_header_path is not None
+# If the Metal backend is determined to be available by Torch, but the
+# Metal-cpp header is missing, we report an error to alert the user that they
+# need to provide this path (otherwise all compilation tests for Metal would be
+# skipped).
+if torch.mps.is_available() and parir.get_metal_cpp_header_path() is None:
+    raise RuntimeError(f"The Metal backend is available, but the path to the \
+                         Metal-cpp header was not set using the \
+                         METAL_CPP_HEADER_PATH environment variable.")
 
 def run_if_backend_is_enabled(backend, fn):
-    if compiler_backend_is_enabled(backend):
+    if parir.backend.is_enabled(backend):
         import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("error")

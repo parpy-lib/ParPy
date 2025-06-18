@@ -1,4 +1,4 @@
-from . import buffer, compile, key, parir, validate
+from . import backend, buffer, compile, key, parir, validate
 from .buffer import sync
 from .compile import clear_cache
 from .operators import *
@@ -101,6 +101,7 @@ def run_callbacks(callbacks, opts):
             cb()
 
 def compile_string(fun_name, code, opts=parir.CompileOptions()):
+    opts = backend.resolve(opts, True)
     k = "string_" + key.generate_code_key(code)
     compile.build_shared_library(k, code, opts)
     opts.cache = False
@@ -118,6 +119,7 @@ def print_compiled(fun, args, opts=parir.CompileOptions()):
     arguments and parallelization arguments. Returns the resulting CUDA C++
     code.
     """
+    opts = backend.resolve(opts, False)
     if fun in ir_asts:
         ir_ast = ir_asts[fun]
     else:
@@ -135,7 +137,7 @@ def jit(fun):
     ir_ast = convert_python_function_to_ir(fun)
 
     def inner(*args, **kwargs):
-        opts = check_kwargs(kwargs)
+        opts = backend.resolve(check_kwargs(kwargs), True)
         callbacks, args = validate.check_arguments(args, opts, True)
         compile_function(ir_ast, args, opts, fun)(*args)
         run_callbacks(callbacks, opts)
