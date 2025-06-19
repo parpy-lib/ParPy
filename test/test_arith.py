@@ -1,3 +1,4 @@
+from enum import Enum
 import math
 import parir
 import pytest
@@ -108,13 +109,16 @@ arith_funs = [
     parir_add, parir_sub, parir_mul, parir_div_int, parir_div, parir_rem,
     parir_pow, parir_abs, parir_aug_ops, parir_max, parir_min
 ] + bitwise_funs
-arith_tys = [
-    torch.int8, torch.int16, torch.int32, torch.int64, torch.float16,
-    torch.float32, torch.float64
-]
+signed_int_tys = [torch.int8, torch.int16, torch.int32, torch.int64]
+unsigned_int_tys = [torch.uint8, torch.uint16, torch.uint32, torch.uint64]
+float_tys = [torch.float16, torch.float32, torch.float64]
+arith_tys = signed_int_tys + unsigned_int_tys + float_tys
 
 def is_float_dtype(dtype):
-    return dtype == torch.float16 or dtype == torch.float32 or dtype == torch.float64
+    return dtype in float_tys
+
+def is_untyped_dtype(dtype):
+    return dtype in unsigned_int_tys
 
 def is_invalid_div_or_rem_call(fn, ldtype, rdtype):
     return ((fn.__name__ == "parir_div_int" or fn.__name__ == "parir_rem") and
@@ -126,27 +130,43 @@ def is_invalid_pow_call(fn, ldtype, rdtype):
         ((not is_float_dtype(ldtype) and not is_float_dtype(rdtype)) or
         (ldtype == torch.float16 and rdtype == torch.float16)))
 
+# When subtraction of untyped integers overflows, we get a warning that causes
+# tests to fail. As we pick random values, we do not know until the numbers
+# have been picked whether the test should fail or pass.
+def is_untyped_subtraction(fn, ldtype, rdtype):
+    return ((fn.__name__ == "parir_sub" or fn.__name__ == "parir_aug_ops") and
+        (is_untyped_dtype(ldtype) and is_untyped_dtype(rdtype)))
+
+class RunType(Enum):
+    ShouldPass = 0
+    ShouldFail = 1
+    Skip = 2
+
 def set_expected_behavior_binop(fn, ldtype, rdtype, backend):
     if is_invalid_div_or_rem_call(fn, ldtype, rdtype):
-        return True, r"Invalid type .* of integer arithmetic operation"
+        return RunType.ShouldFail, r"Invalid type .* of integer arithmetic operation"
     elif is_invalid_pow_call(fn, ldtype, rdtype):
-        return True, r"Invalid type .* of floating-point arithmetic operation"
+        return RunType.ShouldFail, r"Invalid type .* of floating-point arithmetic operation"
     elif fn in bitwise_funs and (is_float_dtype(ldtype) or is_float_dtype(rdtype)):
-        return True, r"Invalid type .* of bitwise operation"
+        return RunType.ShouldFail, r"Invalid type .* of bitwise operation"
     elif backend == parir.CompileBackend.Metal and \
          (ldtype == torch.float64 or rdtype == torch.float64):
-        return True, r"Metal does not support double-precision floating-point numbers."
+        return RunType.ShouldFail, r"Metal does not support double-precision floating-point numbers."
+    elif is_untyped_subtraction(fn, ldtype, rdtype):
+        return RunType.Skip, None
     else:
-        return False, None
+        return RunType.ShouldPass, None
 
 def bin_arith_helper(fn, ldtype, rdtype, compile_only, backend):
-    should_fail, msg_regex = set_expected_behavior_binop(fn, ldtype, rdtype, backend)
-    if should_fail:
+    rt, msg_regex = set_expected_behavior_binop(fn, ldtype, rdtype, backend)
+    if rt == RunType.ShouldPass:
+        arith_binop_dtype(fn, ldtype, rdtype, compile_only, backend)
+    elif rt == RunType.ShouldFail:
         with pytest.raises(TypeError) as e_info:
             arith_binop_dtype(fn, ldtype, rdtype, compile_only, backend)
         assert e_info.match(msg_regex)
-    else:
-        arith_binop_dtype(fn, ldtype, rdtype, compile_only, backend)
+    elif rt == RunType.Skip:
+        pass
 
 @pytest.mark.parametrize('fn', arith_funs)
 @pytest.mark.parametrize('dtype', arith_tys)
@@ -172,6 +192,12 @@ arith_ty_pairs = [
     (torch.int16, torch.int32),
     (torch.int16, torch.int64),
     (torch.int32, torch.int64),
+    (torch.uint8, torch.uint16),
+    (torch.uint8, torch.uint32),
+    (torch.uint8, torch.uint64),
+    (torch.uint16, torch.uint32),
+    (torch.uint16, torch.uint64),
+    (torch.uint32, torch.uint64),
     (torch.float16, torch.float32),
     (torch.float16, torch.float64),
     (torch.float32, torch.float64),
