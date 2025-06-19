@@ -182,7 +182,8 @@ mod test {
 
     fn int(v: i64) -> Expr {
         Expr::Int {
-            v, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]}, i: Info::default()
+            v: v as i128, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]},
+            i: Info::default()
         }
     }
 

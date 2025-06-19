@@ -13,13 +13,13 @@ pub trait CFExpr<T> {
         where Self: Sized;
     fn bool_expr(v: bool, ty: T, i: Info) -> Self
         where Self: Sized;
-    fn int_expr(v: i64, ty: T, i: Info) -> Self
+    fn int_expr(v: i128, ty: T, i: Info) -> Self
         where Self: Sized;
     fn float_expr(v: f64, ty: T, i: Info) -> Self
         where Self: Sized;
 
     fn get_bool_value(&self) -> Option<bool>;
-    fn get_int_value(&self) -> Option<i64>;
+    fn get_int_value(&self) -> Option<i128>;
     fn get_float_value(&self) -> Option<f64>;
 
     fn literal_kind(&self) -> Option<LitKind> {
@@ -124,8 +124,8 @@ fn is_int_neutral_elem<T, E: CFExpr<T>>(op: &BinOp, e: &E, is_rhs: bool) -> bool
         BinOp::Sub if is_rhs => v == 0,
         BinOp::Mul => v == 1,
         BinOp::Div if is_rhs => v == 1,
-        BinOp::Max => v == i64::MIN,
-        BinOp::Min => v == i64::MAX,
+        BinOp::Max => v == i128::MIN,
+        BinOp::Min => v == i128::MAX,
         _ => false
     }
 }
@@ -146,8 +146,8 @@ fn apply_int_int_binop<T, E: CFExpr<T>>(
         BinOp::FloorDiv if rv != 0 => Some(lv / rv),
         BinOp::Rem if rv != 0 => Some(lv % rv),
         BinOp::BitAnd => Some(lv & rv),
-        BinOp::Max => Some(i64::max(lv, rv)),
-        BinOp::Min => Some(i64::min(lv, rv)),
+        BinOp::Max => Some(i128::max(lv, rv)),
+        BinOp::Min => Some(i128::min(lv, rv)),
         _ => None
     };
     match o {

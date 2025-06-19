@@ -13,8 +13,8 @@ use crate::utils::pprint::PrettyPrint;
 pub trait ExprLit {
     fn generate_literal(v: f64, sz: &ElemSize, i: Info) -> Self where Self: Sized;
 
-    fn to_int_lit(v: f64) -> i64 {
-        v as i64
+    fn to_int_lit(v: f64) -> i128 {
+        v as i128
     }
     fn to_bool_lit(v: f64) -> bool {
         v != 0.0
@@ -29,6 +29,9 @@ impl ExprLit for py_ast::Expr {
                 py_ast::Expr::Bool {v: py_ast::Expr::to_bool_lit(v), ty, i}
             },
             ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 => {
+                py_ast::Expr::Int {v: py_ast::Expr::to_int_lit(v), ty, i}
+            },
+            ElemSize::U8 | ElemSize::U16 | ElemSize::U32 | ElemSize::U64 => {
                 py_ast::Expr::Int {v: py_ast::Expr::to_int_lit(v), ty, i}
             },
             ElemSize::F16 | ElemSize::F32 | ElemSize::F64 => {
@@ -48,6 +51,9 @@ impl ExprLit for ir_ast::Expr {
             ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 => {
                 ir_ast::Expr::Int {v: ir_ast::Expr::to_int_lit(v), ty, i}
             },
+            ElemSize::U8 | ElemSize::U16 | ElemSize::U32 | ElemSize::U64 => {
+                ir_ast::Expr::Int {v: ir_ast::Expr::to_int_lit(v), ty, i}
+            },
             ElemSize::F16 | ElemSize::F32 | ElemSize::F64 => {
                 ir_ast::Expr::Float {v, ty, i}
             }
@@ -65,6 +71,9 @@ impl ExprLit for gpu_ast::Expr {
             ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 => {
                 gpu_ast::Expr::Int {v: gpu_ast::Expr::to_int_lit(v), ty, i}
             },
+            ElemSize::U8 | ElemSize::U16 | ElemSize::U32 | ElemSize::U64 => {
+                gpu_ast::Expr::Int {v: gpu_ast::Expr::to_int_lit(v), ty, i}
+            },
             ElemSize::F16 | ElemSize::F32 | ElemSize::F64 => {
                 gpu_ast::Expr::Float {v, ty, i}
             }
@@ -80,6 +89,9 @@ impl ExprLit for cu_ast::Expr {
                 cu_ast::Expr::Bool {v: cu_ast::Expr::to_bool_lit(v), ty, i}
             },
             ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 => {
+                cu_ast::Expr::Int {v: cu_ast::Expr::to_int_lit(v), ty, i}
+            },
+            ElemSize::U8 | ElemSize::U16 | ElemSize::U32 | ElemSize::U64 => {
                 cu_ast::Expr::Int {v: cu_ast::Expr::to_int_lit(v), ty, i}
             },
             ElemSize::F16 | ElemSize::F32 | ElemSize::F64 => {

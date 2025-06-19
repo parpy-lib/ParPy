@@ -11,7 +11,7 @@ use std::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum ElemSize {
-    Bool, I8, I16, I32, I64, F16, F32, F64
+    Bool, I8, I16, I32, I64, U8, U16, U32, U64, F16, F32, F64
 }
 
 impl ElemSize {
@@ -27,6 +27,17 @@ impl ElemSize {
             ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 => true,
             _ => false
         }
+    }
+
+    pub fn is_unsigned_integer(&self) -> bool {
+        match self {
+            ElemSize::U8 | ElemSize::U16 | ElemSize::U32 | ElemSize::U64 => true,
+            _ => false
+        }
+    }
+
+    pub fn is_integer(&self) -> bool {
+        self.is_signed_integer() || self.is_unsigned_integer()
     }
 
     pub fn is_floating_point(&self) -> bool {
@@ -45,6 +56,10 @@ impl fmt::Display for ElemSize {
             ElemSize::I16 => write!(f, "int16"),
             ElemSize::I32 => write!(f, "int32"),
             ElemSize::I64 => write!(f, "int64"),
+            ElemSize::U8 => write!(f, "uint8"),
+            ElemSize::U16 => write!(f, "uint16"),
+            ElemSize::U32 => write!(f, "uint32"),
+            ElemSize::U64 => write!(f, "uint64"),
             ElemSize::F16 => write!(f, "float16"),
             ElemSize::F32 => write!(f, "float32"),
             ElemSize::F64 => write!(f, "float64"),
@@ -200,7 +215,7 @@ pub enum Expr {
     Var {id: Name, ty: Type, i: Info},
     String {v: String, ty: Type, i: Info},
     Bool {v: bool, ty: Type, i: Info},
-    Int {v: i64, ty: Type, i: Info},
+    Int {v: i128, ty: Type, i: Info},
     Float {v: f64, ty: Type, i: Info},
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},

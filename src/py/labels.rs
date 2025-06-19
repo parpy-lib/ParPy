@@ -113,7 +113,7 @@ mod test {
     }
 
     fn int(v: i64) -> Expr {
-        Expr::Int {v, ty: Type::Unknown, i: i()}
+        Expr::Int {v: v as i128, ty: Type::Unknown, i: i()}
     }
 
     #[test]

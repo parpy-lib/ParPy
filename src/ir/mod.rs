@@ -61,7 +61,7 @@ pub mod ir_builder {
 
     pub fn int_with_ty(v: i64, ty: Option<Type>) -> Expr {
         let ty = ty.unwrap_or(scalar_ty(ElemSize::I64));
-        Expr::Int {v, ty, i: Info::default()}
+        Expr::Int {v: v as i128, ty, i: Info::default()}
     }
 
     pub fn int(v: i64) -> Expr {

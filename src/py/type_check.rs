@@ -48,7 +48,7 @@ impl TypeCheckEnv {
     }
 
     pub fn is_int_scalar(&self, ty: &Type) -> bool {
-        self.is_scalar_h(ty, |sz| sz.is_signed_integer())
+        self.is_scalar_h(ty, |sz| sz.is_signed_integer() || sz.is_unsigned_integer())
     }
 
     pub fn is_float_scalar(&self, ty: &Type) -> bool {
@@ -65,7 +65,7 @@ impl TypeCheckEnv {
     }
 
     pub fn is_arith_tensor(&self, ty: &Type) -> bool {
-        self.is_tensor(ty, |sz| sz.is_signed_integer() || sz.is_floating_point())
+        self.is_tensor(ty, |sz| sz.is_integer() || sz.is_floating_point())
     }
 }
 
@@ -82,6 +82,14 @@ fn compile_elem_size<'py>(dtype: Bound<'py, PyAny>) -> PyResult<ElemSize> {
         Ok(ElemSize::I32)
     } else if ty.eq(parir.getattr("int64")?)? {
         Ok(ElemSize::I64)
+    } else if ty.eq(parir.getattr("uint8")?)? {
+        Ok(ElemSize::U8)
+    } else if ty.eq(parir.getattr("uint16")?)? {
+        Ok(ElemSize::U16)
+    } else if ty.eq(parir.getattr("uint32")?)? {
+        Ok(ElemSize::U32)
+    } else if ty.eq(parir.getattr("uint64")?)? {
+        Ok(ElemSize::U64)
     } else if ty.eq(parir.getattr("float16")?)? {
         Ok(ElemSize::F16)
     } else if ty.eq(parir.getattr("float32")?)? {
@@ -141,6 +149,12 @@ fn lub_elem_size(
         (ElemSize::I32, ElemSize::I8 | ElemSize::I16) => Ok(ElemSize::I32),
         (ElemSize::I32, _) if rhs.is_signed_integer() => Ok(rhs.clone()),
         (ElemSize::I64, _) if rhs.is_signed_integer() => Ok(lhs.clone()),
+        (ElemSize::U8, _) if rhs.is_unsigned_integer() => Ok(rhs.clone()),
+        (ElemSize::U16, ElemSize::U8) => Ok(ElemSize::U16),
+        (ElemSize::U16, _) if rhs.is_unsigned_integer() => Ok(rhs.clone()),
+        (ElemSize::U32, ElemSize::U8 | ElemSize::U16) => Ok(ElemSize::U32),
+        (ElemSize::U32, _) if rhs.is_unsigned_integer() => Ok(rhs.clone()),
+        (ElemSize::U64, _) if rhs.is_unsigned_integer() => Ok(lhs.clone()),
         (ElemSize::F16, _) if rhs.is_floating_point() => Ok(rhs.clone()),
         (ElemSize::F32, ElemSize::F16) => Ok(ElemSize::F32),
         (ElemSize::F32, _) if rhs.is_floating_point() => Ok(rhs.clone()),
@@ -588,12 +602,12 @@ fn num_index_dimensions(idx: &Expr) -> usize {
 
 fn extract_slice_bound(
     o: &Option<Box<Expr>>,
-    default: i64,
+    default: i128,
     msg_prefix: &str,
     i: &Info
 ) -> PyResult<i64> {
     match slices::extract_slice_index(o, default) {
-        Some(idx) => Ok(idx),
+        Some(idx) => Ok(idx as i64),
         None => py_type_error!(i, "{msg_prefix} of slice must be fixed.")
     }
 }
@@ -607,7 +621,7 @@ fn extract_slice_dim<'a>(
     match e {
         Expr::Slice {lo, hi, i, ..} => {
             let lo_idx = extract_slice_bound(lo, 0, "Lower-bound", &i)?;
-            let hi_idx = extract_slice_bound(hi, shape[0], "Upper-bound", &i)?;
+            let hi_idx = extract_slice_bound(hi, shape[0] as i128, "Upper-bound", &i)?;
             let hi_idx = if hi_idx < 0 {
                 hi_idx + shape[0]
             } else {
@@ -632,10 +646,11 @@ fn extract_slice_dim<'a>(
             }
         },
         Expr::Int {v, ..} => {
-            let idx = if *v < 0 {
-                *v + shape[0]
+            let vi = *v as i64;
+            let idx = if vi < 0 {
+                vi + shape[0]
             } else {
-                *v
+                vi
             };
             if idx >= 0 && idx < shape[0] {
                 slice_dims.push(0);
@@ -1096,7 +1111,7 @@ mod test {
 
     fn int(v: i64, ty: Option<Type>) -> Expr {
         let ty = ty.unwrap_or(Type::Unknown);
-        Expr::Int {v, ty, i: Info::default()}
+        Expr::Int {v: v as i128, ty, i: Info::default()}
     }
 
     fn test_tc_unop(op: UnOp, arg: Expr) -> PyResult<Type> {

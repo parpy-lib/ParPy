@@ -204,7 +204,7 @@ mod test {
             Expr::ThreadIdx {dim, ty: i64_ty.clone(), i: i()}
         };
         let init = Expr::BinOp {
-            lhs: Box::new(Expr::Int {v: lo, ty: i64_ty.clone(), i: i()}),
+            lhs: Box::new(Expr::Int {v: lo as i128, ty: i64_ty.clone(), i: i()}),
             op: BinOp::Add,
             rhs: Box::new(rhs),
             ty: i64_ty.clone(), i: i()
@@ -212,7 +212,7 @@ mod test {
         let cond = Expr::BinOp {
             lhs: Box::new(Expr::Var {id: var.clone(), ty: i64_ty.clone(), i: i()}),
             op: BinOp::Lt,
-            rhs: Box::new(Expr::Int {v: hi, ty: i64_ty.clone(), i: i()}),
+            rhs: Box::new(Expr::Int {v: hi as i128, ty: i64_ty.clone(), i: i()}),
             ty: i64_ty.clone(), i: i()
         };
         let incr = Expr::BinOp {
@@ -252,7 +252,7 @@ mod test {
     }
 
     fn int(v: i64) -> Expr {
-        Expr::Int {v, ty: i64_ty(), i: i()}
+        Expr::Int {v: v as i128, ty: i64_ty(), i: i()}
     }
 
     fn tcheck(stmt: Stmt) -> Stmt {

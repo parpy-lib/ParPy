@@ -64,7 +64,7 @@ fn extract_scalar_value<'py>(
         let v = arg.extract::<bool>()?;
         Ok(Expr::Bool {v, ty: Type::Tensor {sz, shape: vec![]}, i: i.clone()})
     } else if sz.is_signed_integer() {
-        let v = arg.extract::<i64>()?;
+        let v = arg.extract::<i128>()?;
         Ok(Expr::Int {v, ty: Type::Tensor {sz, shape: vec![]}, i: i.clone()})
     } else if sz.is_floating_point() {
         let v = arg.extract::<f64>()?;
@@ -159,7 +159,7 @@ mod test {
     }
 
     fn int(v: i64) -> Expr {
-        Expr::Int {v, ty: scalar_ty(ElemSize::I64), i: Info::default()}
+        Expr::Int {v: v as i128, ty: scalar_ty(ElemSize::I64), i: Info::default()}
     }
 
     fn float(v: f64) -> Expr {

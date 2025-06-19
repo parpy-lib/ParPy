@@ -84,11 +84,11 @@ fn remainder_if_shared_dimension(
             lhs: Box::new(Expr::BinOp {
                 lhs: Box::new(idx.clone()),
                 op: BinOp::Div,
-                rhs: Box::new(int_expr(multiplier)),
+                rhs: Box::new(int_expr(multiplier as i128)),
                 ty: ty.clone(), i: idx.get_info()
             }),
             op: BinOp::Rem,
-            rhs: Box::new(int_expr(v)),
+            rhs: Box::new(int_expr(v as i128)),
             ty: ty.clone(), i: idx.get_info()
         }
     } else {
@@ -116,7 +116,7 @@ fn determine_loop_bounds(
         i: i.clone()
     };
     let step = Expr::Int {
-        v: step_size, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
+        v: step_size as i128, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
     };
     let fn_incr = |v| Expr::BinOp {
         lhs: Box::new(var_e),
@@ -125,7 +125,7 @@ fn determine_loop_bounds(
             lhs: Box::new(step.clone()),
             op: BinOp::Mul,
             rhs: Box::new(Expr::Int {
-                v, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
+                v: v as i128, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
             }),
             ty: ty.clone(), i: i.clone()
         }),
@@ -173,7 +173,7 @@ fn determine_loop_bounds(
                     }),
                     op: BinOp::Mul,
                     rhs: Box::new(Expr::Int {
-                        v: nthreads, ty: ty.clone(), i: i.clone()
+                        v: nthreads as i128, ty: ty.clone(), i: i.clone()
                     }),
                     ty: ty.clone(),
                     i: i.clone()
@@ -199,7 +199,7 @@ fn determine_loop_bounds(
                         lhs: Box::new(idx.clone()),
                         op: BinOp::Lt,
                         rhs: Box::new(Expr::Int {
-                            v: n, ty: ty.clone(), i: i.clone()
+                            v: n as i128, ty: ty.clone(), i: i.clone()
                         }),
                         ty: ty.clone(), i: i.clone()
                     }),
@@ -340,7 +340,7 @@ fn generate_parallel_reduction(
                 lhs: Box::new(var.clone()),
                 op: BinOp::Add,
                 rhs: Box::new(Expr::Int {
-                    v: nthreads, ty: i64_ty.clone(), i: i.clone()
+                    v: nthreads as i128, ty: i64_ty.clone(), i: i.clone()
                 }),
                 ty: i64_ty.clone(),
                 i: i.clone()

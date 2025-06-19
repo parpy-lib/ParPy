@@ -170,7 +170,7 @@ fn flatten_indices(
     let zero = Expr::Int {v: 0, ty: int_ty.clone(), i: i.clone()};
     let nindices = indices.len();
     let tail = shape.split_off(nindices);
-    let init = tail.into_iter().product();
+    let init = tail.into_iter().product::<i64>() as i128;
     let (idx, _) = shape.clone()
         .into_iter()
         .rev()
@@ -192,7 +192,7 @@ fn flatten_indices(
                 ty: int_ty.clone(),
                 i: i.clone()
             };
-            Ok((idx_expr, mult * n))
+            Ok((idx_expr, mult * n as i128))
         })?;
     Ok(idx)
 }
@@ -459,7 +459,7 @@ mod test {
     }
 
     fn py_int(v: i64) -> py_ast::Expr {
-        py_ast::Expr::Int {v, ty: py_tensor_ty(vec![]), i: i()}
+        py_ast::Expr::Int {v: v as i128, ty: py_tensor_ty(vec![]), i: i()}
     }
 
     fn ir_tensor_ty(shape: Vec<i64>) -> Type {
@@ -471,7 +471,7 @@ mod test {
     }
 
     fn ir_int(v: i64) -> Expr {
-        Expr::Int {v, ty: ir_int_ty(), i: i()}
+        Expr::Int {v: v as i128, ty: ir_int_ty(), i: i()}
     }
 
     fn ir_binop(lhs: Expr, op: BinOp, rhs: Expr, ty: Type) -> Expr {

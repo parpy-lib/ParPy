@@ -14,6 +14,10 @@ impl PrettyPrint for ElemSize {
             ElemSize::I16 => "int16_t",
             ElemSize::I32 => "int32_t",
             ElemSize::I64 => "int64_t",
+            ElemSize::U8 => "uint8_t",
+            ElemSize::U16 => "uint16_t",
+            ElemSize::U32 => "uint32_t",
+            ElemSize::U64 => "uint64_t",
             ElemSize::F16 => "half",
             ElemSize::F32 => "float",
             ElemSize::F64 => "double",
@@ -405,7 +409,7 @@ mod test {
     }
 
     fn int(v: i64) -> Expr {
-        Expr::Int {v, ty: Type::Scalar {sz: ElemSize::I64}, i: Info::default()}
+        Expr::Int {v: v as i128, ty: Type::Scalar {sz: ElemSize::I64}, i: Info::default()}
     }
 
     fn bop(lhs: Expr, op: BinOp, rhs: Expr, ty: Option<Type>) -> Expr {

@@ -38,7 +38,7 @@ impl BinOp {
 pub enum Expr {
     Var {id: Name, ty: Type, i: Info},
     Bool {v: bool, ty: Type, i: Info},
-    Int {v: i64, ty: Type, i: Info},
+    Int {v: i128, ty: Type, i: Info},
     Float {v: f64, ty: Type, i: Info},
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},

@@ -65,15 +65,23 @@ int8 = 1
 int16 = 2
 int32 = 3
 int64 = 4
-float16 = 5
-float32 = 6
-float64 = 7
+uint8 = 5
+uint16 = 6
+uint32 = 7
+uint64 = 8
+float16 = 9
+float32 = 10
+float64 = 11
 typemap = {
     ty_bool: "b1",
     int8: "i1",
     int16: "i2",
     int32: "i4",
     int64: "i8",
+    uint8: "u1",
+    uint16: "u2",
+    uint32: "u4",
+    uint64: "u8",
     float16: "f2",
     float32: "f4",
     float64: "f8",
@@ -84,6 +92,10 @@ np_typemap = {
     int16: np.int16,
     int32: np.int32,
     int64: np.int64,
+    uint8: np.uint8,
+    uint16: np.uint16,
+    uint32: np.uint32,
+    uint64: np.uint64,
     float16: np.float16,
     float32: np.float32,
     float64: np.float64,
@@ -94,6 +106,10 @@ ctypemap = {
     int16: ctypes.c_int16,
     int32: ctypes.c_int32,
     int64: ctypes.c_int64,
+    uint8: ctypes.c_uint8,
+    uint16: ctypes.c_uint16,
+    uint32: ctypes.c_uint32,
+    uint64: ctypes.c_uint64,
     float16: ctypes.c_int16,
     float32: ctypes.c_float,
     float64: ctypes.c_double,

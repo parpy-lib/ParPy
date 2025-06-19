@@ -17,7 +17,7 @@ impl CFExpr<Type> for Expr {
         Expr::Bool {v, ty, i}
     }
 
-    fn int_expr(v: i64, ty: Type, i: Info) -> Expr {
+    fn int_expr(v: i128, ty: Type, i: Info) -> Expr {
         Expr::Int {v, ty, i}
     }
 
@@ -32,7 +32,7 @@ impl CFExpr<Type> for Expr {
         }
     }
 
-    fn get_int_value(&self) -> Option<i64> {
+    fn get_int_value(&self) -> Option<i128> {
         match self {
             Expr::Int {v, ..} => Some(*v),
             _ => None
@@ -110,7 +110,7 @@ fn is_zero_value(init: &Expr) -> bool {
     }
 }
 
-fn cond_upper_bound(var: &Name, cond: &Expr) -> Option<i64> {
+fn cond_upper_bound(var: &Name, cond: &Expr) -> Option<i128> {
     match cond {
         Expr::BinOp {lhs, op: BinOp::Lt, rhs, ..} => {
             match (lhs.as_ref(), rhs.as_ref()) {
@@ -122,7 +122,7 @@ fn cond_upper_bound(var: &Name, cond: &Expr) -> Option<i64> {
     }
 }
 
-fn incr_rhs(var: &Name, incr: &Expr) -> Option<i64> {
+fn incr_rhs(var: &Name, incr: &Expr) -> Option<i128> {
     match incr {
         Expr::BinOp {lhs, op: BinOp::Add, rhs, ..} => {
             match (lhs.as_ref(), rhs.as_ref()) {

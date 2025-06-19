@@ -7,13 +7,13 @@ use crate::utils::smap::SMapAccum;
 
 use pyo3::prelude::*;
 
-fn add_shape_dim_if_negative(idx: i64, dim: i64) -> i64 {
+fn add_shape_dim_if_negative(idx: i128, dim: i128) -> i128 {
     if idx < 0 { idx + dim } else { idx }
 }
 
 fn resolve_index_entry(
     idx: Expr,
-    dim: i64
+    dim: i128
 ) -> PyResult<Expr> {
     match idx {
         Expr::Slice {lo, hi, ty, i} => {
@@ -47,7 +47,7 @@ fn resolve_index_entries(
     if dims.len() <= shape.len() {
         let elems = dims.into_iter()
             .zip(shape.iter())
-            .map(|(e, dim)| resolve_index_entry(e, *dim))
+            .map(|(e, dim)| resolve_index_entry(e, *dim as i128))
             .collect::<PyResult<Vec<Expr>>>()?;
         Ok(Expr::Tuple {elems, ty, i})
     } else {

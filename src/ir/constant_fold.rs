@@ -16,7 +16,7 @@ impl CFExpr<Type> for Expr {
         Expr::Bool {v, ty, i}
     }
 
-    fn int_expr(v: i64, ty: Type, i: Info) -> Expr {
+    fn int_expr(v: i128, ty: Type, i: Info) -> Expr {
         Expr::Int {v, ty, i}
     }
 
@@ -31,7 +31,7 @@ impl CFExpr<Type> for Expr {
         }
     }
 
-    fn get_int_value(&self) -> Option<i64> {
+    fn get_int_value(&self) -> Option<i128> {
         match self {
             Expr::Int {v, ..} => Some(*v),
             _ => None

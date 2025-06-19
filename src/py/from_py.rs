@@ -181,6 +181,14 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Builtin> 
                 Ok(Builtin::Convert {sz: ElemSize::I32})
             } else if e.eq(parir.getattr("int64")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::I64})
+            } else if e.eq(parir.getattr("uint8")?)? {
+                Ok(Builtin::Convert {sz: ElemSize::U8})
+            } else if e.eq(parir.getattr("uint16")?)? {
+                Ok(Builtin::Convert {sz: ElemSize::U16})
+            } else if e.eq(parir.getattr("uint32")?)? {
+                Ok(Builtin::Convert {sz: ElemSize::U32})
+            } else if e.eq(parir.getattr("uint64")?)? {
+                Ok(Builtin::Convert {sz: ElemSize::U64})
             } else if e.eq(parir.getattr("label")?)? {
                 Ok(Builtin::Label)
             } else if e.eq(parir.getattr("gpu")?)? {
@@ -202,9 +210,9 @@ fn lookup_builtin_expr<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr
 
 fn extract_integer_literal_value(e: Expr) -> Option<i64> {
     match e {
-        Expr::Int {v, ..} => Some(v),
+        Expr::Int {v, ..} => Some(v as i64),
         Expr::UnOp {op: UnOp::Sub, arg, ..} => match *arg {
-            Expr::Int {v, ..} => Some(-v),
+            Expr::Int {v, ..} => Some(-v as i64),
             _ => None
         },
         _ => None
@@ -254,7 +262,7 @@ fn convert_expr<'py, 'a>(
             let v = val.extract::<bool>()?;
             Ok(Expr::Bool {v, ty, i})
         } else if val.is_instance(&types::PyInt::type_object(val.py()))? {
-            let v = val.extract::<i64>()?;
+            let v = val.extract::<i128>()?;
             Ok(Expr::Int {v, ty, i})
         } else if val.is_instance(&types::PyFloat::type_object(val.py()))? {
             let v = val.extract::<f64>()?;
@@ -364,9 +372,9 @@ fn extract_step(e: Expr) -> PyResult<i64> {
         py_runtime_error!(i, "Range step size must be non-zero")
     };
     match &e {
-        Expr::Int {v, ..} if *v != 0 => Ok(*v),
+        Expr::Int {v, ..} if *v != 0 => Ok(*v as i64),
         Expr::UnOp {op: UnOp::Sub, arg, ..} => match arg.as_ref() {
-            Expr::Int {v, ..} if *v != 0 => Ok(-*v),
+            Expr::Int {v, ..} if *v != 0 => Ok(-*v as i64),
             Expr::Int {i, ..} => fail_zero(&i),
             _ => fail()
         },
@@ -706,6 +714,10 @@ mod test {
         lookup_builtin_ok("parir.int16", Builtin::Convert {sz: ElemSize::I16})?;
         lookup_builtin_ok("parir.int32", Builtin::Convert {sz: ElemSize::I32})?;
         lookup_builtin_ok("parir.int64", Builtin::Convert {sz: ElemSize::I64})?;
+        lookup_builtin_ok("parir.uint8", Builtin::Convert {sz: ElemSize::U8})?;
+        lookup_builtin_ok("parir.uint16", Builtin::Convert {sz: ElemSize::U16})?;
+        lookup_builtin_ok("parir.uint32", Builtin::Convert {sz: ElemSize::U32})?;
+        lookup_builtin_ok("parir.uint64", Builtin::Convert {sz: ElemSize::U64})?;
         lookup_builtin_ok("parir.float16", Builtin::Convert {sz: ElemSize::F16})?;
         lookup_builtin_ok("parir.float32", Builtin::Convert {sz: ElemSize::F32})?;
         lookup_builtin_ok("parir.float64", Builtin::Convert {sz: ElemSize::F64})

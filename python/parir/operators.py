@@ -59,5 +59,17 @@ def int32(x):
 def int64(x):
     return int(x)
 
+def uint8(x):
+    return int(x)
+
+def uint16(x):
+    return int(x)
+
+def uint32(x):
+    return int(x)
+
+def uint64(x):
+    return int(x)
+
 def label(x):
     assert x is not None, "parir.label expects one argument"

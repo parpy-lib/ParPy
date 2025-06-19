@@ -137,8 +137,8 @@ fn find_reduce_dim(rhs: &Expr) -> ReduceDim {
 
 pub fn extract_slice_index(
     o: &Option<Box<Expr>>,
-    default: i64
-) -> Option<i64> {
+    default: i128
+) -> Option<i128> {
     if let Some(e) = o {
         if let Expr::Int {v, ..} = e.as_ref() {
             Some(*v)
@@ -233,7 +233,7 @@ fn replace_ids_with_shape_expr(
         let sub_expr = Expr::BinOp {
             lhs: Box::new(reduce_expr.clone()),
             op: BinOp::Rem,
-            rhs: Box::new(Expr::Int {v: *sh, ty: Type::Unknown, i: i.clone()}),
+            rhs: Box::new(Expr::Int {v: *sh as i128, ty: Type::Unknown, i: i.clone()}),
             ty: Type::Unknown,
             i: i.clone()
         };
@@ -241,7 +241,7 @@ fn replace_ids_with_shape_expr(
         reduce_expr = Expr::BinOp {
             lhs: Box::new(reduce_expr),
             op: BinOp::Div,
-            rhs: Box::new(Expr::Int {v: *sh, ty: Type::Unknown, i: i.clone()}),
+            rhs: Box::new(Expr::Int {v: *sh as i128, ty: Type::Unknown, i: i.clone()}),
             ty: Type::Unknown,
             i: i.clone()
         };
@@ -285,7 +285,7 @@ fn generate_for_loops(
                     op: r.op.clone(), tyof: Box::new(expr), i: i.clone()
                 };
                 stmt = Stmt::For {
-                    var: r.var_id, lo: int(0), hi: int(r.niters), step: 1,
+                    var: r.var_id, lo: int(0), hi: int(r.niters as i128), step: 1,
                     body: vec![stmt], labels: l, i: i.clone()
                 };
                 let pre_stmt = match r.target_data {
@@ -307,7 +307,7 @@ fn generate_for_loops(
     for (id, shape) in dims.into_iter().rev() {
         let for_label = labels.pop().map(|l| vec![l]).unwrap_or(vec![]);
         stmt = Stmt::For {
-            var: id, lo: int(0), hi: int(shape), step: 1,
+            var: id, lo: int(0), hi: int(shape as i128), step: 1,
             body: vec![stmt], labels: for_label, i: i.clone()
         }
     }

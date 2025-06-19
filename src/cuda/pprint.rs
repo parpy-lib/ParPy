@@ -412,7 +412,7 @@ mod test {
     }
 
     fn int(v: i64) -> Expr {
-        Expr::Int {v, ty: Type::Scalar {sz: ElemSize::I64}, i: Info::default()}
+        Expr::Int {v: v as i128, ty: Type::Scalar {sz: ElemSize::I64}, i: Info::default()}
     }
 
     fn bop(lhs: Expr, op: BinOp, rhs: Expr, ty: Option<Type>) -> Expr {

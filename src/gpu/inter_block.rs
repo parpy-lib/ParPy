@@ -143,7 +143,7 @@ fn inner_multi_block_reduce_loop(
     lo: Expr,
     hi: Expr,
     step: i64,
-    nblocks: i64,
+    nblocks: i128,
     tpb: i64,
     block_idx: Name,
     lhs: Expr,
@@ -238,7 +238,7 @@ fn outer_multi_block_reduce_loop(
     Stmt::For {
         var,
         lo: Expr::Int {v: 0, ty: i64_ty.clone(), i: i.clone()},
-        hi: Expr::Int {v: nblocks as i64, ty: i64_ty.clone(), i: i.clone()},
+        hi: Expr::Int {v: nblocks as i128, ty: i64_ty.clone(), i: i.clone()},
         step: 1,
         body: vec![init_stmt, inner_loop],
         par: LoopPar {nthreads: nblocks as i64, reduction: false, tpb},
@@ -277,7 +277,7 @@ fn single_block_reduce_loop(
     Stmt::For {
         var,
         lo: Expr::Int {v: 0, ty: i64_ty.clone(), i: i.clone()},
-        hi: Expr::Int {v: nblocks as i64, ty: i64_ty.clone(), i: i.clone()},
+        hi: Expr::Int {v: nblocks as i128, ty: i64_ty.clone(), i: i.clone()},
         step: 1, body: vec![assign], par, i: i.clone()
     }
 }
@@ -304,7 +304,7 @@ fn split_inter_block_parallel_reductions_stmt(s: Stmt) -> CompileResult<Stmt> {
                     id: temp_id.clone(), ty: ty.clone(), i: i.clone()
                 };
                 let l1 = inner_multi_block_reduce_loop(
-                    var, lo, hi, step, nblocks as i64, par.tpb,
+                    var, lo, hi, step, nblocks as i128, par.tpb,
                     id.clone(), temp_access.clone(), op.clone(), rhs, &i
                 );
                 let l2 = outer_multi_block_reduce_loop(
@@ -853,7 +853,7 @@ fn collect_variable_temp_data(
                         ty: idx_ty.clone(),
                         i: i.clone()
                     };
-                    (e, acc_size * dim)
+                    (e, acc_size * *dim as i128)
                 });
             let (ty, sz) = match ty {
                 Type::Tensor {sz, ..} => {
@@ -875,7 +875,7 @@ fn collect_variable_temp_data(
                 i: i.clone()
             };
             let temp_data = TempData {
-                id: new_id, ty, expr, size
+                id: new_id, ty, expr, size: size as i64
             };
             env.data.insert(id.clone(), temp_data);
             Ok(env)
