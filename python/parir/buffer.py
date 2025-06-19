@@ -175,7 +175,7 @@ def sync(backend):
         check_cuda_errors(runtime.cudaDeviceSynchronize())
     elif backend == CompileBackend.Metal:
         try_load_metal_base_lib()
-        metal_lib.sync()
+        metal_lib.parir_sync()
     else:
         raise RuntimeError(f"Called sync on unsupported compiler backend {backend}")
 
