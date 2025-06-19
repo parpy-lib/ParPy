@@ -229,6 +229,9 @@ class Buffer:
                 return self.__int__()
         raise ValueError(f"Cannot use buffer of shape {self.shape} and type {self.dtype} as index")
 
+    def sync(self):
+        sync(self.backend)
+
     def cleanup(self):
         nbytes = reduce(mul, self.shape, 1) * self.dtype.size()
         if self.backend == CompileBackend.Cuda:
@@ -245,7 +248,7 @@ class Buffer:
         elif self.backend == CompileBackend.Metal:
             if self.buf is not None:
                 # Need to wait for kernels to complete before we copy data.
-                sync(self.backend)
+                self.sync()
                 if self.src_ptr is not None:
                     metal_lib.parir_memcpy(self.src_ptr, self.ptr, nbytes)
                 metal_lib.parir_free_buffer(self.buf)
@@ -323,7 +326,7 @@ class Buffer:
             check_cuda_errors(runtime.cudaMemcpy(data_ptr, self.buf, nbytes, runtime.cudaMemcpyKind.cudaMemcpyDeviceToHost))
             return a
         elif self.backend == CompileBackend.Metal:
-            sync(self.backend)
+            self.sync()
             return np.asarray(self)
         else:
             raise RuntimeError(f"Unsupported buffer backend {self.backend}")
