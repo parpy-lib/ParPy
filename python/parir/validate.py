@@ -1,5 +1,6 @@
 from .parir import CompileBackend
 from .buffer import Buffer
+import numpy as np
 
 def check_dict(arg, i, in_dict, check_rec):
     if in_dict:
@@ -42,11 +43,14 @@ def check_cuda_arg(arg, i, in_dict, seq):
         return [], arg
     elif hasattr(arg, "__cuda_array_interface__"):
         if seq:
+            # NOTE: This may break if some data is allocated in another way.
+            # The proper approach, which may introduce significant overhead, is
+            # to copy data to the CPU (NumPy) and back again.
             return [], arg
         return [], Buffer.from_array(arg, CompileBackend.Cuda)
     elif hasattr(arg, "__array_interface__") or hasattr(arg, "__array__"):
         if seq:
-            return [], arg
+            return [], np.asarray(arg)
         buf = Buffer.from_array(arg, CompileBackend.Cuda)
         callback = lambda: buf.cleanup()
         return [callback], buf
@@ -66,7 +70,7 @@ def check_metal_arg(arg, i, in_dict, seq):
         return [], arg
     elif hasattr(arg, "__array_interface__") or hasattr(arg, "__array__"):
         if seq:
-            return [], arg
+            return [], np.asarray(arg)
         buf = Buffer.from_array(arg, CompileBackend.Metal)
         callback = lambda: buf.cleanup()
         return [callback], buf

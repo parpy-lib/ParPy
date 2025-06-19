@@ -1,7 +1,7 @@
 from builtins import abs
-from torch import atan2, cos, exp, inf, log, sin, sqrt, tanh
+from numpy import atan2, cos, exp, inf, log, sin, sqrt, tanh
 import builtins
-import torch
+import numpy as np
 import contextlib
 
 gpu = contextlib.nullcontext()
@@ -9,9 +9,9 @@ gpu = contextlib.nullcontext()
 def min(x, y=None, axis=None):
     if y is None:
         if axis is None:
-            return torch.min(x)
+            return np.min(x)
         else:
-            return torch.min(x, dim=axis).values
+            return np.min(x, axis=axis).values
     else:
         assert axis is None
         return builtins.min(x, y)
@@ -19,24 +19,24 @@ def min(x, y=None, axis=None):
 def max(x, y=None, axis=None):
     if y is None:
         if axis is None:
-            return torch.max(x)
+            return np.max(x)
         else:
-            return torch.max(x, dim=axis).values
+            return np.max(x, axis=axis).values
     else:
         assert axis is None
         return builtins.max(x, y)
 
 def sum(x, axis=None):
     if axis is None:
-        return torch.sum(x)
+        return np.sum(x)
     else:
-        return torch.sum(x, dim=axis)
+        return np.sum(x, axis=axis)
 
 def prod(x, axis=None):
     if axis is None:
-        return torch.prod(x)
+        return np.prod(x)
     else:
-        return torch.prod(x, dim=axis)
+        return np.prod(x, axis=axis)
 
 def float16(x):
     return float(x)
