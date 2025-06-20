@@ -63,7 +63,7 @@ fn compile_ir<'py>(
     // Specialize the Python-like AST based on the provided arguments, inferring the types of all
     // expressions and inlining scalar argument values directly into the AST.
     let py_ast = untyped_ir_def.clone();
-    let py_ast = py::specialize_ast_on_arguments(py_ast, args, &opts.parallelize, &debug_env)?;
+    let py_ast = py::specialize_ast_on_arguments(py_ast, args, &opts, &debug_env)?;
     debug_env.print("Specialized Python-like AST", &py_ast);
 
     // Converts the Python-like AST to an IR by removing or simplifying concepts from Python. For

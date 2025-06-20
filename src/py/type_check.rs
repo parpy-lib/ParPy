@@ -20,12 +20,17 @@ use itertools::Itertools;
 #[derive(Clone, Debug)]
 pub struct TypeCheckEnv {
     pub vars: BTreeMap<Name, Type>,
-    pub shapes_only: bool
+    pub shapes_only: bool,
+    pub float_size: ElemSize
 }
 
 impl Default for TypeCheckEnv {
     fn default() -> TypeCheckEnv {
-        TypeCheckEnv {vars: BTreeMap::new(), shapes_only: false}
+        TypeCheckEnv {
+            vars: BTreeMap::new(),
+            shapes_only: false,
+            float_size: ElemSize::F64
+        }
     }
 }
 
@@ -107,7 +112,7 @@ fn get_buffer_shape<'py>(
     t.getattr("shape")?.extract::<Vec<i64>>()
 }
 
-fn convert_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
+fn convert_type<'py>(arg: &Bound<'py, PyAny>, float_size: &ElemSize) -> PyResult<Type> {
     let py = arg.py();
     let buffer = py.import("parir.buffer")?;
     let ty = arg.get_type();
@@ -119,7 +124,7 @@ fn convert_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
     } else if arg.is_instance(&PyInt::type_object(arg.py()))? {
         Ok(Type::Tensor {sz: ElemSize::I64, shape: vec![]})
     } else if arg.is_instance(&PyFloat::type_object(arg.py()))? {
-        Ok(Type::Tensor {sz: ElemSize::F64, shape: vec![]})
+        Ok(Type::Tensor {sz: float_size.clone(), shape: vec![]})
     } else if arg.is_instance(&PyDict::type_object(arg.py()))? {
         let fields = arg.call_method0("items")?
             .try_iter()?
@@ -127,7 +132,7 @@ fn convert_type<'py>(arg: &Bound<'py, PyAny>) -> PyResult<Type> {
                 let f = f?;
                 let id = f.get_item(0)?.extract::<String>()?;
                 let ty = f.get_item(1)?;
-                Ok((id, convert_type(&ty)?))
+                Ok((id, convert_type(&ty, float_size)?))
             })
             .collect::<PyResult<BTreeMap<String, Type>>>()?;
         Ok(Type::Dict {fields})
@@ -390,7 +395,6 @@ fn type_check_builtin(
                 py_type_error!(i, "Unexpected type {ty} of unary builtin (expected float)")
             }
         },
-        // CUDA has no built-in tanh for 16-bit floats.
         Builtin::Tanh if args.len() == 1 => {
             let ty = args[0].get_type().clone();
             if env.shapes_only {
@@ -400,14 +404,10 @@ fn type_check_builtin(
                     py_type_error!(i, "Expected scalar but found non-scalar tensor")
                 }
             } else {
-                match ty.get_scalar_elem_size() {
-                    Some(ElemSize::F16) =>
-                        py_type_error!(i, "Operation tanh not supported for \
-                                           16-bit floats"),
-                    Some(ElemSize::F32 | ElemSize::F64) =>
-                        Ok(Expr::Builtin {func, args, axis, ty, i}),
-                    _ => py_type_error!(i, "Unexpected type {ty} of tanh \
-                                            builtin (expected float)")
+                if env.is_float_scalar(&ty) {
+                    Ok(Expr::Builtin {func, args, axis, ty, i})
+                } else {
+                    py_type_error!(i, "Unexpected type {ty} of tanh builtin (expected float)")
                 }
             }
         },
@@ -453,10 +453,10 @@ fn type_check_builtin(
                         mk_builtin(func, fst, snd, ty, i)
                     },
                     Some(sz) if func == Builtin::Atan2 => {
-                        match sz {
-                            ElemSize::F64 => mk_builtin(func, fst, snd, ty, i),
-                            _ => py_type_error!(i, "Operation atan2 is only \
-                                                    supported for 64-bit floats.")
+                        if sz.is_floating_point() {
+                            mk_builtin(func, fst, snd, ty, i)
+                        } else {
+                            py_type_error!(i, "Operation atan2 is only supported for floats.")
                         }
                     },
                     _ => {
@@ -739,8 +739,10 @@ pub fn type_check_expr(
         },
         Expr::Int {v, i, ..} =>
             Ok(Expr::Int {v, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]}, i}),
-        Expr::Float {v, i, ..} =>
-            Ok(Expr::Float {v, ty: Type::Tensor {sz: ElemSize::F64, shape: vec![]}, i}),
+        Expr::Float {v, i, ..} => {
+            let ty = Type::Tensor {sz: env.float_size.clone(), shape: vec![]};
+            Ok(Expr::Float {v, ty, i})
+        },
         Expr::UnOp {op, arg, i, ..} => {
             let arg = Box::new(type_check_expr(env, *arg)?);
             let ty = type_check_unop(env, &op, &arg, &i)?;
@@ -915,12 +917,15 @@ fn type_check_stmts(
 fn add_param_types<'py>(
     id: &Name,
     params: Vec<Param>,
-    args: &Vec<Bound<'py, PyAny>>
+    args: &Vec<Bound<'py, PyAny>>,
+    float_size: &ElemSize
 ) -> PyResult<Vec<Param>> {
     if args.len() == params.len() {
         args.iter()
             .zip(params.into_iter())
-            .map(|(arg, Param {id, i, ..})| Ok(Param {id, ty: convert_type(&arg)?, i}))
+            .map(|(arg, Param {id, i, ..})| {
+                Ok(Param {id, ty: convert_type(&arg, float_size)?, i})
+            })
             .collect::<PyResult<Vec<Param>>>()
     } else {
         py_type_error!(
@@ -933,28 +938,36 @@ fn add_param_types<'py>(
 
 pub fn type_check_params<'py>(
     def: FunDef,
-    args: &Vec<Bound<'py, PyAny>>
+    args: &Vec<Bound<'py, PyAny>>,
+    float_size: &ElemSize
 ) -> PyResult<FunDef> {
-    let params = add_param_types(&def.id, def.params, args)?;
+    let params = add_param_types(&def.id, def.params, args, float_size)?;
     Ok(FunDef {params, ..def})
 }
 
-fn type_check_body_shapes(def: FunDef, shapes_only: bool) -> PyResult<FunDef> {
+fn type_check_body_shapes(
+    def: FunDef,
+    shapes_only: bool,
+    float_size: Option<ElemSize>
+) -> PyResult<FunDef> {
     let mut env = TypeCheckEnv::default();
     env.shapes_only = shapes_only;
     env.vars = def.params.iter()
         .map(|Param {id, ty, ..}| (id.clone(), ty.clone()))
         .collect::<BTreeMap<Name, Type>>();
+    if let Some(sz) = float_size {
+        env.float_size = sz;
+    };
     let (_, body) = type_check_stmts(env, def.body)?;
     Ok(FunDef {body, ..def})
 }
 
-pub fn type_check_body(def: FunDef) -> PyResult<FunDef> {
-    type_check_body_shapes(def, false)
+pub fn type_check_body(def: FunDef, float_size: ElemSize) -> PyResult<FunDef> {
+    type_check_body_shapes(def, false, Some(float_size))
 }
 
 pub fn check_body_shape(def: FunDef) -> PyResult<FunDef> {
-    type_check_body_shapes(def, true)
+    type_check_body_shapes(def, true, None)
 }
 
 #[cfg(test)]

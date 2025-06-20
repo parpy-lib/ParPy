@@ -84,26 +84,6 @@ impl Expr {
         }
     }
 
-    pub fn with_type(self, ty: Type) -> Expr {
-        match self {
-            Expr::Var {id, i, ..} => Expr::Var {id, ty, i},
-            Expr::Bool {v, i, ..} => Expr::Bool {v, ty, i},
-            Expr::Int {v, i, ..} => Expr::Int {v, ty, i},
-            Expr::Float {v, i, ..} => Expr::Float {v, ty, i},
-            Expr::UnOp {op, arg, i, ..} => Expr::UnOp {op, arg, ty, i},
-            Expr::BinOp {lhs, op, rhs, i, ..} => Expr::BinOp {lhs, op, rhs, ty, i},
-            Expr::IfExpr {cond, thn, els, i, ..} => Expr::IfExpr {cond, thn, els, ty, i},
-            Expr::StructFieldAccess {target, label, i, ..} =>
-                Expr::StructFieldAccess {target, label, ty, i},
-            Expr::ArrayAccess {target, idx, i, ..} =>
-                Expr::ArrayAccess {target, idx, ty, i},
-            Expr::Convert {e, ..} => Expr::Convert {e, ty},
-            Expr::Struct {id, fields, i, ..} => Expr::Struct {id, fields, ty, i},
-            Expr::ThreadIdx {dim, i, ..} => Expr::ThreadIdx {dim, ty, i},
-            Expr::BlockIdx {dim, i, ..} => Expr::BlockIdx {dim, ty, i},
-        }
-    }
-
     pub fn is_leaf_node(&self) -> bool {
         match self {
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |

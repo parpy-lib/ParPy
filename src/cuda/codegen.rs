@@ -1,9 +1,12 @@
 use super::ast::*;
 use crate::parir_compile_error;
 use crate::parir_internal_error;
+use crate::parir_type_error;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::err::*;
+use crate::utils::info::Info;
 use crate::utils::name::Name;
+use crate::utils::pprint::PrettyPrint;
 
 fn from_gpu_ir_type(ty: gpu_ast::Type) -> Type {
     match ty {
@@ -17,6 +20,46 @@ fn from_gpu_ir_type(ty: gpu_ast::Type) -> Type {
     }
 }
 
+fn validate_unary_operation(
+    op: &UnOp, ty: &Type, i: &Info
+) -> CompileResult<()> {
+    match op {
+        UnOp::Tanh => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F32 | ElemSize::F64) => Ok(()),
+            Some(ElemSize::F16) => {
+                parir_type_error!(i, "Operation tanh not supported for \
+                                      16-bit floats.")
+            },
+            Some(_) | None => {
+                let ty = ty.pprint_default();
+                parir_type_error!(i, "Unexpected type {ty} of tanh \
+                                      builtin (expected float).")
+            }
+        },
+        _ => Ok(())
+    }
+}
+
+fn validate_binary_operation(
+    op: &BinOp, ty: &Type, i: &Info
+) -> CompileResult<()> {
+    match op {
+        BinOp::Atan2 => match ty.get_scalar_elem_size() {
+            Some(ElemSize::F64) => Ok(()),
+            Some(ElemSize::F16 | ElemSize::F32) => {
+                parir_type_error!(i, "Operation atan2 is only supported \
+                                      for 64-bit floats.")
+            },
+            Some(_) | None => {
+                let ty = ty.pprint_default();
+                parir_type_error!(i, "Unexpected type {ty} of atan2 \
+                                      builtin (expected float).")
+            }
+        },
+        _ => Ok(())
+    }
+}
+
 fn from_gpu_ir_expr(e: gpu_ast::Expr) -> CompileResult<Expr> {
     let ty = from_gpu_ir_type(e.get_type().clone());
     match e {
@@ -26,11 +69,13 @@ fn from_gpu_ir_expr(e: gpu_ast::Expr) -> CompileResult<Expr> {
         gpu_ast::Expr::Float {v, i, ..} => Ok(Expr::Float {v, ty, i}),
         gpu_ast::Expr::UnOp {op, arg, i, ..} => {
             let arg = from_gpu_ir_expr(*arg)?;
+            validate_unary_operation(&op, &ty, &i)?;
             Ok(Expr::UnOp {op, arg: Box::new(arg), ty, i})
         },
         gpu_ast::Expr::BinOp {lhs, op, rhs, i, ..} => {
             let lhs = from_gpu_ir_expr(*lhs)?;
             let rhs = from_gpu_ir_expr(*rhs)?;
+            validate_binary_operation(&op, &ty, &i)?;
             Ok(Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i})
         },
         gpu_ast::Expr::IfExpr {cond, thn, els, i, ..} => {

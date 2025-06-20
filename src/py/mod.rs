@@ -11,13 +11,12 @@ mod slices;
 mod symbolize;
 mod type_check;
 
+use ast::ElemSize;
 use symbolize::Symbolize;
-use crate::par::LoopPar;
+use crate::option::*;
 use crate::utils::debug;
 
 use pyo3::prelude::*;
-
-use std::collections::BTreeMap;
 
 pub use inline_calls::inline_function_calls;
 
@@ -32,12 +31,22 @@ pub fn parse_untyped_ast<'py>(
     labels::associate_labels(ast)
 }
 
+fn select_float_size(backend: &CompileBackend) -> ElemSize {
+    match backend {
+        CompileBackend::Cuda => ElemSize::F64,
+        CompileBackend::Metal => ElemSize::F32,
+        _ => ElemSize::F64
+    }
+}
+
 pub fn specialize_ast_on_arguments<'py>(
     ast: ast::FunDef,
     args: Vec<Bound<'py, PyAny>>,
-    par: &BTreeMap<String, LoopPar>,
+    opts: &CompileOptions,
     debug_env: &debug::DebugEnv
 ) -> PyResult<ast::FunDef> {
+    let par = &opts.parallelize;
+
     // Ensure the AST contains any degree of parallelism - otherwise, there is no point in using
     // this framework at all.
     par::ensure_parallelism(&ast, &par)?;
@@ -49,7 +58,8 @@ pub fn specialize_ast_on_arguments<'py>(
     //
     // This particular order is important, because it allows us to reason about the exact sizes of
     // all slices and by extension the correctness of dimensions of slice operations.
-    let ast = type_check::type_check_params(ast, &args)?;
+    let float_size = select_float_size(&opts.backend);
+    let ast = type_check::type_check_params(ast, &args, &float_size)?;
     let ast = inline_const::inline_scalar_values(ast, &args)?;
     debug_env.print("Python-like AST after inlining", &ast);
 
@@ -69,7 +79,7 @@ pub fn specialize_ast_on_arguments<'py>(
     debug_env.print("Python-like AST after resolving indices", &ast);
     let ast = slices::replace_slices_with_for_loops(ast)?;
     debug_env.print("Python-like AST after slice transformation", &ast);
-    let ast = type_check::type_check_body(ast)?;
+    let ast = type_check::type_check_body(ast, float_size)?;
     debug_env.print("Python-like AST after type-checking", &ast);
 
     Ok(ast)
