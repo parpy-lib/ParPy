@@ -165,7 +165,7 @@ def bin_arith_helper(fn, ldtype, rdtype, compile_only, backend):
         with pytest.raises(TypeError) as e_info:
             arith_binop_dtype(fn, ldtype, rdtype, compile_only, backend)
         assert e_info.match(msg_regex)
-    elif rt == RunType.Skip:
+    else:
         pass
 
 @pytest.mark.parametrize('fn', arith_funs)
@@ -253,23 +253,26 @@ float_funs = [parir_cos, parir_sin, parir_tanh, parir_atan2, parir_sqrt]
 float_tys = [torch.float16, torch.float32, torch.float64]
 
 def set_expected_behavior_unop(fn, dtype, backend):
-    if fn.__name__ == "parir_tanh" and dtype == torch.float16:
-        return True, "Operation tanh not supported for 16-bit floats.*"
-    elif fn.__name__ == "parir_atan2" and dtype != torch.float64:
-        return True, "Operation atan2 is only supported for 64-bit floats.*"
-    elif backend == parir.CompileBackend.Metal and dtype == torch.float64:
-        return True, r"Metal does not support double-precision floating-point numbers."
-    else:
-        return False, None
+    if backend == parir.CompileBackend.Cuda:
+        if fn.__name__ == "parir_tanh" and dtype == torch.float16:
+            return RunType.ShouldFail, r"Operation tanh not supported for 16-bit floats.*"
+        elif fn.__name__ == "parir_atan2" and dtype != torch.float64:
+            return RunType.ShouldFail, r"Operation atan2 is only supported for 64-bit floats.*"
+    elif backend == parir.CompileBackend.Metal:
+        if dtype == torch.float64:
+            return RunType.ShouldFail, r"Metal does not support double-precision floating-point numbers."
+    return RunType.ShouldPass, None
 
 def float_unop_helper(fn, dtype, compile_only, backend):
-    should_fail, msg_regex = set_expected_behavior_unop(fn, dtype, backend)
-    if should_fail:
+    rt, msg_regex = set_expected_behavior_unop(fn, dtype, backend)
+    if rt == RunType.ShouldPass:
+        arith_unop_dtype(fn, dtype, compile_only, backend)
+    elif rt == RunType.ShouldFail:
         with pytest.raises(TypeError) as e_info:
             arith_unop_dtype(fn, dtype, compile_only, backend)
         assert e_info.match(msg_regex)
     else:
-        arith_unop_dtype(fn, dtype, compile_only, backend)
+        pass
 
 @pytest.mark.parametrize('fn', float_funs)
 @pytest.mark.parametrize('dtype', float_tys)
