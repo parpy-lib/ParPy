@@ -32,7 +32,6 @@ extern "C" MTL::Buffer *parir_alloc_buffer(int64_t nbytes) {
     fprintf(stderr, "Failed to allocate buffer of %lld bytes\n", nbytes);
     exit(1);
   }
-  buf->retain();
   return buf;
 }
 
@@ -57,7 +56,6 @@ namespace parir_metal {
       fprintf(stderr, "Error compiling library: %s\n", err->description()->utf8String());
       exit(1);
     }
-    lib->retain();
     return lib;
   }
 
@@ -68,7 +66,6 @@ namespace parir_metal {
       fprintf(stderr, "Could not find function %s in library\n", fun_id);
       exit(1);
     }
-    f->retain();
     return f;
   }
 
@@ -100,8 +97,8 @@ namespace parir_metal {
       int64_t block_x, int64_t block_y, int64_t block_z,
       int64_t thread_x, int64_t thread_y, int64_t thread_z) {
     if (cb == nullptr || cb->status() != MTL::CommandBufferStatusNotEnqueued) {
+      if (cb != nullptr) cb->release();
       cb = cq->commandBuffer();
-      cb->retain();
       if (cb == nullptr) {
         fprintf(stderr, "Failed to set up command buffer\n");
         exit(1);
@@ -110,7 +107,6 @@ namespace parir_metal {
 
     if (ce == nullptr) {
       ce = cb->computeCommandEncoder();
-      ce->retain();
       if (ce == nullptr) {
         fprintf(stderr, "Failed to set up compute command encoder\n");
         exit(1);
@@ -143,7 +139,6 @@ namespace parir_metal {
     if (++queue_size == queue_cap) {
       submit_work();
     }
-    state->release();
   }
 
   void submit_work() {
@@ -151,6 +146,7 @@ namespace parir_metal {
       ce->endEncoding();
       cb->commit();
       cb->waitUntilScheduled();
+      ce->release();
       ce = nullptr;
       queue_size = 0;
     }
