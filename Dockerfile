@@ -46,6 +46,6 @@ RUN source /root/.venv/bin/activate \
  && git clone https://github.com/larshum/pyparir.git \
  && cd /src/pyparir \
  && pip install h5py ssgetpy \
- && pip install .
+ && pip install ".[cuda]"
 
 WORKDIR /src/pyparir
