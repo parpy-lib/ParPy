@@ -2,11 +2,11 @@ from enum import Enum
 import math
 import parir
 import pytest
-import torch
+import numpy as np
 
 from common import *
 
-torch.manual_seed(1234)
+np.random.seed(1234)
 
 @parir.jit
 def parir_add(dst, a, b):
@@ -90,17 +90,17 @@ def parir_min(dst, a, b):
         dst[0] = parir.min(a[0], b[0])
 
 def arith_binop_dtype(fn, ldtype, rdtype, compile_only, backend):
-    a = torch.randint(1, 10, (1,), dtype=ldtype)
-    b = torch.randint(1, 10, (1,), dtype=rdtype)
-    dst = torch.zeros((1,), dtype=rdtype)
+    a = np.random.randint(1, 10, (1,)).astype(ldtype)
+    b = np.random.randint(1, 10, (1,)).astype(rdtype)
+    dst = np.zeros((1,), dtype=rdtype)
     if compile_only:
         s = parir.print_compiled(fn, [dst, a, b], par_opts(backend, {}))
         assert len(s) != 0
     else:
-        dst_device = torch.zeros_like(dst)
+        dst_device = np.zeros_like(dst)
         fn(dst_device, a, b, opts=par_opts(backend, {}))
         fn(dst, a, b, opts=seq_opts(backend))
-        assert torch.allclose(dst, dst_device, atol=1e-5)
+        assert np.allclose(dst, dst_device, atol=1e-5)
 
 bitwise_funs = [
     parir_bit_and, parir_bit_or, parir_bit_xor, parir_bit_shl, parir_bit_shr
@@ -109,9 +109,9 @@ arith_funs = [
     parir_add, parir_sub, parir_mul, parir_div_int, parir_div, parir_rem,
     parir_pow, parir_abs, parir_aug_ops, parir_max, parir_min
 ] + bitwise_funs
-signed_int_tys = [torch.int8, torch.int16, torch.int32, torch.int64]
-unsigned_int_tys = [torch.uint8, torch.uint16, torch.uint32, torch.uint64]
-float_tys = [torch.float16, torch.float32, torch.float64]
+signed_int_tys = [np.int8, np.int16, np.int32, np.int64]
+unsigned_int_tys = [np.uint8, np.uint16, np.uint32, np.uint64]
+float_tys = [np.float16, np.float32, np.float64]
 arith_tys = signed_int_tys + unsigned_int_tys + float_tys
 
 def is_float_dtype(dtype):
@@ -128,7 +128,7 @@ def is_invalid_div_or_rem_call(fn, ldtype, rdtype):
 def is_invalid_pow_call(fn, ldtype, rdtype):
     return (fn.__name__ == "parir_pow" and
         ((not is_float_dtype(ldtype) and not is_float_dtype(rdtype)) or
-        (ldtype == torch.float16 and rdtype == torch.float16)))
+        (ldtype == np.float16 and rdtype == np.float16)))
 
 # When subtraction of untyped integers overflows, we get a warning that causes
 # tests to fail. As we pick random values, we do not know until the numbers
@@ -150,7 +150,7 @@ def set_expected_behavior_binop(fn, ldtype, rdtype, backend):
     elif fn in bitwise_funs and (is_float_dtype(ldtype) or is_float_dtype(rdtype)):
         return RunType.ShouldFail, r"Invalid type .* of bitwise operation"
     elif backend == parir.CompileBackend.Metal and \
-         (ldtype == torch.float64 or rdtype == torch.float64):
+         (ldtype == np.float64 or rdtype == np.float64):
         return RunType.ShouldFail, r"Metal does not support double-precision floating-point numbers."
     elif is_untyped_subtraction(fn, ldtype, rdtype):
         return RunType.Skip, None
@@ -186,21 +186,21 @@ def test_bin_arith_compile(fn, dtype, backend):
 # All allowed pairs of types in arithmetic operations, where the LHS should be
 # coerced to the RHS type.
 arith_ty_pairs = [
-    (torch.int8, torch.int16),
-    (torch.int8, torch.int32),
-    (torch.int8, torch.int64),
-    (torch.int16, torch.int32),
-    (torch.int16, torch.int64),
-    (torch.int32, torch.int64),
-    (torch.uint8, torch.uint16),
-    (torch.uint8, torch.uint32),
-    (torch.uint8, torch.uint64),
-    (torch.uint16, torch.uint32),
-    (torch.uint16, torch.uint64),
-    (torch.uint32, torch.uint64),
-    (torch.float16, torch.float32),
-    (torch.float16, torch.float64),
-    (torch.float32, torch.float64),
+    (np.int8, np.int16),
+    (np.int8, np.int32),
+    (np.int8, np.int64),
+    (np.int16, np.int32),
+    (np.int16, np.int64),
+    (np.int32, np.int64),
+    (np.uint8, np.uint16),
+    (np.uint8, np.uint32),
+    (np.uint8, np.uint64),
+    (np.uint16, np.uint32),
+    (np.uint16, np.uint64),
+    (np.uint32, np.uint64),
+    (np.float16, np.float32),
+    (np.float16, np.float64),
+    (np.float32, np.float64),
 ]
 
 @pytest.mark.parametrize('fn', arith_funs)
@@ -238,28 +238,28 @@ def parir_sqrt(dst, src):
         dst[0] = parir.sqrt(src[0])
 
 def arith_unop_dtype(fn, dtype, compile_only, backend):
-    src = torch.tensor([0.5], dtype=dtype)
-    dst = torch.zeros_like(src)
+    src = np.array([0.5], dtype=dtype)
+    dst = np.zeros_like(src)
     if compile_only:
         s = parir.print_compiled(fn, [src, dst], par_opts(backend, {}))
         assert len(s) != 0
     else:
-        dst_device = torch.zeros_like(dst)
+        dst_device = np.zeros_like(dst)
         fn(dst_device, src, opts=par_opts(backend, {}))
         fn(dst, src, opts=seq_opts(backend))
-        assert torch.allclose(dst, dst_device, atol=1e-5)
+        assert np.allclose(dst, dst_device, atol=1e-5)
 
 float_funs = [parir_cos, parir_sin, parir_tanh, parir_atan2, parir_sqrt]
-float_tys = [torch.float16, torch.float32, torch.float64]
+float_tys = [np.float16, np.float32, np.float64]
 
 def set_expected_behavior_unop(fn, dtype, backend):
     if backend == parir.CompileBackend.Cuda:
-        if fn.__name__ == "parir_tanh" and dtype == torch.float16:
+        if fn.__name__ == "parir_tanh" and dtype == np.float16:
             return RunType.ShouldFail, r"Operation tanh not supported for 16-bit floats.*"
-        elif fn.__name__ == "parir_atan2" and dtype != torch.float64:
+        elif fn.__name__ == "parir_atan2" and dtype != np.float64:
             return RunType.ShouldFail, r"Operation atan2 is only supported for 64-bit floats.*"
     elif backend == parir.CompileBackend.Metal:
-        if dtype == torch.float64:
+        if dtype == np.float64:
             return RunType.ShouldFail, r"Metal does not support double-precision floating-point numbers."
     return RunType.ShouldPass, None
 

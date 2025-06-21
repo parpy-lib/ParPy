@@ -15,7 +15,7 @@ def assert_cuda_is_enabled():
         raise RuntimeError(f"Could not find 'nvcc' in path - it is required to build the generated CUDA C++ code")
 
 def assert_metal_is_enabled():
-    if not torch.mps.is_available():
+    if not torch.backends.mps.is_available():
         raise RuntimeError(f"Torch was not built with Metal support")
     if parir.state.get_metal_cpp_header_path() is None:
         raise RuntimeError(f"The path to the Metal-cpp headers must be provided \
