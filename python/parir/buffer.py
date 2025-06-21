@@ -268,6 +268,7 @@ class Buffer:
                 if self.src_ptr is not None:
                     metal_lib.parir_memcpy(self.src_ptr, self.ptr, nbytes)
                 metal_lib.parir_free_buffer(self.buf)
+                self.ptr = None
                 self.buf = None
 
     def from_array_cpu(t):
