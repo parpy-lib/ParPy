@@ -52,8 +52,16 @@ impl TypeCheckEnv {
         self.is_scalar_h(ty, |sz| sz.is_boolean())
     }
 
+    pub fn is_signed_int_scalar(&self, ty: &Type) -> bool {
+        self.is_scalar_h(ty, |sz| sz.is_signed_integer())
+    }
+
+    pub fn is_unsigned_int_scalar(&self, ty: &Type) -> bool {
+        self.is_scalar_h(ty, |sz| sz.is_unsigned_integer())
+    }
+
     pub fn is_int_scalar(&self, ty: &Type) -> bool {
-        self.is_scalar_h(ty, |sz| sz.is_signed_integer() || sz.is_unsigned_integer())
+        self.is_signed_int_scalar(ty) || self.is_unsigned_int_scalar(ty)
     }
 
     pub fn is_float_scalar(&self, ty: &Type) -> bool {
@@ -413,8 +421,14 @@ fn type_check_builtin(
         },
         Builtin::Abs if args.len() == 1 => {
             let ty = args[0].get_type().clone();
-            if env.is_int_scalar(&ty) || env.is_float_scalar(&ty) {
+            if env.is_signed_int_scalar(&ty) || env.is_float_scalar(&ty) {
                 Ok(Expr::Builtin {func, args, axis, ty, i})
+            } else if env.is_unsigned_int_scalar(&ty) {
+                // NOTE: The absolute function of an unsigned integer is the identity function, so
+                // we can simply return the value without wrapping it in a call to the absolute
+                // function.
+                let arg = args.remove(0);
+                Ok(arg)
             } else {
                 py_type_error!(i, "Unexpected type {ty} of abs builtin")
             }
