@@ -13,8 +13,6 @@ import sys
 from tqdm import tqdm
 
 import common
-import forward
-import sddmm
 
 class obj(object):
     pass
