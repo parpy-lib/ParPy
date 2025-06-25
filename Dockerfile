@@ -1,4 +1,4 @@
-FROM docker.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+FROM docker.io/nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04
 
 SHELL ["/bin/bash", "-c"]
 
@@ -23,21 +23,12 @@ RUN mkdir /src
 RUN echo "source /root/.venv/bin/activate" >> /root/.bashrc
 
 # Install nsys for performance measurements
-RUN apt update \
- && apt install -y --no-install-recommends gnupg \
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends gnupg \
  && echo "deb http://developer.download.nvidia.com/devtools/repos/ubuntu$(source /etc/lsb-release; echo "$DISTRIB_RELEASE" | tr -d .)/$(dpkg --print-architecture) /" | tee /etc/apt/sources.list.d/nvidia-devtools.list \
  && apt-key adv --fetch-keys http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub \
- && apt update \
- && apt install -y nsight-systems-cli
-
-# Install NPBench
-RUN source /root/.venv/bin/activate \
- && pip install dace cupy-cuda12x "jax[cuda12]" \
- && cd /src \
- && git clone https://github.com/larshum/npbench.git \
- && cd /src/npbench \
- && pip install -r requirements.txt \
- && pip install .
+ && apt-get update \
+ && apt-get install -y nsight-systems-cli
 
 # Install Parir
 RUN source /root/.venv/bin/activate \
@@ -47,5 +38,14 @@ RUN source /root/.venv/bin/activate \
  && cd /src/pyparir \
  && pip install h5py ssgetpy \
  && pip install ".[cuda]"
+
+# Install NPBench and dependencies
+RUN source /root/.venv/bin/activate \
+ && cd /src \
+ && git clone https://github.com/larshum/npbench.git \
+ && cd /src/npbench \
+ && pip install -r requirements.txt \
+ && pip install . \
+ && pip install dace cupy-cuda12x "jax[cuda12]<0.6.0"
 
 WORKDIR /src/pyparir
