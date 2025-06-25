@@ -173,14 +173,14 @@ def run_sddmm_benchmark(k):
     frameworks = ["PyTorch", "Parir-CSR", "Parir-COO"]
     csv_file = f"{common.SDDMM_NAME}-{k}.csv"
 
-    # 1. Download all matrices
-    matrices = ssgetpy.search(limit=3000, nzbounds=(None, 10**9))
-    for matrix in tqdm(matrices, desc="Downloading SuiteSparse matrices (this may take a while)"):
-        common.download_matrix(matrix)
-
-    # 2. Run the benchmark on each matrix for each of the frameworks and store
-    # the results in a file.
     if not os.path.isfile(csv_file):
+        # 1. Download all matrices
+        matrices = ssgetpy.search(limit=3000, nzbounds=(None, 10**9))
+        for matrix in tqdm(matrices, desc="Downloading SuiteSparse matrices (this may take a while)"):
+            common.download_matrix(matrix)
+
+        # 2. Run the benchmark on each matrix for each of the frameworks and store
+        # the results in a file.
         clear_log_output("sddmm")
         niters = len(matrices) * len(frameworks)
         for idx, matrix in enumerate(tqdm(matrices, desc=f"Running benchmarks")):
@@ -188,7 +188,7 @@ def run_sddmm_benchmark(k):
                 fn = lambda: sddmm.run_sddmm(framework, matrix.name, k)
                 launch_bench("sddmm", [framework, matrix.name], fn=fn)
 
-        # After running all benchmarks, we report the number of benchmarks
+        # 3. After running all benchmarks, we report the number of benchmarks
         # failed by the respective framework and whether it failed due to OOM
         # or another reason.
         for framework in frameworks:
