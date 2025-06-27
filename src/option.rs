@@ -142,3 +142,10 @@ pub fn parallelize(p: BTreeMap<String, par::LoopPar>) -> PyResult<CompileOptions
     opts.parallelize = p;
     Ok(opts)
 }
+
+#[pyfunction]
+pub fn seq() -> PyResult<CompileOptions> {
+    let mut opts = CompileOptions::default();
+    opts.seq = true;
+    Ok(opts)
+}

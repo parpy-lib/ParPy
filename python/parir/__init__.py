@@ -3,7 +3,7 @@ from .buffer import sync
 from .compile import clear_cache
 from .operators import *
 from .state import *
-from .parir import parallelize
+from .parir import parallelize, seq
 from .parir import CompileBackend, CompileOptions
 
 ir_asts = {}
