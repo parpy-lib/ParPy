@@ -137,12 +137,13 @@ impl CompileOptions {
 // Constructs the default options object but containing the provided parallelization specification.
 // This is useful when you want to parallelize while using the default options.
 #[pyfunction]
-pub fn parallelize(p: BTreeMap<String, par::LoopPar>) -> PyResult<CompileOptions> {
+pub fn par(p: BTreeMap<String, par::LoopPar>) -> PyResult<CompileOptions> {
     let mut opts = CompileOptions::default();
     opts.parallelize = p;
     Ok(opts)
 }
 
+// Constructs the default options but requesting sequential execution.
 #[pyfunction]
 pub fn seq() -> PyResult<CompileOptions> {
     let mut opts = CompileOptions::default();
