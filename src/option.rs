@@ -1,4 +1,4 @@
-use crate::par;
+use crate::par::LoopPar;
 
 use std::collections::BTreeMap;
 
@@ -21,7 +21,7 @@ pub struct CompileOptions {
     // The parallelization mapping, used to control how the code in the function is parallelized
     // based on labels associated with statements.
     #[pyo3(get, set)]
-    pub parallelize: BTreeMap<String, par::LoopPar>,
+    pub parallelize: BTreeMap<String, LoopPar>,
 
     // When enabled, the compiler caches previous compilations of functions to reduce the overhead
     // of the JIT compilation on repeated runs.
@@ -137,7 +137,7 @@ impl CompileOptions {
 // Constructs the default options object but containing the provided parallelization specification.
 // This is useful when you want to parallelize while using the default options.
 #[pyfunction]
-pub fn par(p: BTreeMap<String, par::LoopPar>) -> PyResult<CompileOptions> {
+pub fn par(p: BTreeMap<String, LoopPar>) -> PyResult<CompileOptions> {
     let mut opts = CompileOptions::default();
     opts.parallelize = p;
     Ok(opts)

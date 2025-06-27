@@ -102,7 +102,8 @@ fn parir(m : &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(python_to_ir, m)?)?;
     m.add_function(wrap_pyfunction!(print_ir_ast, m)?)?;
     m.add_function(wrap_pyfunction!(compile_ir, m)?)?;
-    m.add_function(wrap_pyfunction!(option::parallelize, m)?)?;
+    m.add_function(wrap_pyfunction!(option::par, m)?)?;
+    m.add_function(wrap_pyfunction!(option::seq, m)?)?;
     m.add_class::<par::LoopPar>()?;
     m.add_class::<option::CompileBackend>()?;
     m.add_class::<option::CompileOptions>()?;
