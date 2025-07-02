@@ -40,5 +40,4 @@ def par_opts(backend, p):
     opts = parir.CompileOptions()
     opts.backend = backend
     opts.parallelize = p
-    opts.cache = False
     return opts

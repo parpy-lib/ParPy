@@ -3,7 +3,6 @@ use crate::par::LoopPar;
 use std::collections::BTreeMap;
 
 use pyo3::prelude::*;
-use pyo3::exceptions::PyRuntimeError;
 
 #[pyclass(eq, eq_int)]
 #[derive(Clone, Debug, PartialEq)]
@@ -22,11 +21,6 @@ pub struct CompileOptions {
     // based on labels associated with statements.
     #[pyo3(get, set)]
     pub parallelize: BTreeMap<String, LoopPar>,
-
-    // When enabled, the compiler caches previous compilations of functions to reduce the overhead
-    // of the JIT compilation on repeated runs.
-    #[pyo3(get)]
-    pub cache: bool,
 
     // When enabled, the function is not JIT compiled but instead executes sequentially using the
     // Python interpreter.
@@ -77,7 +71,6 @@ impl Default for CompileOptions {
     fn default() -> Self {
         CompileOptions {
             parallelize: BTreeMap::new(),
-            cache: true,
             seq: false,
             verbose_backend_resolution: false,
             backend: CompileBackend::Auto,
@@ -99,38 +92,6 @@ impl CompileOptions {
 
     fn is_debug_enabled(&self) -> bool {
         self.debug_print || self.debug_perf
-    }
-
-    #[setter]
-    fn set_cache(&mut self, v: bool) -> PyResult<()> {
-        // After setting a debug flag to true, caching is automatically disabled. If we try to
-        // enable caching when a debug flag is set, we get an error.
-        if self.is_debug_enabled() && v {
-            Err(PyRuntimeError::new_err("Caching cannot be enabled when debug flags are set"))
-        } else {
-            self.cache = v;
-            Ok(())
-        }
-    }
-
-    // When any of the debug flags are enabled, we automatically disable caching to ensure that the
-    // debug output is actually printed.
-    #[setter]
-    fn set_debug_print(&mut self, v: bool) -> PyResult<()> {
-        if v {
-            self.cache = false;
-        }
-        self.debug_print = v;
-        Ok(())
-    }
-
-    #[setter]
-    fn set_debug_perf(&mut self, v: bool) -> PyResult<()> {
-        if v {
-            self.cache = false;
-        }
-        self.debug_perf = v;
-        Ok(())
     }
 }
 

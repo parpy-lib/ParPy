@@ -1,4 +1,4 @@
-from . import backend, buffer, compile, key, parir, validate
+from . import backend, buffer, compile, parir, validate
 from .buffer import sync
 from .compile import clear_cache
 from .operators import *
@@ -65,33 +65,29 @@ def check_kwargs(kwargs):
 
     return opts
 
-def compile_function(ir_ast, args, opts, fn):
-    # If the user explicitly requests sequential execution by setting the 'seq'
-    # keyword argument to True, we return the original Python function. This is
-    # useful for debugging, as it avoids the need to remove the function
-    # decorator.
-    if opts.seq:
-        return fn
+def compile_function(ir_ast, args, opts):
+    # Extract the name of the main function in the IR AST.
+    name = parir.get_ir_function_name(ir_ast)
 
-    # If we recently generated a wrapper for this function, we do a quick
-    # lookup based on the name and signature of the function to immediately
-    # return the wrapper function.
-    quick_key = key.generate_quick_function_key(ir_ast, args, opts)
-    if opts.cache and quick_key in fun_cache:
-        return fun_cache[quick_key]
+    # Generate the code based on the provided IR AST, arguments and compilation
+    # options.
+    code = parir.compile_ir(ir_ast, args, opts)
 
-    # Compiles the IR AST using type information of the provided arguments and
-    # the parallelization settings to determine how to generate parallel
-    # low-level code.
-    full_key = key.generate_function_key(quick_key)
-    if not opts.cache or not compile.is_cached(full_key):
-        code = parir.compile_ir(ir_ast, args, opts)
-        compile.build_shared_library(full_key, code, opts)
+    # If the generated code is found in the local cache, we return the cached
+    # wrapper function.
+    cache_key = compile.generate_function_key(code, opts)
+    if cache_key in fun_cache:
+        return fun_cache[cache_key]
 
-    # Return a wrapper function which ensures the arguments are passed
-    # correctly on to the exposed shared library function.
-    wrap_fn = compile.get_wrapper(fn.__name__, full_key, opts)
-    fun_cache[quick_key] = wrap_fn
+    # If the key is not found in the cache, we produce a new shared library by
+    # compiling the generated code.
+    if not compile.is_cached(cache_key):
+        compile.build_shared_library(cache_key, code, opts)
+
+    # Return a wrapper function which ensures the arguments are correctly
+    # passed to the exposed shared library function.
+    wrap_fn = compile.get_wrapper(name, cache_key, opts)
+    fun_cache[cache_key] = wrap_fn
     return wrap_fn
 
 def run_callbacks(callbacks, opts):
@@ -102,10 +98,9 @@ def run_callbacks(callbacks, opts):
 
 def compile_string(fun_name, code, opts=parir.CompileOptions()):
     opts = backend.resolve(opts, True)
-    k = "string_" + key.generate_code_key(code)
-    compile.build_shared_library(k, code, opts)
-    opts.cache = False
-    fn = compile.get_wrapper(fun_name, k, opts)
+    cache_key = "string_" + compile.generate_function_key(code, opts)
+    compile.build_shared_library(cache_key, code, opts)
+    fn = compile.get_wrapper(fun_name, cache_key, opts)
     def inner(*args):
         callbacks, args = validate.check_arguments(args, opts, True)
         fn(*args)
@@ -139,7 +134,12 @@ def jit(fun):
     def inner(*args, **kwargs):
         opts = backend.resolve(check_kwargs(kwargs), True)
         callbacks, args = validate.check_arguments(args, opts, True)
-        compile_function(ir_ast, args, opts, fun)(*args)
+        # If the user explicitly requests sequential execution by setting the 'seq'
+        # keyword argument to True, we call the original Python function.
+        if opts.seq:
+            fun(*args)
+        else:
+            compile_function(ir_ast, args, opts)(*args)
         run_callbacks(callbacks, opts)
     ir_asts[inner] = ir_ast
     inner.__name__ = fun.__name__
