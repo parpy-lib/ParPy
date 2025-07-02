@@ -92,36 +92,36 @@ impl Type {
             panic!("Parir internal error: expected dictionary type, found {self}")
         }
     }
+
+    pub fn discriminator(&self) -> u8 {
+        match self {
+            Type::String => 0,
+            Type::Tensor {..} => 1,
+            Type::Tuple {..} => 2,
+            Type::Dict {..} => 3,
+            Type::Void => 4,
+            Type::Unknown => 5,
+        }
+    }
 }
 
 impl Ord for Type {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (Type::String, Type::String) => Ordering::Equal,
-            (Type::String, _) => Ordering::Less,
-            (Type::Tensor {..}, Type::String) =>
-                Ordering::Greater,
-            (Type::Tensor {sz: lsz, shape: lsh}, Type::Tensor {sz: rsz, shape: rsh}) => {
-                lsz.cmp(rsz).then(lsh.cmp(rsh))
-            },
-            (Type::Tensor {..}, _) => Ordering::Less,
-            (Type::Tuple {..}, Type::Dict {..} | Type::Void | Type::Unknown) => Ordering::Less,
+            (Type::Tensor {sz: lsz, shape: lsh}, Type::Tensor {sz: rsz, shape: rsh}) =>
+                lsz.cmp(rsz).then(lsh.cmp(rsh)),
             (Type::Tuple {elems: lelems}, Type::Tuple {elems: relems}) =>
                 lelems.cmp(relems),
-            (Type::Tuple {..}, _) => Ordering::Greater,
-            (Type::Dict {..}, Type::Void | Type::Unknown) => Ordering::Less,
             (Type::Dict {fields: lfields}, Type::Dict {fields: rfields}) =>
                 lfields.iter()
                     .zip(rfields.iter())
                     .fold(Ordering::Equal, |acc, ((lk, lv), (rk, rv))| {
                         acc.then(lk.cmp(rk)).then(lv.cmp(rv))
                     }),
-            (Type::Dict {..}, _) => Ordering::Greater,
-            (Type::Void, Type::Unknown) => Ordering::Less,
             (Type::Void, Type::Void) => Ordering::Equal,
-            (Type::Void, _) => Ordering::Greater,
             (Type::Unknown, Type::Unknown) => Ordering::Equal,
-            (Type::Unknown, _) => Ordering::Greater,
+            (lhs, rhs) => lhs.discriminator().cmp(&rhs.discriminator())
         }
     }
 }
