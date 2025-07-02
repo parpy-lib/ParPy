@@ -3,6 +3,11 @@ import parir
 import pytest
 import torch
 
+# Explicitly clear the cache before running tests. This is important, as the
+# caching assumes the compiler is fixed. If the compiler is updated, we have to
+# clear the cache to ensure it runs.
+parir.clear_cache()
+
 # Use all backends declared in the library
 compiler_backends = parir.backend.backends
 
