@@ -88,6 +88,6 @@ fn find_dict_types_def(
     def.body.sfold(types, find_dict_types_stmt)
 }
 
-pub fn find_dict_types(def: &FunDef) -> DictTypes {
-    find_dict_types_def(DictTypes::default(), def)
+pub fn find_dict_types(ast: &Ast) -> DictTypes {
+    ast.sfold(DictTypes::default(), find_dict_types_def)
 }

@@ -57,6 +57,7 @@ fn to_ir_type(
                 parir_compile_error!(i, "Encountered unknown dictionary type when translating to IR AST")
             }
         },
+        py_ast::Type::Void => Ok(Type::Void),
         py_ast::Type::Unknown => {
             parir_compile_error!(i, "Encountered unknown type when translating to IR AST")
         },
@@ -402,12 +403,22 @@ pub fn to_ir_def(
     env: &IREnv,
     def: py_ast::FunDef
 ) -> CompileResult<FunDef> {
-    let py_ast::FunDef {id, params, body, i} = def;
+    let py_ast::FunDef {id, params, body, res_ty, i} = def;
     let params = params.into_iter()
         .map(|p| to_ir_param(env, p))
         .collect::<CompileResult<Vec<Param>>>()?;
     let body = to_ir_stmts(env, body)?;
-    Ok(FunDef {id, params, body, i})
+    let res_ty = to_ir_type(env, &i, res_ty)?;
+    Ok(FunDef {id, params, body, res_ty, i})
+}
+
+pub fn to_ir_defs(
+    env: &IREnv,
+    ast: py_ast::Ast
+) -> CompileResult<Vec<FunDef>> {
+    ast.into_iter()
+        .map(|def| to_ir_def(env, def))
+        .collect::<CompileResult<Vec<FunDef>>>()
 }
 
 #[cfg(test)]

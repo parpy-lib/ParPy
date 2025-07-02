@@ -14,6 +14,7 @@ pub enum Type {
     Tensor {sz: ElemSize, shape: Vec<i64>},
     Pointer {ty: Box<Type>, count: usize},
     Struct {id: Name},
+    Void,
 }
 
 impl BinOp {
@@ -325,11 +326,12 @@ pub struct FunDef {
     pub id: Name,
     pub params: Vec<Param>,
     pub body: Vec<Stmt>,
+    pub res_ty: Type,
     pub i: Info
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ast {
     pub structs: Vec<StructDef>,
-    pub fun: FunDef,
+    pub defs: Vec<FunDef>,
 }

@@ -15,7 +15,7 @@ use crate::utils::err::*;
 use std::collections::BTreeMap;
 
 pub fn from_python(
-    def: py_ast::FunDef,
+    ast: py_ast::Ast,
     mut par: BTreeMap<String, LoopPar>,
     debug_env: &DebugEnv
 ) -> CompileResult<Ast> {
@@ -23,13 +23,13 @@ pub fn from_python(
     // is used in slicing involving reduction operations.
     par.insert(REDUCE_PAR_LABEL.to_string(), LoopPar::default().reduce());
 
-    let structs = struct_types::find_dict_types(&def).to_named_structs();
+    let structs = struct_types::find_dict_types(&ast).to_named_structs();
     let env = from_py_ast::IREnv::new(structs.clone(), par);
     let structs = structs.into_iter()
         .map(|(ty, id)| from_py_ast::to_struct_def(&env, id, ty))
         .collect::<CompileResult<Vec<StructDef>>>()?;
-    let fun = from_py_ast::to_ir_def(&env, def)?;
-    let ast = Ast {structs, fun};
+    let defs = from_py_ast::to_ir_defs(&env, ast)?;
+    let ast = Ast {structs, defs};
     debug_env.print("Initial IR AST", &ast);
     let ast = tpb::propagate_configuration(ast)?;
     let ast = constant_fold::fold(ast);
@@ -145,6 +145,7 @@ pub mod ir_builder {
             id: Name::new("main".to_string()),
             params: vec![],
             body,
+            res_ty: Type::Void,
             i: Info::default()
         }
     }

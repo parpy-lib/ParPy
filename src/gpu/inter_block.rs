@@ -1001,7 +1001,11 @@ fn allocate_temporary_data(
 /// allocated for representing local variables that are defined and used in separate kernels after
 /// transforming the AST. These are performed to restore the AST to a valid state.
 pub fn restructure_inter_block_synchronization(ast: Ast) -> CompileResult<Ast> {
-    let Ast {fun: FunDef {id, params, body, i}, structs} = ast;
+    // NOTE: We only apply this to the main function definition, which is the last one in the list.
+    // The others are assumed to contain no parallelism.
+    let Ast {mut defs, structs} = ast;
+    let FunDef {id, params, body, res_ty, i} = defs.pop().unwrap();
+
     // Insert a synchronization point at the end of each parallel for-loop, and determine for each
     // of them whether they require inter-block synchronization.
     let body = insert_synchronization_points(body);
@@ -1039,7 +1043,8 @@ pub fn restructure_inter_block_synchronization(ast: Ast) -> CompileResult<Ast> {
     // make sure later transformations work as expected, we need to re-symbolize loop variables.
     let body = resymbolize_duplicated_loops(body);
 
-    Ok(Ast {fun: FunDef {id, params, body, i}, structs})
+    defs.push(FunDef {id, params, body, res_ty, i});
+    Ok(Ast {defs, structs})
 }
 
 #[cfg(test)]

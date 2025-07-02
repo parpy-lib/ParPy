@@ -221,6 +221,12 @@ impl PrettyPrint for FunDef {
     }
 }
 
+impl PrettyPrint for Ast {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        pprint_iter(self.iter(), env, "\n")
+    }
+}
+
 impl fmt::Display for Builtin {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.pprint_default())

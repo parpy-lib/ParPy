@@ -561,10 +561,14 @@ fn ensure_no_remaining_reduction_ops_stmt(acc: (), s: &Stmt) -> PyResult<()> {
     s.sfold_result(Ok(acc), ensure_no_remaining_reduction_ops_expr)
 }
 
-pub fn replace_slices_with_for_loops(fun: FunDef) -> PyResult<FunDef> {
+fn replace_slices_with_for_loops_def(fun: FunDef) -> PyResult<FunDef> {
     validate_slices(&fun.body)?;
     let body = fun.body.smap_result(replace_slices_with_for_loops_stmt)?;
     let body = body.into_iter().fold(vec![], eliminate_scopes_stmt);
     body.sfold_result(Ok(()), ensure_no_remaining_reduction_ops_stmt)?;
     Ok(FunDef {body, ..fun})
+}
+
+pub fn replace_slices_with_for_loops(ast: Ast) -> PyResult<Ast> {
+    ast.smap_result(replace_slices_with_for_loops_def)
 }

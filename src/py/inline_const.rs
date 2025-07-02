@@ -55,6 +55,21 @@ fn replace_constants_stmts(
     stmts.smap(|s| replace_constants_stmt(consts, s))
 }
 
+fn replace_constants_def(
+    consts: &BTreeMap<Expr, Expr>,
+    def: FunDef
+) -> FunDef {
+    let body = replace_constants_stmts(consts, def.body);
+    FunDef {body, ..def}
+}
+
+fn replace_constants(
+    consts: &BTreeMap<Expr, Expr>,
+    ast: Ast
+) -> Ast {
+    ast.smap(|def| replace_constants_def(consts, def))
+}
+
 fn extract_scalar_value<'py>(
     arg: &Bound<'py, PyAny>,
     i: &Info,
@@ -113,19 +128,19 @@ fn add_scalar_constant<'py>(
 }
 
 pub fn inline_scalar_values<'py>(
-    ast: FunDef,
+    ast: Ast,
     args: &Vec<Bound<'py, PyAny>>
-) -> PyResult<FunDef> {
+) -> PyResult<Ast> {
+    let def = ast.last().unwrap();
     let const_map = args.iter()
-        .zip(ast.params.iter())
+        .zip(def.params.iter())
         .fold(Ok(BTreeMap::new()), |acc, (arg, Param {id, ty, i})| {
             let target = Expr::Var {
                 id: id.clone(), ty: ty.clone(), i: i.clone()
             };
             add_scalar_constant(acc?, target, arg)
         })?;
-    let body = replace_constants_stmts(&const_map, ast.body);
-    Ok(FunDef {body, ..ast})
+    Ok(replace_constants(&const_map, ast))
 }
 
 #[cfg(test)]

@@ -15,7 +15,6 @@ use std::collections::BTreeMap;
 struct CodegenEnv {
     gpu_mapping: BTreeMap<Name, GpuMapping>,
     struct_fields: BTreeMap<Name, Vec<Field>>,
-    id: Name
 }
 
 fn from_ir_type(ty: ir_ast::Type) -> Type {
@@ -27,7 +26,8 @@ fn from_ir_type(ty: ir_ast::Type) -> Type {
         ir_ast::Type::Pointer {ty, ..} => {
             Type::Pointer {ty: Box::new(from_ir_type(*ty)), mem: MemSpace::Device}
         },
-        ir_ast::Type::Struct {id} => Type::Struct {id}
+        ir_ast::Type::Struct {id} => Type::Struct {id},
+        ir_ast::Type::Void => Type::Void,
     }
 }
 
@@ -499,6 +499,7 @@ fn generate_kernel_stmts(
 
 fn from_ir_stmt(
     env: &CodegenEnv,
+    fun_id: &Name,
     mut host_body: Vec<Stmt>,
     mut kernels: Vec<Top>,
     stmt: ir_ast::Stmt
@@ -518,7 +519,7 @@ fn from_ir_stmt(
             // sequential for-loop and add it to the host code.
             match &env.gpu_mapping.get(&var) {
                 Some(m) => {
-                    let kernel_id = generate_kernel_name(&env.id, &var);
+                    let kernel_id = generate_kernel_name(&fun_id, &var);
                     let stmt = ir_ast::Stmt::For {var, lo, hi, step, body, par, i: i.clone()};
                     let kernel_body = generate_kernel_stmt(
                         m.grid.clone(), &m.get_mapping()[..], vec![], stmt
@@ -543,7 +544,7 @@ fn from_ir_stmt(
                 },
                 None => {
                     let (init, cond, incr) = determine_loop_bounds(None, var.clone(), lo, hi, step)?;
-                    let (body, kernels) = from_ir_stmts(env, vec![], kernels, body)?;
+                    let (body, kernels) = from_ir_stmts(env, fun_id, vec![], kernels, body)?;
                     host_body.push(Stmt::For {
                         var_ty, var, init, cond, incr, body, i
                     });
@@ -553,14 +554,14 @@ fn from_ir_stmt(
         },
         ir_ast::Stmt::If {cond, thn, els, i} => {
             let cond = from_ir_expr(cond)?;
-            let (thn, kernels) = from_ir_stmts(env, vec![], kernels, thn)?;
-            let (els, kernels) = from_ir_stmts(env, vec![], kernels, els)?;
+            let (thn, kernels) = from_ir_stmts(env, fun_id, vec![], kernels, thn)?;
+            let (els, kernels) = from_ir_stmts(env, fun_id, vec![], kernels, els)?;
             host_body.push(Stmt::If {cond, thn, els, i});
             Ok(kernels)
         },
         ir_ast::Stmt::While {cond, body, i} => {
             let cond = from_ir_expr(cond)?;
-            let (body, kernels) = from_ir_stmts(env, vec![], kernels, body)?;
+            let (body, kernels) = from_ir_stmts(env, fun_id, vec![], kernels, body)?;
             host_body.push(Stmt::While {cond, body, i});
             Ok(kernels)
         },
@@ -583,6 +584,7 @@ fn from_ir_stmt(
 
 fn from_ir_stmts(
     env: &CodegenEnv,
+    fun_id: &Name,
     host_body: Vec<Stmt>,
     kernels: Vec<Top>,
     stmts: Vec<ir_ast::Stmt>
@@ -590,7 +592,7 @@ fn from_ir_stmts(
     stmts.into_iter()
         .fold(Ok((host_body, kernels)), |acc, stmt| {
             let (host_body, kernels) = acc?;
-            from_ir_stmt(env, host_body, kernels, stmt)
+            from_ir_stmt(env, fun_id, host_body, kernels, stmt)
         })
 }
 
@@ -639,15 +641,18 @@ fn unwrap_params(
 }
 
 fn from_ir_fun_body(
-    env: CodegenEnv,
+    env: &CodegenEnv,
+    id: Name,
     params: Vec<Param>,
-    body: Vec<ir_ast::Stmt>
+    body: Vec<ir_ast::Stmt>,
+    res_ty: ir_ast::Type
 ) -> CompileResult<Vec<Top>> {
-    let (mut params_init, unwrapped_params) = unwrap_params(&env, params)?;
-    let (mut host_body, mut tops) = from_ir_stmts(&env, vec![], vec![], body)?;
+    let (mut params_init, unwrapped_params) = unwrap_params(env, params)?;
+    let (mut host_body, mut tops) = from_ir_stmts(env, &id, vec![], vec![], body)?;
     params_init.append(&mut host_body);
+    let ret_ty = from_ir_type(res_ty);
     tops.push(Top::HostFunDef {
-        ret_ty: Type::Void, id: env.id, params: unwrapped_params, body: params_init
+        ret_ty, id, params: unwrapped_params, body: params_init
     });
     Ok(tops)
 }
@@ -658,15 +663,14 @@ fn from_ir_param(p: ir_ast::Param) -> Param {
 }
 
 fn from_ir_fun_def(
-    mut env: CodegenEnv,
+    env: &CodegenEnv,
     fun: ir_ast::FunDef
 ) -> CompileResult<Vec<Top>> {
-    let ir_ast::FunDef {id, params, body, ..} = fun;
-    env.id = id;
+    let ir_ast::FunDef {id, params, body, res_ty, ..} = fun;
     let params = params.into_iter()
         .map(|p| from_ir_param(p))
         .collect::<Vec<Param>>();
-    from_ir_fun_body(env, params, body)
+    from_ir_fun_body(env, id, params, body, res_ty)
 }
 
 fn from_ir_field(f: ir_ast::Field) -> Field {
@@ -699,15 +703,21 @@ pub fn from_general_ir(
         .into_iter()
         .map(from_ir_struct)
         .collect::<Vec<Top>>();
-
     let struct_fields = tops.clone()
         .into_iter()
         .map(struct_top_fields)
         .collect::<BTreeMap<Name, Vec<Field>>>();
     let env = CodegenEnv {
-        gpu_mapping, struct_fields, id: Name::new(String::new())
+        gpu_mapping, struct_fields
     };
 
-    tops.append(&mut from_ir_fun_def(env, ast.fun)?);
+    let mut def_tops = ast.defs
+        .into_iter()
+        .map(|def| from_ir_fun_def(&env, def))
+        .collect::<CompileResult<Vec<Vec<Top>>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<Top>>();
+    tops.append(&mut def_tops);
     Ok(tops)
 }

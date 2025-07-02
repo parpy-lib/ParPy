@@ -40,11 +40,11 @@ fn select_float_size(backend: &CompileBackend) -> ElemSize {
 }
 
 pub fn specialize_ast_on_arguments<'py>(
-    ast: ast::FunDef,
+    ast: ast::Ast,
     args: Vec<Bound<'py, PyAny>>,
     opts: &CompileOptions,
     debug_env: &debug::DebugEnv
-) -> PyResult<ast::FunDef> {
+) -> PyResult<ast::Ast> {
     let par = &opts.parallelize;
 
     // Ensure the AST contains any degree of parallelism - otherwise, there is no point in using

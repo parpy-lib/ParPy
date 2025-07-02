@@ -107,8 +107,8 @@ fn fold_fun(fun: FunDef) -> FunDef {
 }
 
 pub fn fold(ast: Ast) -> Ast {
-    let fun = fold_fun(ast.fun);
-    Ast {fun, ..ast}
+    let defs = ast.defs.smap(fold_fun);
+    Ast {defs, ..ast}
 }
 
 #[cfg(test)]

@@ -86,7 +86,11 @@ fn resolve_indices_stmt(s: Stmt) -> PyResult<Stmt> {
         .smap_result(resolve_indices_expr)
 }
 
-pub fn resolve_indices(fun: FunDef) -> PyResult<FunDef> {
+fn resolve_indices_def(fun: FunDef) -> PyResult<FunDef> {
     let body = fun.body.smap_result(resolve_indices_stmt)?;
     Ok(FunDef {body, ..fun})
+}
+
+pub fn resolve_indices(ast: Ast) -> PyResult<Ast> {
+    ast.smap_result(resolve_indices_def)
 }

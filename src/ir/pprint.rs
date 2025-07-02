@@ -23,7 +23,8 @@ impl PrettyPrint for Type {
             Type::Struct {id} => {
                 let (env, id) = id.pprint(env);
                 (env, format!("struct {id}"))
-            }
+            },
+            Type::Void => (env, format!("void"))
         }
     }
 }
@@ -172,22 +173,23 @@ impl PrettyPrint for StructDef {
 
 impl PrettyPrint for FunDef {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let FunDef {id, params, body, ..} = self;
+        let FunDef {id, params, body, res_ty, ..} = self;
         let (env, id) = id.pprint(env);
         let (env, params) = pprint_iter(params.iter(), env, ", ");
         let env = env.incr_indent();
         let (env, body) = pprint_iter(body.iter(), env, "\n");
         let env = env.decr_indent();
-        (env, format!("void {id}({params}) {{\n{body}\n}}"))
+        let (env, res_ty) = res_ty.pprint(env);
+        (env, format!("{res_ty} {id}({params}) {{\n{body}\n}}"))
     }
 }
 
 impl PrettyPrint for Ast {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Ast {structs, fun} = self;
+        let Ast {structs, defs} = self;
         let (env, structs) = pprint_iter(structs.iter(), env, "\n");
-        let (env, fun) = fun.pprint(env);
-        (env, format!("{structs}\n{fun}"))
+        let (env, defs) = pprint_iter(defs.iter(), env, "\n");
+        (env, format!("{structs}\n{defs}"))
     }
 }
 

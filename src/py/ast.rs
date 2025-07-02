@@ -73,6 +73,7 @@ pub enum Type {
     Tensor {sz: ElemSize, shape: Vec<i64>},
     Tuple {elems: Vec<Type>},
     Dict {fields: BTreeMap<String, Type>},
+    Void,
     Unknown
 }
 
@@ -104,11 +105,11 @@ impl Ord for Type {
                 lsz.cmp(rsz).then(lsh.cmp(rsh))
             },
             (Type::Tensor {..}, _) => Ordering::Less,
-            (Type::Tuple {..}, Type::Dict {..} | Type::Unknown) => Ordering::Less,
+            (Type::Tuple {..}, Type::Dict {..} | Type::Void | Type::Unknown) => Ordering::Less,
             (Type::Tuple {elems: lelems}, Type::Tuple {elems: relems}) =>
                 lelems.cmp(relems),
             (Type::Tuple {..}, _) => Ordering::Greater,
-            (Type::Dict {..}, Type::Unknown) => Ordering::Less,
+            (Type::Dict {..}, Type::Void | Type::Unknown) => Ordering::Less,
             (Type::Dict {fields: lfields}, Type::Dict {fields: rfields}) =>
                 lfields.iter()
                     .zip(rfields.iter())
@@ -116,6 +117,9 @@ impl Ord for Type {
                         acc.then(lk.cmp(rk)).then(lv.cmp(rv))
                     }),
             (Type::Dict {..}, _) => Ordering::Greater,
+            (Type::Void, Type::Unknown) => Ordering::Less,
+            (Type::Void, Type::Void) => Ordering::Equal,
+            (Type::Void, _) => Ordering::Greater,
             (Type::Unknown, Type::Unknown) => Ordering::Equal,
             (Type::Unknown, _) => Ordering::Greater,
         }
@@ -139,7 +143,6 @@ impl fmt::Display for Type {
                 let sh = shape.iter().map(|i| i.to_string()).join(",");
                 write!(f, "tensor<{sz}>[{sh}]")
             },
-            Type::Unknown => write!(f, "?"),
             Type::Tuple {elems} => {
                 let elems = elems.iter()
                     .map(|e| format!("{e}"))
@@ -152,6 +155,8 @@ impl fmt::Display for Type {
                     .join(",");
                 write!(f, "dict {{{fields}}}")
             },
+            Type::Void => write!(f, "void"),
+            Type::Unknown => write!(f, "?"),
         }
     }
 }
@@ -178,7 +183,9 @@ impl SMapAccum<Type> for Type {
                 let (acc, fields) = fields.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Type::Dict {fields}))
             },
-            Type::String | Type::Tensor {..} | Type::Unknown => Ok((acc?, self))
+            Type::String | Type::Tensor {..} | Type::Void | Type::Unknown => {
+                Ok((acc?, self))
+            }
         }
     }
 }
@@ -192,7 +199,7 @@ impl SFold<Type> for Type {
         match self {
             Type::Tuple {elems} => elems.sfold_result(acc, f),
             Type::Dict {fields} => fields.sfold_result(acc, f),
-            Type::String | Type::Tensor {..} | Type::Unknown => acc
+            Type::String | Type::Tensor {..} | Type::Void | Type::Unknown => acc
         }
     }
 }
@@ -591,5 +598,8 @@ pub struct FunDef {
     pub id: Name,
     pub params: Vec<Param>,
     pub body: Vec<Stmt>,
+    pub res_ty: Type,
     pub i: Info
 }
+
+pub type Ast = Vec<FunDef>;

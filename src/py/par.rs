@@ -32,10 +32,11 @@ fn ensure_parallelism_stmt(
 /// Ensures that the provided function AST contains at least some use of parallelism. If it does
 /// not, we produce a clear error message explaining what the problem is and how to fix it.
 pub fn ensure_parallelism(
-    ast: &FunDef,
+    ast: &Ast,
     par: &BTreeMap<String, LoopPar>
 ) -> PyResult<()> {
-    let contains_parallelism = ast.body.sfold(false, |acc, s| {
+    let def = ast.last().unwrap();
+    let contains_parallelism = def.body.sfold(false, |acc, s| {
         ensure_parallelism_stmt(acc, s, par)
     });
     if !contains_parallelism {
@@ -46,9 +47,9 @@ pub fn ensure_parallelism(
              'parallelize' keyword argument. Alternatively, if you want to run \
              sequential code on the GPU, wrap the code in a GPU context as \
              'with parir.gpu: ...'.",
-             ast.id
+             def.id
         );
-        py_runtime_error!(ast.i, "{}", msg)
+        py_runtime_error!(def.i, "{}", msg)
     } else {
         Ok(())
     }

@@ -20,6 +20,7 @@ use itertools::Itertools;
 #[derive(Clone, Debug)]
 pub struct TypeCheckEnv {
     pub vars: BTreeMap<Name, Type>,
+    pub res_ty: Type,
     pub shapes_only: bool,
     pub float_size: ElemSize
 }
@@ -28,6 +29,7 @@ impl Default for TypeCheckEnv {
     fn default() -> TypeCheckEnv {
         TypeCheckEnv {
             vars: BTreeMap::new(),
+            res_ty: Type::Unknown,
             shapes_only: false,
             float_size: ElemSize::F64
         }
@@ -951,19 +953,26 @@ fn add_param_types<'py>(
 }
 
 pub fn type_check_params<'py>(
-    def: FunDef,
+    mut ast: Ast,
     args: &Vec<Bound<'py, PyAny>>,
     float_size: &ElemSize
-) -> PyResult<FunDef> {
+) -> PyResult<Ast> {
+    let def = ast.pop().unwrap();
     let params = add_param_types(&def.id, def.params, args, float_size)?;
-    Ok(FunDef {params, ..def})
+    let def = FunDef {params, ..def};
+    ast.push(def);
+    Ok(ast)
 }
 
 fn type_check_body_shapes(
-    def: FunDef,
+    mut ast: Ast,
     shapes_only: bool,
     float_size: Option<ElemSize>
-) -> PyResult<FunDef> {
+) -> PyResult<Ast> {
+    // TODO: Type-check all function definitions, and not just the "main" one. After type-checking
+    // the main definition, the environment should contain the argument types of the other
+    // functions (by inferring from use).
+    let def = ast.pop().unwrap();
     let mut env = TypeCheckEnv::default();
     env.shapes_only = shapes_only;
     env.vars = def.params.iter()
@@ -972,16 +981,22 @@ fn type_check_body_shapes(
     if let Some(sz) = float_size {
         env.float_size = sz;
     };
-    let (_, body) = type_check_stmts(env, def.body)?;
-    Ok(FunDef {body, ..def})
+    let (env, body) = type_check_stmts(env, def.body)?;
+    let res_ty = match env.res_ty {
+        Type::Unknown => Type::Void,
+        ty => ty
+    };
+    let def = FunDef {body, res_ty, ..def};
+    ast.push(def);
+    Ok(ast)
 }
 
-pub fn type_check_body(def: FunDef, float_size: ElemSize) -> PyResult<FunDef> {
-    type_check_body_shapes(def, false, Some(float_size))
+pub fn type_check_body(ast: Ast, float_size: ElemSize) -> PyResult<Ast> {
+    type_check_body_shapes(ast, false, Some(float_size))
 }
 
-pub fn check_body_shape(def: FunDef) -> PyResult<FunDef> {
-    type_check_body_shapes(def, true, None)
+pub fn check_body_shape(ast: Ast) -> PyResult<Ast> {
+    type_check_body_shapes(ast, true, None)
 }
 
 #[cfg(test)]

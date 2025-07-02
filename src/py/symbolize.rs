@@ -146,11 +146,11 @@ impl Symbolize for Param {
 
 impl Symbolize for FunDef {
     fn symbolize(self, env: SymbolizeEnv) -> SymbolizeResult<FunDef> {
-        let FunDef {id, params, body, i} = self;
+        let FunDef {id, params, body, res_ty, i} = self;
         let (env, id) = env.set_symbol(id);
         let (env, params) = params.symbolize(env)?;
         let (env, body) = body.symbolize(env)?;
-        Ok((env, FunDef {id, params, body, i}))
+        Ok((env, FunDef {id, params, body, res_ty, i}))
     }
 }
 

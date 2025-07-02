@@ -34,16 +34,16 @@ fn python_to_ir<'py>(
     let def = py::inline_function_calls(def, &ir_asts)?;
 
     // Wrap the intermediate AST in a capsule that we return to Python.
-    let name = CString::new("Parir untyped Python AST")?;
+    let name = CString::new("Parir untyped Python function AST")?;
     Ok(PyCapsule::new::<py::ast::FunDef>(py, def, Some(name))?)
 }
 
 #[pyfunction]
 fn print_ir_ast<'py>(ir_ast_cap: Bound<'py, PyCapsule>) -> String {
-    let untyped_ir_def : &py::ast::FunDef = unsafe {
+    let untyped_ir_ast : &py::ast::FunDef = unsafe {
         ir_ast_cap.reference()
     };
-    untyped_ir_def.pprint_default()
+    untyped_ir_ast.pprint_default()
 }
 
 #[pyfunction]
@@ -62,7 +62,7 @@ fn compile_ir<'py>(
 
     // Specialize the Python-like AST based on the provided arguments, inferring the types of all
     // expressions and inlining scalar argument values directly into the AST.
-    let py_ast = untyped_ir_def.clone();
+    let py_ast = vec![untyped_ir_def.clone()];
     let py_ast = py::specialize_ast_on_arguments(py_ast, args, &opts, &debug_env)?;
     debug_env.print("Specialized Python-like AST", &py_ast);
 
