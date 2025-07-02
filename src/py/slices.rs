@@ -506,7 +506,8 @@ fn replace_slices_with_for_loops_stmt(s: Stmt) -> PyResult<Stmt> {
             replace_slices_assignment(reconstruct_assign, def_data, dst, expr, labels, i)
         },
         Stmt::Label {..} | Stmt::For {..} | Stmt::While {..} | Stmt::If {..} |
-        Stmt::WithGpuContext {..} | Stmt::Scope {..} | Stmt::Call {..} => {
+        Stmt::Return {..} | Stmt::WithGpuContext {..} | Stmt::Scope {..} |
+        Stmt::Call {..} => {
             s.smap_result(replace_slices_with_for_loops_stmt)
         }
     }
@@ -534,8 +535,8 @@ fn eliminate_scopes_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
         Stmt::Scope {body, ..} => {
             acc = body.into_iter().fold(acc, eliminate_scopes_stmt);
         },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Call {..} |
-        Stmt::Label {..} => {
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
+        Stmt::Call {..} | Stmt::Label {..} => {
             acc.push(s);
         },
     };

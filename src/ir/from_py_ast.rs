@@ -355,6 +355,10 @@ fn to_ir_stmt(
             let body = to_ir_stmts(env, body)?;
             Ok(Stmt::While {cond, body, i})
         },
+        py_ast::Stmt::Return {value, i} => {
+            let value = to_ir_expr(env, value)?;
+            Ok(Stmt::Return {value, i})
+        },
         py_ast::Stmt::WithGpuContext {body, i} => {
             // NOTE: To ensure code within a GPU context actually runs on the GPU, we generate a
             // for-loop with a single iteration annotated to run in parallel on 1 thread.

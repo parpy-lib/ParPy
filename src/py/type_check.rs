@@ -898,21 +898,29 @@ fn type_check_stmt(
             let lo = ensure_scalar_type(&env, lo, ElemSize::I64)?;
             let hi = type_check_expr(&env, hi)?;
             let hi = ensure_scalar_type(&env, hi, ElemSize::I64)?;
-            let mut body_env = env.clone();
-            body_env.vars.insert(var.clone(), Type::Tensor {sz: ElemSize::I64, shape: vec![]});
-            let (_, body) = type_check_stmts(body_env, body)?;
+            env.vars.insert(var.clone(), Type::Tensor {sz: ElemSize::I64, shape: vec![]});
+            let (env, body) = type_check_stmts(env, body)?;
             Ok((env, Stmt::For {var, lo, hi, step, body, labels, i}))
         },
         Stmt::While {cond, body, i} => {
             let cond = validate_condition_type(type_check_expr(&env, cond)?, &i)?;
-            let (_, body) = type_check_stmts(env.clone(), body)?;
+            let (env, body) = type_check_stmts(env, body)?;
             Ok((env, Stmt::While {cond, body, i}))
         },
         Stmt::If {cond, thn, els, i} => {
             let cond = validate_condition_type(type_check_expr(&env, cond)?, &i)?;
-            let (_, thn) = type_check_stmts(env.clone(), thn)?;
-            let (_, els) = type_check_stmts(env.clone(), els)?;
-            Ok((env, Stmt::If {cond, thn, els, i}))
+            let (thn_env, thn) = type_check_stmts(env, thn)?;
+            let (els_env, els) = type_check_stmts(thn_env, els)?;
+            Ok((els_env, Stmt::If {cond, thn, els, i}))
+        },
+        Stmt::Return {value, i} => {
+            let value = type_check_expr(&env, value)?;
+            env.res_ty = match env.res_ty {
+                Type::Unknown => Ok(value.get_type().clone()),
+                ty if ty.eq(value.get_type()) => Ok(ty),
+                _ => py_type_error!(i, "Found conflicting types of return statements")
+            }?;
+            Ok((env, Stmt::Return {value, i}))
         },
         Stmt::WithGpuContext {..} | Stmt::Scope {..} | Stmt::Label {..} => {
             stmt.smap_accum_l_result(Ok(env), type_check_stmt)
@@ -984,7 +992,7 @@ fn type_check_body_shapes(
     let (env, body) = type_check_stmts(env, def.body)?;
     let res_ty = match env.res_ty {
         Type::Unknown => Type::Void,
-        ty => ty
+        _ => py_type_error!(Info::default(), "Main function cannot return a value")?
     };
     let def = FunDef {body, res_ty, ..def};
     ast.push(def);
@@ -1358,6 +1366,57 @@ mod test {
         } else {
             assert!(false);
         }
+    }
+
+    #[test]
+    fn type_check_return_stmt() {
+        let env = TypeCheckEnv::default();
+        let ret = Stmt::Return {
+            value: Expr::Int {
+                v: 1, ty: Type::Unknown, i: Info::default()
+            },
+            i: Info::default()
+        };
+        assert!(type_check_stmt(env, ret).is_ok());
+    }
+
+    #[test]
+    fn type_check_conflicting_return() {
+        let env = TypeCheckEnv::default();
+        let conds = Stmt::If {
+            cond: Expr::Bool {v: true, ty: Type::Unknown, i: Info::default()},
+            thn: vec![Stmt::Return {
+                value: Expr::Int {
+                    v: 1, ty: Type::Unknown, i: Info::default()
+                },
+                i: Info::default()
+            }],
+            els: vec![Stmt::Return {
+                value: Expr::Bool {
+                    v: false, ty: Type::Unknown, i: Info::default()
+                },
+                i: Info::default()
+            }],
+            i: Info::default()
+        };
+        assert!(type_check_stmt(env, conds).is_err());
+    }
+
+    #[test]
+    fn return_value_in_main() {
+        let ast = vec![FunDef {
+            id: var("x"),
+            params: vec![],
+            body: vec![Stmt::Return {
+                value: Expr::Int {
+                    v: 1, ty: Type::Unknown, i: Info::default()
+                },
+                i: Info::default()
+            }],
+            res_ty: Type::Unknown,
+            i: Info::default()}
+        ];
+        assert!(type_check_body(ast, ElemSize::F64).is_err());
     }
 
     fn test_slicing(

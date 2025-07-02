@@ -143,6 +143,10 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             let body = from_gpu_ir_stmts(env, body)?;
             Ok(Stmt::While {cond, body})
         },
+        gpu_ast::Stmt::Return {value, ..} => {
+            let value = from_gpu_ir_expr(env, value)?;
+            Ok(Stmt::Return {value})
+        },
         gpu_ast::Stmt::Scope {i, ..} => {
             parir_internal_error!(i, "Found scope statement that should have \
                                       been eliminated")

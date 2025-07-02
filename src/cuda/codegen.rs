@@ -141,6 +141,10 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             let body = from_gpu_ir_stmts(body)?;
             Ok(Stmt::While {cond, body})
         },
+        gpu_ast::Stmt::Return {value, ..} => {
+            let value = from_gpu_ir_expr(value)?;
+            Ok(Stmt::Return {value})
+        },
         gpu_ast::Stmt::Scope {i, ..} => {
             parir_compile_error!(i, "Internal error: Found scope statement that \
                                      should have been eliminated")

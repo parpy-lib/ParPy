@@ -475,6 +475,10 @@ fn generate_kernel_stmt(
             let body = generate_kernel_stmts(grid, map, vec![], body)?;
             acc.push(Stmt::While {cond, body, i});
         },
+        ir_ast::Stmt::Return {value, i} => {
+            let value = from_ir_expr(value)?;
+            acc.push(Stmt::Return {value, i});
+        },
         ir_ast::Stmt::Alloc {i, ..} => {
             parir_compile_error!(i, "Memory allocation is not supported in \
                                      parallel code.")?
@@ -563,6 +567,11 @@ fn from_ir_stmt(
             let cond = from_ir_expr(cond)?;
             let (body, kernels) = from_ir_stmts(env, fun_id, vec![], kernels, body)?;
             host_body.push(Stmt::While {cond, body, i});
+            Ok(kernels)
+        },
+        ir_ast::Stmt::Return {value, i} => {
+            let value = from_ir_expr(value)?;
+            host_body.push(Stmt::Return {value, i});
             Ok(kernels)
         },
         ir_ast::Stmt::Alloc {id, elem_ty, sz, i} => {

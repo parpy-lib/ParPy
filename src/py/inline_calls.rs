@@ -94,7 +94,8 @@ fn inline_function_calls_stmt<'py>(
             let body = inline_function_calls_stmts(body, ir_asts)?;
             acc.push(Stmt::Scope {body, i})
         },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Label {..} => {
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
+        Stmt::Label {..} => {
             acc.push(stmt);
         }
     };

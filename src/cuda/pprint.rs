@@ -307,6 +307,10 @@ impl PrettyPrint for Stmt {
                 let s = format!("{0}while ({1}) {{\n{2}\n{0}}}", indent, cond, body);
                 (env, s)
             },
+            Stmt::Return {value} => {
+                let (env, value) = value.pprint(env);
+                (env, format!("{indent}return {value};"))
+            },
             Stmt::Syncthreads {} => {
                 (env, format!("{indent}__syncthreads();"))
             },

@@ -228,6 +228,7 @@ pub enum Stmt {
     },
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>},
     While {cond: Expr, body: Vec<Stmt>},
+    Return {value: Expr},
     Syncthreads {},
     KernelLaunch {id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>},
     AllocShared {ty: Type, id: Name, sz: usize},
@@ -265,6 +266,10 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, cond) = f(acc?, cond)?;
                 Ok((acc, Stmt::While {cond, body}))
             },
+            Stmt::Return {value} => {
+                let (acc, value) = f(acc?, value)?;
+                Ok((acc, Stmt::Return {value}))
+            },
             Stmt::KernelLaunch {id, blocks, threads, args} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::KernelLaunch {id, blocks, threads, args}))
@@ -287,6 +292,7 @@ impl SFold<Expr> for Stmt {
             Stmt::For {init, cond, incr, ..} => f(f(f(acc?, init)?, cond)?, incr),
             Stmt::If {cond, ..} => f(acc?, cond),
             Stmt::While {cond, ..} => f(acc?, cond),
+            Stmt::Return {value, ..} => f(acc?, value),
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
             Stmt::AllocShared {..} | Stmt::Syncthreads {} |
             Stmt::MallocAsync {..} | Stmt::FreeAsync {..} => acc,
@@ -314,8 +320,8 @@ impl SMapAccum<Stmt> for Stmt {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::While {cond, body}))
             },
-            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
-            Stmt::Syncthreads {} | Stmt::MallocAsync {..} |
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
+            Stmt::AllocShared {..} | Stmt::Syncthreads {} | Stmt::MallocAsync {..} |
             Stmt::FreeAsync {..} | Stmt::KernelLaunch {..} => Ok((acc?, self))
         }
     }
@@ -331,9 +337,9 @@ impl SFold<Stmt> for Stmt {
             Stmt::For {body, ..} => body.sfold_result(acc, &f),
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
-            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::AllocShared {..} |
-            Stmt::Syncthreads {} | Stmt::MallocAsync {..} | Stmt::FreeAsync {..} |
-            Stmt::KernelLaunch {..} => acc,
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
+            Stmt::AllocShared {..} | Stmt::Syncthreads {} | Stmt::MallocAsync {..} |
+            Stmt::FreeAsync {..} | Stmt::KernelLaunch {..} => acc,
         }
     }
 }

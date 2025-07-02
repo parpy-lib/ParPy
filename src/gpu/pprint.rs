@@ -291,6 +291,10 @@ impl PrettyPrint for Stmt {
                 let s = format!("{0}while ({1}) {{\n{2}\n{0}}}", indent, cond, body);
                 (env, s)
             },
+            Stmt::Return {value, ..} => {
+                let (env, value) = value.pprint(env);
+                (env, format!("{indent}return {value};"))
+            },
             Stmt::Scope {body, ..} => {
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");

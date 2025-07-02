@@ -548,6 +548,14 @@ fn convert_stmt<'py, 'a>(
         } else {
             py_runtime_error!(i, "With statements using multiple items is not supported")
         }
+    } else if stmt.is_instance(&env.ast.getattr("Return")?)? {
+        let value = stmt.getattr("value")?;
+        if value.is_none() {
+            py_runtime_error!(i, "Empty return statements are not supported")
+        } else {
+            let value = convert_expr(value, env)?;
+            Ok(Stmt::Return {value, i})
+        }
     } else {
         py_runtime_error!(i, "Unsupported statement: {stmt}")
     }
@@ -1251,6 +1259,15 @@ mod test {
                 }
             ],
             i: mkinfo(1, 0, 2, 7)
+        });
+    }
+
+    #[test]
+    fn convert_return_stmt() {
+        let stmt = convert_stmt_wrap("return 3").unwrap();
+        assert_eq!(stmt, Stmt::Return {
+            value: Expr::Int {v: 3, ty: Type::Unknown, i: mkinfo(1, 7, 1, 8)},
+            i: mkinfo(1, 0, 1, 8)
         });
     }
 

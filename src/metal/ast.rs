@@ -70,6 +70,7 @@ pub enum Stmt {
     },
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>},
     While {cond: Expr, body: Vec<Stmt>},
+    Return {value: Expr},
     ThreadgroupBarrier {},
     KernelLaunch {id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>},
     SubmitWork {},

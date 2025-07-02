@@ -453,6 +453,7 @@ pub enum Stmt {
     },
     While {cond: Expr, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
+    Return {value: Expr, i: Info},
     WithGpuContext {body: Vec<Stmt>, i: Info},
     Scope {body: Vec<Stmt>, i: Info},
     Call {func: String, args: Vec<Expr>, i: Info},
@@ -467,6 +468,7 @@ impl InfoNode for Stmt {
             Stmt::For {i, ..} => i.clone(),
             Stmt::While {i, ..} => i.clone(),
             Stmt::If {i, ..} => i.clone(),
+            Stmt::Return {i, ..} => i.clone(),
             Stmt::WithGpuContext {i, ..} => i.clone(),
             Stmt::Scope {i, ..} => i.clone(),
             Stmt::Call {i, ..} => i.clone(),
@@ -504,6 +506,10 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, cond) = f(acc?, cond)?;
                 Ok((acc, Stmt::If {cond, thn, els, i}))
             },
+            Stmt::Return {value, i} => {
+                let (acc, value) = f(acc?, value)?;
+                Ok((acc, Stmt::Return {value, i}))
+            },
             Stmt::Call {func, args, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::Call {func, args, i}))
@@ -526,6 +532,7 @@ impl SFold<Expr> for Stmt {
             Stmt::For {lo, hi, ..} => f(f(acc?, lo)?, hi),
             Stmt::While {cond, ..} => f(acc?, cond),
             Stmt::If {cond, ..} => f(acc?, cond),
+            Stmt::Return {value, ..} => f(acc?, value),
             Stmt::Call {args, ..} => args.sfold_result(acc, &f),
             Stmt::WithGpuContext {..} | Stmt::Scope {..} | Stmt::Label {..} => acc,
         }
@@ -560,10 +567,8 @@ impl SMapAccum<Stmt> for Stmt {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::Scope {body, i}))
             },
-            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Label {..} |
-            Stmt::Call {..} => {
-                Ok((acc?, self))
-            }
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
+            Stmt::Label {..} | Stmt::Call {..} => Ok((acc?, self))
         }
     }
 }
@@ -580,8 +585,8 @@ impl SFold<Stmt> for Stmt {
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
             Stmt::WithGpuContext {body, ..} => body.sfold_result(acc, &f),
             Stmt::Scope {body, ..} => body.sfold_result(acc, &f),
-            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Label {..} |
-            Stmt::Call {..} => acc
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
+            Stmt::Label {..} | Stmt::Call {..} => acc
         }
     }
 }

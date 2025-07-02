@@ -291,6 +291,7 @@ pub enum Stmt {
     },
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
+    Return {value: Expr, i: Info},
     Scope {body: Vec<Stmt>, i: Info},
 
     // Synchronization among all threads of the same thread block, ensuring all writes to memory
@@ -326,6 +327,7 @@ impl InfoNode for Stmt {
             Stmt::For {i, ..} => i.clone(),
             Stmt::If {i, ..} => i.clone(),
             Stmt::While {i, ..} => i.clone(),
+            Stmt::Return {i, ..} => i.clone(),
             Stmt::Scope {i, ..} => i.clone(),
             Stmt::SynchronizeBlock {i} => i.clone(),
             Stmt::WarpReduce {i, ..} => i.clone(),
@@ -368,6 +370,10 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, cond) = f(acc?, cond)?;
                 Ok((acc, Stmt::While {cond, body, i}))
             },
+            Stmt::Return {value, i} => {
+                let (acc, value) = f(acc?, value)?;
+                Ok((acc, Stmt::Return {value, i}))
+            },
             Stmt::WarpReduce {value, op, ty, i} => {
                 let (acc, value) = f(acc?, value)?;
                 Ok((acc, Stmt::WarpReduce {value, op, ty, i}))
@@ -400,6 +406,7 @@ impl SFold<Expr> for Stmt {
             Stmt::For {init, cond, incr, ..} => f(f(f(acc?, init)?, cond)?, incr),
             Stmt::If {cond, ..} => f(acc?, cond),
             Stmt::While {cond, ..} => f(acc?, cond),
+            Stmt::Return {value, ..} => f(acc?, value),
             Stmt::WarpReduce {value, ..} => f(acc?, value),
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
             Stmt::CopyMemory {src, dst, ..} => f(f(acc?, src)?, dst),
@@ -434,7 +441,7 @@ impl SMapAccum<Stmt> for Stmt {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::Scope {body, i}))
             },
-            Stmt::Definition {..} | Stmt::Assign {..} |
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
             Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
             Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
             Stmt::AllocShared {..} | Stmt::FreeDevice {..} |
@@ -456,7 +463,7 @@ impl SFold<Stmt> for Stmt {
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
             Stmt::Scope {body, ..} => body.sfold_result(acc, &f),
-            Stmt::Definition {..} | Stmt::Assign {..} |
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
             Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
             Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
             Stmt::AllocShared {..} | Stmt::FreeDevice {..} |

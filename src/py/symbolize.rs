@@ -127,8 +127,9 @@ impl Symbolize for Stmt {
                 let (_, body) = body.symbolize(body_env)?;
                 Ok((env, Stmt::For {var, lo, hi, step, body, labels, i}))
             },
-            Stmt::While {..} | Stmt::If {..} | Stmt::WithGpuContext {..} |
-            Stmt::Scope {..} | Stmt::Call {..} | Stmt::Label {..} => {
+            Stmt::While {..} | Stmt::If {..} | Stmt::Return {..} |
+            Stmt::WithGpuContext {..} | Stmt::Scope {..} | Stmt::Call {..} |
+            Stmt::Label {..} => {
                 let (env, s) = self.smap_accum_l_result(Ok(env), |env, e: Expr| e.symbolize(env))?;
                 s.smap_accum_l_result(Ok(env), |env, s: Stmt| s.symbolize(env))
             }

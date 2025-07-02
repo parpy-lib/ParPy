@@ -181,6 +181,10 @@ impl PrettyPrint for Stmt {
                     ))
                 }
             },
+            Stmt::Return {value, ..} => {
+                let (env, value) = value.pprint(env);
+                (env, format!("{indent}return {value}"))
+            },
             Stmt::WithGpuContext {body, ..} => {
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
