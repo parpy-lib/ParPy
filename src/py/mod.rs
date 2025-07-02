@@ -4,6 +4,7 @@ mod from_py;
 mod indices;
 mod inline_calls;
 mod inline_const;
+mod insert_called_functions;
 mod labels;
 mod par;
 mod pprint;
@@ -17,6 +18,9 @@ use crate::option::*;
 use crate::utils::debug;
 
 use pyo3::prelude::*;
+use pyo3::types::PyCapsule;
+
+use std::collections::BTreeMap;
 
 pub use inline_calls::inline_function_calls;
 
@@ -24,9 +28,10 @@ pub fn parse_untyped_ast<'py>(
     ast: Bound<'py, PyAny>,
     filepath: String,
     line_ofs: usize,
-    col_ofs: usize
+    col_ofs: usize,
+    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>
 ) -> PyResult<ast::FunDef> {
-    let ast = from_py::to_untyped_ir(ast, filepath, line_ofs, col_ofs)?;
+    let ast = from_py::to_untyped_ir(ast, filepath, line_ofs, col_ofs, ir_asts)?;
     let ast = ast.symbolize_default()?;
     labels::associate_labels(ast)
 }
@@ -40,16 +45,17 @@ fn select_float_size(backend: &CompileBackend) -> ElemSize {
 }
 
 pub fn specialize_ast_on_arguments<'py>(
-    ast: ast::Ast,
+    def: ast::FunDef,
     args: Vec<Bound<'py, PyAny>>,
     opts: &CompileOptions,
+    ir_asts: BTreeMap<String, Bound<'py, PyCapsule>>,
     debug_env: &debug::DebugEnv
 ) -> PyResult<ast::Ast> {
     let par = &opts.parallelize;
 
     // Ensure the AST contains any degree of parallelism - otherwise, there is no point in using
     // this framework at all.
-    par::ensure_parallelism(&ast, &par)?;
+    par::ensure_parallelism(&def, &par)?;
 
     // Perform the type-checking and inlining of literal values in an intertwined manner. First, we
     // type-check the parameters based on the corresponding arguments provided in the function
@@ -59,9 +65,11 @@ pub fn specialize_ast_on_arguments<'py>(
     // This particular order is important, because it allows us to reason about the exact sizes of
     // all slices and by extension the correctness of dimensions of slice operations.
     let float_size = select_float_size(&opts.backend);
-    let ast = type_check::type_check_params(ast, &args, &float_size)?;
-    let ast = inline_const::inline_scalar_values(ast, &args)?;
-    debug_env.print("Python-like AST after inlining", &ast);
+    let def = type_check::type_check_params(def, &args, &float_size)?;
+    let def = inline_const::inline_scalar_values(def, &args)?;
+    debug_env.print("Python-like AST after inlining", &def);
+
+    let ast = insert_called_functions::apply(ir_asts, def)?;
 
     // As the types of slice operations involve tensors, we check that the shapes of all operations
     // are valid, ignoring the element types inside tensors. Next, we resolve indices based on the
@@ -73,18 +81,17 @@ pub fn specialize_ast_on_arguments<'py>(
     // unlike regular operations. When working with slices, the dimensions are explicitly declared,
     // making it natural to specify parallelism, while regular broadcasting would make this
     // implicit and therefore ill-suited with the parallelism approach used in this library.
-    let ast = type_check::check_body_shape(ast)?;
+    let (_, ast) = type_check::check_body_shape(ast)?;
     debug_env.print("Python-like AST after shape checking", &ast);
     let ast = indices::resolve_indices(ast)?;
     debug_env.print("Python-like AST after resolving indices", &ast);
     let ast = slices::replace_slices_with_for_loops(ast)?;
     debug_env.print("Python-like AST after slice transformation", &ast);
-    let ast = type_check::type_check_body(ast, float_size)?;
+    let (_, ast) = type_check::type_check_body(ast, float_size)?;
     debug_env.print("Python-like AST after type-checking", &ast);
 
     Ok(ast)
 }
-
 
 #[macro_export]
 macro_rules! py_runtime_error {

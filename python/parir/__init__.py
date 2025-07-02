@@ -71,7 +71,8 @@ def compile_function(ir_ast, args, opts):
 
     # Generate the code based on the provided IR AST, arguments and compilation
     # options.
-    code = parir.compile_ir(ir_ast, args, opts)
+    ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
+    code = parir.compile_ir(ir_ast, args, opts, ir_ast_map)
 
     # If the generated code is found in the local cache, we return the cached
     # wrapper function.

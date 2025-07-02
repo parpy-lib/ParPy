@@ -216,7 +216,7 @@ fn from_gpu_ir_param(env: &CodegenEnv, p: gpu_ast::Param) -> CompileResult<Param
 
 fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc> {
     match top {
-        gpu_ast::Top::DeviceFunDef {threads, id, params, body} => {
+        gpu_ast::Top::KernelFunDef {threads, id, params, body} => {
             let env = CodegenEnv::on_device();
             let params = params.into_iter()
                 .map(|p| from_gpu_ir_param(&env, p))
@@ -227,7 +227,7 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
             });
             Ok(acc)
         },
-        gpu_ast::Top::HostFunDef {ret_ty, id, params, body} => {
+        gpu_ast::Top::FunDef {ret_ty, id, params, body, target} => {
             let env = CodegenEnv::on_host();
             let ret_ty = from_gpu_ir_type(&env, ret_ty, &Info::default())?;
             let params = params.into_iter()
@@ -235,7 +235,8 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
                 .collect::<CompileResult<Vec<Param>>>()?;
             let mut body = from_gpu_ir_stmts(&env, body)?;
             body.push(Stmt::SubmitWork {});
-            acc.host.push(HostDef {ret_ty, id, params, body});
+            let def = HostDef {ret_ty, id, params, body};
+            acc.host.push(def);
             Ok(acc)
         },
         gpu_ast::Top::StructDef {id, ..} => {

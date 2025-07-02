@@ -117,6 +117,7 @@ fn validate_slices(body: &Vec<Stmt>) -> PyResult<()> {
     body.sfold_result(Ok(()), validate_slices_stmt)
 }
 
+#[derive(Debug)]
 enum ReduceDim {
     One(i64),
     All,
@@ -374,11 +375,7 @@ fn replace_slices_assignment(
         let ids = (0..nslices).into_iter()
             .map(|_| Name::sym_str("slice_dim"))
             .collect::<Vec<Name>>();
-        let shapes = if rslices == nslices {
-            extract_shape(&rhs)
-        } else {
-            extract_shape(&lhs)
-        }?;
+        let shapes = extract_shape(&lhs)?;
         let lhs = insert_slice_dim_ids(&ids, lhs)?;
         let rhs = insert_slice_dim_ids(&ids, rhs)?;
         let mut dims = ids.into_iter()

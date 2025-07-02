@@ -32,10 +32,9 @@ fn ensure_parallelism_stmt(
 /// Ensures that the provided function AST contains at least some use of parallelism. If it does
 /// not, we produce a clear error message explaining what the problem is and how to fix it.
 pub fn ensure_parallelism(
-    ast: &Ast,
+    def: &FunDef,
     par: &BTreeMap<String, LoopPar>
 ) -> PyResult<()> {
-    let def = ast.last().unwrap();
     let contains_parallelism = def.body.sfold(false, |acc, s| {
         ensure_parallelism_stmt(acc, s, par)
     });
