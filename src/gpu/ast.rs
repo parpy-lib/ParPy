@@ -54,6 +54,7 @@ pub enum Expr {
     IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
+    Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 
     // High-level representation of a struct literal value.
@@ -77,6 +78,7 @@ impl Expr {
             Expr::IfExpr {ty, ..} => ty,
             Expr::StructFieldAccess {ty, ..} => ty,
             Expr::ArrayAccess {ty, ..} => ty,
+            Expr::Call {ty, ..} => ty,
             Expr::Convert {ty, ..} => ty,
             Expr::Struct {ty, ..} => ty,
             Expr::ThreadIdx {ty, ..} => ty,
@@ -87,8 +89,8 @@ impl Expr {
     pub fn is_leaf_node(&self) -> bool {
         match self {
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
-            Expr::Float {..} | Expr::Struct {..} | Expr::ThreadIdx {..} |
-            Expr::BlockIdx {..} => true,
+            Expr::Float {..} | Expr::Call {..} | Expr::Struct {..} |
+            Expr::ThreadIdx {..} | Expr::BlockIdx {..} => true,
             _ => false
         }
     }
@@ -106,6 +108,7 @@ impl InfoNode for Expr {
             Expr::IfExpr {i, ..} => i.clone(),
             Expr::StructFieldAccess {i, ..} => i.clone(),
             Expr::ArrayAccess {i, ..} => i.clone(),
+            Expr::Call {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
             Expr::Struct {i, ..} => i.clone(),
             Expr::ThreadIdx {i, ..} => i.clone(),
@@ -136,6 +139,9 @@ impl PartialEq for Expr {
             ( Expr::ArrayAccess {target: ltarget, idx: lidx, ..}
             , Expr::ArrayAccess {target: rtarget, idx: ridx, ..} ) =>
                 ltarget.eq(rtarget) && lidx.eq(ridx),
+            ( Expr::Call {id: lid, args: largs, ..}
+            , Expr::Call {id: rid, args: rargs, ..} ) =>
+                lid.eq(rid) && largs.eq(rargs),
             (Expr::Convert {e: le, ..}, Expr::Convert {e: re, ..}) => le.eq(re),
             ( Expr::Struct {id: lid, fields: lfields, ..}
             , Expr::Struct {id: rid, fields: rfields, ..} ) =>
@@ -188,6 +194,10 @@ impl SMapAccum<Expr> for Expr {
                     target: Box::new(target), idx: Box::new(idx), ty, i
                 }))
             },
+            Expr::Call {id, args, ty, i} => {
+                let (acc, args) = args.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::Call {id, args, ty, i}))
+            },
             Expr::Convert {e, ty} => {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
@@ -214,6 +224,7 @@ impl SFold<Expr> for Expr {
             Expr::IfExpr {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
             Expr::StructFieldAccess {target, ..} => f(acc?, target),
             Expr::ArrayAccess {target, idx, ..} => f(f(acc?, target)?, idx),
+            Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
             Expr::Struct {fields, ..} => fields.sfold_result(acc, &f),
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |

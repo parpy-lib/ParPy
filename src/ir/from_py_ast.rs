@@ -280,6 +280,13 @@ fn to_ir_expr(
         py_ast::Expr::Tuple {i, ..} => {
             parir_compile_error!(i, "Tuple literals are not supported outside of indexing")
         },
+        py_ast::Expr::Call {id, args, ty, i} => {
+            let args = args.into_iter()
+                .map(|e| to_ir_expr(env, e))
+                .collect::<CompileResult<Vec<Expr>>>()?;
+            let ty = to_ir_type(env, &i, ty)?;
+            Ok(Expr::Call {id, args, ty, i})
+        },
         py_ast::Expr::NeutralElement {i, ..} => {
             parir_compile_error!(i, "Intermediate reduction node remaining during IR translation")
         },

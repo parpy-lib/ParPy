@@ -39,6 +39,7 @@ pub enum Expr {
     StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Struct {id: Name, fields: Vec<(String, Expr)>, ty: Type, i: Info},
+    Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 
     // CUDA-specific nodes
@@ -60,6 +61,7 @@ impl Expr {
             Expr::StructFieldAccess {ty, ..} => ty,
             Expr::ArrayAccess {ty, ..} => ty,
             Expr::Struct {ty, ..} => ty,
+            Expr::Call {ty, ..} => ty,
             Expr::Convert {ty, ..} => ty,
             Expr::ShflXorSync {ty, ..} => ty,
             Expr::ThreadIdx {ty, ..} => ty,
@@ -70,8 +72,8 @@ impl Expr {
     pub fn is_leaf_node(&self) -> bool {
         match self {
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
-            Expr::Float {..} | Expr::ThreadIdx {..} |
-            Expr::BlockIdx {..} => true,
+            Expr::Float {..} | Expr::Call {..} |
+            Expr::ThreadIdx {..} | Expr::BlockIdx {..} => true,
             _ => false
         }
     }
@@ -90,6 +92,7 @@ impl InfoNode for Expr {
             Expr::StructFieldAccess {i, ..} => i.clone(),
             Expr::ArrayAccess {i, ..} => i.clone(),
             Expr::Struct {i, ..} => i.clone(),
+            Expr::Call {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
             Expr::ShflXorSync {i, ..} => i.clone(),
             Expr::ThreadIdx {i, ..} => i.clone(),
@@ -123,6 +126,9 @@ impl PartialEq for Expr {
             ( Expr::Struct {id: lid, fields: lfields, ..}
             , Expr::Struct {id: rid, fields: rfields, ..} ) =>
                 lid.eq(rid) && lfields.eq(rfields),
+            ( Expr::Call {id: lid, args: largs, ..}
+            , Expr::Call {id: rid, args: rargs, ..}) =>
+                lid.eq(rid) && largs.eq(rargs),
             (Expr::Convert {e: le, ..}, Expr::Convert {e: re, ..}) => le.eq(re),
             ( Expr::ShflXorSync {value: lval, idx: lidx, ..}
             , Expr::ShflXorSync {value: rval, idx: ridx, ..} ) => {
@@ -180,6 +186,10 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, fields) = fields.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Expr::Struct {id, fields, ty, i}))
             },
+            Expr::Call {id, args, ty, i} => {
+                let (acc, args) = args.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::Call {id, args, ty, i}))
+            },
             Expr::Convert {e, ty} => {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
@@ -210,6 +220,7 @@ impl SFold<Expr> for Expr {
             Expr::StructFieldAccess {target, ..} => f(acc?, target),
             Expr::ArrayAccess {target, idx, ..} => f(f(acc?, target)?, idx),
             Expr::Struct {fields, ..} => fields.sfold_result(acc, &f),
+            Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
             Expr::ShflXorSync {value, idx, ..} => f(f(acc?, value)?, idx),
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |

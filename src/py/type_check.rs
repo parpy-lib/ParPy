@@ -822,14 +822,20 @@ pub fn type_check_expr(
             Ok(Expr::Slice {lo, hi, ty, i})
         },
         Expr::Tuple {elems, i, ..} => {
-            let elems = elems.into_iter()
-                .map(|e| type_check_expr(env, e))
-                .collect::<PyResult<Vec<Expr>>>()?;
+            let elems = elems.smap_result(|e| type_check_expr(env, e))?;
             let elem_types = elems.iter()
                 .map(|e| e.get_type().clone())
                 .collect::<Vec<Type>>();
             let ty = Type::Tuple {elems: elem_types};
             Ok(Expr::Tuple {elems, ty, i})
+        },
+        Expr::Call {id: _id, args, i: _i, ..} => {
+            let args = args.smap_result(|arg| type_check_expr(env, arg))?;
+            let _arg_types = args.iter()
+                .map(|e| e.get_type().clone())
+                .collect::<Vec<Type>>();
+            // TODO: look up function by its id (string) and instantiate based on argument types
+            todo!()
         },
         Expr::NeutralElement {op, tyof, i} => {
             let tyof = type_check_expr(env, *tyof)?;

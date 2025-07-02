@@ -62,6 +62,12 @@ fn from_ir_expr(e: ir_ast::Expr) -> CompileResult<Expr> {
             let idx = Box::new(from_ir_expr(*idx)?);
             Ok(Expr::ArrayAccess {target, idx, ty, i})
         },
+        ir_ast::Expr::Call {id, args, i, ..} => {
+            let args = args.into_iter()
+                .map(from_ir_expr)
+                .collect::<CompileResult<Vec<Expr>>>()?;
+            Ok(Expr::Call {id, args, ty, i})
+        },
         ir_ast::Expr::Convert {e, ..} => {
             let e = Box::new(from_ir_expr(*e)?);
             Ok(Expr::Convert {e, ty})
