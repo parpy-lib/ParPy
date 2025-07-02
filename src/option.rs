@@ -42,11 +42,11 @@ pub struct CompileOptions {
     pub backend: CompileBackend,
 
     // Enable to make the compiler print intermediate ASTs to standard output.
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub debug_print: bool,
 
     // Enable to have to compiler report the time spent in various passes.
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub debug_perf: bool,
 
     /////////////////
