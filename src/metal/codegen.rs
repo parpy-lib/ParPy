@@ -99,6 +99,12 @@ fn from_gpu_ir_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
             let idx = Box::new(from_gpu_ir_expr(env, *idx)?);
             Ok(Expr::ArrayAccess {target, idx, ty, i})
         },
+        gpu_ast::Expr::Call {id, args, i, ..} => {
+            let args = args.into_iter()
+                .map(|arg| from_gpu_ir_expr(env, arg))
+                .collect::<CompileResult<Vec<Expr>>>()?;
+            Ok(Expr::Call {id, args, ty, i})
+        },
         gpu_ast::Expr::Convert {e, ..} => {
             let e = Box::new(from_gpu_ir_expr(env, *e)?);
             Ok(Expr::Convert {e, ty})

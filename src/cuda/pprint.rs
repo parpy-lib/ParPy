@@ -226,6 +226,11 @@ impl PrettyPrint for Expr {
                 let env = env.decr_indent();
                 (env, format!("{id} {{\n{indent}{fields}\n{outer_indent}}}"))
             },
+            Expr::Call {id, args, ..} => {
+                let (env, id) = id.pprint(env);
+                let (env, args) = pprint_iter(args.iter(), env, ", ");
+                (env, format!("{id}({args})"))
+            },
             Expr::Convert {e, ty} => {
                 let (env, e_str) = e.pprint(env);
                 let (env, ty) = ty.pprint(env);

@@ -95,6 +95,12 @@ fn from_gpu_ir_expr(e: gpu_ast::Expr) -> CompileResult<Expr> {
             let idx = from_gpu_ir_expr(*idx)?;
             Ok(Expr::ArrayAccess {target: Box::new(target), idx: Box::new(idx), ty, i})
         },
+        gpu_ast::Expr::Call {id, args, i, ..} => {
+            let args = args.into_iter()
+                .map(from_gpu_ir_expr)
+                .collect::<CompileResult<Vec<Expr>>>()?;
+            Ok(Expr::Call {id, args, ty, i})
+        },
         gpu_ast::Expr::Convert {e, ..} => {
             let e = from_gpu_ir_expr(*e)?;
             Ok(Expr::Convert {e: Box::new(e), ty})
