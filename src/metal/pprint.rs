@@ -295,15 +295,14 @@ fn pprint_metal_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrint
 }
 
 fn pprint_host_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrintEnv, String) {
-    let indent = env.print_indent();
     let (env, strs) = params.iter()
         .fold((env, vec![]), |(env, mut strs), Param {id, ty}| {
             let (env, id) = id.pprint(env);
             let (env, ty) = ty.pprint(env);
-            strs.push(format!("{indent}{ty} {id}"));
+            strs.push(format!("{ty} {id}"));
             (env, strs)
         });
-    (env, strs.iter().join(",\n"))
+    (env, strs.iter().join(", "))
 }
 
 fn pprint_metal_top(env: PrettyPrintEnv, t: &Top) -> (PrettyPrintEnv, String) {
@@ -340,7 +339,7 @@ fn pprint_host_top(env: PrettyPrintEnv, t: &Top) -> (PrettyPrintEnv, String) {
             let env = env.incr_indent();
             let (env, body) = pprint_iter(body.iter(), env, "\n");
             let env = env.decr_indent();
-            (env, format!("extern \"C\"{ret_ty} {id}({params}) {{\n{body}\n}}"))
+            (env, format!("extern \"C\" {ret_ty} {id}({params}) {{\n{body}\n}}"))
         },
     }
 }
@@ -389,7 +388,7 @@ fn generate_metal_kernel_function_definitions(
 // compiler to consider a multi-line string valid.
 fn add_backslash_at_end_of_line(s: String) -> String {
     s.lines()
-        .map(|l| format!("{l}\\"))
+        .map(|l| format!("{l}\\n\\"))
         .join("\n")
 }
 
