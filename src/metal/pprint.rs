@@ -277,7 +277,7 @@ impl PrettyPrint for Stmt {
     }
 }
 
-fn print_metal_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrintEnv, String) {
+fn pprint_metal_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrintEnv, String) {
     let indent = env.print_indent();
     let (env, mut strs) = params.iter()
         .enumerate()
@@ -294,50 +294,92 @@ fn print_metal_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrintE
     (env, strs.iter().join(",\n"))
 }
 
-impl PrettyPrint for MetalDef {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let MetalDef {maxthreads, id, params, body} = self;
-        let (env, id) = id.pprint(env);
-        let env = env.incr_indent();
-        let (env, params) = print_metal_params(env, params);
-        let (env, body) = pprint_iter(body.iter(), env, "\n");
-        let env = env.decr_indent();
-        (env, format!("\
-            [[max_total_threads_per_threadgroup({maxthreads})]]\n\
-            kernel void {id}(\n{params}\n) {{\n{body}\n}}"))
+fn pprint_host_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrintEnv, String) {
+    let indent = env.print_indent();
+    let (env, strs) = params.iter()
+        .fold((env, vec![]), |(env, mut strs), Param {id, ty}| {
+            let (env, id) = id.pprint(env);
+            let (env, ty) = ty.pprint(env);
+            strs.push(format!("{indent}{ty} {id}"));
+            (env, strs)
+        });
+    (env, strs.iter().join(",\n"))
+}
+
+fn pprint_metal_top(env: PrettyPrintEnv, t: &Top) -> (PrettyPrintEnv, String) {
+    match t {
+        Top::KernelDef {maxthreads, id, params, body} => {
+            let (env, id) = id.pprint(env);
+            let env = env.incr_indent();
+            let (env, params) = pprint_metal_params(env, params);
+            let (env, body) = pprint_iter(body.iter(), env, "\n");
+            let env = env.decr_indent();
+            (env, format!("\
+                [[max_total_threads_per_threadgroup({maxthreads})]]\n\
+                kernel void {id}(\n{params}\n) {{\n{body}\n}}"))
+        },
+        Top::FunDef {ret_ty, id, params, body} => {
+            let (env, ret_ty) = ret_ty.pprint(env);
+            let (env, id) = id.pprint(env);
+            let env = env.incr_indent();
+            let (env, params) = pprint_host_params(env, params);
+            let (env, body) = pprint_iter(body.iter(), env, "\n");
+            let env = env.decr_indent();
+            (env, format!("{ret_ty} {id}({params}) {{\n{body}\n}}"))
+        },
     }
 }
 
-impl PrettyPrint for Param {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Param {id, ty} = self;
-        let (env, id) = id.pprint(env);
-        let (env, ty) = ty.pprint(env);
-        (env, format!("{ty} {id}"))
+fn pprint_host_top(env: PrettyPrintEnv, t: &Top) -> (PrettyPrintEnv, String) {
+    match t {
+        Top::KernelDef {id, ..} => panic!("Found definition of kernel {id} in host code"),
+        Top::FunDef {ret_ty, id, params, body} => {
+            let (env, ret_ty) = ret_ty.pprint(env);
+            let (env, id) = id.pprint(env);
+            let (env, params) = pprint_host_params(env, params);
+            let env = env.incr_indent();
+            let (env, body) = pprint_iter(body.iter(), env, "\n");
+            let env = env.decr_indent();
+            (env, format!("extern \"C\"{ret_ty} {id}({params}) {{\n{body}\n}}"))
+        },
     }
 }
 
-impl PrettyPrint for HostDef {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let HostDef {ret_ty, id, params, body} = self;
-        let (env, ret_ty) = ret_ty.pprint(env);
-        let (env, id) = id.pprint(env);
-        let (env, params) = pprint_iter(params.iter(), env, ", ");
-        let env = env.incr_indent();
-        let (env, body) = pprint_iter(body.iter(), env, "\n");
-        let env = env.decr_indent();
-        (env, format!("extern \"C\"\n{ret_ty} {id}({params}) {{\n{body}\n}}"))
-    }
+fn pprint_tops(
+    env: PrettyPrintEnv,
+    tops: &Vec<Top>,
+    pptop: impl Fn(PrettyPrintEnv, &Top) -> (PrettyPrintEnv, String)
+) -> (PrettyPrintEnv, String) {
+    let (env, strs) = tops.iter()
+        .fold((env, vec![]), |(env, mut strs), t| {
+            let (env, s) = pptop(env, t);
+            strs.push(s);
+            (env, strs)
+        });
+    (env, strs.into_iter().join("\n"))
 }
 
-fn generate_metal_function_definitions(
-    env: PrettyPrintEnv, metal_tops: &Vec<MetalDef>
+fn pprint_metal_tops(env: PrettyPrintEnv, tops: &Vec<Top>) -> (PrettyPrintEnv, String) {
+    pprint_tops(env, tops, pprint_metal_top)
+}
+
+fn pprint_host_tops(env: PrettyPrintEnv, tops: &Vec<Top>) -> (PrettyPrintEnv, String) {
+    pprint_tops(env, tops, pprint_host_top)
+}
+
+fn generate_metal_kernel_function_definitions(
+    env: PrettyPrintEnv, metal_tops: &Vec<Top>
 ) -> (PrettyPrintEnv, String) {
     let (env, tops) = metal_tops.iter()
         .fold((env, vec![]), |(env, mut strs), t| {
-            let (env, id) = t.id.pprint(env);
-            let s = format!("MTL::Function* {id} = parir_metal::get_fun(lib, \"{id}\");");
-            strs.push(s);
+            let env = if let Top::KernelDef {id, ..} = t {
+                let (env, id) = id.pprint(env);
+                let s = format!("MTL::Function* {id} = parir_metal::get_fun(lib, \"{id}\");");
+                strs.push(s);
+                env
+            } else {
+                env
+            };
             (env, strs)
         });
     (env, tops.into_iter().join("\n"))
@@ -357,10 +399,10 @@ impl PrettyPrint for Ast {
         let includes = includes.iter()
             .map(|s| format!("#include {s}"))
             .join("\n");
-        let (env, metal_tops_str) = pprint_iter(metal_tops.iter(), env, "\n");
+        let (env, metal_tops_str) = pprint_metal_tops(env, metal_tops);
         let metal_tops_str = add_backslash_at_end_of_line(metal_tops_str);
-        let (env, host_tops_str) = pprint_iter(host_tops.iter(), env, "\n");
-        let (env, metal_fun_defs) = generate_metal_function_definitions(env, metal_tops);
+        let (env, host_tops_str) = pprint_host_tops(env, host_tops);
+        let (env, metal_fun_defs) = generate_metal_kernel_function_definitions(env, metal_tops);
         (env, format!("\
             {includes}\n\
             MTL::Library* lib = parir_metal::load_library(\"\\\n{metal_tops_str}\n\");\n\

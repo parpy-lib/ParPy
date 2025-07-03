@@ -18,8 +18,8 @@ fn validate_return_type(ty: &Type) -> CompileResult<()> {
         Type::Struct {id} => {
             let i = Info::default();
             let id = id.pprint_default();
-            parir_compile_error!(i, "Found struct return type in host \
-                                     function {id}, which is not supported")
+            parir_compile_error!(i, "Found struct return type in function {id}, \
+                                     which is not supported")
         },
     }
 }
@@ -161,15 +161,22 @@ fn flatten_structs_top(
     mut env: StructEnv, t: Top
 ) -> CompileResult<(StructEnv, Option<Top>)> {
     match t {
-        Top::DeviceFunDef {threads, id, params, body} => {
+        Top::KernelFunDef {threads, id, params, body} => {
             let (env, params) = expand_kernel_params(env, params)?;
             let body = flatten_structs_kernel_body(&env, body)?;
-            Ok((env, Some(Top::DeviceFunDef {threads, id, params, body})))
+            Ok((env, Some(Top::KernelFunDef {threads, id, params, body})))
         },
-        Top::HostFunDef {ret_ty, id, params, body} => {
+        Top::FunDef {ret_ty, id, params, body, target} => {
             validate_return_type(&ret_ty)?;
-            let body = flatten_structs_host_body(body);
-            Ok((env, Some(Top::HostFunDef {ret_ty, id, params, body})))
+            // NOTE: Currently, we only support simple scalar types as arguments to user-defined
+            // functions (these will have a device target). Therefore, we do not need to flatten
+            // structs within their bodies.
+            let body = if target == Target::Host {
+                flatten_structs_host_body(body)
+            } else {
+                body
+            };
+            Ok((env, Some(Top::FunDef {ret_ty, id, params, body, target})))
         },
         Top::StructDef {id, fields} => {
             let renamed_fields = fields.into_iter()

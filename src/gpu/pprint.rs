@@ -368,10 +368,19 @@ impl PrettyPrint for Field {
     }
 }
 
+impl PrettyPrint for Target {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        match self {
+            Target::Device => (env, format!("device")),
+            Target::Host => (env, format!("host")),
+        }
+    }
+}
+
 impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
-            Top::DeviceFunDef {threads, id, params, body} => {
+            Top::KernelFunDef {threads, id, params, body} => {
                 let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let env = env.incr_indent();
@@ -379,14 +388,15 @@ impl PrettyPrint for Top {
                 let env = env.decr_indent();
                 (env, format!("threads({threads})\nvoid {id}({params}) {{\n{body}\n}}"))
             },
-            Top::HostFunDef {ret_ty, id, params, body} => {
+            Top::FunDef {ret_ty, id, params, body, target} => {
                 let (env, ret_ty) = ret_ty.pprint(env);
                 let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("{ret_ty} {id}({params}) {{\n{body}\n}}"))
+                let (env, target) = target.pprint(env);
+                (env, format!("[{target}] {ret_ty} {id}({params}) {{\n{body}\n}}"))
             },
             Top::StructDef {id, fields} => {
                 let (env, id) = id.pprint(env);
@@ -704,8 +714,8 @@ mod test {
     }
 
     #[test]
-    fn pprint_device_fun_def() {
-        let def = Top::DeviceFunDef {
+    fn pprint_kernel_fun_def() {
+        let def = Top::KernelFunDef {
             threads: 1024,
             id: Name::new("f".to_string()),
             params: vec![],
@@ -718,14 +728,29 @@ mod test {
 
     #[test]
     fn pprint_host_fun_def() {
-        let def = Top::HostFunDef {
+        let def = Top::FunDef {
             ret_ty: Type::Void,
             id: Name::new("f".to_string()),
             params: vec![],
-            body: vec![Stmt::Assign {dst: var("x"), expr: var("y"), i: i()}]
+            body: vec![Stmt::Assign {dst: var("x"), expr: var("y"), i: i()}],
+            target: Target::Host
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
-        let expected = format!("void f() {{\n{0}x = y;\n}}", indent);
+        let expected = format!("[host] void f() {{\n{0}x = y;\n}}", indent);
+        assert_eq!(def.pprint_default(), expected);
+    }
+
+    #[test]
+    fn pprint_device_fun_def() {
+        let def = Top::FunDef {
+            ret_ty: Type::Void,
+            id: Name::new("f".to_string()),
+            params: vec![],
+            body: vec![Stmt::Assign {dst: var("x"), expr: var("y"), i: i()}],
+            target: Target::Device
+        };
+        let indent = " ".repeat(pprint::DEFAULT_INDENT);
+        let expected = format!("[device] void f() {{\n{0}x = y;\n}}", indent);
         assert_eq!(def.pprint_default(), expected);
     }
 }

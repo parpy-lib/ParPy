@@ -539,7 +539,7 @@ fn from_ir_stmt(
                         .into_iter()
                         .map(|(id, ty)| Param {id, ty, i: i.clone()})
                         .collect::<Vec<Param>>();
-                    let kernel = Top::DeviceFunDef {
+                    let kernel = Top::KernelFunDef {
                         threads: m.grid.threads.prod(), id: kernel_id.clone(),
                         params: kernel_params, body: kernel_body
                     };
@@ -655,37 +655,44 @@ fn unwrap_params(
     Ok((params_init, unwrapped_params))
 }
 
-fn from_ir_fun_body(
-    env: &CodegenEnv,
-    id: Name,
-    params: Vec<Param>,
-    body: Vec<ir_ast::Stmt>,
-    res_ty: ir_ast::Type
-) -> CompileResult<Vec<Top>> {
-    let (mut params_init, unwrapped_params) = unwrap_params(env, params)?;
-    let (mut host_body, mut tops) = from_ir_stmts(env, &id, vec![], vec![], body)?;
-    params_init.append(&mut host_body);
-    let ret_ty = from_ir_type(res_ty);
-    tops.push(Top::HostFunDef {
-        ret_ty, id, params: unwrapped_params, body: params_init
-    });
-    Ok(tops)
-}
-
 fn from_ir_param(p: ir_ast::Param) -> Param {
     let ir_ast::Param {id, ty, i} = p;
     Param {id, ty: from_ir_type(ty), i}
 }
 
-fn from_ir_fun_def(
+fn from_ir_fun_def_helper(
     env: &CodegenEnv,
-    fun: ir_ast::FunDef
+    fun: ir_ast::FunDef,
+    is_main: bool
 ) -> CompileResult<Vec<Top>> {
     let ir_ast::FunDef {id, params, body, res_ty, ..} = fun;
     let params = params.into_iter()
-        .map(|p| from_ir_param(p))
+        .map(from_ir_param)
         .collect::<Vec<Param>>();
-    from_ir_fun_body(env, id, params, body, res_ty)
+    let (mut host_body, mut kernel_tops) = from_ir_stmts(env, &id, vec![], vec![], body)?;
+    let ret_ty = from_ir_type(res_ty);
+    if is_main {
+        let (mut params_init, unwrapped_params) = unwrap_params(env, params)?;
+        params_init.append(&mut host_body);
+        kernel_tops.push(Top::FunDef {
+            ret_ty, id, params: unwrapped_params, body: params_init, target: Target::Host
+        });
+        Ok(kernel_tops)
+    } else {
+        assert!(kernel_tops.is_empty());
+        Ok(vec![Top::FunDef {
+            ret_ty, id, params, body: host_body, target: Target::Device
+        }])
+    }
+}
+
+fn from_ir_fun_def(
+    env: &CodegenEnv,
+    fun: ir_ast::FunDef
+) -> CompileResult<Top> {
+    let mut v = from_ir_fun_def_helper(env, fun, false)?;
+    assert!(v.len() == 1);
+    Ok(v.pop().unwrap())
 }
 
 fn from_ir_field(f: ir_ast::Field) -> Field {
@@ -711,7 +718,7 @@ fn struct_top_fields(t: Top) -> (Name, Vec<Field>) {
 }
 
 pub fn from_general_ir(
-    ast: ir_ast::Ast,
+    mut ast: ir_ast::Ast,
     gpu_mapping: BTreeMap<Name, GpuMapping>
 ) -> CompileResult<Ast> {
     let mut tops = ast.structs
@@ -726,13 +733,11 @@ pub fn from_general_ir(
         gpu_mapping, struct_fields
     };
 
-    let mut def_tops = ast.defs
+    let main_def = ast.defs.pop().unwrap();
+    tops.append(&mut ast.defs
         .into_iter()
         .map(|def| from_ir_fun_def(&env, def))
-        .collect::<CompileResult<Vec<Vec<Top>>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<Top>>();
-    tops.append(&mut def_tops);
+        .collect::<CompileResult<Vec<Top>>>()?);
+    tops.append(&mut from_ir_fun_def_helper(&env, main_def, true)?);
     Ok(tops)
 }

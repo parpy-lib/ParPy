@@ -342,6 +342,7 @@ impl PrettyPrint for Attribute {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
             Attribute::Global => "__global__",
+            Attribute::Device => "__device__",
             Attribute::Entry => "extern \"C\"",
         };
         (env, s.to_string())

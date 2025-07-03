@@ -87,10 +87,10 @@ fn find_thread_index_dependent_variables_top(
     top: &Top
 ) -> CompileResult<BTreeSet<Name>> {
     match top {
-        Top::DeviceFunDef {body, ..} => {
+        Top::KernelFunDef {body, ..} => {
             body.sfold(acc, find_thread_index_dependent_variables_stmt)
         },
-        Top::HostFunDef {..} | Top::StructDef {..} => acc
+        Top::FunDef {..} | Top::StructDef {..} => acc
     }
 }
 
@@ -166,11 +166,11 @@ fn transform_thread_independent_memory_writes_top(
     vars: &BTreeSet<Name>
 ) -> Top {
     match top {
-        Top::DeviceFunDef {threads, id, params, body} => {
+        Top::KernelFunDef {threads, id, params, body} => {
             let body = transform_thread_independent_memory_writes_stmts(body, vars);
-            Top::DeviceFunDef {threads, id, params, body}
+            Top::KernelFunDef {threads, id, params, body}
         },
-        Top::HostFunDef {..} | Top::StructDef {..} => top,
+        Top::FunDef {..} | Top::StructDef {..} => top,
     }
 }
 

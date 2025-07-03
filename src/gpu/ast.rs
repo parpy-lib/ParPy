@@ -516,13 +516,13 @@ impl SMapAccum<Stmt> for Top {
         f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
     ) -> Result<(A, Self), E> {
         match self {
-            Top::DeviceFunDef {threads, id, params, body} => {
+            Top::KernelFunDef {threads, id, params, body} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Top::DeviceFunDef {threads, id, params, body}))
+                Ok((acc, Top::KernelFunDef {threads, id, params, body}))
             },
-            Top::HostFunDef {ret_ty, id, params, body} => {
+            Top::FunDef {ret_ty, id, params, body, target} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Top::HostFunDef {ret_ty, id, params, body}))
+                Ok((acc, Top::FunDef {ret_ty, id, params, body, target}))
             },
             Top::StructDef {..} => Ok((acc?, self))
         }

@@ -93,24 +93,14 @@ pub struct Param {
 }
 
 #[derive(Clone, Debug)]
-pub struct MetalDef {
-    pub maxthreads: usize,
-    pub id: Name,
-    pub params: Vec<Param>,
-    pub body: Vec<Stmt>
-}
-
-#[derive(Clone, Debug)]
-pub struct HostDef {
-   pub ret_ty: Type,
-   pub id: Name,
-   pub params: Vec<Param>,
-   pub body: Vec<Stmt>
+pub enum Top {
+    KernelDef {maxthreads: usize, id: Name, params: Vec<Param>, body: Vec<Stmt>},
+    FunDef {ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>},
 }
 
 #[derive(Clone, Debug)]
 pub struct Ast {
     pub includes: Vec<String>,
-    pub metal_tops: Vec<MetalDef>,
-    pub host_tops: Vec<HostDef>
+    pub metal_tops: Vec<Top>,
+    pub host_tops: Vec<Top>
 }

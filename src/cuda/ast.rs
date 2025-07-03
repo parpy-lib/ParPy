@@ -357,7 +357,7 @@ impl SFold<Stmt> for Stmt {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Attribute {
-    Global, Entry
+    Global, Device, Entry
 }
 
 #[derive(Clone, Debug)]

@@ -174,15 +174,21 @@ fn update_use_of_converted_scalar_params_stmt(conv: &BTreeSet<Name>, s: Stmt) ->
 
 fn transform_scalars_to_buffers_top(t: Top) -> Top {
     match t {
-        Top::DeviceFunDef {threads, id, params, body} => {
+        Top::KernelFunDef {threads, id, params, body} => {
             let (conv, params) = params.smap_accum_l(vec![], convert_scalar_param_to_pointer);
             let conv = conv.into_iter().collect::<BTreeSet<Name>>();
             let body = body.smap(|s| update_use_of_converted_scalar_params_stmt(&conv, s));
-            Top::DeviceFunDef {threads, id, params, body}
+            Top::KernelFunDef {threads, id, params, body}
         },
-        Top::HostFunDef {ret_ty, id, params, body} => {
+        Top::FunDef {ret_ty, id, params, body, target: Target::Host} => {
             let body = transform_scalars_to_buffers_host_body(body);
-            Top::HostFunDef {ret_ty, id, params, body}
+            Top::FunDef {ret_ty, id, params, body, target: Target::Host}
+        },
+        Top::FunDef {ret_ty, id, params, body, target: Target::Device} => {
+            let (conv, params) = params.smap_accum_l(vec![], convert_scalar_param_to_pointer);
+            let conv = conv.into_iter().collect::<BTreeSet<Name>>();
+            let body = body.smap(|s| update_use_of_converted_scalar_params_stmt(&conv, s));
+            Top::FunDef {ret_ty, id, params, body, target: Target::Device}
         },
         Top::StructDef {..} => t,
     }

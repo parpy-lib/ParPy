@@ -240,7 +240,7 @@ fn from_gpu_ir_field(f: gpu_ast::Field) -> Field {
 
 fn from_gpu_ir_top(t: gpu_ast::Top) -> CompileResult<Top> {
     match t {
-        gpu_ast::Top::DeviceFunDef {threads, id, params, body} => {
+        gpu_ast::Top::KernelFunDef {threads, id, params, body} => {
             let params = params.into_iter()
                 .map(from_gpu_ir_param)
                 .collect::<Vec<Param>>();
@@ -250,14 +250,18 @@ fn from_gpu_ir_top(t: gpu_ast::Top) -> CompileResult<Top> {
                 bounds_attr: Some(threads), id, params, body
             })
         },
-        gpu_ast::Top::HostFunDef {ret_ty, id, params, body} => {
+        gpu_ast::Top::FunDef {ret_ty, id, params, body, target} => {
             let ret_ty = from_gpu_ir_type(ret_ty);
             let params = params.into_iter()
                 .map(from_gpu_ir_param)
                 .collect::<Vec<Param>>();
             let body = from_gpu_ir_stmts(body)?;
+            let attr = match target {
+                gpu_ast::Target::Host => Attribute::Entry,
+                gpu_ast::Target::Device => Attribute::Device,
+            };
             Ok(Top::FunDef {
-                attr: Attribute::Entry, ret_ty, bounds_attr: None,
+                attr, ret_ty, bounds_attr: None,
                 id, params, body
             })
         },
