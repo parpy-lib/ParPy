@@ -121,7 +121,8 @@ def print_compiled(fun, args, opts=parir.CompileOptions()):
     else:
         ir_ast = convert_python_function_to_ir(fun)
     _, args = validate.check_arguments(args, opts, False)
-    return parir.compile_ir(ir_ast, args, opts)
+    ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
+    return parir.compile_ir(ir_ast, args, opts, ir_ast_map)
 
 def jit(fun):
     """
