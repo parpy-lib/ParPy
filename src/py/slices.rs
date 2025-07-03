@@ -117,6 +117,7 @@ fn validate_slices(body: &Vec<Stmt>) -> PyResult<()> {
     body.sfold_result(Ok(()), validate_slices_stmt)
 }
 
+#[derive(Debug)]
 enum ReduceDim {
     One(i64),
     All,
@@ -374,10 +375,11 @@ fn replace_slices_assignment(
         let ids = (0..nslices).into_iter()
             .map(|_| Name::sym_str("slice_dim"))
             .collect::<Vec<Name>>();
-        let shapes = if rslices == nslices {
-            extract_shape(&rhs)
-        } else {
+        let reduce_dim = find_reduce_dim(&rhs);
+        let shapes = if let ReduceDim::None = reduce_dim {
             extract_shape(&lhs)
+        } else {
+            extract_shape(&rhs)
         }?;
         let lhs = insert_slice_dim_ids(&ids, lhs)?;
         let rhs = insert_slice_dim_ids(&ids, rhs)?;
@@ -388,7 +390,7 @@ fn replace_slices_assignment(
             Some(ref id) => TargetData::Def(id.clone()),
             None => TargetData::Assign(lhs.clone())
         };
-        match find_reduce_dim(&rhs) {
+        match reduce_dim {
             ReduceDim::One(n) => {
                 let msg = "When reducing along one dimension, the number of \
                            slice dimensions of the left-hand side expression \

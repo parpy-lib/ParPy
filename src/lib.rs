@@ -28,7 +28,7 @@ fn python_to_ir<'py>(
 
     // Convert the provided Python AST (parsed by the 'ast' module of Python) to a similar
     // representation of the Python AST using Rust data types.
-    let def = py::parse_untyped_ast(py_ast, filepath, line_ofs, col_ofs)?;
+    let def = py::parse_untyped_ast(py_ast, filepath, line_ofs, col_ofs, &ir_asts)?;
 
     // Inline function calls referring to previously defined IR ASTs.
     let def = py::inline_function_calls(def, &ir_asts)?;
@@ -50,7 +50,8 @@ fn get_ir_function_name<'py>(ir_ast_cap: Bound<'py, PyCapsule>) -> String {
 fn compile_ir<'py>(
     ir_ast_cap: Bound<'py, PyCapsule>,
     args: Vec<Bound<'py, PyAny>>,
-    opts: option::CompileOptions
+    opts: option::CompileOptions,
+    ir_asts: BTreeMap<String, Bound<'py, PyCapsule>>
 ) -> PyResult<String> {
     // Extract a reference to the untyped AST parsed earlier.
     let untyped_ir_def : &py::ast::FunDef = unsafe {
@@ -62,8 +63,7 @@ fn compile_ir<'py>(
 
     // Specialize the Python-like AST based on the provided arguments, inferring the types of all
     // expressions and inlining scalar argument values directly into the AST.
-    let py_ast = vec![untyped_ir_def.clone()];
-    let py_ast = py::specialize_ast_on_arguments(py_ast, args, &opts, &debug_env)?;
+    let py_ast = py::specialize_ast_on_arguments(untyped_ir_def.clone(), args, &opts, ir_asts, &debug_env)?;
     debug_env.print("Specialized Python-like AST", &py_ast);
 
     // Converts the Python-like AST to an IR by removing or simplifying concepts from Python. For

@@ -11,18 +11,17 @@ struct CodegenEnv {
 }
 
 impl CodegenEnv {
-    pub fn on_host() -> Self {
-        CodegenEnv {on_device: false}
-    }
-
-    pub fn on_device() -> Self {
-        CodegenEnv {on_device: true}
+    pub fn new(target: &gpu_ast::Target) -> Self {
+        match target {
+            gpu_ast::Target::Host => CodegenEnv {on_device: false},
+            gpu_ast::Target::Device => CodegenEnv {on_device: true}
+        }
     }
 }
 
 struct TopsAcc {
-    pub metal: Vec<MetalDef>,
-    pub host: Vec<HostDef>
+    pub metal: Vec<Top>,
+    pub host: Vec<Top>
 }
 
 impl Default for TopsAcc {
@@ -223,26 +222,30 @@ fn from_gpu_ir_param(env: &CodegenEnv, p: gpu_ast::Param) -> CompileResult<Param
 
 fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc> {
     match top {
-        gpu_ast::Top::DeviceFunDef {threads, id, params, body} => {
-            let env = CodegenEnv::on_device();
+        gpu_ast::Top::KernelFunDef {threads, id, params, body} => {
+            let env = CodegenEnv::new(&gpu_ast::Target::Device);
             let params = params.into_iter()
                 .map(|p| from_gpu_ir_param(&env, p))
                 .collect::<CompileResult<Vec<Param>>>()?;
             let body = from_gpu_ir_stmts(&env, body)?;
-            acc.metal.push(MetalDef {
+            acc.metal.push(Top::KernelDef {
                 maxthreads: threads as usize, id, params, body
             });
             Ok(acc)
         },
-        gpu_ast::Top::HostFunDef {ret_ty, id, params, body} => {
-            let env = CodegenEnv::on_host();
+        gpu_ast::Top::FunDef {ret_ty, id, params, body, target} => {
+            let env = CodegenEnv::new(&target);
             let ret_ty = from_gpu_ir_type(&env, ret_ty, &Info::default())?;
             let params = params.into_iter()
                 .map(|p| from_gpu_ir_param(&env, p))
                 .collect::<CompileResult<Vec<Param>>>()?;
             let mut body = from_gpu_ir_stmts(&env, body)?;
-            body.push(Stmt::SubmitWork {});
-            acc.host.push(HostDef {ret_ty, id, params, body});
+            if let gpu_ast::Target::Host = target {
+                body.push(Stmt::SubmitWork {});
+                acc.host.push(Top::FunDef {ret_ty, id, params, body});
+            } else {
+                acc.metal.push(Top::FunDef {ret_ty, id, params, body});
+            };
             Ok(acc)
         },
         gpu_ast::Top::StructDef {id, ..} => {

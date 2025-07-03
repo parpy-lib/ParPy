@@ -39,7 +39,7 @@ pub enum Expr {
     StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Struct {id: Name, fields: Vec<(String, Expr)>, ty: Type, i: Info},
-    Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
+    Call {id: String, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 
     // CUDA-specific nodes
@@ -357,7 +357,7 @@ impl SFold<Stmt> for Stmt {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Attribute {
-    Global, Entry
+    Global, Device, Entry
 }
 
 #[derive(Clone, Debug)]

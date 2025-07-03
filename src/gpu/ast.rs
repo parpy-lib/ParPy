@@ -54,7 +54,7 @@ pub enum Expr {
     IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
-    Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
+    Call {id: String, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 
     // High-level representation of a struct literal value.
@@ -497,10 +497,15 @@ pub struct Field {
     pub i: Info
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum Target {
+    Device, Host
+}
+
 #[derive(Clone, Debug)]
 pub enum Top {
-    DeviceFunDef {threads: i64, id: Name, params: Vec<Param>, body: Vec<Stmt>},
-    HostFunDef {ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>},
+    KernelFunDef {threads: i64, id: Name, params: Vec<Param>, body: Vec<Stmt>},
+    FunDef {ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>, target: Target},
     StructDef {id: Name, fields: Vec<Field>},
 }
 
@@ -511,13 +516,13 @@ impl SMapAccum<Stmt> for Top {
         f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
     ) -> Result<(A, Self), E> {
         match self {
-            Top::DeviceFunDef {threads, id, params, body} => {
+            Top::KernelFunDef {threads, id, params, body} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Top::DeviceFunDef {threads, id, params, body}))
+                Ok((acc, Top::KernelFunDef {threads, id, params, body}))
             },
-            Top::HostFunDef {ret_ty, id, params, body} => {
+            Top::FunDef {ret_ty, id, params, body, target} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Top::HostFunDef {ret_ty, id, params, body}))
+                Ok((acc, Top::FunDef {ret_ty, id, params, body, target}))
             },
             Top::StructDef {..} => Ok((acc?, self))
         }

@@ -7,11 +7,14 @@ use super::ast::*;
 use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
 use pyo3::types;
+use pyo3::types::PyCapsule;
 
+use std::collections::BTreeMap;
 use std::ffi::CString;
 
 struct ConvertEnv<'py, 'a> {
     ast: Bound<'py, PyModule>,
+    ir_asts: &'a BTreeMap<String, Bound<'py, PyCapsule>>,
     filepath: &'a str,
     line_ofs: usize,
     col_ofs: usize
@@ -208,6 +211,17 @@ fn lookup_builtin_expr<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr
     Ok(Expr::Builtin {func, args: vec![], axis: None, ty: Type::Unknown, i: i.clone()})
 }
 
+fn try_extract_type_annotation<'py>(id: &Name, annot: Bound<'py, PyAny>) -> PyResult<Type> {
+    match lookup_builtin(&annot, &Info::default()) {
+        Ok(Builtin::Convert {sz}) => Ok(Type::Tensor {sz, shape: vec![]}),
+        Ok(_) => {
+            let s = id.get_str();
+            py_runtime_error!(Info::default(), "Unknown type annotation of parameter {s}")
+        },
+        Err(_) => Ok(Type::Unknown)
+    }
+}
+
 fn extract_integer_literal_value(e: Expr) -> Option<i64> {
     match e {
         Expr::Int {v, ..} => Some(v as i64),
@@ -351,13 +365,21 @@ fn convert_expr<'py, 'a>(
             .fold(Ok(None), |acc, kw| extract_axis_kwarg(acc, kw?, &i, env))?;
         match convert_expr(expr.getattr("func")?, env)? {
             Expr::Var {id, ..} => {
-                let func = Builtin::Ext {id: id.to_string()};
-                Ok(Expr::Builtin {func, args, axis, ty, i})
+                if env.ir_asts.contains_key(&id.to_string()) {
+                    if axis.is_none() {
+                        Ok(Expr::Call {id: id.to_string(), args, ty, i})
+                    } else {
+                        py_runtime_error!(i, "Keyword arguments are not supported \
+                                              in calls to user-defined functions")
+                    }
+                } else {
+                    py_runtime_error!(i, "Call to unknown function {0}", id.to_string())
+                }
             },
             Expr::Builtin {func, args: a, ..} if a.len() == 0 => {
                 Ok(Expr::Builtin {func, args, axis, ty, i})
             },
-            _ => py_runtime_error!(i, "Function calls are only supported on built-in functions")
+            _ => py_runtime_error!(i, "Unsupported call target type")
         }
     } else {
         py_runtime_error!(i, "Unsupported expression: {expr}")
@@ -397,22 +419,18 @@ fn construct_expr_stmt(
             py_runtime_error!(i, "{}", msg)
         }
     };
-    if let Expr::Builtin {func, mut args, ..} = value {
-        match func {
-            Builtin::Label => {
-                let label = match args.len() {
-                    1 => extract_label(args.remove(0)),
-                    _ => py_runtime_error!(i, "Label expects one argument")
-                }?;
-                Ok(Stmt::Label {label, i: i.clone()})
-            },
-            Builtin::Ext {id} => {
-                Ok(Stmt::Call {func: id, args, i: i.clone()})
-            },
-            _ => py_runtime_error!(i, "Unsupported expression statement")
-        }
-    } else {
-        py_runtime_error!(i, "Unsupported expression statement")
+    match value {
+        Expr::Builtin {func: Builtin::Label, mut args, ..} => {
+            let label = match args.len() {
+                1 => extract_label(args.remove(0)),
+                _ => py_runtime_error!(i, "Label statement expects one argument")
+            }?;
+            Ok(Stmt::Label {label, i: i.clone()})
+        },
+        Expr::Call {id, args, ..} => {
+            Ok(Stmt::Call {func: id.to_string(), args, i: i.clone()})
+        },
+        _ => py_runtime_error!(i, "Unsupported expression statement")
     }
 }
 
@@ -580,20 +598,23 @@ pub fn to_untyped_ir<'py>(
     ast: Bound<'py, PyAny>,
     filepath: String,
     line_ofs: usize,
-    col_ofs: usize
+    col_ofs: usize,
+    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>
 ) -> PyResult<FunDef> {
     let env = ConvertEnv {
-        ast : ast.py().import("ast")?,
-        filepath : &filepath,
+        ast: ast.py().import("ast")?,
+        ir_asts,
+        filepath: &filepath,
         line_ofs, col_ofs
     };
 
     let body = ast.getattr("body")?.get_item(0)?;
     let untyped_args = body.getattr("args")?.getattr("args")?.try_iter()?
         .map(|arg| {
-            let id = Name::new(arg?.getattr("arg")?.extract::<String>()?);
+            let arg = arg?;
+            let id = Name::new(arg.getattr("arg")?.extract::<String>()?);
             let i = Info::default();
-            let ty = Type::Unknown;
+            let ty = try_extract_type_annotation(&id, arg.getattr("annotation")?)?;
             Ok(Param {id, ty, i})
         })
         .collect::<PyResult<Vec<Param>>>()?;
@@ -784,7 +805,8 @@ mod test {
         Python::with_gil(|py| {
             let expr = parse_str_expr(py, s)?;
             let env = ConvertEnv {
-                ast : py.import("ast")?,
+                ast: py.import("ast")?,
+                ir_asts: &BTreeMap::new(),
                 filepath: &String::from("<test>"),
                 line_ofs: 0,
                 col_ofs: 0
@@ -1089,12 +1111,18 @@ mod test {
         });
     }
 
+    #[test]
+    fn convert_expr_call_to_undefined() {
+        assert!(convert_expr_wrap("f(2, 3)").is_err());
+    }
+
     fn convert_stmt_wrap(s: &str) -> PyResult<Stmt> {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let stmt = parse_str_stmt(py, s)?;
             let env = ConvertEnv {
-                ast : py.import("ast")?,
+                ast: py.import("ast")?,
+                ir_asts: &BTreeMap::new(),
                 filepath: &String::from("<test>"),
                 line_ofs: 0,
                 col_ofs: 0
@@ -1276,7 +1304,8 @@ mod test {
         Python::with_gil(|py| {
             let stmt = parse_str_stmts(py, s)?;
             let env = ConvertEnv {
-                ast : py.import("ast")?,
+                ast: py.import("ast")?,
+                ir_asts: &BTreeMap::new(),
                 filepath: &String::from("<test>"),
                 line_ofs: 0,
                 col_ofs: 0

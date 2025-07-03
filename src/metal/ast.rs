@@ -41,7 +41,7 @@ pub enum Expr {
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     Ternary {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
-    Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
+    Call {id: String, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 
     // Metal-specific nodes
@@ -93,24 +93,14 @@ pub struct Param {
 }
 
 #[derive(Clone, Debug)]
-pub struct MetalDef {
-    pub maxthreads: usize,
-    pub id: Name,
-    pub params: Vec<Param>,
-    pub body: Vec<Stmt>
-}
-
-#[derive(Clone, Debug)]
-pub struct HostDef {
-   pub ret_ty: Type,
-   pub id: Name,
-   pub params: Vec<Param>,
-   pub body: Vec<Stmt>
+pub enum Top {
+    KernelDef {maxthreads: usize, id: Name, params: Vec<Param>, body: Vec<Stmt>},
+    FunDef {ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>},
 }
 
 #[derive(Clone, Debug)]
 pub struct Ast {
     pub includes: Vec<String>,
-    pub metal_tops: Vec<MetalDef>,
-    pub host_tops: Vec<HostDef>
+    pub metal_tops: Vec<Top>,
+    pub host_tops: Vec<Top>
 }

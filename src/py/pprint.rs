@@ -22,7 +22,6 @@ impl PrettyPrint for Builtin {
             Builtin::Convert {..} => "<convert>",
             Builtin::Label => "<label>",
             Builtin::GpuContext => "<gpu_context>",
-            Builtin::Ext {id} => &format!("<ext>{id}")
         };
         (env, s.to_string())
     }
@@ -122,7 +121,6 @@ impl PrettyPrint for Expr {
                 (env, format!("({elems})"))
             },
             Expr::Call {id, args, ..} => {
-                let (env, id) = id.pprint(env);
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{id}({args})"))
             },

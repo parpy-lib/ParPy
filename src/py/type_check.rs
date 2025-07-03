@@ -20,6 +20,8 @@ use itertools::Itertools;
 #[derive(Clone, Debug)]
 pub struct TypeCheckEnv {
     pub vars: BTreeMap<Name, Type>,
+    pub arg_types: BTreeMap<String, Vec<Type>>,
+    pub res_types: BTreeMap<String, Type>,
     pub res_ty: Type,
     pub shapes_only: bool,
     pub float_size: ElemSize
@@ -29,6 +31,8 @@ impl Default for TypeCheckEnv {
     fn default() -> TypeCheckEnv {
         TypeCheckEnv {
             vars: BTreeMap::new(),
+            arg_types: BTreeMap::new(),
+            res_types: BTreeMap::new(),
             res_ty: Type::Unknown,
             shapes_only: false,
             float_size: ElemSize::F64
@@ -81,6 +85,40 @@ impl TypeCheckEnv {
 
     pub fn is_arith_tensor(&self, ty: &Type) -> bool {
         self.is_tensor(ty, |sz| sz.is_integer() || sz.is_floating_point())
+    }
+}
+
+fn assert_known_param_type(acc: Result<(), String>, id: &Name, ty: &Type) -> Result<(), String> {
+    match ty {
+        Type::Tuple {elems} => {
+            elems.iter()
+                .fold(Ok(acc?), |acc, ty| assert_known_param_type(acc, id, ty))
+        },
+        Type::Dict {fields} => {
+            fields.values()
+                .fold(Ok(acc?), |acc, ty| assert_known_param_type(acc, id, ty))
+        },
+        Type::Unknown => Err(format!("{id}")),
+        Type::String | Type::Tensor {..} | Type::Void => Ok(())
+    }
+}
+
+fn assert_known_params(id: &Name, params: &Vec<Param>) -> PyResult<()> {
+    let errs = params.iter()
+        .map(|Param {id, ty, ..}| assert_known_param_type(Ok(()), id, ty))
+        .filter(|r| r.is_err())
+        .map(|r| r.unwrap_err())
+        .collect::<Vec<String>>();
+    if errs.is_empty() {
+        Ok(())
+    } else {
+        let id = id.get_str();
+        let e = errs.into_iter().join(", ");
+        py_type_error!(
+            Info::default(),
+            "Parameters {e} of function {id} have unknown type.\n\
+             Make sure to annotate the types of parameters in functions called \
+             within the main function.")
     }
 }
 
@@ -314,6 +352,8 @@ fn coerce_type(env: &TypeCheckEnv, e: Expr, expected: &Type) -> PyResult<Expr> {
 /// bound of an int16 and an int32 is int32.
 fn lub_type(env: &TypeCheckEnv, l: Type, r: Type, i: &Info) -> PyResult<Type> {
     match (&l, &r) {
+        (_, Type::Unknown) => Ok(l),
+        (Type::Unknown, _) => Ok(r),
         (Type::Tensor {sz: lsz, shape: lsh}, Type::Tensor {sz: rsz, shape: rsh}) => {
             if env.shapes_only {
                 // When we only care about the shapes, we do not care about the element size type
@@ -696,11 +736,11 @@ fn extract_slice_dims(idx: &Expr, shape: &[i64]) -> PyResult<Vec<i64>> {
 }
 
 fn type_check_indexing(
-    env: &TypeCheckEnv,
+    env: TypeCheckEnv,
     target: &Expr,
     idx: Expr,
-) -> PyResult<(Type, Expr)> {
-    let idx = type_check_expr(env, idx)?;
+) -> PyResult<(TypeCheckEnv, Type, Expr)> {
+    let (env, idx) = type_check_expr(env, idx)?;
     // NOTE: We immediately run constant folding on the index expression to eliminate any simple
     // arithmetic on the bounds of a slice (e.g., 10-1), as we require them to be literal values.
     let idx = constant_fold::fold_expr(idx);
@@ -733,67 +773,68 @@ fn type_check_indexing(
         },
         ty => py_type_error!(i, "Unsupported index of type {ty} in subscript operation")
     }?;
-    Ok((elem_ty, coerce_type(env, idx, &expected_ty)?))
+    let idx = coerce_type(&env, idx, &expected_ty)?;
+    Ok((env, elem_ty, idx))
 }
 
 pub fn type_check_expr(
-    env: &TypeCheckEnv,
+    env: TypeCheckEnv,
     e: Expr
-) -> PyResult<Expr> {
+) -> PyResult<(TypeCheckEnv, Expr)> {
     match e {
         Expr::Var {id, i, ..} => {
             let ty = match env.vars.get(&id) {
                 Some(ty) if ty != &Type::Unknown => Ok(ty.clone()),
                 _ => py_type_error!(i, "Variable {id} has unknown type")
             }?;
-            Ok(Expr::Var {id, ty, i})
+            Ok((env, Expr::Var {id, ty, i}))
         },
-        Expr::String {v, i, ..} => Ok(Expr::String {v, ty: Type::String, i}),
+        Expr::String {v, i, ..} => Ok((env, Expr::String {v, ty: Type::String, i})),
         Expr::Bool {v, i, ..} => {
             let ty = Type::Tensor {sz: ElemSize::Bool, shape: vec![]};
-            Ok(Expr::Bool {v, ty, i})
+            Ok((env, Expr::Bool {v, ty, i}))
         },
         Expr::Int {v, i, ..} =>
-            Ok(Expr::Int {v, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]}, i}),
+            Ok((env, Expr::Int {v, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]}, i})),
         Expr::Float {v, i, ..} => {
             let ty = Type::Tensor {sz: env.float_size.clone(), shape: vec![]};
-            Ok(Expr::Float {v, ty, i})
+            Ok((env, Expr::Float {v, ty, i}))
         },
         Expr::UnOp {op, arg, i, ..} => {
-            let arg = Box::new(type_check_expr(env, *arg)?);
-            let ty = type_check_unop(env, &op, &arg, &i)?;
-            Ok(Expr::UnOp {op, arg, ty, i})
+            let (env, arg) = type_check_expr(env, *arg)?;
+            let ty = type_check_unop(&env, &op, &arg, &i)?;
+            Ok((env, Expr::UnOp {op, arg: Box::new(arg), ty, i}))
         },
         Expr::BinOp {lhs, op, rhs, i, ..} => {
-            let lhs = type_check_expr(env, *lhs)?;
-            let rhs = type_check_expr(env, *rhs)?;
-            let (lhs, ty, rhs) = type_check_binop(env, lhs, &op, rhs, &i)?;
-            Ok(Expr::BinOp {lhs, op, rhs, ty, i})
+            let (env, lhs) = type_check_expr(env, *lhs)?;
+            let (env, rhs) = type_check_expr(env, *rhs)?;
+            let (lhs, ty, rhs) = type_check_binop(&env, lhs, &op, rhs, &i)?;
+            Ok((env, Expr::BinOp {lhs, op, rhs, ty, i}))
         },
         Expr::IfExpr {cond, thn, els, i, ..} => {
-            let cond = Box::new(type_check_expr(env, *cond)?);
+            let (env, cond) = type_check_expr(env, *cond)?;
             let ty = cond.get_type();
             if env.is_bool_scalar(ty) {
-                let thn = type_check_expr(env, *thn)?;
-                let els = type_check_expr(env, *els)?;
+                let (env, thn) = type_check_expr(env, *thn)?;
+                let (env, els) = type_check_expr(env, *els)?;
                 let thn_ty = thn.get_type().clone();
                 let els_ty = els.get_type().clone();
                 let ty = lub_type(&env, thn_ty, els_ty, &i)?;
                 let thn = Box::new(coerce_type(&env, thn, &ty)?);
                 let els = Box::new(coerce_type(&env, els, &ty)?);
-                Ok(Expr::IfExpr {cond, thn, els, ty, i})
+                Ok((env, Expr::IfExpr {cond: Box::new(cond), thn, els, ty, i}))
             } else {
                 py_type_error!(i, "If expression has condition of invalid type {ty}")
             }
         },
         Expr::Subscript {target, idx, i, ..} => {
-            let target = type_check_expr(env, *target)?;
-            let (ty, idx) = match *idx {
+            let (env, target) = type_check_expr(env, *target)?;
+            let (env, ty, idx) = match *idx {
                 Expr::String {v, i, ..} => {
                     if let Type::Dict {fields} = target.get_type() {
                         if let Some(ty) = fields.get(&v) {
                             let idx_ty = Type::String;
-                            Ok((ty.clone(), Expr::String {v, ty: idx_ty, i}))
+                            Ok((env, ty.clone(), Expr::String {v, ty: idx_ty, i}))
                         } else {
                             py_type_error!(i, "Field {v} not present in {0}", target.get_type())
                         }
@@ -803,46 +844,63 @@ pub fn type_check_expr(
                 },
                 idx => type_check_indexing(env, &target, idx)
             }?;
-            Ok(Expr::Subscript {target: Box::new(target), idx: Box::new(idx), ty, i})
+            Ok((env, Expr::Subscript {target: Box::new(target), idx: Box::new(idx), ty, i}))
         },
         Expr::Slice {lo, hi, i, ..} => {
-            let type_check_boxed = |o: Option<Box<Expr>>| match o {
+            let type_check_boxed = |env, o: Option<Box<Expr>>| match o {
                 Some(e) => {
-                    let e = type_check_expr(env, *e)?;
-                    Ok::<Option<Box<Expr>>, PyErr>(Some(Box::new(e)))
+                    let (env, e) = type_check_expr(env, *e)?;
+                    Ok::<_, PyErr>((env, Some(Box::new(e))))
                 },
-                None => Ok(None)
+                None => Ok((env, None))
             };
-            let lo = type_check_boxed(lo)?;
-            let hi = type_check_boxed(hi)?;
+            let (env, lo) = type_check_boxed(env, lo)?;
+            let (env, hi) = type_check_boxed(env, hi)?;
             // NOTE: The type of a slice expression is pointless since it can never be used outside
             // of a subscript operation, so we consider it an integer type to be consistent with
             // regular indices.
             let ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
-            Ok(Expr::Slice {lo, hi, ty, i})
+            Ok((env, Expr::Slice {lo, hi, ty, i}))
         },
         Expr::Tuple {elems, i, ..} => {
-            let elems = elems.smap_result(|e| type_check_expr(env, e))?;
+            let (env, elems) = elems.smap_accum_l_result(Ok(env), type_check_expr)?;
             let elem_types = elems.iter()
                 .map(|e| e.get_type().clone())
                 .collect::<Vec<Type>>();
             let ty = Type::Tuple {elems: elem_types};
-            Ok(Expr::Tuple {elems, ty, i})
+            Ok((env, Expr::Tuple {elems, ty, i}))
         },
-        Expr::Call {id: _id, args, i: _i, ..} => {
-            let args = args.smap_result(|arg| type_check_expr(env, arg))?;
-            let _arg_types = args.iter()
+        Expr::Call {id, args, i, ..} => {
+            let (mut env, args) = args.smap_accum_l_result(Ok(env), type_check_expr)?;
+            let arg_types = args.iter()
                 .map(|e| e.get_type().clone())
                 .collect::<Vec<Type>>();
-            // TODO: look up function by its id (string) and instantiate based on argument types
-            todo!()
+            let arg_types = match env.arg_types.get(&id) {
+                Some(tys) => {
+                    let lub_types = arg_types.into_iter()
+                        .zip(tys.clone().into_iter())
+                        .map(|(lty, rty)| lub_type(&env, lty, rty, &i))
+                        .collect::<PyResult<Vec<Type>>>();
+                    match lub_types {
+                        Ok(tys) => Ok(tys),
+                        Err(e) => py_type_error!(i, "Found incompatible types in function call:\n{e}")
+                    }
+                },
+                None => Ok(arg_types)
+            }?;
+            env.arg_types.insert(id.clone(), arg_types);
+            let ty = match env.res_types.get(&id) {
+                Some(ty) => ty.clone(),
+                None => py_type_error!(i, "Unknown return type of function {id}")?
+            };
+            Ok((env, Expr::Call {id, args, ty, i}))
         },
         Expr::NeutralElement {op, tyof, i} => {
-            let tyof = type_check_expr(env, *tyof)?;
+            let (env, tyof) = type_check_expr(env, *tyof)?;
             match tyof.get_type() {
                 Type::Tensor {sz, ..} => {
                     match reduce::neutral_element(&op, &sz, &i) {
-                        Some(ne) => Ok(ne),
+                        Some(ne) => Ok((env, ne)),
                         None => {
                             let op_str = op.pprint_default();
                             py_type_error!(i, "Failed to find neutral element \
@@ -857,21 +915,22 @@ pub fn type_check_expr(
             }
         },
         Expr::Builtin {func, args, axis, i, ..} => {
-            let args = type_check_exprs(env, args)?;
-            type_check_builtin(env, func, args, axis, i)
+            let (env, args) = type_check_exprs(env, args)?;
+            let builtin = type_check_builtin(&env, func, args, axis, i)?;
+            Ok((env, builtin))
         },
         Expr::Convert {e, ty} => {
-            let e = Box::new(type_check_expr(env, *e)?);
-            Ok(Expr::Convert {e, ty})
+            let (env, e) = type_check_expr(env, *e)?;
+            Ok((env, Expr::Convert {e: Box::new(e), ty}))
         },
     }
 }
 
 fn type_check_exprs(
-    env: &TypeCheckEnv,
+    env: TypeCheckEnv,
     exprs: Vec<Expr>
-) -> PyResult<Vec<Expr>> {
-    exprs.smap_result(|e| type_check_expr(env, e))
+) -> PyResult<(TypeCheckEnv, Vec<Expr>)> {
+    exprs.smap_accum_l_result(Ok(env), type_check_expr)
 }
 
 fn validate_condition_type(cond: Expr, i: &Info) -> PyResult<Expr> {
@@ -883,48 +942,57 @@ fn validate_condition_type(cond: Expr, i: &Info) -> PyResult<Expr> {
 }
 
 fn type_check_stmt(
-    mut env: TypeCheckEnv,
+    env: TypeCheckEnv,
     stmt: Stmt
 ) -> PyResult<(TypeCheckEnv, Stmt)> {
     match stmt {
         Stmt::Definition {id, expr, labels, i, ..} => {
-            let expr = type_check_expr(&env, expr)?;
+            let (mut env, expr) = type_check_expr(env, expr)?;
             let ty = expr.get_type().clone();
             env.vars.insert(id.clone(), ty.clone());
             Ok((env, Stmt::Definition {ty, id, expr, labels, i}))
         },
         Stmt::Assign {dst, expr, labels, i} => {
-            let dst = type_check_expr(&env, dst)?;
-            let expr = type_check_expr(&env, expr)?;
+            let (env, dst) = type_check_expr(env, dst)?;
+            let (env, expr) = type_check_expr(env, expr)?;
             let expr = coerce_type(&env, expr, dst.get_type())?;
             Ok((env, Stmt::Assign {dst, expr, labels, i}))
         },
         Stmt::For {var, lo, hi, step, body, labels, i} => {
-            let lo = type_check_expr(&env, lo)?;
+            let (env, lo) = type_check_expr(env, lo)?;
             let lo = ensure_scalar_type(&env, lo, ElemSize::I64)?;
-            let hi = type_check_expr(&env, hi)?;
+            let (mut env, hi) = type_check_expr(env, hi)?;
             let hi = ensure_scalar_type(&env, hi, ElemSize::I64)?;
             env.vars.insert(var.clone(), Type::Tensor {sz: ElemSize::I64, shape: vec![]});
-            let (env, body) = type_check_stmts(env, body)?;
+            let (mut env, body) = type_check_stmts(env, body)?;
+            env.vars.remove(&var);
             Ok((env, Stmt::For {var, lo, hi, step, body, labels, i}))
         },
         Stmt::While {cond, body, i} => {
-            let cond = validate_condition_type(type_check_expr(&env, cond)?, &i)?;
+            let (env, cond) = type_check_expr(env, cond)?;
+            let cond = validate_condition_type(cond, &i)?;
             let (env, body) = type_check_stmts(env, body)?;
             Ok((env, Stmt::While {cond, body, i}))
         },
         Stmt::If {cond, thn, els, i} => {
-            let cond = validate_condition_type(type_check_expr(&env, cond)?, &i)?;
+            let (env, cond) = type_check_expr(env, cond)?;
+            let cond = validate_condition_type(cond, &i)?;
             let (thn_env, thn) = type_check_stmts(env, thn)?;
             let (els_env, els) = type_check_stmts(thn_env, els)?;
             Ok((els_env, Stmt::If {cond, thn, els, i}))
         },
         Stmt::Return {value, i} => {
-            let value = type_check_expr(&env, value)?;
-            env.res_ty = match env.res_ty {
-                Type::Unknown => Ok(value.get_type().clone()),
-                ty if ty.eq(value.get_type()) => Ok(ty),
-                _ => py_type_error!(i, "Found conflicting types of return statements")
+            let (mut env, value) = type_check_expr(env, value)?;
+            env.res_ty = match &env.res_ty {
+                Type::Void => Ok(value.get_type().clone()),
+                ty => {
+                    let r = lub_type(&env, value.get_type().clone(), ty.clone(), &i);
+                    if r.is_err() {
+                        py_type_error!(i, "Found conflicting types of return statements")
+                    } else {
+                        r
+                    }
+                },
             }?;
             Ok((env, Stmt::Return {value, i}))
         },
@@ -967,49 +1035,80 @@ fn add_param_types<'py>(
 }
 
 pub fn type_check_params<'py>(
-    mut ast: Ast,
+    def: FunDef,
     args: &Vec<Bound<'py, PyAny>>,
     float_size: &ElemSize
-) -> PyResult<Ast> {
-    let def = ast.pop().unwrap();
+) -> PyResult<FunDef> {
     let params = add_param_types(&def.id, def.params, args, float_size)?;
-    let def = FunDef {params, ..def};
-    ast.push(def);
-    Ok(ast)
+    Ok(FunDef {params, ..def})
+}
+
+fn type_check_def(
+    mut env: TypeCheckEnv,
+    def: FunDef
+) -> PyResult<(TypeCheckEnv, FunDef)> {
+    let params = match env.arg_types.get(def.id.get_str()) {
+        Some(arg_tys) => {
+            def.params.into_iter()
+                .zip(arg_tys.iter())
+                .map(|(Param {id, ty, i}, arg_ty)| {
+                    let ty = lub_type(&env, ty, arg_ty.clone(), &i)?;
+                    Ok(Param {id, ty, i})
+                })
+                .collect::<PyResult<Vec<Param>>>()
+        },
+        None => Ok(def.params)
+    }?;
+    // Ensure the types of all parameters are known at this point. If we find any parameter whose
+    // type is unknown, the user is recommended to use explicit type annotations (not needed for
+    // the "main" function).
+    assert_known_params(&def.id, &params)?;
+
+    // Before we type-check the body, we reset the return type to unknown and set the function
+    // parameters as our known variables.
+    env.res_ty = Type::Void;
+    env.vars = params.iter()
+        .map(|Param {id, ty, ..}| (id.clone(), ty.clone()))
+        .collect::<BTreeMap<Name, Type>>();
+    let (mut env, body) = type_check_stmts(env, def.body)?;
+
+    let res_ty = env.res_ty.clone();
+    env.res_types.insert(def.id.get_str().clone(), res_ty.clone());
+    let def = FunDef {params, body, res_ty, ..def};
+    Ok((env, def))
 }
 
 fn type_check_body_shapes(
-    mut ast: Ast,
+    ast: Ast,
     shapes_only: bool,
     float_size: Option<ElemSize>
-) -> PyResult<Ast> {
-    // TODO: Type-check all function definitions, and not just the "main" one. After type-checking
-    // the main definition, the environment should contain the argument types of the other
-    // functions (by inferring from use).
-    let def = ast.pop().unwrap();
+) -> PyResult<(TypeCheckEnv, Ast)> {
     let mut env = TypeCheckEnv::default();
     env.shapes_only = shapes_only;
-    env.vars = def.params.iter()
-        .map(|Param {id, ty, ..}| (id.clone(), ty.clone()))
-        .collect::<BTreeMap<Name, Type>>();
     if let Some(sz) = float_size {
         env.float_size = sz;
-    };
-    let (env, body) = type_check_stmts(env, def.body)?;
-    let res_ty = match env.res_ty {
-        Type::Unknown => Type::Void,
-        _ => py_type_error!(Info::default(), "Main function cannot return a value")?
-    };
-    let def = FunDef {body, res_ty, ..def};
-    ast.push(def);
-    Ok(ast)
+    }
+
+    // Collect the argument types of all functions before running.
+    env.arg_types = ast.iter()
+        .map(|FunDef {id, params, ..}| {
+            let params = params.clone()
+                .into_iter()
+                .map(|Param {ty, ..}| ty.clone())
+                .collect::<Vec<Type>>();
+            (id.get_str().clone(), params)
+        })
+        .collect::<BTreeMap<String, Vec<Type>>>();
+
+    // Type-check the AST nodes
+    ast.smap_accum_l_result(Ok(env), type_check_def)
 }
 
-pub fn type_check_body(ast: Ast, float_size: ElemSize) -> PyResult<Ast> {
+pub fn type_check_body(ast: Ast, float_size: ElemSize) -> PyResult<(TypeCheckEnv, Ast)> {
     type_check_body_shapes(ast, false, Some(float_size))
 }
 
-pub fn check_body_shape(ast: Ast) -> PyResult<Ast> {
+pub fn check_body_shape(ast: Ast) -> PyResult<(TypeCheckEnv, Ast)> {
     type_check_body_shapes(ast, true, None)
 }
 
@@ -1252,7 +1351,8 @@ mod test {
     fn tc_expr(vars: BTreeMap<Name, Type>, e: Expr) -> PyResult<Expr> {
         let mut env = TypeCheckEnv::default();
         env.vars = vars;
-        type_check_expr(&env, e)
+        let (_ ,e) = type_check_expr(env, e)?;
+        Ok(e)
     }
 
     #[test]
@@ -1409,7 +1509,7 @@ mod test {
     }
 
     #[test]
-    fn return_value_in_main() {
+    fn return_value() {
         let ast = vec![FunDef {
             id: var("x"),
             params: vec![],
@@ -1422,7 +1522,7 @@ mod test {
             res_ty: Type::Unknown,
             i: Info::default()}
         ];
-        assert!(type_check_body(ast, ElemSize::F64).is_err());
+        assert!(type_check_body(ast, ElemSize::F64).is_ok());
     }
 
     fn test_slicing(
