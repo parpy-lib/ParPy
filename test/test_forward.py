@@ -160,7 +160,6 @@ def forward(hmm, seqs, opts):
     alpha1 = torch.zeros((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
     alpha2 = torch.zeros_like(alpha1)
     result = torch.zeros(seqs["num_instances"], dtype=torch.float32)
-    code = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], opts)
     forward_kernel(hmm, seqs, alpha1, alpha2, result, opts=opts)
     return result
 
@@ -196,7 +195,12 @@ def test_forward_multi_block(backend):
             'inst': parir.threads(seqs["num_instances"]),
             'state': parir.threads(2048),
         }
-        run_forw_test(hmm, seqs, expected, par_opts(backend, p))
+        if backend == parir.CompileBackend.Metal:
+            with pytest.raises(TypeError) as e_info:
+                run_forw_test(hmm, seqs, expected, par_opts(backend, p))
+            assert e_info.match(r".*nested pointer in generated code.*")
+        else:
+            run_forw_test(hmm, seqs, expected, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.skipif(importlib.util.find_spec('h5py') is None, reason="Test requires h5py")

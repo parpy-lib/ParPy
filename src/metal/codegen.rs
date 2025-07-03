@@ -52,7 +52,14 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
             }
         },
         gpu_ast::Type::Pointer {ty, mem} => {
-            let ty = Box::new(from_gpu_ir_type(env, *ty, i)?);
+            let ty = match from_gpu_ir_type(env, *ty, i) {
+                Ok(Type::Pointer {..}) => {
+                    parir_type_error!(i, "Found nested pointer in generated code, \
+                                          which is not supported in Metal.")
+                },
+                Ok(ty) => Ok(Box::new(ty)),
+                Err(e) => Err(e)
+            }?;
             let mem = from_gpu_ir_mem(mem);
             // The only pointers used in host code (outside the device) are pointers to Metal
             // buffers containing GPU data.
