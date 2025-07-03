@@ -26,6 +26,11 @@ def parir_add_mul_nested(x, y, N):
     parir.label('N')
     y[:] = parir_add_mul(x[:], y[:], x[:])
 
+@parir.jit
+def parir_sum_call(x, y):
+    with parir.gpu:
+        y[0] = parir.sum(x[:])
+
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_direct_call_expr(backend):
     def helper():
@@ -44,6 +49,16 @@ def test_nested_call_expr(backend):
         p = {'N': parir.threads(10)}
         parir_add_mul_nested(x, y, 10, opts=par_opts(backend, p))
         assert torch.allclose(x**2, y)
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_sum_call_expr(backend):
+    def helper():
+        x = torch.randn(10)
+        y = torch.zeros(1)
+        p = {'N': parir.threads(10)}
+        parir_sum_call(x, y, opts=par_opts(backend, p))
+        assert torch.allclose(torch.sum(x), y)
     run_if_backend_is_enabled(backend, helper)
 
 @parir.jit
