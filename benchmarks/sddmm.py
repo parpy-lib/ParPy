@@ -54,7 +54,7 @@ def parir_sddmm_csr(A, B, C):
         "M": parir.threads(32),
         "nnz": parir.threads(nnz),
     }
-    opts = parir.parallelize(p)
+    opts = parir.par(p)
     parir_sddmm_csr_kernel(A, B, C_dict, D.values(), N, alpha, beta, opts=opts)
     return D
 
@@ -77,7 +77,7 @@ def parir_sddmm_coo(A, B, C, C_rows):
         "values": C.values(),
         "nnz": nnz
     }
-    opts = parir.parallelize({"nnz": parir.threads(nnz)})
+    opts = parir.par({"nnz": parir.threads(nnz)})
     parir_sddmm_coo_kernel(A, B, C_dict, D.values(), alpha, beta, opts=opts)
     return D
 
