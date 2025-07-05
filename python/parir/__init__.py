@@ -72,11 +72,11 @@ def compile_function(ir_ast, args, opts):
     # Generate the code based on the provided IR AST, arguments and compilation
     # options.
     ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
-    code = parir.compile_ir(ir_ast, args, opts, ir_ast_map)
+    code, unsymb_code = parir.compile_ir(ir_ast, args, opts, ir_ast_map)
 
     # If the generated code is found in the local cache, we return the cached
     # wrapper function.
-    cache_key = compile.generate_function_key(code, opts)
+    cache_key = compile.generate_function_key(unsymb_code, opts)
     if cache_key in fun_cache:
         return fun_cache[cache_key]
 
@@ -122,7 +122,8 @@ def print_compiled(fun, args, opts=parir.CompileOptions()):
         ir_ast = convert_python_function_to_ir(fun)
     _, args = validate.check_arguments(args, opts, False)
     ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
-    return parir.compile_ir(ir_ast, args, opts, ir_ast_map)
+    code, _ = parir.compile_ir(ir_ast, args, opts, ir_ast_map)
+    return code
 
 def jit(fun):
     """

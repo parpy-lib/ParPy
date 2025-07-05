@@ -52,7 +52,7 @@ fn compile_ir<'py>(
     args: Vec<Bound<'py, PyAny>>,
     opts: option::CompileOptions,
     ir_asts: BTreeMap<String, Bound<'py, PyCapsule>>
-) -> PyResult<String> {
+) -> PyResult<(String, String)> {
     // Extract a reference to the untyped AST parsed earlier.
     let untyped_ir_def : &py::ast::FunDef = unsafe {
         ir_ast_cap.reference()
@@ -74,16 +74,19 @@ fn compile_ir<'py>(
     let ir_ast = ir::from_python(py_ast, opts.parallelize, &debug_env)?;
     debug_env.print("IR AST", &ir_ast);
 
+    // Compile using the backend-specific approach to code generation. In the end, we pretty-print
+    // the AST with and without symbols. The latter is used as a key to the cache - if only the
+    // symbols differ between two ASTs, they should be considered equivalent.
     match opts.backend {
         option::CompileBackend::Cuda => {
             let ast = cuda::codegen(ir_ast, &debug_env)?;
             debug_env.print("CUDA AST", &ast);
-            Ok(ast.pprint_default())
+            Ok((ast.pprint_default(), ast.pprint_ignore_symbols()))
         },
         option::CompileBackend::Metal => {
             let ast = metal::codegen(ir_ast, &debug_env)?;
             debug_env.print("Metal AST", &ast);
-            Ok(ast.pprint_default())
+            Ok((ast.pprint_default(), ast.pprint_ignore_symbols()))
         },
         option::CompileBackend::Auto => {
             Err(PyRuntimeError::new_err("Internal error: Auto backend should \

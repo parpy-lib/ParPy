@@ -13,6 +13,7 @@ pub const DEFAULT_INDENT: usize = 2;
 pub struct PrettyPrintEnv {
     strs: BTreeSet<String>,
     vars: BTreeMap<Name, String>,
+    ignore_symbols: bool,
     indent: usize,
     indent_increment: usize,
 }
@@ -22,6 +23,7 @@ impl PrettyPrintEnv {
         PrettyPrintEnv {
             strs: BTreeSet::new(),
             vars: BTreeMap::new(),
+            ignore_symbols: false,
             indent: 0,
             indent_increment: DEFAULT_INDENT,
         }
@@ -49,6 +51,13 @@ pub trait PrettyPrint {
         let (_, s) = self.pprint(PrettyPrintEnv::new());
         s
     }
+
+    fn pprint_ignore_symbols(&self) -> String {
+        let mut env = PrettyPrintEnv::new();
+        env.ignore_symbols = true;
+        let (_, s) = self.pprint(env);
+        s
+    }
 }
 
 fn rand_alphanum(n: usize) -> String {
@@ -70,7 +79,9 @@ fn alloc_free_string(mut env: PrettyPrintEnv, id: &Name) -> (PrettyPrintEnv, Str
 
 impl PrettyPrint for Name {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        if let Some(s) = env.vars.get(&self) {
+        if env.ignore_symbols {
+            (env, format!("{}", self.get_str()))
+        } else if let Some(s) = env.vars.get(&self) {
             let s = s.clone();
             (env, s)
         } else {
