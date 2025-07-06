@@ -179,6 +179,7 @@ def run_sddmm_benchmark(k):
 
         # 2. Run the benchmark on each matrix for each of the frameworks and store
         # the results in a file.
+        import sddmm
         clear_log_output("sddmm")
         niters = len(matrices) * len(frameworks)
         for idx, matrix in enumerate(tqdm(matrices, desc=f"Running benchmarks")):

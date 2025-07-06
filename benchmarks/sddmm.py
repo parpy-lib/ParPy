@@ -108,7 +108,7 @@ def csr_rows(csr_matrix):
     rows = torch.empty_like(csr_matrix.col_indices())
     N = len(crows)-1
     p = {"N": parir.threads(N), "M": parir.threads(32)}
-    parir_sddmm_decompress_csr(crows, rows, N, opts=parir.parallelize(p))
+    parir_sddmm_decompress_csr(crows, rows, N, opts=parir.par(p))
     return rows
 
 def run_sddmm(framework, matrix_id, k):
