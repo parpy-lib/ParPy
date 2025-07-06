@@ -1,4 +1,4 @@
-from . import backend, buffer, compile, parir, validate
+from . import backend, buffer, compile, key, parir, validate
 from .buffer import sync
 from .compile import clear_cache
 from .operators import *
@@ -84,7 +84,7 @@ def compile_function(ir_ast, args, opts):
 
     # If the shared library corresponding to the generated code does not exist,
     # we run the underlying compiler to produce a shared library.
-    cache_key = compile.generate_function_key(unsymb_code, opts)
+    cache_key = key.generate_function_key(unsymb_code, opts)
     if not compile.is_cached(cache_key):
         compile.build_shared_library(cache_key, code, opts)
 
@@ -102,7 +102,7 @@ def run_callbacks(callbacks, opts):
 
 def compile_string(fun_name, code, opts=parir.CompileOptions()):
     opts = backend.resolve(opts, True)
-    cache_key = "string_" + compile.generate_function_key(code, opts)
+    cache_key = "string_" + key.generate_function_key(code, opts)
     compile.build_shared_library(cache_key, code, opts)
     fn = compile.get_wrapper(fun_name, cache_key, opts)
     def inner(*args):
