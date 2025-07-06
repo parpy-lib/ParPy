@@ -39,6 +39,14 @@ fn python_to_ir<'py>(
 }
 
 #[pyfunction]
+fn print_ir_ast<'py>(ir_ast_cap: Bound<'py, PyCapsule>) -> String {
+    let untyped_ir_def: &py::ast::FunDef = unsafe {
+        ir_ast_cap.reference()
+    };
+    untyped_ir_def.pprint_default()
+}
+
+#[pyfunction]
 fn get_ir_function_name<'py>(ir_ast_cap: Bound<'py, PyCapsule>) -> String {
     let untyped_ir_def: &py::ast::FunDef = unsafe {
         ir_ast_cap.reference()
@@ -103,6 +111,7 @@ fn compile_ir<'py>(
 #[pymodule]
 fn parir(m : &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(python_to_ir, m)?)?;
+    m.add_function(wrap_pyfunction!(print_ir_ast, m)?)?;
     m.add_function(wrap_pyfunction!(get_ir_function_name, m)?)?;
     m.add_function(wrap_pyfunction!(compile_ir, m)?)?;
     m.add_function(wrap_pyfunction!(option::par, m)?)?;

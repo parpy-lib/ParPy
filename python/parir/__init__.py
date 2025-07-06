@@ -69,26 +69,29 @@ def compile_function(ir_ast, args, opts):
     # Extract the name of the main function in the IR AST.
     name = parir.get_ir_function_name(ir_ast)
 
+    # Generate a key based on the IR AST, the function arguments, and the
+    # compile options. If this key is found in the cache, we have already
+    # compiled the function in this way before, so we return the cached wrapper
+    # function.
+    fast_cache_key = key.generate_fast_cache_key(ir_ast, args, opts)
+    if fast_cache_key in fun_cache:
+        return fun_cache[fast_cache_key]
+
     # Generate the code based on the provided IR AST, arguments and compilation
     # options.
     ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
     code, unsymb_code = parir.compile_ir(ir_ast, args, opts, ir_ast_map)
 
-    # If the generated code is found in the local cache, we return the cached
-    # wrapper function.
+    # If the shared library corresponding to the generated code does not exist,
+    # we run the underlying compiler to produce a shared library.
     cache_key = compile.generate_function_key(unsymb_code, opts)
-    if cache_key in fun_cache:
-        return fun_cache[cache_key]
-
-    # If the key is not found in the cache, we produce a new shared library by
-    # compiling the generated code.
     if not compile.is_cached(cache_key):
         compile.build_shared_library(cache_key, code, opts)
 
     # Return a wrapper function which ensures the arguments are correctly
     # passed to the exposed shared library function.
     wrap_fn = compile.get_wrapper(name, cache_key, opts)
-    fun_cache[cache_key] = wrap_fn
+    fun_cache[fast_cache_key] = wrap_fn
     return wrap_fn
 
 def run_callbacks(callbacks, opts):
