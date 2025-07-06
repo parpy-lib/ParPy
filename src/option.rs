@@ -93,6 +93,10 @@ impl CompileOptions {
     fn is_debug_enabled(&self) -> bool {
         self.debug_print || self.debug_perf
     }
+
+    fn __str__(&self) -> String {
+        format!("{self:?}")
+    }
 }
 
 // Constructs the default options object but containing the provided parallelization specification.

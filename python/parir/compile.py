@@ -1,5 +1,4 @@
 import ctypes
-import hashlib
 import itertools
 import os
 import tempfile
@@ -15,12 +14,6 @@ cache_path.mkdir(parents=True, exist_ok=True)
 def clear_cache():
     shutil.rmtree(f"{cache_path}")
     cache_path.mkdir(parents=True, exist_ok=True)
-
-def generate_function_key(code, opts):
-    s = f"{code}+{opts.includes}+{opts.libs}+{opts.extra_flags}"
-    h = hashlib.new("sha256")
-    h.update(s.encode("ascii"))
-    return h.hexdigest()
 
 def get_library_path(key):
     return cache_path / f"{key}-lib.so"
