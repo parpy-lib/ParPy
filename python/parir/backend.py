@@ -50,18 +50,18 @@ def resolve(opts, strict):
             opts.backend = available[0]
             return opts
         elif len(available) == 0:
-            raise RuntimeError(f"Found no enabled GPU backends. For detailed \
-                                 information on why this is, enable the \
-                                 'verbose_backend_resolution' flag in the \
-                                 compiler options.")
+            raise RuntimeError("Found no enabled GPU backends. For detailed " +
+                               "information on why this is, enable the " +
+                               "'verbose_backend_resolution' flag in the " +
+                               "compiler options.")
         else:
-            raise RuntimeError(f"Found multiple supported GPU backends: {available}. \
-                                 Please explicitly specify which backend to use \
-                                 by setting the 'backend' field of the 'opts' \
-                                 argument to the desired backend.")
+            raise RuntimeError(f"Found multiple supported GPU backends: {available}. " +
+                                "Please explicitly specify which backend to use " +
+                                "by setting the 'backend' field of the 'opts' + "
+                                "argument to the desired backend.")
     elif strict and opts.backend not in available:
-        raise RuntimeError(f"Specified backend {backend} is not available. For \
-                             more information, enable the 'verbose_backend_resolution' \
-                             flag in the compiler options.")
+        raise RuntimeError(f"Specified backend {backend} is not available. For " +
+                            "more information, enable the 'verbose_backend_resolution' " +
+                            "flag in the compiler options.")
     else:
         return opts
