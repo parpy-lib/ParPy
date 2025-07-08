@@ -144,7 +144,8 @@ def get_wrapper(name, key, opts):
 
     def wrapper(*args):
         if any([isinstance(arg, dict) for arg in args]):
-            args = list(itertools.chain.from_iterable([expand_arg(a) for a in args]))
+            exp_args = [expand_arg(a) for a in args]
+            args = [x for xs in exp_args for x in xs]
         getattr(lib, name).argtypes = [get_ctype(arg) for arg in args]
         getattr(lib, name)(*[value_or_ptr(arg) for arg in args])
     wrapper.__name__ = name

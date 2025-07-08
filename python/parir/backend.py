@@ -38,13 +38,18 @@ def is_enabled(backend, verbose=False):
             print(f"Backend {backend} is not enabled: {e}")
         return False
 
+# Determine the list of available backend once, so we do not have to do this
+# every time we want to resolve the available backends.
+available = [b for b in backends if is_enabled(b, False)]
+
 # If the provided options specify the backend as 'Auto', this function attempts
 # to resolve it. The result depends on the number of available backends. If
 # exactly one backend is available, the options are updated to use this backend
 # and returned. Otherwise, if none or multiple backends are available, this
 # function raises an error reporting that the automatic selection failed.
 def resolve(opts, strict):
-    available = [b for b in backends if is_enabled(b, opts.verbose_backend_resolution)]
+    if opts.verbose_backend_resolution:
+        [b for b in backends if is_enabled(b, True)]
     if opts.backend == CompileBackend.Auto:
         if len(available) == 1:
             opts.backend = available[0]
