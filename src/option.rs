@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 #[pyclass(eq, eq_int)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompileBackend {
-    Auto, Cuda, Metal, Dummy
+    Auto, Cuda, Metal
 }
 
 #[pyclass]

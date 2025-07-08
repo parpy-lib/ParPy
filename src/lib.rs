@@ -101,10 +101,6 @@ fn compile_ir<'py>(
                                          be resolved before being passed to \
                                          the code generator."))
         },
-        option::CompileBackend::Dummy => {
-            Err(PyRuntimeError::new_err("Code generation is not supported \
-                                         for the Dummy backend."))
-        }
     }
 }
 

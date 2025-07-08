@@ -196,14 +196,14 @@ def sync(backend):
         raise RuntimeError(f"Called sync on unsupported compiler backend {backend}")
 
 class Buffer:
-    def __init__(self, buf, shape, dtype, backend, src_ptr=None):
+    def __init__(self, buf, shape, dtype, backend=None, src_ptr=None):
         self.buf = buf
         self.shape = shape
         self.dtype = dtype
         self.backend = backend
         self.src_ptr = src_ptr
 
-        if self.backend == CompileBackend.Dummy:
+        if self.backend is None:
             arr_intf = to_array_interface(self.buf, self.dtype, self.shape)
             setattr(self, "__array_interface__", arr_intf)
         elif self.backend == CompileBackend.Cuda:
@@ -285,7 +285,7 @@ class Buffer:
         else:
             raise RuntimeError(f"Cannot convert argument {t} to CPU buffer")
 
-        return Buffer(data_ptr, shape, dtype, CompileBackend.Dummy)
+        return Buffer(data_ptr, shape, dtype)
 
     def from_array_cuda(t):
         # If the provided argument defines the __cuda_array_interface__, we can
@@ -322,8 +322,8 @@ class Buffer:
         metal_lib.parir_memcpy(ptr, data_ptr, nbytes)
         return Buffer(buf, shape, dtype, CompileBackend.Metal, data_ptr)
 
-    def from_array(t, backend):
-        if backend == CompileBackend.Dummy:
+    def from_array(t, backend=None):
+        if backend is None:
             return Buffer.from_array_cpu(t)
         if backend == CompileBackend.Cuda:
             return Buffer.from_array_cuda(t)
@@ -333,7 +333,7 @@ class Buffer:
             raise RuntimeError(f"Unsupported buffer backend {backend}")
 
     def numpy(self):
-        if self.backend == CompileBackend.Dummy:
+        if self.backend is None:
             return np.asarray(self)
         elif self.backend == CompileBackend.Cuda:
             from cuda.bindings import runtime
