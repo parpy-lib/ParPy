@@ -42,34 +42,34 @@ The Parir compiler produces CUDA C++ code. The mapping from a Parir function to 
 
 ## Example
 
-We start with a regular Python function for computing the row-wise sum of a two-dimensional Torch tensor `x` and storing the result in `out`:
+We start with a regular Python function for computing the row-wise sum of a two-dimensional Torch tensor `x` and storing the result in `y`:
 ```python
-def sum_rows(x, out, N, M):
+def sum_rows(x, y, N, M):
   for i in range(N):
     for j in range(M):
-      out[i] += x[i,j]
+      y[i] += x[i,j]
 ```
 
-The iterations of the outer for-loop over `i` are independent because we write the summation result to distinct indices of the output tensor `out`. Therefore, this loop can be safely parallelized. Parallelization in Parir is performed in two separate steps. The first step is to annotate the function, to indicate it should be JIT compiled and to associate labels with the statements we wish to parallelize:
+The iterations of the outer for-loop over `i` are independent because we write the summation result to distinct indices of the output tensor `y`. Therefore, this loop can be safely parallelized. Parallelization in Parir is performed in two separate steps. The first step is to annotate the function, to indicate it should be JIT compiled and to associate labels with the statements we wish to parallelize:
 ```python
 import parir
 
 @parir.jit
-def sum_rows(x, out, N, M):
+def sum_rows(x, y, N, M):
   parir.label('N')
   for i in range(N):
     for j in range(M):
-      out[i] += x[i,j]
+      y[i] += x[i,j]
 ```
 
 We use the decorator `@parir.jit` to indicate the function should be JIT compiled. When the Python interpreter processes this definition, the Parir compiler translates the Python code to an untyped Python-like representation. We use the statement `parir.label('N')` to associate the label `N` with the outer for-loop. The second step of parallelization occurs when calling the function. At this point, we can determine how to parallelize the function, based on the arguments we provide. For instance, if the original call to `sum_rows` is:
 ```python
-sum_rows(x, out, N, M)
+sum_rows(x, y, N, M)
 ```
-we update it by providing an options object via the `opts` keyword. We can conveniently construct an option via the `parir.parallelize` function, which provides the default options along with the provided parallelization specification (in the form of a Python dict).
+we update it by providing an options object via the `opts` keyword. We can conveniently construct an option using the `parir.par` function, which provides the default options along with the provided parallel specification (in the form of a Python dict).
 ```python
 p = {'N': parir.threads(N)}
-sum_rows(x, out, N, M, opts=parir.parallelize(p))
+sum_rows(x, y, N, M, opts=parir.par(p))
 ```
 
 When the `sum_rows` function is called, the Parir compiler will generate GPU code based on the untyped Python-like representation from the first stage and the provided arguments. Our provided options specify that the compiler should generate CUDA code (the default target), and that any statement associated with the label `N` is parallelized across `N` threads. The [Parallelization](#parallelization) section describes how the compiler maps these threads to the GPU grid.
@@ -78,18 +78,19 @@ When the `sum_rows` function is called, the Parir compiler will generate GPU cod
 
 The summation performed in the inner loop of the `sum_rows` is an example of a [reduction](https://en.wikipedia.org/wiki/Fold_%28higher-order_function%29), which can be parallelized. To do this in Parir, we first annotate the inner for-loop:
 ```python
-def sum_rows(x, out, N, M):
+@parir.jit
+def sum_rows(x, y, N, M):
   parir.label('N')
   for i in range(N):
     parir.label('M')
     for j in range(M):
-      out[i] += x[i,j]
+      y[i] += x[i,j]
 ```
 
 Second, we specify how to parallelize the reduction. The compiler currently does not automatically identify reductions, so we need to specify that we want it to perform a parallel reduction in the parallelization specification:
 ```python
 p = {'N': parir.threads(N), 'M': parir.threads(M).reduce()}
-sum_rows(x, out, N, M, opts=parir.parallelize(p))
+sum_rows(x, y, N, M, opts=parir.par(p))
 ```
 
 Alternatively, we can use the reduction operator in combination with slicing (described in the following section), in which case the `parir.reduce()` specifier is inferred by the compiler.
@@ -102,23 +103,24 @@ The [test](/test) directory contains several programs using parallelization. The
 
 The Parir compiler supports a restricted form of slicing, where each slice dimension of a statement is mapped to a separate for-loop, starting from the left. For example, we can use slices to define the `sum_rows` more succinctly as
 ```python
-def sum_rows(x, out, N, M):
+@parir.jit
+def sum_rows(x, y, N, M):
   parir.label('N')
   parir.label('M')
-  out[:] = parir.sum(x[:,:], axis=1)
+  y[:] = parir.sum(x[:,:], axis=1)
 ```
 
 The `parir.sum` operation is an example of a slice reduction operation, which reduces the number of dimensions. In this case, we use the `axis` keyword argument to specify a dimension to reduce over. When the `axis` argument is omitted, the compiler generates a reduction over all dimensions. For example,
 ```python
 y[0] = parir.sum(x[:,:])
 ```
-would reduce over both dimensions of `x` and store the result in `y`. Note that all tensor dimensions must be explicitly mentioned in a slice operation.
+would reduce over both dimensions of `x` and store the result in `y`. Note that all tensor dimensions must be explicitly listed in a slice operation.
 
-The Parir compiler will, at an early stage, automatically translate slice operations to semantically equivalent explicit for-loops. By doing this early, we can mostly reuse compilation logic across the two approaches.
+The Parir compiler will automatically translate slice operations to semantically equivalent explicit for-loops. This happens quite early in the compiler pipeline, allowing us to drastically simplify later stages of the compiler.
 
 ### Limitations
 
-Slice operations that require materializing a fresh tensor are not supported:
+Slice operations that require materialization of a new tensor are not supported:
 ```
 a = x[i,:]
 ```
@@ -140,7 +142,7 @@ See the [test_dict_args.py](test/test_dict_args.py) and [test_forward.py](test/t
 
 All functions provided via Parir should behave equivalently when executed by the Python interpreter and when compiled to GPU code (barring compiler bugs and missing reduction annotations). To avoid having to remove the `@parir.jit` decorator when a user wants to debug using the Python interpreter, we can set the `seq` keyword to `True` in the call to the function, as in:
 ```python
-sum_rows(x, out, N, M, seq=True)
+sum_rows(x, y, N, M, seq=True)
 ```
 
 An advanced or curious user can set the `debug` keyword argument to `True` in a call. When debugging is enabled in the compiler, it will output the AST (abstract syntax tree, a representation of the code) after all major transformations within the compiler, along with the time spent in the compiler up to that stage.
@@ -180,7 +182,7 @@ such that we end up with two separate kernels with a consistent amount of parall
 
 Note that the current compiler version does not do the above transformation when `M1` and `M2` are not equal, and both of them map to at most 1024 threads (i.e., they map to a single CUDA block). In this case, the compiler would either have to generate code where some threads are idle for one of the loops, or it could split them up into two parallel loops, both of which introduce extra overhead in a situation where this may have a significant performance impact.
 
-### Sequential Code
+### Sequential Code on the GPU
 
 As running sequential code on the GPU is significantly slower than running it on the CPU, sequential for-loops outside of the first parallel for-loop on the CPU. As arguments are allocated on the GPU, we disallow any non-loop statements outside parallel loops. While supporting operations on the CPU would be possible, this would be inefficient as it may require copying data between the CPU and the GPU. Therefore, Parir disallows this altogether.
 
@@ -188,23 +190,23 @@ Consider the below attempt at a one-dimensional summation function in Parir:
 ```python
 import parir
 @parir.jit
-def sum(x, out, N):
-  out[0] = 0.0
+def sum(x, y, N):
+  y[0] = 0.0
   parir.label('N')
   for i in range(N):
-    out[0] += x[i]
+    y[0] += x[i]
 ```
 
-The compiler rejects this code because the initial assignment to `out[0]` occurs outside a parallel for-loop. In this case, we are willing to accept the (minimal) overhead of running this statement sequentially on the GPU. To achieve this, we could wrap the whole function body in a for-loop with one iteration, annotate it, and specify that its label should map to one thread. While this would work, it is verbose and requires modifying the code in multiple places. As a short-hand for this, we can wrap the function body in the `parir.gpu` context:
+The compiler rejects this code because the initial assignment to `y[0]` occurs outside a parallel for-loop. In this case, we are willing to accept the (minimal) overhead of running this statement sequentially on the GPU. To achieve this, we could wrap the whole function body in a for-loop with one iteration, annotate it, and specify that its label should map to one thread. While this would work, it is verbose and requires modifying the code in multiple places. As a short-hand for this, we can wrap the function body in the `parir.gpu` context:
 ```
 import parir
 @parir.jit
-def sum(x, out, N):
+def sum(x, y, N):
   with parir.gpu:
-    out[0] = 0.0
+    y[0] = 0.0
     parir.label('N')
     for i in range(N):
-      out[0] += x[i]
+      y[0] += x[i]
 ```
 
 ## Working Around Limitations
@@ -216,7 +218,7 @@ There are many low-level concepts that are critical to achieving high performanc
 For instance, consider the `sum_rows` function presented as an example above. To print the resulting CUDA code from compiling this function, we can use
 ```python
 p = {'N': parir.threads(32), 'M': parir.threads(128).reduce()}
-print(parir.print_compiled(sum_rows, [x, out, N, M], opts=parir.parallelize(p)))
+print(parir.print_compiled(sum_rows, [x, y, N, M], opts=parir.parallelize(p)))
 ```
 
 We pass a function to be compiled (this function does _not_ have to be decorated with `@parir.jit`), a list of the arguments to be passed to the function, and the parallelization dictionary (which we would pass to the `parallelize` keyword argument in a regular function call). The resulting string is printed to stdout using `print`.
