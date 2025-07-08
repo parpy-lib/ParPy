@@ -8,8 +8,12 @@ def generate_function_key(code, opts):
 
 def print_argument_key(arg):
     from .buffer import Buffer
-    from .buffer import print_type
-    if isinstance(arg, Buffer):
+    if isinstance(arg, dict):
+        s = []
+        for k, v in sorted(arg.items()):
+            s.append(f"{k}: {print_argument_key(v)}")
+        return """{{{", ".join(s)}}}"""
+    elif isinstance(arg, Buffer):
         if len(arg.shape) == 0:
             v = arg.numpy()
             return f"{v};{v.dtype}"
