@@ -170,9 +170,9 @@ def produce_sddmm_output(csv_file, frameworks, k):
         # produce a box plot for each interval.
         for e in range(1, 10):
             nnz_range = fw_res["nnz"].between(10**(e-1), 10**e)
-            times[e-1].append(fw_res["time"][nnz_range])
+            times[e-1].append(fw_res[nnz_range]["time"])
     for i in range(9):
-        bp = axs.boxplot(times[i], positions=[i*4+1, i*4+2, i*4+3], sym='', widths=0.6)
+        bp = axs.boxplot(times[i], positions=[i*4+1, i*4+2, i*4+3], whis=[0, 100], widths=0.6)
         set_colors(bp, colors)
     axs.set_xticks([i for i in np.arange(0, 36, 4)])
     axs.set_xticklabels([f"$10^{i}$" for i in range(9)])

@@ -1,4 +1,5 @@
 import ctypes
+import numpy as np
 import pandas as pd
 import parir
 import ssgetpy
@@ -165,8 +166,8 @@ def run_sddmm(framework, matrix_id, k):
             sparse_c_rows = csr_rows(sparse_c)
             fn = lambda: parir_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
         times = common.bench(matrix_id, fn, nwarmup=1)
-        results = [mk_framework_entry(framework, t) for t in times]
-        common.append_csv(f"{common.SDDMM_NAME}-{k}.csv", results)
+        result = mk_framework_entry(framework, np.mean(times))
+        common.append_csv(f"{common.SDDMM_NAME}-{k}.csv", [result])
         if framework == "Parir-COO":
             del sparse_c_rows
     except torch.cuda.OutOfMemoryError:
