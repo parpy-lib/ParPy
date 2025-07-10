@@ -1,0 +1,23 @@
+name: bench-env
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip=25.1.1
+  - six=1.17.0
+  - rust=1.88.0
+  - maturin=1.9.1
+  - pip:
+    - cupy-cuda12x==13.4.1
+    - dace==1.0.2
+    - "jax[cuda12]==0.5.3"
+    - triton==3.3.1
+    - torch==2.7.1
+    - h5py==3.14.0
+    - ssgetpy==1.0rc2
+    - matplotlib==3.10.3
+    - numpy==1.26.4
+    - pandas==2.3.1
+    - pygount==3.1.0
+    - scipy==1.15.3
