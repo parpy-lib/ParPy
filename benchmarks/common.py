@@ -15,9 +15,6 @@ warnings.filterwarnings("ignore", "Sparse CSR tensor support is in beta state.*"
 
 URL_BASE = "https://sparse.tamu.edu"
 SUITESPARSE_PATH = os.getenv("SUITESPARSE_PATH")
-if SUITESPARSE_PATH is None:
-    print("Need to set the SUITESPARSE_PATH variable to the path at which to store SuiteSparse matrices")
-    exit(1)
 
 FORWARD_NAME = "forward-results"
 SDDMM_NAME = "sddmm-results"
@@ -46,6 +43,9 @@ def download_matrix(matrix):
         pass
 
 def ssgetpy_matrix_to_csr(matrix_name):
+    if SUITESPARSE_PATH is None:
+        print("Need to set the SUITESPARSE_PATH variable to the path at which to store SuiteSparse matrices")
+        exit(1)
     matrix_path = Path(f"{SUITESPARSE_PATH}/{matrix_name}/{matrix_name}.mtx")
     matrix = mmread(matrix_path.resolve())
     matrix = matrix.tocsr()
