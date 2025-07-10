@@ -1,4 +1,3 @@
-# Let's make sure this configuration works before we commit to it...
 name: bench-env
 channels:
   - conda-forge
