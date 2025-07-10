@@ -14,7 +14,10 @@ import warnings
 warnings.filterwarnings("ignore", "Sparse CSR tensor support is in beta state.*")
 
 URL_BASE = "https://sparse.tamu.edu"
-SUITESPARSE_PATH = os.environ.get("SUITESPARSE_PATH", "/src/suitesparse")
+SUITESPARSE_PATH = os.getenv("SUITESPARSE_PATH")
+if SUITESPARSE_PATH is None:
+    print("Need to set the SUITESPARSE_PATH variable to the path at which to store SuiteSparse matrices")
+    exit(1)
 
 FORWARD_NAME = "forward-results"
 SDDMM_NAME = "sddmm-results"
@@ -22,7 +25,7 @@ SDDMM_NAME = "sddmm-results"
 BATCH_SIZE = 16384
 
 # Custom download function because ssgetpy uses a throttled approach.
-def download_extracted_to(url, dst_path):
+def download_extracted_to(url):
     response = requests.get(url, stream=True)
     content_length = int(response.headers["content-length"])
     download_file = "/tmp/data.tar.gz"
@@ -38,7 +41,7 @@ def download_matrix(matrix):
     try:
         if not matrix_path.exists():
             url = f"{URL_BASE}/MM/{matrix.group}/{matrix.name}.tar.gz"
-            download_extracted_to(url, matrix_path)
+            download_extracted_to(url)
     except:
         pass
 
