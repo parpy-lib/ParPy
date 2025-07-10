@@ -18,11 +18,11 @@ def assert_metal_is_enabled():
     if not torch.backends.mps.is_available():
         raise RuntimeError(f"Torch was not built with Metal support")
     if parir.state.get_metal_cpp_header_path() is None:
-        raise RuntimeError(f"The path to the Metal-cpp headers must be provided \
-                             to use the Metal backend. The headers are available \
-                             at https://developer.apple.com/metal/cpp/. The path \
-                             is specified using the 'METAL_CPP_HEADER_PATH' \
-                             environment variable.")
+        raise RuntimeError(f"The path to the Metal-cpp headers must be provided " +
+                            "to use the Metal backend. The headers are available " +
+                            "at https://developer.apple.com/metal/cpp/. The path " +
+                            "is specified using the 'METAL_CPP_HEADER_PATH' " +
+                            "environment variable.")
 
 def is_enabled(backend, verbose=False):
     try:

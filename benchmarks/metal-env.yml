@@ -9,7 +9,5 @@ dependencies:
   - maturin=1.8.6
   - pip:
     - torch==2.7.0
-    - torchvision==0.22.0
-    - torchaudio==2.7.0
     - jax-metal==0.1.0
     - numpy==2.2.5

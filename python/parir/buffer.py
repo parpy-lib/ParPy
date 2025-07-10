@@ -36,9 +36,9 @@ def try_load_metal_base_lib():
         if not libpath.exists() or os.path.getmtime(libpath) < os.path.getmtime(src_path):
             metal_cpp_path = parir.state.get_metal_cpp_header_path()
             if metal_cpp_path is None:
-                raise RuntimeError(f"The path to the Metal C++ library must be provided \
-                                     via the 'parir.set_metal_cpp_header_path' function \
-                                     before using the Metal backend.")
+                raise RuntimeError(f"The path to the Metal C++ library must be provided " +
+                                    "via the 'METAL_CPP_HEADER_PATH' variable before " +
+                                    "using the Metal backend.")
             frameworks = ["-framework", "Metal", "-framework", "Foundation", "-framework", "MetalKit"]
             cmd = ["clang++", "-std=c++17", "-O3", "-shared", "-fpic",
                    "-I", metal_cpp_path] + frameworks + [src_path, "-o", libpath]
@@ -46,8 +46,8 @@ def try_load_metal_base_lib():
             if r.returncode != 0:
                 stdout = r.stdout.decode('ascii')
                 stderr = r.stderr.decode('ascii')
-                raise RuntimeError(f"Compilation of the Metal base library failed.\
-                        \nstdout:\n{stdout}\nstderr:\n{stderr}")
+                raise RuntimeError(f"Compilation of the Metal base library failed.\n" +
+                                    "stdout:\n{stdout}\nstderr:\n{stderr}")
         lib = ctypes.cdll.LoadLibrary(libpath)
         lib.parir_init.argtypes = [ctypes.c_int64]
         lib.parir_sync.argtypes = []

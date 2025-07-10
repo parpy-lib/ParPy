@@ -16,9 +16,9 @@ compiler_backends = parir.backend.backends
 # need to provide this path (otherwise all compilation tests for Metal would be
 # skipped).
 if torch.backends.mps.is_available() and parir.get_metal_cpp_header_path() is None:
-    raise RuntimeError(f"The Metal backend is available, but the path to the \
-                         Metal-cpp header was not set using the \
-                         METAL_CPP_HEADER_PATH environment variable.")
+    raise RuntimeError(f"The Metal backend is available, but the path to the " +
+                        "Metal-cpp header was not set using the " +
+                        "METAL_CPP_HEADER_PATH environment variable.")
 
 def run_if_backend_is_enabled(backend, fn):
     if parir.backend.is_enabled(backend):

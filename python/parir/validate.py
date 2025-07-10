@@ -28,12 +28,12 @@ def check_arg(arg, i, in_dict, opts, execute):
     elif hasattr(arg, "__cuda_array_interface__"):
         if opts.backend == CompileBackend.Cuda:
             if opts.seq:
-                raise RuntimeError(f"Argument {i} is a CUDA array, which cannot \
-                                     be used in sequential execution.")
+                raise RuntimeError(f"Argument {i} is a CUDA array, which cannot " +
+                                    "be used in sequential execution.")
             return [], Buffer.from_array(arg, CompileBackend.Cuda)
         else:
-            raise RuntimeError(f"Argument {i} is a CUDA array, which is not \
-                                 supported in {opts.backend}.")
+            raise RuntimeError(f"Argument {i} is a CUDA array, which is not "
+                                "supported in {opts.backend}.")
     elif hasattr(arg, "__array_interface__") or hasattr(arg, "__array__"):
         # Copy data to memory accessible from the GPU. If the resulting code
         # will not be executed, we do not copy data so we can generate code for
