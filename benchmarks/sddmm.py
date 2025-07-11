@@ -177,5 +177,5 @@ def run_sddmm(framework, matrix_id, k):
 if __name__ == "__main__":
     framework = sys.argv[1]
     matrix_id = sys.argv[2]
-    k = int(sys.argv[3]) if len(sys.argv) > 3 else 64
+    k = int(sys.argv[3])
     run_sddmm(framework, matrix_id, k)

@@ -35,12 +35,9 @@ def download_extracted_to(url):
 
 def download_matrix(matrix):
     matrix_path = Path(f"{SUITESPARSE_PATH}/{matrix.name}/{matrix.name}.mtx")
-    try:
-        if not matrix_path.exists():
-            url = f"{URL_BASE}/MM/{matrix.group}/{matrix.name}.tar.gz"
-            download_extracted_to(url)
-    except:
-        pass
+    if not matrix_path.exists():
+        url = f"{URL_BASE}/MM/{matrix.group}/{matrix.name}.tar.gz"
+        download_extracted_to(url)
 
 def ssgetpy_matrix_to_csr(matrix_name):
     if SUITESPARSE_PATH is None:
