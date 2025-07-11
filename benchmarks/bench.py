@@ -155,6 +155,7 @@ def produce_sddmm_output(csv_file, frameworks, k):
     def set_colors(bp, colors):
         for i, c in enumerate(colors):
             plt.setp(bp["boxes"][i], color=c)
+            bp["boxes"][i].set_facecolor("#FFFFFF")
             plt.setp(bp["whiskers"][2*i], color=c)
             plt.setp(bp["whiskers"][2*i+1], color=c)
             plt.setp(bp["caps"][2*i], color=c)
@@ -172,13 +173,16 @@ def produce_sddmm_output(csv_file, frameworks, k):
             nnz_range = fw_res["nnz"].between(10**(e-1), 10**e)
             times[e-1].append(fw_res[nnz_range]["time"])
     for i in range(9):
-        bp = axs.boxplot(times[i], positions=[i*4+1, i*4+2, i*4+3], whis=[0, 100], widths=0.6)
+        bp = axs.boxplot(times[i], positions=[i*4+1, i*4+2, i*4+3], whis=[0, 100], patch_artist=True, widths=0.6)
         set_colors(bp, colors)
     axs.set_xticks([i for i in np.arange(0, 36, 4)])
     axs.set_xticklabels([f"$10^{i}$" for i in range(9)])
     axs.set_yscale("log")
     axs.set_xlabel("Number of non-zero values", fontsize=16)
     axs.set_ylabel("Execution time (ms)", fontsize=16)
+    axs.set_axisbelow(True)
+    axs.yaxis.grid(color="gray", which="major", alpha=.5)
+    axs.yaxis.grid(color="gray", which="minor", alpha=.2)
     axs.tick_params(axis="both", which="major", labelsize=16)
     axs.tick_params(axis="both", which="minor", labelsize=14)
 
