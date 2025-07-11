@@ -190,13 +190,13 @@ def produce_sddmm_output(csv_file, frameworks, k):
     axs.legend(loc="upper left", fontsize=16)
     fig.savefig(f"sddmm-{k}.pdf", bbox_inches="tight", pad_inches=0.05)
 
-def run_sddmm_benchmark(k):
+def run_sddmm_benchmark(k, limit=2892):
     frameworks = ["PyTorch", "Parir-CSR", "Parir-COO"]
     csv_file = f"{common.SDDMM_NAME}-{k}.csv"
 
     if not os.path.isfile(csv_file):
         # 1. Download all matrices
-        matrices = ssgetpy.search(limit=3000, nzbounds=(None, 10**9))
+        matrices = ssgetpy.search(limit=limit, nzbounds=(None, 10**9))
         for matrix in tqdm(matrices, desc="Downloading SuiteSparse matrices (this may take a while)"):
             common.download_matrix(matrix)
 
@@ -228,8 +228,13 @@ benchmark_id = sys.argv[1]
 if benchmark_id == "all":
     run_forward_benchmark()
     run_sddmm_benchmark(64)
+    run_sddmm_benchmark(1024)
 if benchmark_id == "forward":
     run_forward_benchmark()
 elif benchmark_id == "sddmm":
     k = int(sys.argv[2])
-    run_sddmm_benchmark(k)
+    if len(sys.argv) > 3:
+        limit = int(sys.argv[3])
+        run_sddmm_benchmark(k, limit)
+    else:
+        run_sddmm_benchmark(k)
