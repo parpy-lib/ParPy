@@ -1,7 +1,7 @@
 import importlib
 import numpy as np
 from math import inf
-import parir
+import prickle
 import pytest
 import torch
 
@@ -80,13 +80,13 @@ def read_expected_output(fname):
   with open(fname) as f:
     return torch.tensor([float(l) for l in f.readlines()], dtype=torch.float32)
 
-@parir.jit
+@prickle.jit
 def forward_kernel(hmm, seqs, alpha1, alpha2, result):
-    parir.label('inst')
+    prickle.label('inst')
     for inst in range(seqs["num_instances"]):
         # Initialization
         o = seqs["data"][inst, 0]
-        parir.label('state')
+        prickle.label('state')
         for state in range(hmm["num_states"]):
             alpha1[inst, state] = hmm["initial_prob"][state] + hmm["output_prob"][o, state % 64]
 
@@ -98,16 +98,16 @@ def forward_kernel(hmm, seqs, alpha1, alpha2, result):
                 alpha_src = alpha1
                 alpha_dst = alpha2
             o = seqs["data"][inst, t]
-            parir.label('state')
+            prickle.label('state')
             for state in range(hmm["num_states"]):
                 if t < seqs["lens"][inst]:
                     # Transitively inlined version of forward_prob_predecessors.
                     num_kmers = hmm["num_states"] // 16
 
-                    pred1 = parir.int16((state // 4) % (hmm["num_states"] // 64))
-                    pred2 = parir.int16(hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
-                    pred3 = parir.int16(2 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
-                    pred4 = parir.int16(3 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
+                    pred1 = prickle.int16((state // 4) % (hmm["num_states"] // 64))
+                    pred2 = prickle.int16(hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
+                    pred3 = prickle.int16(2 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
+                    pred4 = prickle.int16(3 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
                     t11 = hmm["trans1"][pred1 % num_kmers, state % 4]
                     t12 = hmm["trans1"][pred2 % num_kmers, state % 4]
                     t13 = hmm["trans1"][pred3 % num_kmers, state % 4]
@@ -118,8 +118,8 @@ def forward_kernel(hmm, seqs, alpha1, alpha2, result):
                     p3 = t13 + t2 + alpha_src[inst, pred3]
                     p4 = t14 + t2 + alpha_src[inst, pred4]
 
-                    pred5 = parir.int16(0)
-                    p5 = parir.float32(0.0)
+                    pred5 = prickle.int16(0)
+                    p5 = prickle.float32(0.0)
                     if state // num_kmers == 15:
                         pred5 = state
                         p5 = hmm["gamma"]
@@ -128,16 +128,16 @@ def forward_kernel(hmm, seqs, alpha1, alpha2, result):
                         p5 = hmm["synthetic_248"]
                     else:
                         pred5 = ((state // num_kmers) + 1) * num_kmers + state % num_kmers
-                        p5 = parir.float32(0.0)
+                        p5 = prickle.float32(0.0)
                     p5 = p5 + alpha_src[inst, pred5]
 
                     # Inlined version of log_sum_exp.
-                    maxp = parir.max(p1, p2)
-                    maxp = parir.max(maxp, p3)
-                    maxp = parir.max(maxp, p4)
-                    maxp = parir.max(maxp, p5)
-                    lsexp = maxp + parir.log(parir.exp(p1 - maxp) + parir.exp(p2 - maxp) + parir.exp(p3 - maxp) + parir.exp(p4 - maxp) + parir.exp(p5 - maxp))
-                    lsexp = parir.max(lsexp, parir.float32(-parir.inf))
+                    maxp = prickle.max(p1, p2)
+                    maxp = prickle.max(maxp, p3)
+                    maxp = prickle.max(maxp, p4)
+                    maxp = prickle.max(maxp, p5)
+                    lsexp = maxp + prickle.log(prickle.exp(p1 - maxp) + prickle.exp(p2 - maxp) + prickle.exp(p3 - maxp) + prickle.exp(p4 - maxp) + prickle.exp(p5 - maxp))
+                    lsexp = prickle.max(lsexp, prickle.float32(-prickle.inf))
 
                     alpha_dst[inst, state] = lsexp + hmm["output_prob"][o, state % num_kmers]
                 elif t == seqs["lens"][inst]:
@@ -148,13 +148,13 @@ def forward_kernel(hmm, seqs, alpha1, alpha2, result):
         if seqs["maxlen"] & 1:
             alpha = alpha1
 
-        parir.label('state')
-        maxp = parir.max(alpha[inst, :])
+        prickle.label('state')
+        maxp = prickle.max(alpha[inst, :])
 
-        parir.label('state')
-        psum = parir.sum(parir.exp(alpha[inst, :] - maxp))
+        prickle.label('state')
+        psum = prickle.sum(prickle.exp(alpha[inst, :] - maxp))
 
-        result[inst] = maxp + parir.log(psum)
+        result[inst] = maxp + prickle.log(psum)
 
 def forward(hmm, seqs, opts):
     alpha1 = torch.zeros((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
@@ -180,8 +180,8 @@ def test_forward_single_block(backend):
     def helper():
         hmm, seqs, expected = read_test_data()
         p = {
-            'inst': parir.threads(seqs["num_instances"]),
-            'state': parir.threads(512),
+            'inst': prickle.threads(seqs["num_instances"]),
+            'state': prickle.threads(512),
         }
         run_forw_test(hmm, seqs, expected, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
@@ -192,10 +192,10 @@ def test_forward_multi_block(backend):
     def helper():
         hmm, seqs, expected = read_test_data()
         p = {
-            'inst': parir.threads(seqs["num_instances"]),
-            'state': parir.threads(2048),
+            'inst': prickle.threads(seqs["num_instances"]),
+            'state': prickle.threads(2048),
         }
-        if backend == parir.CompileBackend.Metal:
+        if backend == prickle.CompileBackend.Metal:
             with pytest.raises(TypeError) as e_info:
                 run_forw_test(hmm, seqs, expected, par_opts(backend, p))
             assert e_info.match(r".*nested pointer in generated code.*")
@@ -211,8 +211,8 @@ def test_forward_compiles(backend):
     alpha1 = torch.zeros((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
     alpha2 = torch.zeros_like(alpha1)
     p = {
-        'inst': parir.threads(seqs["num_instances"]),
-        'state': parir.threads(hmm["num_states"])
+        'inst': prickle.threads(seqs["num_instances"]),
+        'state': prickle.threads(hmm["num_states"])
     }
-    s = parir.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], par_opts(backend, p))
+    s = prickle.print_compiled(forward_kernel, [hmm, seqs, alpha1, alpha2, result], par_opts(backend, p))
     assert len(s) != 0

@@ -1,17 +1,17 @@
-import parir
+import prickle
 import pytest
 import torch
 
 from common import *
 
-@parir.jit
+@prickle.jit
 def normalize_rows(t, nrows, ncols):
-    parir.label('i')
+    prickle.label('i')
     for i in range(nrows):
-        parir.label('j1')
-        s = parir.sum(t[i, :])
+        prickle.label('j1')
+        s = prickle.sum(t[i, :])
 
-        parir.label('j2')
+        prickle.label('j2')
         t[i, :] /= s
 
 def normalize_wrap(t, opts):
@@ -25,7 +25,7 @@ def test_normalize_single_row(backend):
     def helper():
         t = torch.ones((1, 1024), dtype=torch.float32)
         y1 = torch.nn.functional.normalize(t, p=1, dim=1)
-        p = { "i": parir.threads(256) }
+        p = { "i": prickle.threads(256) }
         y2 = normalize_wrap(t, par_opts(backend, p))
         assert torch.allclose(y1, y2, 1e-5)
     run_if_backend_is_enabled(backend, helper)
@@ -36,23 +36,23 @@ def test_normalize_multirow(backend):
         t = torch.ones((256, 1024), dtype=torch.float32)
         y1 = torch.nn.functional.normalize(t, p=1, dim=1)
         p = {
-            "i": parir.threads(256),
-            "j1": parir.threads(128).reduce(),
-            "j2": parir.threads(128)
+            "i": prickle.threads(256),
+            "j1": prickle.threads(128).reduce(),
+            "j2": prickle.threads(128)
         }
         y2 = normalize_wrap(t, par_opts(backend, p))
         assert torch.allclose(y1, y2, 1e-5)
     run_if_backend_is_enabled(backend, helper)
 
 def normalize_rows_no_annot(t, nrows, ncols):
-    parir.label('i')
+    prickle.label('i')
     for i in range(nrows):
-        s = parir.float32(0.0)
-        parir.label('j1')
+        s = prickle.float32(0.0)
+        prickle.label('j1')
         for j in range(ncols):
             s = s + t[i, j]
 
-        parir.label('j2')
+        prickle.label('j2')
         for j in range(ncols):
             t[i, j] = t[i, j] / s
 
@@ -64,9 +64,9 @@ def test_normalize_print_ast(backend):
         1024
     ]
     p = {
-        "i": parir.threads(256),
-        "j1": parir.threads(128).reduce(),
-        "j2": parir.threads(128)
+        "i": prickle.threads(256),
+        "j1": prickle.threads(128).reduce(),
+        "j2": prickle.threads(128)
     }
-    s = parir.print_compiled(normalize_rows_no_annot, args, par_opts(backend, p))
+    s = prickle.print_compiled(normalize_rows_no_annot, args, par_opts(backend, p))
     assert len(s) != 0

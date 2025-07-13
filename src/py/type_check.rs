@@ -123,31 +123,31 @@ fn assert_known_params(id: &Name, params: &Vec<Param>) -> PyResult<()> {
 }
 
 fn compile_elem_size<'py>(dtype: Bound<'py, PyAny>) -> PyResult<ElemSize> {
-    let parir = dtype.py().import("parir.buffer")?;
+    let prickle = dtype.py().import("prickle.buffer")?;
     let ty = dtype.getattr("ty")?;
-    if ty.eq(parir.getattr("ty_bool")?)? {
+    if ty.eq(prickle.getattr("ty_bool")?)? {
         Ok(ElemSize::Bool)
-    } else if ty.eq(parir.getattr("int8")?)? {
+    } else if ty.eq(prickle.getattr("int8")?)? {
         Ok(ElemSize::I8)
-    } else if ty.eq(parir.getattr("int16")?)? {
+    } else if ty.eq(prickle.getattr("int16")?)? {
         Ok(ElemSize::I16)
-    } else if ty.eq(parir.getattr("int32")?)? {
+    } else if ty.eq(prickle.getattr("int32")?)? {
         Ok(ElemSize::I32)
-    } else if ty.eq(parir.getattr("int64")?)? {
+    } else if ty.eq(prickle.getattr("int64")?)? {
         Ok(ElemSize::I64)
-    } else if ty.eq(parir.getattr("uint8")?)? {
+    } else if ty.eq(prickle.getattr("uint8")?)? {
         Ok(ElemSize::U8)
-    } else if ty.eq(parir.getattr("uint16")?)? {
+    } else if ty.eq(prickle.getattr("uint16")?)? {
         Ok(ElemSize::U16)
-    } else if ty.eq(parir.getattr("uint32")?)? {
+    } else if ty.eq(prickle.getattr("uint32")?)? {
         Ok(ElemSize::U32)
-    } else if ty.eq(parir.getattr("uint64")?)? {
+    } else if ty.eq(prickle.getattr("uint64")?)? {
         Ok(ElemSize::U64)
-    } else if ty.eq(parir.getattr("float16")?)? {
+    } else if ty.eq(prickle.getattr("float16")?)? {
         Ok(ElemSize::F16)
-    } else if ty.eq(parir.getattr("float32")?)? {
+    } else if ty.eq(prickle.getattr("float32")?)? {
         Ok(ElemSize::F32)
-    } else if ty.eq(parir.getattr("float64")?)? {
+    } else if ty.eq(prickle.getattr("float64")?)? {
         Ok(ElemSize::F64)
     } else {
         py_type_error!(Info::default(), "Unsupported element type: {ty}")
@@ -162,7 +162,7 @@ fn get_buffer_shape<'py>(
 
 fn convert_type<'py>(arg: &Bound<'py, PyAny>, float_size: &ElemSize) -> PyResult<Type> {
     let py = arg.py();
-    let buffer = py.import("parir.buffer")?;
+    let buffer = py.import("prickle.buffer")?;
     let ty = arg.get_type();
     if ty.eq(buffer.getattr("Buffer")?)? {
         let dtype = arg.getattr("dtype")?;

@@ -122,17 +122,17 @@ def compile_trellis_shared_libs():
         exit(r.returncode)
 
 def run_forward_benchmark():
-    frameworks = ["parir", "triton", "trellis"]
+    frameworks = ["prickle", "triton", "trellis"]
     configurations = [1, 2, 3]
     kmer = [5, 7]
     csv_file = f"{common.FORWARD_NAME}.csv"
 
-    # Compile the shared libraries for the generated Trellis code if they do
-    # not yet exist.
-    compile_trellis_shared_libs()
-
     # Only run the benchmarks if the CSV data file does not exist.
     if not os.path.isfile(csv_file):
+        # Compile the shared libraries for the generated Trellis code if they do
+        # not yet exist.
+        compile_trellis_shared_libs()
+
         clear_log_output("forward")
 
         # Run the benchmarks over all possible configurations.

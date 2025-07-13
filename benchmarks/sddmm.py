@@ -1,7 +1,7 @@
 import ctypes
 import numpy as np
 import pandas as pd
-import parir
+import prickle
 import ssgetpy
 import subprocess
 import torch
@@ -17,29 +17,29 @@ beta = 2.0
 def torch_sddmm(A, B, C):
     return torch.sparse.sampled_addmm(C, A, B, alpha=alpha, beta=beta)
 
-@parir.jit
-def parir_sddmm_decompress_csr(C_crows, C_rows, N):
-    parir.label('N')
+@prickle.jit
+def prickle_sddmm_decompress_csr(C_crows, C_rows, N):
+    prickle.label('N')
     for row in range(N):
-        parir.label('M')
+        prickle.label('M')
         for i in range(C_crows[row], C_crows[row+1]):
             C_rows[i] = row
 
-@parir.jit
-def parir_sddmm_csr_kernel(A, B, C, D, N, alpha, beta):
+@prickle.jit
+def prickle_sddmm_csr_kernel(A, B, C, D, N, alpha, beta):
     # Convert CSR to a COO representation by decompressing the rows. This
     # allows us to naively parallelize across all non-zero values without the
     # need to do load-balancing, as we would need to using CSR (or binary
     # search, which is costly).
-    parir_sddmm_decompress_csr(C["crows"], C["rows"], N)
-    parir.label('nnz')
+    prickle_sddmm_decompress_csr(C["crows"], C["rows"], N)
+    prickle.label('nnz')
     for i in range(C["nnz"]):
         row = C["rows"][i]
         col = C["cols"][i]
-        t = parir.sum(A[row, :] * B[:, col])
+        t = prickle.sum(A[row, :] * B[:, col])
         D[i] = alpha * t + beta * C["values"][i]
 
-def parir_sddmm_csr(A, B, C):
+def prickle_sddmm_csr(A, B, C):
     D = torch.empty_like(C)
     N, K = A.shape
     nnz = C._nnz()
@@ -51,24 +51,24 @@ def parir_sddmm_csr(A, B, C):
         "nnz": nnz
     }
     p = {
-        "N": parir.threads(N),
-        "M": parir.threads(32),
-        "nnz": parir.threads(nnz),
+        "N": prickle.threads(N),
+        "M": prickle.threads(32),
+        "nnz": prickle.threads(nnz),
     }
-    opts = parir.par(p)
-    parir_sddmm_csr_kernel(A, B, C_dict, D.values(), N, alpha, beta, opts=opts)
+    opts = prickle.par(p)
+    prickle_sddmm_csr_kernel(A, B, C_dict, D.values(), N, alpha, beta, opts=opts)
     return D
 
-@parir.jit
-def parir_sddmm_coo_kernel(A, B, C, D, alpha, beta):
-    parir.label('nnz')
+@prickle.jit
+def prickle_sddmm_coo_kernel(A, B, C, D, alpha, beta):
+    prickle.label('nnz')
     for i in range(C["nnz"]):
         row = C["rows"][i]
         col = C["cols"][i]
-        t = parir.sum(A[row, :] * B[:, col])
+        t = prickle.sum(A[row, :] * B[:, col])
         D[i] = alpha * t + beta * C["values"][i]
 
-def parir_sddmm_coo(A, B, C, C_rows):
+def prickle_sddmm_coo(A, B, C, C_rows):
     D = C.detach().clone()
     _, K = A.shape
     nnz = C._nnz()
@@ -78,8 +78,8 @@ def parir_sddmm_coo(A, B, C, C_rows):
         "values": C.values(),
         "nnz": nnz
     }
-    opts = parir.par({"nnz": parir.threads(nnz)})
-    parir_sddmm_coo_kernel(A, B, C_dict, D.values(), alpha, beta, opts=opts)
+    opts = prickle.par({"nnz": prickle.threads(nnz)})
+    prickle_sddmm_coo_kernel(A, B, C_dict, D.values(), alpha, beta, opts=opts)
     return D
 
 def validate_sparse_result(A, actual_A):
@@ -108,8 +108,8 @@ def csr_rows(csr_matrix):
     crows = csr_matrix.crow_indices()
     rows = torch.empty_like(csr_matrix.col_indices())
     N = len(crows)-1
-    p = {"N": parir.threads(N), "M": parir.threads(32)}
-    parir_sddmm_decompress_csr(crows, rows, N, opts=parir.par(p))
+    p = {"N": prickle.threads(N), "M": prickle.threads(32)}
+    prickle_sddmm_decompress_csr(crows, rows, N, opts=prickle.par(p))
     return rows
 
 def run_sddmm(framework, matrix_id, k):
@@ -133,12 +133,12 @@ def run_sddmm(framework, matrix_id, k):
         if framework == "PyTorch":
             sparse_d = None
         elif framework == "Parir-CSR":
-            sparse_d = parir_sddmm_csr(dense_a, dense_b, sparse_c)
+            sparse_d = prickle_sddmm_csr(dense_a, dense_b, sparse_c)
         elif framework == "Parir-COO":
             # Convert from CSR to COO on the CPU to reduce peak memory usage on
             # the GPU, which is typically the limiting factor.
             sparse_c_rows = csr_rows(sparse_c)
-            sparse_d = parir_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
+            sparse_d = prickle_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
             del sparse_c_rows
         if not validate_sparse_result(torch_d, sparse_d):
             return 1
@@ -161,10 +161,10 @@ def run_sddmm(framework, matrix_id, k):
         if framework == "PyTorch":
             fn = lambda: torch_sddmm(dense_a, dense_b, sparse_c)
         elif framework == "Parir-CSR":
-            fn = lambda: parir_sddmm_csr(dense_a, dense_b, sparse_c)
+            fn = lambda: prickle_sddmm_csr(dense_a, dense_b, sparse_c)
         elif framework == "Parir-COO":
             sparse_c_rows = csr_rows(sparse_c)
-            fn = lambda: parir_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
+            fn = lambda: prickle_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
         times = common.bench(matrix_id, fn, nwarmup=1)
         result = mk_framework_entry(framework, np.mean(times))
         common.append_csv(f"{common.SDDMM_NAME}-{k}.csv", [result])

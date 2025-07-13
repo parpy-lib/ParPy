@@ -1,5 +1,5 @@
-from .parir import CompileBackend, CompileOptions
-import parir.state
+from .prickle import CompileBackend, CompileOptions
+import prickle.state
 import shutil
 import torch
 
@@ -17,7 +17,7 @@ def assert_cuda_is_enabled():
 def assert_metal_is_enabled():
     if not torch.backends.mps.is_available():
         raise RuntimeError(f"Torch was not built with Metal support")
-    if parir.state.get_metal_cpp_header_path() is None:
+    if prickle.state.get_metal_cpp_header_path() is None:
         raise RuntimeError(f"The path to the Metal-cpp headers must be provided " +
                             "to use the Metal backend. The headers are available " +
                             "at https://developer.apple.com/metal/cpp/. The path " +

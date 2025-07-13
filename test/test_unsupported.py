@@ -2,7 +2,7 @@
 # are correctly reported as errors already when parsing the Python function.
 
 import numpy as np
-import parir
+import prickle
 import pytest
 import torch
 
@@ -10,7 +10,7 @@ from common import *
 
 def test_while_else_rejected():
     with pytest.raises(RuntimeError) as e_info:
-        @parir.jit
+        @prickle.jit
         def while_fun(x, y, N):
             i = 0
             while i < N:
@@ -22,7 +22,7 @@ def test_while_else_rejected():
 
 def test_for_else_rejected():
     with pytest.raises(RuntimeError) as e_info:
-        @parir.jit
+        @prickle.jit
         def for_else(x, y, N):
             for i in range(N):
                 y[i] = x[i]
@@ -32,7 +32,7 @@ def test_for_else_rejected():
 
 def test_with_unsupported_context():
     with pytest.raises(RuntimeError) as e_info:
-        @parir.jit
+        @prickle.jit
         def with_context():
             with 5:
                 pass
@@ -40,16 +40,16 @@ def test_with_unsupported_context():
 
 def test_with_as():
     with pytest.raises(RuntimeError) as e_info:
-        @parir.jit
+        @prickle.jit
         def with_as():
-            with parir.gpu as x:
+            with prickle.gpu as x:
                 a = x + 1
     assert e_info.match(r".*lines 45-46.*")
 
 def test_dict_with_non_string_keys():
-    @parir.jit
+    @prickle.jit
     def dict_arg(a):
-        with parir.gpu:
+        with prickle.gpu:
             a["x"] = a["y"]
 
     with pytest.raises(RuntimeError) as e_info:
@@ -57,9 +57,9 @@ def test_dict_with_non_string_keys():
     assert e_info.match(r"(.*non-string key.*)|(Found no enabled GPU backends.*)")
 
 def test_dict_with_int_key():
-    @parir.jit
+    @prickle.jit
     def dict_arg(a):
-        with parir.gpu:
+        with prickle.gpu:
             a["x"] = a[2]
 
     with pytest.raises(RuntimeError) as e_info:

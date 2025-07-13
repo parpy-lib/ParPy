@@ -1,7 +1,7 @@
 use super::ast::*;
-use crate::parir_compile_error;
-use crate::parir_internal_error;
-use crate::parir_type_error;
+use crate::prickle_compile_error;
+use crate::prickle_internal_error;
+use crate::prickle_type_error;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::err::*;
 use crate::utils::info::Info;
@@ -27,12 +27,12 @@ fn validate_unary_operation(
         UnOp::Tanh => match ty.get_scalar_elem_size() {
             Some(ElemSize::F32 | ElemSize::F64) => Ok(()),
             Some(ElemSize::F16) => {
-                parir_type_error!(i, "Operation tanh not supported for \
+                prickle_type_error!(i, "Operation tanh not supported for \
                                       16-bit floats.")
             },
             Some(_) | None => {
                 let ty = ty.pprint_default();
-                parir_type_error!(i, "Unexpected type {ty} of tanh \
+                prickle_type_error!(i, "Unexpected type {ty} of tanh \
                                       builtin (expected float).")
             }
         },
@@ -47,12 +47,12 @@ fn validate_binary_operation(
         BinOp::Atan2 => match ty.get_scalar_elem_size() {
             Some(ElemSize::F64) => Ok(()),
             Some(ElemSize::F16 | ElemSize::F32) => {
-                parir_type_error!(i, "Operation atan2 is only supported \
+                prickle_type_error!(i, "Operation atan2 is only supported \
                                       for 64-bit floats.")
             },
             Some(_) | None => {
                 let ty = ty.pprint_default();
-                parir_type_error!(i, "Unexpected type {ty} of atan2 \
+                prickle_type_error!(i, "Unexpected type {ty} of atan2 \
                                       builtin (expected float).")
             }
         },
@@ -152,7 +152,7 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             Ok(Stmt::Return {value})
         },
         gpu_ast::Stmt::Scope {i, ..} => {
-            parir_compile_error!(i, "Internal error: Found scope statement that \
+            prickle_compile_error!(i, "Internal error: Found scope statement that \
                                      should have been eliminated")
         },
         gpu_ast::Stmt::SynchronizeBlock {..} => Ok(Stmt::Syncthreads {}),
@@ -217,7 +217,7 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             Ok(Stmt::FreeAsync {id})
         },
         gpu_ast::Stmt::CopyMemory {i, ..} => {
-            parir_internal_error!(i, "Memory copying not supported in CUDA backend")
+            prickle_internal_error!(i, "Memory copying not supported in CUDA backend")
         },
     }
 }

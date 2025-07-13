@@ -1,7 +1,7 @@
 #define NS_PRIVATE_IMPLEMENTATION
 #define MTL_PRIVATE_IMPLEMENTATION
 
-#include "parir_metal.h"
+#include "prickle_metal.h"
 
 static MTL::Device *device;
 static MTL::CommandQueue *cq;
@@ -10,7 +10,7 @@ static MTL::ComputeCommandEncoder *ce;
 static int64_t queue_cap = 0;
 static int64_t queue_size = 0;
 
-extern "C" void parir_init(int64_t queue_capacity) {
+extern "C" void prickle_init(int64_t queue_capacity) {
   if (device == nullptr) {
     device = MTL::CreateSystemDefaultDevice();
     queue_cap = queue_capacity;
@@ -22,11 +22,11 @@ extern "C" void parir_init(int64_t queue_capacity) {
   }
 }
 
-extern "C" void parir_sync() {
-  parir_metal::sync();
+extern "C" void prickle_sync() {
+  prickle_metal::sync();
 }
 
-extern "C" MTL::Buffer *parir_alloc_buffer(int64_t nbytes) {
+extern "C" MTL::Buffer *prickle_alloc_buffer(int64_t nbytes) {
   MTL::Buffer *buf = device->newBuffer(nbytes, MTL::ResourceStorageModeShared);
   if (buf == nullptr) {
     fprintf(stderr, "Failed to allocate buffer of %lld bytes\n", nbytes);
@@ -35,19 +35,19 @@ extern "C" MTL::Buffer *parir_alloc_buffer(int64_t nbytes) {
   return buf;
 }
 
-extern "C" void *parir_ptr_buffer(MTL::Buffer *buf) {
+extern "C" void *prickle_ptr_buffer(MTL::Buffer *buf) {
   return buf->contents();
 }
 
-extern "C" void parir_memcpy(void *dst, void *src, int64_t nbytes) {
+extern "C" void prickle_memcpy(void *dst, void *src, int64_t nbytes) {
   memcpy(dst, src, nbytes);
 }
 
-extern "C" void parir_free_buffer(MTL::Buffer *buf) {
+extern "C" void prickle_free_buffer(MTL::Buffer *buf) {
   buf->release();
 }
 
-namespace parir_metal {
+namespace prickle_metal {
   MTL::Library *load_library(const char *lib_str) {
     NS::String *code = NS::String::string(lib_str, NS::ASCIIStringEncoding);
     NS::Error *err;
@@ -70,11 +70,11 @@ namespace parir_metal {
   }
 
   MTL::Buffer *alloc(int64_t nbytes) {
-    return parir_alloc_buffer(nbytes);
+    return prickle_alloc_buffer(nbytes);
   }
 
   void free(MTL::Buffer *b) {
-    parir_free_buffer(b);
+    prickle_free_buffer(b);
   }
 
   void copy(void *dst, void *src, int64_t nbytes, int64_t k) {
@@ -88,7 +88,7 @@ namespace parir_metal {
     //  3: both device
     dst = k & 1 ? ((MTL::Buffer*)dst)->contents() : dst;
     src = k & 2 ? ((MTL::Buffer*)src)->contents() : src;
-    parir_memcpy(dst, src, nbytes);
+    prickle_memcpy(dst, src, nbytes);
   }
 
   void launch_kernel(

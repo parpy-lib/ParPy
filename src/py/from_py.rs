@@ -132,69 +132,69 @@ fn convert_bool_op<'py, 'a>(
 fn eval_name<'py>(s: String, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
     let globals = types::PyDict::new(py);
     globals.set_item("math", py.import("math")?)?;
-    globals.set_item("parir", py.import("parir")?)?;
+    globals.set_item("prickle", py.import("prickle")?)?;
     py.eval(&CString::new(s)?, Some(&globals), None)
 }
 
 fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Builtin> {
     let py = expr.py();
     let ast = py.import("ast")?;
-    let parir = py.import("parir")?;
+    let prickle = py.import("prickle")?;
     let s = ast.call_method1("unparse", types::PyTuple::new(py, vec![expr])?)?
         .extract::<String>()?;
     match eval_name(s, py) {
         Ok(e) => {
-            if e.eq(parir.getattr("exp")?)? {
+            if e.eq(prickle.getattr("exp")?)? {
                 Ok(Builtin::Exp)
-            } else if e.eq(parir.getattr("inf")?)? {
+            } else if e.eq(prickle.getattr("inf")?)? {
                 Ok(Builtin::Inf)
-            } else if e.eq(parir.getattr("log")?)? {
+            } else if e.eq(prickle.getattr("log")?)? {
                 Ok(Builtin::Log)
-            } else if e.eq(parir.getattr("min")?)? {
+            } else if e.eq(prickle.getattr("min")?)? {
                 Ok(Builtin::Min)
-            } else if e.eq(parir.getattr("max")?)? {
+            } else if e.eq(prickle.getattr("max")?)? {
                 Ok(Builtin::Max)
-            } else if e.eq(parir.getattr("abs")?)? {
+            } else if e.eq(prickle.getattr("abs")?)? {
                 Ok(Builtin::Abs)
-            } else if e.eq(parir.getattr("cos")?)? {
+            } else if e.eq(prickle.getattr("cos")?)? {
                 Ok(Builtin::Cos)
-            } else if e.eq(parir.getattr("sin")?)? {
+            } else if e.eq(prickle.getattr("sin")?)? {
                 Ok(Builtin::Sin)
-            } else if e.eq(parir.getattr("sqrt")?)? {
+            } else if e.eq(prickle.getattr("sqrt")?)? {
                 Ok(Builtin::Sqrt)
-            } else if e.eq(parir.getattr("tanh")?)? {
+            } else if e.eq(prickle.getattr("tanh")?)? {
                 Ok(Builtin::Tanh)
-            } else if e.eq(parir.getattr("atan2")?)? {
+            } else if e.eq(prickle.getattr("atan2")?)? {
                 Ok(Builtin::Atan2)
-            } else if e.eq(parir.getattr("sum")?)? {
+            } else if e.eq(prickle.getattr("sum")?)? {
                 Ok(Builtin::Sum)
-            } else if e.eq(parir.getattr("prod")?)? {
+            } else if e.eq(prickle.getattr("prod")?)? {
                 Ok(Builtin::Prod)
-            } else if e.eq(parir.getattr("float16")?)? {
+            } else if e.eq(prickle.getattr("float16")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::F16})
-            } else if e.eq(parir.getattr("float32")?)? {
+            } else if e.eq(prickle.getattr("float32")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::F32})
-            } else if e.eq(parir.getattr("float64")?)? {
+            } else if e.eq(prickle.getattr("float64")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::F64})
-            } else if e.eq(parir.getattr("int8")?)? {
+            } else if e.eq(prickle.getattr("int8")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::I8})
-            } else if e.eq(parir.getattr("int16")?)? {
+            } else if e.eq(prickle.getattr("int16")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::I16})
-            } else if e.eq(parir.getattr("int32")?)? {
+            } else if e.eq(prickle.getattr("int32")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::I32})
-            } else if e.eq(parir.getattr("int64")?)? {
+            } else if e.eq(prickle.getattr("int64")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::I64})
-            } else if e.eq(parir.getattr("uint8")?)? {
+            } else if e.eq(prickle.getattr("uint8")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::U8})
-            } else if e.eq(parir.getattr("uint16")?)? {
+            } else if e.eq(prickle.getattr("uint16")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::U16})
-            } else if e.eq(parir.getattr("uint32")?)? {
+            } else if e.eq(prickle.getattr("uint32")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::U32})
-            } else if e.eq(parir.getattr("uint64")?)? {
+            } else if e.eq(prickle.getattr("uint64")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::U64})
-            } else if e.eq(parir.getattr("label")?)? {
+            } else if e.eq(prickle.getattr("label")?)? {
                 Ok(Builtin::Label)
-            } else if e.eq(parir.getattr("gpu")?)? {
+            } else if e.eq(prickle.getattr("gpu")?)? {
                 Ok(Builtin::GpuContext)
             } else {
                 py_runtime_error!(i, "Unknown built-in operator {expr}")
@@ -413,7 +413,7 @@ fn construct_expr_stmt(
         Expr::String {v, ..} => Ok(v),
         _ => {
             let msg = concat!(
-                "First argument of parir.label should be a string literal ",
+                "First argument of prickle.label should be a string literal ",
                 "representing the label name"
             );
             py_runtime_error!(i, "{}", msg)
@@ -552,7 +552,7 @@ fn convert_stmt<'py, 'a>(
                         let body = convert_stmts(stmt.getattr("body")?, env)?;
                         Ok(Stmt::WithGpuContext {body, i})
                     },
-                    _ => py_runtime_error!(i, "With statements are only supported for 'parir.gpu'")
+                    _ => py_runtime_error!(i, "With statements are only supported for 'prickle.gpu'")
                 }
             } else {
                 let msg = concat!(
@@ -695,14 +695,14 @@ mod test {
 
     #[test]
     fn lookup_builtin_exp() -> PyResult<()> {
-        lookup_builtin_ok("parir.exp", Builtin::Exp)?;
+        lookup_builtin_ok("prickle.exp", Builtin::Exp)?;
         lookup_builtin_fail("torch.exp")?;
         lookup_builtin_fail("exp")
     }
 
     #[test]
     fn lookup_builtin_inf() -> PyResult<()> {
-        lookup_builtin_ok("parir.inf", Builtin::Inf)?;
+        lookup_builtin_ok("prickle.inf", Builtin::Inf)?;
         lookup_builtin_ok("float('inf')", Builtin::Inf)?;
         lookup_builtin_fail("torch.inf")?;
         lookup_builtin_fail("inf")
@@ -710,63 +710,63 @@ mod test {
 
     #[test]
     fn lookup_builtin_log() -> PyResult<()> {
-        lookup_builtin_ok("parir.log", Builtin::Log)?;
+        lookup_builtin_ok("prickle.log", Builtin::Log)?;
         lookup_builtin_fail("torch.log")?;
         lookup_builtin_fail("log")
     }
 
     #[test]
     fn lookup_builtin_max() -> PyResult<()> {
-        lookup_builtin_ok("parir.max", Builtin::Max)
+        lookup_builtin_ok("prickle.max", Builtin::Max)
     }
 
     #[test]
     fn lookup_builtin_min() -> PyResult<()> {
-        lookup_builtin_ok("parir.min", Builtin::Min)
+        lookup_builtin_ok("prickle.min", Builtin::Min)
     }
 
     #[test]
     fn lookup_builtin_reduce_ops() -> PyResult<()> {
-        lookup_builtin_ok("parir.sum", Builtin::Sum)?;
-        lookup_builtin_ok("parir.prod", Builtin::Prod)
+        lookup_builtin_ok("prickle.sum", Builtin::Sum)?;
+        lookup_builtin_ok("prickle.prod", Builtin::Prod)
     }
 
     #[test]
     fn lookup_builtin_abs() -> PyResult<()> {
-        lookup_builtin_ok("parir.abs", Builtin::Abs)?;
+        lookup_builtin_ok("prickle.abs", Builtin::Abs)?;
         lookup_builtin_ok("abs", Builtin::Abs)
     }
 
     #[test]
     fn lookup_builtin_conversion() -> PyResult<()> {
-        lookup_builtin_ok("parir.int8", Builtin::Convert {sz: ElemSize::I8})?;
-        lookup_builtin_ok("parir.int16", Builtin::Convert {sz: ElemSize::I16})?;
-        lookup_builtin_ok("parir.int32", Builtin::Convert {sz: ElemSize::I32})?;
-        lookup_builtin_ok("parir.int64", Builtin::Convert {sz: ElemSize::I64})?;
-        lookup_builtin_ok("parir.uint8", Builtin::Convert {sz: ElemSize::U8})?;
-        lookup_builtin_ok("parir.uint16", Builtin::Convert {sz: ElemSize::U16})?;
-        lookup_builtin_ok("parir.uint32", Builtin::Convert {sz: ElemSize::U32})?;
-        lookup_builtin_ok("parir.uint64", Builtin::Convert {sz: ElemSize::U64})?;
-        lookup_builtin_ok("parir.float16", Builtin::Convert {sz: ElemSize::F16})?;
-        lookup_builtin_ok("parir.float32", Builtin::Convert {sz: ElemSize::F32})?;
-        lookup_builtin_ok("parir.float64", Builtin::Convert {sz: ElemSize::F64})
+        lookup_builtin_ok("prickle.int8", Builtin::Convert {sz: ElemSize::I8})?;
+        lookup_builtin_ok("prickle.int16", Builtin::Convert {sz: ElemSize::I16})?;
+        lookup_builtin_ok("prickle.int32", Builtin::Convert {sz: ElemSize::I32})?;
+        lookup_builtin_ok("prickle.int64", Builtin::Convert {sz: ElemSize::I64})?;
+        lookup_builtin_ok("prickle.uint8", Builtin::Convert {sz: ElemSize::U8})?;
+        lookup_builtin_ok("prickle.uint16", Builtin::Convert {sz: ElemSize::U16})?;
+        lookup_builtin_ok("prickle.uint32", Builtin::Convert {sz: ElemSize::U32})?;
+        lookup_builtin_ok("prickle.uint64", Builtin::Convert {sz: ElemSize::U64})?;
+        lookup_builtin_ok("prickle.float16", Builtin::Convert {sz: ElemSize::F16})?;
+        lookup_builtin_ok("prickle.float32", Builtin::Convert {sz: ElemSize::F32})?;
+        lookup_builtin_ok("prickle.float64", Builtin::Convert {sz: ElemSize::F64})
     }
 
     #[test]
     fn lookup_builtin_sqrt() -> PyResult<()> {
-        lookup_builtin_ok("parir.sqrt", Builtin::Sqrt)?;
+        lookup_builtin_ok("prickle.sqrt", Builtin::Sqrt)?;
         lookup_builtin_fail("torch.sqrt")
     }
 
     #[test]
     fn lookup_builtin_trigonometry() -> PyResult<()> {
-        lookup_builtin_ok("parir.cos", Builtin::Cos)?;
+        lookup_builtin_ok("prickle.cos", Builtin::Cos)?;
         lookup_builtin_fail("torch.cos")?;
-        lookup_builtin_ok("parir.sin", Builtin::Sin)?;
+        lookup_builtin_ok("prickle.sin", Builtin::Sin)?;
         lookup_builtin_fail("torch.sin")?;
-        lookup_builtin_ok("parir.tanh", Builtin::Tanh)?;
+        lookup_builtin_ok("prickle.tanh", Builtin::Tanh)?;
         lookup_builtin_fail("torch.tanh")?;
-        lookup_builtin_ok("parir.atan2", Builtin::Atan2)?;
+        lookup_builtin_ok("prickle.atan2", Builtin::Atan2)?;
         lookup_builtin_fail("torch.atan2")
     }
 

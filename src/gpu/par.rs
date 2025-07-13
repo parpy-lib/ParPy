@@ -3,7 +3,7 @@
 
 use super::ast::{Dim, LaunchArgs};
 use crate::par;
-use crate::parir_compile_error;
+use crate::prickle_compile_error;
 use crate::ir::ast::*;
 use crate::utils::err::*;
 use crate::utils::info::Info;
@@ -63,7 +63,7 @@ fn unify_par(acc: Par, p: Par) -> CompileResult<Par> {
             "The parallel structure of this statement is inconsistent relative to ",
             "previous statements on the same level of nesting"
         );
-        parir_compile_error!(p.i, "{}", msg)
+        prickle_compile_error!(p.i, "{}", msg)
     }
 }
 
@@ -90,7 +90,7 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
                      This is not supported because the compiller cannot generate \
                      efficient code for this."
                 );
-                parir_compile_error!(i, "{}", msg)
+                prickle_compile_error!(i, "{}", msg)
             }
         },
         Stmt::For {body, par, ..} => {

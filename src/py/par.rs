@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 /// We consider the AST to contain parallelism if it contains:
 /// 1. A label which is associated with a parallel argument.
-/// 2. A GPU context introduction, corresponding to the use of 'with parir.gpu:'.
+/// 2. A GPU context introduction, corresponding to the use of 'with prickle.gpu:'.
 fn ensure_parallelism_stmt(
     acc: bool,
     s: &Stmt,
@@ -41,11 +41,11 @@ pub fn ensure_parallelism(
     if !contains_parallelism {
         let msg = format!(
             "The function {0} does not contain any parallelism, which is not \
-             allowed. Try adding a label ('parir.label') in front of a \
+             allowed. Try adding a label ('prickle.label') in front of a \
              parallelizable statement, and specify its parallelism using the \
              'parallelize' keyword argument. Alternatively, if you want to run \
              sequential code on the GPU, wrap the code in a GPU context as \
-             'with parir.gpu: ...'.",
+             'with prickle.gpu: ...'.",
              def.id
         );
         py_runtime_error!(def.i, "{}", msg)

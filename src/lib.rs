@@ -105,7 +105,7 @@ fn compile_ir<'py>(
 }
 
 #[pymodule]
-fn parir(m : &Bound<'_, PyModule>) -> PyResult<()> {
+fn prickle(m : &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(python_to_ir, m)?)?;
     m.add_function(wrap_pyfunction!(print_ir_ast, m)?)?;
     m.add_function(wrap_pyfunction!(get_ir_function_name, m)?)?;

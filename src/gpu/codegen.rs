@@ -2,7 +2,7 @@ use super::ast::*;
 use super::free_vars;
 use super::par::{GpuMap, GpuMapping};
 use super::pprint;
-use crate::parir_compile_error;
+use crate::prickle_compile_error;
 use crate::ir::ast as ir_ast;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -249,11 +249,11 @@ fn reduction_op_neutral_element(
             Some(literal) => Ok(literal),
             None => {
                 let op = pprint::print_binop(op);
-                parir_compile_error!(i, "Parallel reductions not supported for operator {op}")
+                prickle_compile_error!(i, "Parallel reductions not supported for operator {op}")
             }
         }
     } else {
-        parir_compile_error!(i, "Parallel reductions not supported for non-scalar arguments")
+        prickle_compile_error!(i, "Parallel reductions not supported for non-scalar arguments")
     }
 }
 
@@ -447,7 +447,7 @@ fn generate_kernel_stmt(
             acc.push(Stmt::SynchronizeBlock {i});
         },
         ir_ast::Stmt::SyncPoint {i, ..} => {
-            parir_compile_error!(i, "Found an unsupported inter-block \
+            prickle_compile_error!(i, "Found an unsupported inter-block \
                                      synchronization statement in parallel \
                                      code, which is not supported")?
         },
@@ -486,11 +486,11 @@ fn generate_kernel_stmt(
             acc.push(Stmt::Return {value, i});
         },
         ir_ast::Stmt::Alloc {i, ..} => {
-            parir_compile_error!(i, "Memory allocation is not supported in \
+            prickle_compile_error!(i, "Memory allocation is not supported in \
                                      parallel code.")?
         },
         ir_ast::Stmt::Free {i, ..} => {
-            parir_compile_error!(i, "Memory deallocation is not supported in \
+            prickle_compile_error!(i, "Memory deallocation is not supported in \
                                      parallel code.")?
         },
     };
@@ -516,10 +516,10 @@ fn from_ir_stmt(
 ) -> CompileResult<(Vec<Stmt>, Vec<Top>)> {
     let kernels = match stmt {
         ir_ast::Stmt::Definition {i, ..} | ir_ast::Stmt::Assign {i, ..} => {
-            parir_compile_error!(i, "Assignments are not allowed outside parallel code")
+            prickle_compile_error!(i, "Assignments are not allowed outside parallel code")
         },
         ir_ast::Stmt::SyncPoint {i, ..} => {
-            parir_compile_error!(i, "Internal error: Found synchronization point \
+            prickle_compile_error!(i, "Internal error: Found synchronization point \
                                      outside parallel code")
         },
         ir_ast::Stmt::For {var, lo, hi, step, body, par, i} => {
@@ -646,7 +646,7 @@ fn unwrap_params(
                     .collect::<Vec<Param>>();
                 unwrapped_params.append(&mut struct_params);
             } else {
-                parir_compile_error!(p.i, "Parameter refers to unknown struct type (internal compiler error)")?;
+                prickle_compile_error!(p.i, "Parameter refers to unknown struct type (internal compiler error)")?;
             }
         } else {
             unwrapped_params.push(p);

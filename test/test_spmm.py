@@ -1,6 +1,6 @@
 import numpy as np
 from math import inf
-import parir
+import prickle
 import pytest
 import torch
 import warnings
@@ -13,13 +13,13 @@ np.random.seed(1234)
 # Multiplies a sparse CSR matrix A with a dense matrix B, and stores the result
 # in C. This implementation computes the result of each cell in parallel in
 # separate blocks.
-@parir.jit
+@prickle.jit
 def spmm_cell(A, B, C):
-    parir.label('i')
+    prickle.label('i')
     for i in range(A["nrows"]):
-        parir.label('j')
+        prickle.label('j')
         for j in range(B["ncols"]):
-            parir.label('aidx')
+            prickle.label('aidx')
             for aidx in range(A["rows"][i], A["rows"][i+1]):
                 C[i,j] += A["values"][aidx] * B["values"][A["cols"][aidx], j]
 
@@ -79,9 +79,9 @@ def test_spmm(backend):
         A, B = spmm_test_data()
         expected = A["original"].matmul(B["values"])
         p = {
-            'i': parir.threads(A["nrows"]),
-            'j': parir.threads(B["ncols"]),
-            'aidx': parir.threads(32).reduce()
+            'i': prickle.threads(A["nrows"]),
+            'j': prickle.threads(B["ncols"]),
+            'aidx': prickle.threads(32).reduce()
         }
         C = spmm_wrap(A, B, spmm_cell, par_opts(backend, p))
         assert torch.allclose(C, expected, atol=1e-5), f"{C}\n{expected}"
@@ -92,21 +92,21 @@ def test_spmm_compiles(backend):
     A, B = spmm_test_data()
     del A["original"]
     C = torch.zeros((A["nrows"], B["ncols"]), dtype=torch.float32)
-    p = { 'i': parir.threads(A["nrows"]) }
-    s = parir.print_compiled(spmm_cell, [A, B, C], par_opts(backend, p))
+    p = { 'i': prickle.threads(A["nrows"]) }
+    s = prickle.print_compiled(spmm_cell, [A, B, C], par_opts(backend, p))
     assert len(s) != 0
 
     p = {
-        'i': parir.threads(A["nrows"]),
-        'j': parir.threads(B["ncols"])
+        'i': prickle.threads(A["nrows"]),
+        'j': prickle.threads(B["ncols"])
     }
-    s = parir.print_compiled(spmm_cell, [A, B, C], par_opts(backend, p))
+    s = prickle.print_compiled(spmm_cell, [A, B, C], par_opts(backend, p))
     assert len(s) != 0
 
     p = {
-        'i': parir.threads(A["nrows"]),
-        'j': parir.threads(B["ncols"]),
-        'aidx': parir.threads(32).reduce()
+        'i': prickle.threads(A["nrows"]),
+        'j': prickle.threads(B["ncols"]),
+        'aidx': prickle.threads(32).reduce()
     }
-    s = parir.print_compiled(spmm_cell, [A, B, C], par_opts(backend, p))
+    s = prickle.print_compiled(spmm_cell, [A, B, C], par_opts(backend, p))
     assert len(s) != 0

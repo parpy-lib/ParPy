@@ -1,4 +1,4 @@
-from .parir import CompileBackend
+from .prickle import CompileBackend
 from .buffer import Buffer
 import numpy as np
 

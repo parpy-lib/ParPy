@@ -1,4 +1,4 @@
-import parir
+import prickle
 import pytest
 import torch
 
@@ -6,100 +6,100 @@ from common import *
 
 torch.manual_seed(1234)
 
-@parir.jit
+@prickle.jit
 def add_slices(x, y, out):
-    parir.label('N')
+    prickle.label('N')
     out[:] = x[:] + y[:]
 
-@parir.jit
+@prickle.jit
 def add_slices_2d(x, y, out):
-    parir.label('N')
-    parir.label('M')
+    prickle.label('N')
+    prickle.label('M')
     out[:,:] = x[:,:] + y[:,:]
 
-@parir.jit
+@prickle.jit
 def mul_discontinuous_2d(x, y, out):
-    parir.label('N')
-    parir.label('M')
+    prickle.label('N')
+    prickle.label('M')
     out[:,:] = x[:,0,:] * y[0,:,:]
 
-@parir.jit
+@prickle.jit
 def matmul_slice(a, b, M, N, c):
     for i in range(M):
-        parir.label('N')
+        prickle.label('N')
         for j in range(N):
-            parir.label('K')
-            c[i,j] = parir.sum(a[i,:] * b[:,j])
+            prickle.label('K')
+            c[i,j] = prickle.sum(a[i,:] * b[:,j])
 
-@parir.jit
+@prickle.jit
 def jacobi_1d(nsteps, A, B):
     for t in range(1, nsteps):
-        parir.label('N')
+        prickle.label('N')
         B[1:-1] = (A[:-2] + A[1:-1] + A[2:]) / 3.0
-        parir.label('N')
+        prickle.label('N')
         A[1:-1] = (B[:-2] + B[1:-1] + B[2:]) / 3.0
 
-@parir.jit
+@prickle.jit
 def slice_assignment(x):
-    parir.label('N')
-    parir.label('M')
+    prickle.label('N')
+    prickle.label('M')
     x[:,:] = 0.0
 
-@parir.jit
+@prickle.jit
 def slice_multi_dim_sum(x, out):
-    with parir.gpu:
-        parir.label('N')
-        out[0] = parir.sum(x[:,:])
+    with prickle.gpu:
+        prickle.label('N')
+        out[0] = prickle.sum(x[:,:])
 
-@parir.jit
+@prickle.jit
 def slice_multi_dim_interspersed_sum(x, out):
-    with parir.gpu:
-        parir.label('N')
-        out[0] = parir.sum(x[:,0,:,2])
+    with prickle.gpu:
+        prickle.label('N')
+        out[0] = prickle.sum(x[:,0,:,2])
 
-@parir.jit
+@prickle.jit
 def slice_assign_to_new_var(x):
-    with parir.gpu:
+    with prickle.gpu:
         y = x[:]
 
-@parir.jit
+@prickle.jit
 def slice_assign_invalid_dims(x, y):
-    with parir.gpu:
-        y[:] = parir.sum(x[:,:,:], axis=0)
+    with prickle.gpu:
+        y[:] = prickle.sum(x[:,:,:], axis=0)
 
-@parir.jit
+@prickle.jit
 def slice_reduce_incompatible_shapes(x, y, out):
-    with parir.gpu:
-        out[0] = parir.sum(x[:,:] * y[:], axis=0)
+    with prickle.gpu:
+        out[0] = prickle.sum(x[:,:] * y[:], axis=0)
 
-@parir.jit
+@prickle.jit
 def slice_reduce_in_loop(x, y, N, out):
-    parir.label('N')
+    prickle.label('N')
     for i in range(N):
-        parir.label('M')
-        out[i] = parir.sum(x[i,:] * y[:,i])
+        prickle.label('M')
+        out[i] = prickle.sum(x[i,:] * y[:,i])
 
-@parir.jit
+@prickle.jit
 def slice_invalid_reduce_assignment(x, y, z, N):
-    parir.label('N')
+    prickle.label('N')
     for i in range(N):
-        x[i,:] = parir.min(y[i,:] + z[:,i])
+        x[i,:] = prickle.min(y[i,:] + z[:,i])
 
-@parir.jit
+@prickle.jit
 def slice_invalid_dims(x, y, N):
-    parir.label('N')
+    prickle.label('N')
     for i in range(N):
         x[i,:] = y[i,:,:]
 
-@parir.jit
+@prickle.jit
 def slice_in_range(x, y):
-    parir.label('N')
-    for i in range(parir.sum(y[:])):
+    prickle.label('N')
+    for i in range(prickle.sum(y[:])):
         x[i] = i
 
-@parir.jit
+@prickle.jit
 def temp_slices(x, y, z):
-    parir.label('N')
+    prickle.label('N')
     x[:] = (y[1:] + z[:-1])[1:-1]
 
 def run_slicing_test(compile_only, spec, backend):
@@ -115,17 +115,17 @@ def run_slicing_test(compile_only, spec, backend):
         err = None
         err_msg = None
     p = {
-        'N': parir.threads(32),
-        'M': parir.threads(32),
-        'K': parir.threads(32)
+        'N': prickle.threads(32),
+        'M': prickle.threads(32),
+        'K': prickle.threads(32)
     }
     if compile_only:
         if err:
             with pytest.raises(err) as e_info:
-                s = parir.print_compiled(fn, args, par_opts(backend, p))
+                s = prickle.print_compiled(fn, args, par_opts(backend, p))
             assert e_info.match(err_msg)
         else:
-            s = parir.print_compiled(fn, args, par_opts(backend, p))
+            s = prickle.print_compiled(fn, args, par_opts(backend, p))
             assert len(s) != 0
     else:
         if err:

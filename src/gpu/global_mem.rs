@@ -10,7 +10,7 @@
 /// index is independent of the thread index, so that only the first thread performs the write.
 
 use super::ast::*;
-use crate::parir_compile_error;
+use crate::prickle_compile_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
@@ -46,7 +46,7 @@ fn extract_assign_target_id(e: &Expr) -> CompileResult<Name> {
         Expr::Var {id, ..} => Ok(id.clone()),
         Expr::ArrayAccess {target, ..} => extract_assign_target_id(&target),
         _ => {
-            parir_compile_error!(e.get_info(), "Unexpected target of assignment")
+            prickle_compile_error!(e.get_info(), "Unexpected target of assignment")
         }
     }
 }

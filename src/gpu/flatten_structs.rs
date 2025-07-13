@@ -1,4 +1,4 @@
-use crate::parir_compile_error;
+use crate::prickle_compile_error;
 use crate::gpu::ast::*;
 use crate::utils::err::*;
 use crate::utils::info::Info;
@@ -18,7 +18,7 @@ fn validate_return_type(ty: &Type) -> CompileResult<()> {
         Type::Struct {id} => {
             let i = Info::default();
             let id = id.pprint_default();
-            parir_compile_error!(i, "Found struct return type in function {id}, \
+            prickle_compile_error!(i, "Found struct return type in function {id}, \
                                      which is not supported")
         },
     }
@@ -40,11 +40,11 @@ fn find_struct_fields<'a>(
             Some(fields) => Ok(fields),
             None => {
                 let idstr = id.pprint_default();
-                parir_compile_error!(i, "Could not find struct type with name {0}", idstr)
+                prickle_compile_error!(i, "Could not find struct type with name {0}", idstr)
             }
         },
         _ => {
-            parir_compile_error!(i, "Found struct field access on non-variable value")
+            prickle_compile_error!(i, "Found struct field access on non-variable value")
         }
     }
 }
@@ -56,8 +56,8 @@ fn flatten_structs_kernel_expr(env: &StructEnv, e: Expr) -> CompileResult<Expr> 
             match fields.get(&label) {
                 Some(Param {id, ..}) => Ok(Expr::Var {id: id.clone(), ty, i}),
                 None => {
-                    parir_compile_error!(i, "Found reference to unknown struct \
-                                             field {label}")
+                    prickle_compile_error!(i, "Found reference to unknown struct \
+                                               field {label}")
                 }
             }
         },
@@ -132,13 +132,13 @@ fn expand_kernel_param(env: &StructEnv, p: Param) -> CompileResult<Vec<Param>> {
                 },
                 None => {
                     let pid = p.id.pprint_default();
-                    parir_compile_error!(p.i, "Parameter {pid} refers to undefined struct type {id}")
+                    prickle_compile_error!(p.i, "Parameter {pid} refers to undefined struct type {id}")
                 }
             }
         },
         Type::Pointer {ty, ..} if contains_struct_type(ty) => {
             let pid = p.id.pprint_default();
-            parir_compile_error!(p.i, "Parameter {pid} contains pointer to a \
+            prickle_compile_error!(p.i, "Parameter {pid} contains pointer to a \
                                        struct type, which is not supported")
         },
         _ => Ok(vec![p])

@@ -1,15 +1,15 @@
 import numpy as np
-import parir
+import prickle
 import pytest
 import torch
 
 from common import *
 
-@parir.jit
+@prickle.jit
 def syrk(alpha, beta, C, A, N, M):
-    parir.label('i')
+    prickle.label('i')
     for i in range(N):
-        parir.label('j')
+        prickle.label('j')
         for j in range(i+1):
             # NOTE: In the generated code, only one thread should write to this
             # memory location to avoid a concurrency bug.
@@ -32,8 +32,8 @@ def syrk_data():
 
 def syrk_par_spec(N, nthreads):
     return {
-        'i': parir.threads(N),
-        'k': parir.threads(nthreads).reduce()
+        'i': prickle.threads(N),
+        'k': prickle.threads(nthreads).reduce()
     }
 
 def syrk_run_par(backend, nthreads):

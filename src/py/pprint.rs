@@ -192,7 +192,7 @@ impl PrettyPrint for Stmt {
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("{indent}with parir.gpu:\n{body}"))
+                (env, format!("{indent}with prickle.gpu:\n{body}"))
             },
             Stmt::Scope {body, ..} => {
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
@@ -203,7 +203,7 @@ impl PrettyPrint for Stmt {
                 (env, format!("{indent}{func}({args})"))
             },
             Stmt::Label {label, ..} => {
-                (env, format!("{indent}parir.label(\"{label}\")"))
+                (env, format!("{indent}prickle.label(\"{label}\")"))
             }
         }
     }

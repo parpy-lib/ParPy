@@ -1,6 +1,6 @@
 use super::par_tree;
 use crate::par;
-use crate::parir_compile_error;
+use crate::prickle_compile_error;
 use crate::ir::ast::*;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -133,7 +133,7 @@ fn extract_neutral_element(
 ) -> CompileResult<Expr> {
     match reduce::neutral_element(op, sz, i) {
         Some(ne) => Ok(ne),
-        None => parir_compile_error!(i, "Reduction operation {0} has unknown \
+        None => prickle_compile_error!(i, "Reduction operation {0} has unknown \
                                          neutral element.",
                                          op.pprint_default())
     }
@@ -323,7 +323,7 @@ fn split_inter_block_parallel_reductions_stmt(s: Stmt) -> CompileResult<Stmt> {
                 let true_expr = Expr::Bool {v: true, ty: bool_ty, i: i.clone()};
                 Ok(Stmt::If {cond: true_expr, thn, els: vec![], i: i.clone()})
             } else {
-                parir_compile_error!(i, "Multi-block reductions must use a \
+                prickle_compile_error!(i, "Multi-block reductions must use a \
                                          multiple of {0} threads.",
                                          par.tpb)
             }
@@ -450,7 +450,7 @@ fn hoist_chunk(
                     body: inner_stmts, par: seq_par, i: seq_i
                 })
             },
-            _ => parir_compile_error!(&i, "Internal error when hoisting \
+            _ => prickle_compile_error!(&i, "Internal error when hoisting \
                                            sequential loop")
         }?;
         Ok(vec![pre_stmt, seq_loop_stmt])
@@ -866,8 +866,8 @@ fn collect_variable_temp_data(
                     };
                     (ptr_ty, sz.clone())
                 },
-                _ => parir_compile_error!(i, "Cannot allocate temporary data \
-                                              for non-tensor variable {id}.")?
+                _ => prickle_compile_error!(i, "Cannot allocate temporary data \
+                                                for non-tensor variable {id}.")?
             };
             let new_id = id.clone().with_new_sym();
             let expr = Expr::TensorAccess {

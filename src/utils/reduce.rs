@@ -1,4 +1,4 @@
-use crate::parir_compile_error;
+use crate::prickle_compile_error;
 use crate::ir::ast as ir_ast;
 use crate::py::ast::{BinOp, Builtin, ElemSize};
 use crate::py::ast as py_ast;
@@ -149,14 +149,14 @@ fn extract_bin_op(
                 ir_ast::Type::Tensor {sz, shape} if shape.is_empty() => {
                     Ok((*lhs, non_short_circuiting_op(op), *rhs, sz, i))
                 },
-                _ => parir_compile_error!(i, "Expected the result of reduction \
+                _ => prickle_compile_error!(i, "Expected the result of reduction \
                                               to be a scalar value, found {0}",
                                               ty.pprint_default())
             }
         },
         ir_ast::Expr::Convert {e, ..} => extract_bin_op(*e),
         _ => {
-            parir_compile_error!(i, "RHS of reduction statement should be a \
+            prickle_compile_error!(i, "RHS of reduction statement should be a \
                                      binary operation.")
         }
     }
@@ -193,20 +193,20 @@ pub fn extract_reduction_operands(
                              target {1}.",
                              lhs.pprint_default(), dst.pprint_default()
                         );
-                        parir_compile_error!(i, "{}", msg)
+                        prickle_compile_error!(i, "{}", msg)
                     }
                 },
                 _ => {
-                    parir_compile_error!(i, "Left-hand side of reduction must \
+                    prickle_compile_error!(i, "Left-hand side of reduction must \
                                              be a variable or tensor access.")
                 }
             }
         } else {
-            parir_compile_error!(i, "Reduction for-loop statement must be an \
+            prickle_compile_error!(i, "Reduction for-loop statement must be an \
                                      assignment.")
         }
     } else {
-        parir_compile_error!(i, "Reduction for-loop must contain a single \
+        prickle_compile_error!(i, "Reduction for-loop must contain a single \
                                  statement.")
     }
 }

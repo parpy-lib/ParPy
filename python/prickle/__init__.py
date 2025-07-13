@@ -1,20 +1,20 @@
-from . import backend, buffer, compile, key, parir, validate
+from . import backend, buffer, compile, key, prickle, validate
 from .buffer import sync
 from .compile import clear_cache
 from .operators import *
 from .state import *
-from .parir import par, seq
-from .parir import CompileBackend, CompileOptions
+from .prickle import par, seq
+from .prickle import CompileBackend, CompileOptions
 
 ir_asts = {}
 fun_cache = {}
 
 def threads(n):
-    from .parir import LoopPar
+    from .prickle import LoopPar
     return LoopPar().threads(n)
 
 def reduce():
-    from .parir import LoopPar
+    from .prickle import LoopPar
     return LoopPar().reduce()
 
 def convert_python_function_to_ir(fn):
@@ -41,7 +41,7 @@ def convert_python_function_to_ir(fn):
     # representation in the compiler. As part of this step, we inline any
     # references to previously parsed functions.
     ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
-    return parir.python_to_ir(ast, filepath, fst_line-1, col_ofs, ir_ast_map)
+    return prickle.python_to_ir(ast, filepath, fst_line-1, col_ofs, ir_ast_map)
 
 def check_kwarg(kwargs, key, default_value, expected_ty):
     if key not in kwargs or kwargs[key] is None:
@@ -54,7 +54,7 @@ def check_kwarg(kwargs, key, default_value, expected_ty):
         raise RuntimeError(f"The keyword argument {key} should be of type {ty}")
 
 def check_kwargs(kwargs):
-    default_opts = parir.CompileOptions()
+    default_opts = prickle.CompileOptions()
     opts = check_kwarg(kwargs, "opts", default_opts, type(default_opts))
 
     # If the compiler is given any other keyword arguments than those specified
@@ -67,7 +67,7 @@ def check_kwargs(kwargs):
 
 def compile_function(ir_ast, args, opts):
     # Extract the name of the main function in the IR AST.
-    name = parir.get_ir_function_name(ir_ast)
+    name = prickle.get_ir_function_name(ir_ast)
 
     # Generate a key based on the IR AST, the function arguments, and the
     # compile options. If this key is found in the cache, we have already
@@ -80,7 +80,7 @@ def compile_function(ir_ast, args, opts):
     # Generate the code based on the provided IR AST, arguments and compilation
     # options.
     ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
-    code, unsymb_code = parir.compile_ir(ir_ast, args, opts, ir_ast_map)
+    code, unsymb_code = prickle.compile_ir(ir_ast, args, opts, ir_ast_map)
 
     # If the shared library corresponding to the generated code does not exist,
     # we run the underlying compiler to produce a shared library.
@@ -100,7 +100,7 @@ def run_callbacks(callbacks, opts):
         for cb in callbacks:
             cb()
 
-def compile_string(fun_name, code, opts=parir.CompileOptions()):
+def compile_string(fun_name, code, opts=prickle.CompileOptions()):
     opts = backend.resolve(opts, True)
     cache_key = "string_" + key.generate_function_key(code, opts)
     compile.build_shared_library(cache_key, code, opts)
@@ -112,7 +112,7 @@ def compile_string(fun_name, code, opts=parir.CompileOptions()):
     inner.__name__ = fun_name
     return inner
 
-def print_compiled(fun, args, opts=parir.CompileOptions()):
+def print_compiled(fun, args, opts=prickle.CompileOptions()):
     """
     Compile the provided Python function with respect to the given function
     arguments and parallelization arguments. Returns the resulting CUDA C++
@@ -125,7 +125,7 @@ def print_compiled(fun, args, opts=parir.CompileOptions()):
         ir_ast = convert_python_function_to_ir(fun)
     _, args = validate.check_arguments(args, opts, False)
     ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
-    code, _ = parir.compile_ir(ir_ast, args, opts, ir_ast_map)
+    code, _ = prickle.compile_ir(ir_ast, args, opts, ir_ast_map)
     return code
 
 def jit(fun):

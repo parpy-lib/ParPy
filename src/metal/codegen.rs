@@ -1,6 +1,6 @@
 use super::ast::*;
-use crate::parir_internal_error;
-use crate::parir_type_error;
+use crate::prickle_internal_error;
+use crate::prickle_type_error;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -44,7 +44,7 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
         gpu_ast::Type::Scalar {sz} => {
             match sz {
                 ElemSize::F64 if env.on_device => {
-                    parir_type_error!(i, "Metal does not support double-precision \
+                    prickle_type_error!(i, "Metal does not support double-precision \
                                           floating-point numbers.")
                 },
                 _ => Ok(Type::Scalar {sz})
@@ -53,7 +53,7 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
         gpu_ast::Type::Pointer {ty, mem} => {
             let ty = match from_gpu_ir_type(env, *ty, i) {
                 Ok(Type::Pointer {..}) => {
-                    parir_type_error!(i, "Found nested pointer in generated code, \
+                    prickle_type_error!(i, "Found nested pointer in generated code, \
                                           which is not supported in Metal.")
                 },
                 Ok(ty) => Ok(Box::new(ty)),
@@ -69,7 +69,7 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
             }
         },
         gpu_ast::Type::Struct {id} => {
-            parir_internal_error!(i, "Found struct type {id} in the Metal backend.")
+            prickle_internal_error!(i, "Found struct type {id} in the Metal backend.")
         }
     }
 }
@@ -97,7 +97,7 @@ fn from_gpu_ir_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
             Ok(Expr::Ternary {cond, thn, els, ty, i})
         },
         gpu_ast::Expr::StructFieldAccess {i, ..} => {
-            parir_internal_error!(i, "Found struct field access in the Metal backend,\
+            prickle_internal_error!(i, "Found struct field access in the Metal backend,\
                                       where structs are not supported.")
         },
         gpu_ast::Expr::ArrayAccess {target, idx, i, ..} => {
@@ -116,7 +116,7 @@ fn from_gpu_ir_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
             Ok(Expr::Convert {e, ty})
         },
         gpu_ast::Expr::Struct {id, i, ..} => {
-            parir_internal_error!(i, "Found struct {id} in the Metal backend,\
+            prickle_internal_error!(i, "Found struct {id} in the Metal backend,\
                                       where structs are not supported.")
         },
         gpu_ast::Expr::ThreadIdx {dim, i, ..} => Ok(Expr::ThreadIdx {dim, ty, i}),
@@ -160,7 +160,7 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             Ok(Stmt::Return {value})
         },
         gpu_ast::Stmt::Scope {i, ..} => {
-            parir_internal_error!(i, "Found scope statement that should have \
+            prickle_internal_error!(i, "Found scope statement that should have \
                                       been eliminated")
         },
         gpu_ast::Stmt::SynchronizeBlock {..} => Ok(Stmt::ThreadgroupBarrier {}),
@@ -249,7 +249,7 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
             Ok(acc)
         },
         gpu_ast::Top::StructDef {id, ..} => {
-            parir_internal_error!(Info::default(), "Found struct definition {id} \
+            prickle_internal_error!(Info::default(), "Found struct definition {id} \
                                                     in the Metal backend, where \
                                                     structs are not supported.")
         }
@@ -257,7 +257,7 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
 }
 
 pub fn from_gpu_ir(ast: gpu_ast::Ast) -> CompileResult<Ast> {
-    let includes = vec!["\"parir_metal.h\"".to_string()];
+    let includes = vec!["\"prickle_metal.h\"".to_string()];
     let tops_init = Ok(TopsAcc::default());
     let tops = ast.sfold_owned_result(tops_init, from_gpu_ir_top)?;
     Ok(Ast {

@@ -56,21 +56,21 @@ impl fmt::Display for CompileError {
 pub type CompileResult<T> = Result<T, CompileError>;
 
 #[macro_export]
-macro_rules! parir_compile_error {
+macro_rules! prickle_compile_error {
     ($i:expr,$($t:tt)*) => {{
         Err(CompileError::compile_err($i.error_msg(format!($($t)*))))
     }}
 }
 
 #[macro_export]
-macro_rules! parir_internal_error {
+macro_rules! prickle_internal_error {
     ($i:expr,$($t:tt)*) => {{
         Err(CompileError::internal_err($i.error_msg(format!($($t)*))))
     }}
 }
 
 #[macro_export]
-macro_rules! parir_type_error {
+macro_rules! prickle_type_error {
     ($i:expr,$($t:tt)*) => {{
         Err(CompileError::type_err($i.error_msg(format!($($t)*))))
     }}

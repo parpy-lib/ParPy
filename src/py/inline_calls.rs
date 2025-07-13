@@ -68,7 +68,7 @@ fn inline_function_calls_stmt<'py>(
             } else {
                 let msg = format!(
                     "Reference to unknown function {func}.\n{0}",
-                    "Perhaps you forgot to decorate the function with @parir.jit?"
+                    "Perhaps you forgot to decorate the function with @prickle.jit?"
                 );
                 py_runtime_error!(i, "{}", msg)?
             }

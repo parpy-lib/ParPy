@@ -6,9 +6,9 @@ import torch
 import shutil
 import subprocess
 from pathlib import Path
-from .parir import CompileBackend
+from .prickle import CompileBackend
 
-cache_path = Path(f"{os.path.expanduser('~')}/.cache/parir")
+cache_path = Path(f"{os.path.expanduser('~')}/.cache/prickle")
 cache_path.mkdir(parents=True, exist_ok=True)
 
 def clear_cache():

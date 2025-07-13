@@ -1,5 +1,5 @@
 import numpy as np
-import parir
+import prickle
 import pytest
 import torch
 import warnings
@@ -9,11 +9,11 @@ from common import *
 torch.manual_seed(1234)
 np.random.seed(1234)
 
-@parir.jit
+@prickle.jit
 def spmv_row(A, x, y):
-    parir.label('row')
+    prickle.label('row')
     for row in range(A["nrows"]):
-        parir.label('i')
+        prickle.label('i')
         for i in range(A["rows"][row], A["rows"][row+1]):
             y[row] += A["values"][i] * x[A["cols"][i]]
 
@@ -56,7 +56,7 @@ def compare_spmv(N, M, opts):
 def test_spmv_seq_reduce(backend):
     def helper():
         N, M = 256, 4096
-        p = { "row": parir.threads(N) }
+        p = { "row": prickle.threads(N) }
         compare_spmv(N, M, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
 
@@ -65,8 +65,8 @@ def test_spmv_gpu(backend):
     def helper():
         N, M = 256, 4096
         p = {
-            "row": parir.threads(N),
-            "i": parir.threads(128).reduce()
+            "row": prickle.threads(N),
+            "i": prickle.threads(128).reduce()
         }
         compare_spmv(N, M, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
@@ -85,8 +85,8 @@ def test_spmv_compiles(backend):
     }
     y = torch.zeros((A["nrows"],), dtype=x.dtype)
     p = {
-        "row": parir.threads(N),
-        "i": parir.threads(128).reduce()
+        "row": prickle.threads(N),
+        "i": prickle.threads(128).reduce()
     }
-    s = parir.print_compiled(spmv_row, [A, x, y], par_opts(backend, p))
+    s = prickle.print_compiled(spmv_row, [A, x, y], par_opts(backend, p))
     assert len(s) != 0

@@ -245,16 +245,16 @@ impl PrettyPrint for Stmt {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 let Dim3 {x: bx, y: by, z: bz} = blocks;
                 let Dim3 {x: tx, y: ty, z: tz} = threads;
-                (env, format!("{indent}parir_metal::launch_kernel({id}, {{{args}}}, \
+                (env, format!("{indent}prickle_metal::launch_kernel({id}, {{{args}}}, \
                                {bx}, {by}, {bz}, {tx}, {ty}, {tz});"))
             },
             Stmt::SubmitWork {} => {
-                (env, format!("{indent}parir_metal::submit_work();"))
+                (env, format!("{indent}prickle_metal::submit_work();"))
             },
             Stmt::AllocDevice {elem_ty, id, sz} => {
                 let (env, ty) = elem_ty.pprint(env);
                 let (env, id) = id.pprint(env);
-                (env, format!("{indent}{id} = parir_metal::alloc({sz} * sizeof({ty}));"))
+                (env, format!("{indent}{id} = prickle_metal::alloc({sz} * sizeof({ty}));"))
             },
             Stmt::AllocThreadgroup {elem_ty, id, sz} => {
                 let (env, ty) = elem_ty.pprint(env);
@@ -263,14 +263,14 @@ impl PrettyPrint for Stmt {
             },
             Stmt::FreeDevice {id} => {
                 let (env, id) = id.pprint(env);
-                (env, format!("{indent}parir_metal::free({id});"))
+                (env, format!("{indent}prickle_metal::free({id});"))
             },
             Stmt::CopyMemory {elem_ty, src, src_mem, dst, dst_mem, sz} => {
                 let (env, ty) = elem_ty.pprint(env);
                 let (env, src) = src.pprint(env);
                 let (env, dst) = dst.pprint(env);
                 let k = memcopy_kind(&src_mem, &dst_mem);
-                (env, format!("{indent}parir_metal::copy((void*){dst}, \
+                (env, format!("{indent}prickle_metal::copy((void*){dst}, \
                                (void*){src}, {sz} * sizeof({ty}), {k});"))
             },
         }
@@ -373,7 +373,7 @@ fn generate_metal_kernel_function_definitions(
         .fold((env, vec![]), |(env, mut strs), t| {
             let env = if let Top::KernelDef {id, ..} = t {
                 let (env, id) = id.pprint(env);
-                let s = format!("MTL::Function* {id} = parir_metal::get_fun(lib, \"{id}\");");
+                let s = format!("MTL::Function* {id} = prickle_metal::get_fun(lib, \"{id}\");");
                 strs.push(s);
                 env
             } else {
@@ -404,7 +404,7 @@ impl PrettyPrint for Ast {
         let (env, metal_fun_defs) = generate_metal_kernel_function_definitions(env, metal_tops);
         (env, format!("\
             {includes}\n\
-            MTL::Library* lib = parir_metal::load_library(\"\\\n{metal_tops_str}\n\");\n\
+            MTL::Library* lib = prickle_metal::load_library(\"\\\n{metal_tops_str}\n\");\n\
             {metal_fun_defs}\n\
             {host_tops_str}"))
     }

@@ -1,4 +1,4 @@
-import parir
+import prickle
 import pytest
 import torch
 
@@ -6,9 +6,9 @@ from common import *
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_dict_args(backend):
-    @parir.jit
+    @prickle.jit
     def dummy(x, y):
-        with parir.gpu:
+        with prickle.gpu:
             y[0] = x["a"][0] + x["b"][0]
     def helper():
         x = {
@@ -22,9 +22,9 @@ def test_dict_args(backend):
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_nested_dict(backend):
-    @parir.jit
+    @prickle.jit
     def dummy(x, y):
-        with parir.gpu:
+        with prickle.gpu:
             y[0] = x['a']['b']
     def helper():
         x = {
