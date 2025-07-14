@@ -8,7 +8,6 @@ import numpy as np
 import os
 import pandas as pd
 import ssgetpy
-import statistics
 import subprocess
 import sys
 from tqdm import tqdm
@@ -75,9 +74,9 @@ def print_mean_pm_stddev(times):
     if len(times) == 0:
         return "-"
     else:
-        t = statistics.mean(times)
-        s = statistics.stdev(times)
-        return f"{t:.1f} \\pm {s:.1f}"
+        t = np.mean(times)
+        s = np.std(times)
+        return f"{t:.1f} ± {s:.1f}"
 
 def forward_config_id(config):
     if config == 1:
@@ -87,31 +86,41 @@ def forward_config_id(config):
     elif config == 3:
         return "tuned"
 
-def produce_forward_output(csv_file, frameworks, configurations, kmer):
+def find_col_maxlen(rows, col):
+    return np.max([len(row[col]) for row in rows])
+
+def print_aligned_columns(rows):
+    nrows = len(rows)
+    ncols = len(rows[0])
+    maxlens = [find_col_maxlen(rows, i) for i in range(ncols)]
+    for row in rows:
+        print(" ".join(col.ljust(maxlen) for col, maxlen in zip(row, maxlens)))
+
+def print_forward_output(csv_file, frameworks, configurations, kmer):
     results_df = pd.read_csv(csv_file)
-    print("LaTeX table output:\n\n")
-    print(f"\\begin{{tabular}}{{l|{'c' * len(kmer)}}}")
-    kmer_header = " & ".join([f"{k}mer" for k in kmer])
-    print(f"Model & {kmer_header}\\\\")
-    print("\\hline")
+    kmer_header = [f"{k}mer" for k in kmer]
+    rows = []
+    rows.append(["Model"] + kmer_header)
     for framework in frameworks:
         results_fw = results_df[results_df["framework"] == framework]
         # Trellis only runs one configuration
         if framework == "trellis":
-            print(f"{framework.capitalize()}", end="")
+            row = []
+            row.append(f"{framework.capitalize()}")
             for k in kmer:
                 times = results_fw[results_fw["k"] == k]["time"]
-                print(f" & ${print_mean_pm_stddev(list(times))}$", end="")
-            print("\\\\")
+                row.append(f"{print_mean_pm_stddev(list(times))}")
+            rows.append(row)
         else:
             for configuration in configurations:
+                row = []
                 results_config = results_fw[results_fw["configuration"] == configuration]
-                print(f"{framework.capitalize()} ({configuration})", end="")
+                row.append(f"{framework.capitalize()} ({configuration})")
                 for k in kmer:
                     times = results_config[results_config["k"] == k]["time"]
-                    print(f" & ${print_mean_pm_stddev(list(times))}$", end="")
-                print("\\\\")
-    print("\\end{tabular}")
+                    row.append(f"{print_mean_pm_stddev(list(times))}")
+                rows.append(row)
+    print_aligned_columns(rows)
 
 def compile_trellis_shared_libs():
     r = subprocess.run(["make"], capture_output=True)
@@ -146,10 +155,10 @@ def run_forward_benchmark():
                             launch_bench("forward", [framework, str(k), str(configuration)])
                     pbar.update(1)
     else:
-        print("CSV results found - skipping benchmarks and plotting results")
+        print("CSV results found - skipping benchmarks and printing results")
 
-    # Generate a LaTeX table based on the results.
-    produce_forward_output(csv_file, frameworks, configurations, kmer)
+    # Print the results in a readable format
+    print_forward_output(csv_file, frameworks, configurations, kmer)
 
 def produce_sddmm_output(csv_file, frameworks, k):
     def set_colors(bp, colors):

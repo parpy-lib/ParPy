@@ -513,8 +513,71 @@ def run_forward(framework, k, config_id):
     common.append_csv(f"{common.FORWARD_NAME}.csv", results)
     return 0
 
+def print_gpu(gpu_id, idx, n):
+    # Format the columns differently for the rightmost GPU column
+    col_format = "c|" if idx < n - 1 else "c"
+    return f"\\multicolumn{{2}}{{{col_format}}}{{{gpu_id}}}"
+
+def print_mean_pm_stddev(times):
+    if len(times) == 0:
+        return "-"
+    else:
+        return f"{np.mean(times):.1f} \\pm {np.std(times):.1f}"
+
+def print_configuration(files, framework, configuration):
+    kmer = [5, 7]
+    if configuration is not None:
+        print(f"{framework.capitalize()} ({configuration})", end="")
+    else:
+        print(f"{framework.capitalize()}", end="")
+
+    for file in files:
+        results_df = pd.read_csv(file)
+        results_fw = results_df[results_df["framework"] == framework]
+        if configuration is not None:
+            results_fw = results_fw[results_fw["configuration"] == configuration]
+        for k in kmer:
+            times = results_fw[results_fw["k"] == k]["time"]
+            print(f" & ${print_mean_pm_stddev(list(times))}$", end="")
+    print(r"\\")
+
+def print_table(gpus, files):
+    frameworks = ["prickle", "triton", "trellis"]
+    configurations = [1, 2, 3]
+    kmer = [5, 7]
+
+    tab_format = "|".join(["cc" for _ in gpus])
+    print(f"\\begin{{tabular}}{{l|{tab_format}}}")
+    gpu_format = " & ".join([print_gpu(gpu, i, len(gpus)) for i, gpu in enumerate(gpus)])
+    print(f"GPU & {gpu_format}\\\\")
+    print(r"\hline")
+    model_format = " & ".join([" & ".join([f"{k}mer" for k in kmer]) for _ in gpus])
+    print(f"Model & {model_format}\\\\")
+    print(r"\hline")
+
+    # Print Prickle configurations
+    framework = "prickle"
+    for configuration in configurations:
+        print_configuration(files, framework, configuration)
+
+    framework = "triton"
+    for configuration in configurations:
+        print_configuration(files, framework, configuration)
+
+    framework = "trellis"
+    print_configuration(files, framework, None)
+
+    print(r"\end{tabular}")
+
 if __name__ == "__main__":
-    framework = sys.argv[1]
-    k = int(sys.argv[2])
-    config_id = int(sys.argv[3]) if len(sys.argv) > 3 else 0
-    run_forward(framework, k, config_id)
+    if sys.argv[1] == "plot":
+        args = sys.argv[2:]
+        assert len(args) % 2 == 0
+        gpus = args[0:len(args):2]
+        files = args[1:len(args):2]
+        print_table(gpus, files)
+    else:
+        framework = sys.argv[1]
+        k = int(sys.argv[2])
+        config_id = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+        run_forward(framework, k, config_id)
