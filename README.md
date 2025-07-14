@@ -6,7 +6,7 @@ Prickle is a Python library performing GPU acceleration of Python functions cont
 
 ### Requirements
 
-The quick start guide described below assumes [Conda]() has been installed and that the `conda` command is available.
+The quick start guide described below assumes [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html) has been installed and that the `conda` command is available.
 
 ### Setup
 
