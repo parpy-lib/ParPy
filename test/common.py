@@ -2,6 +2,7 @@ import os
 import prickle
 import pytest
 import torch
+import warnings
 
 # Explicitly clear the cache before running tests. This is important, as the
 # caching assumes the compiler is fixed. If the compiler is updated, we have to
@@ -11,14 +12,21 @@ prickle.clear_cache()
 # Use all backends declared in the library
 compiler_backends = prickle.backend.backends
 
-# If the Metal backend is determined to be available by Torch, but the
-# Metal-cpp header is missing, we report an error to alert the user that they
-# need to provide this path (otherwise all compilation tests for Metal would be
-# skipped).
+# If the Metal backend is available according to PyTorch and the Metal-cpp
+# header is missing, we report that the Metal backend is currently disabled and
+# what they have to do to enable it.
 if torch.backends.mps.is_available() and prickle.get_metal_cpp_header_path() is None:
-    raise RuntimeError(f"The Metal backend is available, but the path to the " +
-                        "Metal-cpp header was not set using the " +
-                        "METAL_CPP_HEADER_PATH environment variable.")
+    msg = "Metal is available on this machine, but the Metal-cpp library " +\
+          "could not be found. Please download the Metal-cpp headers and run:\n" +\
+          "  export METAL_CPP_HEADER_PATH=/path/to/metal-cpp\n" +\
+          "to enable the Metal backend."
+    warnings.warn(msg, category=RuntimeWarning)
+
+if torch.cuda.is_available() and not shutil.which("nvcc"):
+    msg = "CUDA is available on this machine, but the Nvidia CUDA compiler " +\
+          "(nvcc) could not be found. Please ensure 'nvcc' is included in " +\
+          "the path to enable the CUDA backend."
+    warnings.warn(msg, category=RuntimeWarning)
 
 def run_if_backend_is_enabled(backend, fn):
     if prickle.backend.is_enabled(backend):
