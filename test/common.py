@@ -1,6 +1,7 @@
 import os
 import prickle
 import pytest
+import shutil
 import torch
 import warnings
 
