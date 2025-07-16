@@ -18,11 +18,11 @@ def sum_rows(x, out, N):
 def sum_rows_wrap(x, p):
     N, M = x.shape
     y = torch.zeros(N, dtype=torch.float32, device='cuda')
-    sum_rows(x, y, N, opts=prickle.parallelize(p))
+    sum_rows(x, y, N, opts=prickle.par(p))
     return y
 
 def print_sum_rows(args, p):
-    print(prickle.print_compiled(sum_rows, args, prickle.parallelize(p)))
+    print(prickle.print_compiled(sum_rows, args, prickle.par(p)))
 
 def print_versions(N, M):
     x = torch.randn((N, M), dtype=torch.float32, device='cuda')
