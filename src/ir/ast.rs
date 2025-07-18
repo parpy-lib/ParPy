@@ -185,10 +185,17 @@ impl SFold<Expr> for Expr {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum SyncPointKind {
+    BlockLocal,
+    BlockCluster,
+    InterBlock,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr, i: Info},
     Assign {dst: Expr, expr: Expr, i: Info},
-    SyncPoint {block_local: bool, i: Info},
+    SyncPoint {kind: SyncPointKind, i: Info},
     For {
         var: Name, lo: Expr, hi: Expr, step: i64, body: Vec<Stmt>,
         par: LoopPar, i: Info

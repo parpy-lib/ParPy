@@ -72,9 +72,9 @@ fn find_thread_index_dependent_variables_stmt(
             }
             body.sfold(Ok(acc), find_thread_index_dependent_variables_stmt)
         },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
-        Stmt::If {..} | Stmt::Return {..} | Stmt::Scope {..} |
-        Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} | Stmt::If {..} |
+        Stmt::Return {..} | Stmt::Scope {..} | Stmt::ParallelReduction {..} |
+        Stmt::Synchronize {..} | Stmt::WarpReduce {..} | Stmt::ClusterReduce {..} |
         Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} | Stmt::AllocShared {..} |
         Stmt::FreeDevice {..} | Stmt::CopyMemory {..} => {
             stmt.sfold(Ok(acc), find_thread_index_dependent_variables_stmt)
@@ -126,7 +126,7 @@ fn transform_thread_independent_memory_writes_stmt(
                     els: vec![],
                     i: i.clone()
                 });
-                acc.push(Stmt::SynchronizeBlock {i});
+                acc.push(Stmt::Synchronize {scope: SyncScope::Block, i});
             }
         },
         Stmt::For {var_ty, var, init, cond, incr, body, i} => {
@@ -320,11 +320,11 @@ mod test {
                 thread_dependent_loop(j_id.clone(), Dim::X, 0, 10, vec![
                     Stmt::Assign {dst: var(z_id), expr: var(j_id.clone()), i: i()},
                     tcheck(Stmt::Assign {dst: a_idx1, expr: int(1), i: i()}),
-                    Stmt::SynchronizeBlock {i: i()},
+                    Stmt::Synchronize {scope: SyncScope::Block, i: i()},
                     Stmt::Assign {dst: a_idx2, expr: var(j_id.clone()), i: i()},
                 ]),
                 tcheck(Stmt::Assign {dst: b_idx, expr: int(3), i: i()}),
-                Stmt::SynchronizeBlock {i: i()},
+                Stmt::Synchronize {scope: SyncScope::Block, i: i()},
             ]),
         ];
         assert_eq!(stmts, expected);

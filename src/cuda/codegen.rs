@@ -1,11 +1,9 @@
 use super::ast::*;
-use crate::prickle_compile_error;
 use crate::prickle_internal_error;
 use crate::prickle_type_error;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::err::*;
 use crate::utils::info::Info;
-use crate::utils::name::Name;
 use crate::utils::pprint::PrettyPrint;
 
 fn from_gpu_ir_type(ty: gpu_ast::Type) -> Type {
@@ -152,51 +150,21 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             Ok(Stmt::Return {value})
         },
         gpu_ast::Stmt::Scope {i, ..} => {
-            prickle_compile_error!(i, "Internal error: Found scope statement that \
-                                     should have been eliminated")
+            prickle_internal_error!(i, "Found scope statement that should have \
+                                        been eliminated.")
         },
-        gpu_ast::Stmt::SynchronizeBlock {..} => Ok(Stmt::Syncthreads {}),
-        gpu_ast::Stmt::WarpReduce {value, op, ty, i} => {
-            let iter_id = Name::sym_str("i");
-            let i64_ty = Type::Scalar {sz: ElemSize::I64};
-            let iter_var = Expr::Var {id: iter_id.clone(), ty: i64_ty.clone(), i: i.clone()};
-            let value = from_gpu_ir_expr(value)?;
-            let ty = from_gpu_ir_type(ty);
-            let rhs = Expr::ShflXorSync {
-                value: Box::new(value.clone()),
-                idx: Box::new(iter_var.clone()), ty: value.get_type().clone(), i: i.clone(),
-            };
-            let sync_stmt = Stmt::Assign {
-                dst: value.clone(),
-                expr: Expr::BinOp {
-                    lhs: Box::new(value),
-                    op: op,
-                    rhs: Box::new(rhs),
-                    ty: ty,
-                    i: i.clone()
-                }
-            };
-            let int_lit = |v| {
-                Expr::Int {v, ty: i64_ty.clone(), i: i.clone()}
-            };
-            let cond_expr = Expr::BinOp {
-                lhs: Box::new(iter_var.clone()),
-                op: BinOp::Gt,
-                rhs: Box::new(int_lit(0)),
-                ty: Type::Boolean,
-                i: i.clone()
-            };
-            let incr_expr = Expr::BinOp {
-                lhs: Box::new(iter_var),
-                op: BinOp::Div,
-                rhs: Box::new(int_lit(2)),
-                ty: i64_ty.clone(),
-                i: i.clone()
-            };
-            Ok(Stmt::For {
-                var_ty: i64_ty.clone(), var: iter_id, init: int_lit(16),
-                cond: cond_expr, incr: incr_expr, body: vec![sync_stmt]
-            })
+        gpu_ast::Stmt::ParallelReduction {i, ..} => {
+            prickle_internal_error!(i, "Found parallel reduction statement \
+                                        that should have been eliminated.")
+        },
+        gpu_ast::Stmt::Synchronize {scope, ..} => Ok(Stmt::Synchronize {scope}),
+        gpu_ast::Stmt::WarpReduce {i, ..} => {
+            prickle_internal_error!(i, "Found warp reduction statement that \
+                                        should have been eliminated.")
+        },
+        gpu_ast::Stmt::ClusterReduce {i, ..} => {
+            prickle_internal_error!(i, "Found cluster reduction statement that \
+                                        should have been eliminated.")
         },
         gpu_ast::Stmt::KernelLaunch {id, args, grid, ..} => {
             let args = args.into_iter()
@@ -279,6 +247,8 @@ pub fn from_gpu_ir(ast: gpu_ast::Ast) -> CompileResult<Ast> {
         Top::Include {header: "<cmath>".to_string()},
         Top::Include {header: "<cstdint>".to_string()},
         Top::Include {header: "<cuda_fp16.h>".to_string()},
+        Top::Include {header: "<cooperative_groups.h>".to_string()},
+        Top::Namespace {ns: "cooperative_groups".to_string(), alias: None},
     ];
     let mut cu_ast = ast.into_iter()
         .map(from_gpu_ir_top)

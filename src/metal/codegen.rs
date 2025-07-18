@@ -161,16 +161,29 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
         },
         gpu_ast::Stmt::Scope {i, ..} => {
             prickle_internal_error!(i, "Found scope statement that should have \
-                                      been eliminated")
+                                        been eliminated.")
         },
-        gpu_ast::Stmt::SynchronizeBlock {..} => Ok(Stmt::ThreadgroupBarrier {}),
-        gpu_ast::Stmt::WarpReduce {value, op, ty, i} => {
+        gpu_ast::Stmt::ParallelReduction {i, ..} => {
+            prickle_internal_error!(i, "Found parallel reduction statement \
+                                        that should have been eliminated.")
+        },
+        gpu_ast::Stmt::Synchronize {scope, i} => match scope {
+            gpu_ast::SyncScope::Block => Ok(Stmt::ThreadgroupBarrier {}),
+            gpu_ast::SyncScope::Cluster => {
+                prickle_internal_error!(i, "Found cluster-level synchronization point, \
+                                            which is not supported by the Metal backend.")
+            },
+        },
+        gpu_ast::Stmt::WarpReduce {value, op, res_ty, i, ..} => {
             let value = from_gpu_ir_expr(env, value)?;
-            let ty = from_gpu_ir_type(env, ty, &i)?;
+            let ty = from_gpu_ir_type(env, res_ty, &i)?;
             Ok(Stmt::Assign {
                 dst: value.clone(),
                 expr: Expr::SimdOp {op, arg: Box::new(value), ty, i}
             })
+        },
+        gpu_ast::Stmt::ClusterReduce {i, ..} => {
+            prickle_internal_error!(i, "Cluster reductions are not supported in Metal.")
         },
         gpu_ast::Stmt::KernelLaunch {id, args, grid, ..} => {
             let is_pointer_type = |ty: &gpu_ast::Type| match ty {

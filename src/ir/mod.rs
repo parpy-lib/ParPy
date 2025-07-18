@@ -136,8 +136,8 @@ pub mod ir_builder {
         while_loop_complete(bool_expr(true), body)
     }
 
-    pub fn sync_point(block_local: bool) -> Stmt {
-        Stmt::SyncPoint {block_local, i: Info::default()}
+    pub fn sync_point(kind: SyncPointKind) -> Stmt {
+        Stmt::SyncPoint {kind, i: Info::default()}
     }
 
     pub fn fun_def(body: Vec<Stmt>) -> FunDef {

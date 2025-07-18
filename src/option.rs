@@ -41,6 +41,16 @@ pub struct CompileOptions {
     #[pyo3(get, set)]
     pub backend: CompileBackend,
 
+    // When this option is enabled, the compiler will opt to use thread block clusters in place of
+    // inter-block synchronization where applicable. This is only available on the CUDA backend.
+    #[pyo3(get, set)]
+    pub use_cuda_thread_block_clusters: bool,
+
+    // When the use of thread block clusters is enabled (see the above flag), this option sets the
+    // maximum number of thread blocks per cluster.
+    #[pyo3(get, set)]
+    pub max_thread_blocks_per_cluster: i64,
+
     // Enable to make the compiler print intermediate ASTs to standard output.
     #[pyo3(get, set)]
     pub debug_print: bool,
@@ -74,6 +84,8 @@ impl Default for CompileOptions {
             seq: false,
             verbose_backend_resolution: false,
             backend: CompileBackend::Auto,
+            use_cuda_thread_block_clusters: false,
+            max_thread_blocks_per_cluster: 8,
             debug_print: false,
             debug_perf: false,
             includes: vec![],

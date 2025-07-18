@@ -13,8 +13,76 @@ use crate::utils::smap::SFold;
 use itertools::Itertools;
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 pub const WARP_SIZE: i64 = 32;
+
+#[derive(Clone, Debug)]
+struct ParLayer {
+    threads: i64,
+    tpb: i64,
+}
+
+impl ParLayer {
+    fn new(threads: i64, tpb: i64) -> ParLayer {
+        ParLayer {threads, tpb}
+    }
+
+    fn unify(lhs: ParLayer, rhs: ParLayer, i: &Info) -> CompileResult<ParLayer> {
+        if lhs.threads == rhs.threads {
+            if lhs.tpb == par::DEFAULT_TPB {
+                Ok(rhs)
+            } else if rhs.tpb == par::DEFAULT_TPB || lhs.tpb == rhs.tpb {
+                Ok(lhs)
+            } else {
+                prickle_compile_error!(i, "Found inconsistent requests on the number \
+                                           of threads per block: {0} != {1}",
+                                           lhs.tpb, rhs.tpb)
+            }
+        } else {
+            prickle_compile_error!(i, "Found inconsistent parallel structures: {lhs} != {rhs}")
+        }
+    }
+}
+
+impl fmt::Display for ParLayer {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{self:?}")
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Par {
+    layers: Vec<ParLayer>,
+    i: Info
+}
+
+impl Par {
+    fn new(layers: Vec<ParLayer>, i: Info) -> Par {
+        Par {layers, i}
+    }
+}
+
+impl Par {
+    fn unify(lhs: Par, rhs: Par) -> CompileResult<Par> {
+        if lhs.layers.is_empty() {
+            Ok(rhs)
+        } else if rhs.layers.is_empty() {
+            Ok(lhs)
+        } else if lhs.layers.len() == rhs.layers.len() {
+            let layers = lhs.layers.into_iter()
+                .zip(rhs.layers.into_iter())
+                .map(|(l, r)| ParLayer::unify(l, r, &lhs.i))
+                .collect::<CompileResult<Vec<ParLayer>>>()?;
+            Ok(Par {layers, i: lhs.i})
+        } else {
+            let i = lhs.i;
+            prickle_compile_error!(i, "Found inconsistent number of layers in \
+                                       parallel structure ({0} != {1})",
+                                       lhs.layers.len(), rhs.layers.len())
+        }
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub struct ParEntry {
@@ -26,46 +94,27 @@ impl ParEntry {
     pub fn new(tpb: i64, p: Vec<i64>) -> Self {
         ParEntry {tpb, p}
     }
+
+    fn from_par(p: Par) -> CompileResult<ParEntry> {
+        let (tpb, threads) = p.layers.into_iter()
+            .fold(Ok((par::DEFAULT_TPB, vec![])), |acc, ParLayer {threads, tpb}| {
+                let (acc_tpb, mut acc_threads) = acc?;
+                acc_threads.push(threads);
+                if acc_tpb == par::DEFAULT_TPB || acc_tpb == tpb {
+                    Ok((tpb, acc_threads))
+                } else {
+                    prickle_compile_error!(
+                        p.i,
+                        "Found inconsistent number of threads per block: \
+                         {acc_tpb} != {tpb}"
+                    )
+                }
+            })?;
+        Ok(ParEntry::new(tpb, threads))
+    }
 }
 
 type ParResult = CompileResult<BTreeMap<Name, ParEntry>>;
-
-struct Par {
-    n: Vec<i64>,
-    tpb: i64,
-    i: Info
-}
-
-impl Par {
-    pub fn new(n: Vec<i64>, i: Info) -> Par {
-        Par {n, tpb: par::DEFAULT_TPB, i}
-    }
-}
-
-impl PartialEq for Par {
-    fn eq(&self, other: &Self) -> bool {
-        self.n.eq(&other.n) && (self.tpb.eq(&other.tpb))
-    }
-}
-
-// Attempts to unify the parallel structure of two statements. An empty structure represents
-// sequential code. We can unify it with any kind of parallelization. On the other hand, two
-// parallel structures have to be equivalent to merge them.
-fn unify_par(acc: Par, p: Par) -> CompileResult<Par> {
-    if acc.n.is_empty() {
-        Ok(p)
-    } else if p.n.is_empty() {
-        Ok(acc)
-    } else if acc.n.eq(&p.n) {
-        Ok(acc)
-    } else {
-        let msg = concat!(
-            "The parallel structure of this statement is inconsistent relative to ",
-            "previous statements on the same level of nesting"
-        );
-        prickle_compile_error!(p.i, "{}", msg)
-    }
-}
 
 fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
     match stmt {
@@ -79,11 +128,11 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
             // For if-conditions, we require that both branches have exactly the same parallel
             // structure. That is, we do not allow parallelism only in one branch - this is due to
             // the performance implications this might have.
-            if thn.n.eq(&els.n) {
-                Ok(Par::new(thn.n, i.clone()))
+            if let Ok(p) = Par::unify(thn.clone(), els.clone()) {
+                Ok(p)
             } else {
-                let lhs = thn.n.iter().join(", ");
-                let rhs = els.n.iter().join(", ");
+                let lhs = thn.layers.iter().join(", ");
+                let rhs = els.layers.iter().join(", ");
                 let msg = format!(
                     "Found branches with inconsistent parallel structure: \
                      [{lhs}] != [{rhs}].\n\
@@ -96,7 +145,7 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
         Stmt::For {body, par, ..} => {
             let mut inner_par = find_parallel_structure_stmts_par(body)?;
             if par.is_parallel() {
-                inner_par.n.insert(0, par.nthreads);
+                inner_par.layers.insert(0, ParLayer::new(par.nthreads, par.tpb));
             };
             Ok(inner_par)
         },
@@ -110,7 +159,7 @@ fn find_parallel_structure_stmts_par(stmts: &Vec<Stmt>) -> CompileResult<Par> {
     let p = Par::new(vec![], Info::default());
     stmts.iter()
         .map(find_parallel_structure_stmt_par)
-        .fold(Ok(p), |acc, stmt_par| unify_par(acc?, stmt_par?))
+        .fold(Ok(p), |acc, stmt_par| Par::unify(acc?, stmt_par?))
 }
 
 fn find_parallel_structure_stmt_seq(
@@ -120,16 +169,18 @@ fn find_parallel_structure_stmt_seq(
     match stmt {
         Stmt::For {var, body, par, ..} if par.is_parallel() => {
             let mut p = find_parallel_structure_stmts_par(body)?;
-            p.n.insert(0, par.nthreads);
+            p.layers.insert(0, ParLayer::new(par.nthreads, par.tpb));
             // Ensure that the innermost thread count of the parallel structure of this loop uses a
             // thread count evenly divisible by the size of a warp. This is very important because
             // warp-level intrinsics behave unexpectedly when not all threads of a warp are used,
             // causing parallel reductions to misbehave.
-            match p.n.last_mut() {
-                Some(n) => *n = ((*n + WARP_SIZE - 1) / WARP_SIZE) * WARP_SIZE,
+            match p.layers.last_mut() {
+                Some(ParLayer {threads: n, ..}) => {
+                    *n = ((*n + WARP_SIZE - 1) / WARP_SIZE) * WARP_SIZE
+                },
                 None => ()
             };
-            acc.insert(var.clone(), ParEntry::new(par.tpb, p.n));
+            acc.insert(var.clone(), ParEntry::from_par(p)?);
             Ok(acc)
         },
         Stmt::For {body, ..} => find_parallel_structure_stmts_seq(acc, body),

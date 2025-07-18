@@ -38,7 +38,8 @@ fn fv_stmt(mut env: FVEnv, s: &Stmt) -> FVEnv {
             env.bound.insert(id.clone(), expr.get_type().clone());
             env
         },
-        Stmt::For {var, init, cond, incr, body, ..} => {
+        Stmt::For {var, init, cond, incr, body, ..} |
+        Stmt::ParallelReduction {var, init, cond, incr, body, ..} => {
             let mut env = fv_expr(env, init);
             env.bound.insert(var.clone(), init.get_type().clone());
             let env = fv_expr(env, cond);
@@ -50,8 +51,8 @@ fn fv_stmt(mut env: FVEnv, s: &Stmt) -> FVEnv {
             env
         },
         Stmt::Assign {..} | Stmt::If {..} | Stmt::While {..} | Stmt::Return {..} |
-        Stmt::Scope {..} | Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
-        Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
+        Stmt::Scope {..} | Stmt::Synchronize {..} | Stmt::WarpReduce {..} |
+        Stmt::ClusterReduce {..} | Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
         Stmt::FreeDevice {..} | Stmt::CopyMemory {..} => {
             let env = s.sfold(env, fv_expr);
             s.sfold(env, fv_stmt)

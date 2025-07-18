@@ -1,4 +1,5 @@
 use super::par_tree;
+use crate::option;
 use crate::par;
 use crate::prickle_compile_error;
 use crate::ir::ast::*;
@@ -22,7 +23,7 @@ fn insert_synchronization_points_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> 
             let body = insert_synchronization_points(body);
             acc.push(Stmt::For {var, lo, hi, step, body, par, i: i.clone()});
             if is_par {
-                acc.push(Stmt::SyncPoint {block_local: false, i});
+                acc.push(Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i});
             }
         },
         Stmt::While {cond, body, i} => {
@@ -45,8 +46,31 @@ fn insert_synchronization_points(stmts: Vec<Stmt>) -> Vec<Stmt> {
         })
 }
 
+fn determine_cuda_cluster_size(opts: &option::CompileOptions) -> Option<i64> {
+    match opts.backend {
+        option::CompileBackend::Cuda if opts.use_cuda_thread_block_clusters =>
+            Some(opts.max_thread_blocks_per_cluster),
+        _ => None
+    }
+}
+
+pub fn classify_parallelism(
+    opts: &option::CompileOptions,
+    par: &LoopPar
+) -> SyncPointKind {
+    let cluster_size = determine_cuda_cluster_size(opts).unwrap_or(0);
+    if par.nthreads > 0 && par.nthreads <= par.tpb {
+        SyncPointKind::BlockLocal
+    } else if cluster_size > 0 && par.nthreads > 0 && par.nthreads <= cluster_size * par.tpb {
+        SyncPointKind::BlockCluster
+    } else {
+        SyncPointKind::InterBlock
+    }
+}
+
 fn classify_synchronization_points_par_stmt(
     node: &par_tree::ParNode,
+    opts: &option::CompileOptions,
     mut acc: Vec<Stmt>,
     s: Stmt
 ) -> Vec<Stmt> {
@@ -55,37 +79,33 @@ fn classify_synchronization_points_par_stmt(
         Stmt::Alloc {..} | Stmt::Free {..} => {
             acc.push(s);
         },
-        Stmt::SyncPoint {block_local, i} => {
-            let prev_stmt_is_block_local_for = match acc.last() {
-                Some(Stmt::For {par, ..}) => {
-                    par.nthreads > 0 && par.nthreads <= par.tpb
-                },
-                _ => false
+        Stmt::SyncPoint {i, ..} => {
+            let prev_stmt_sync_kind = match acc.last() {
+                Some(Stmt::For {par, ..}) => classify_parallelism(opts, par),
+                _ => SyncPointKind::InterBlock
             };
+
             // When the synchronization statement is found in the innermost level of parallelism,
-            // and the preceding for-loop is a parallel for-loop with at most the default number of
-            // threads per block (par.tpb), we consider this synchronization point to be
-            // block-local. In this case, we can use a CUDA intrinsic instead of splitting up the
-            // kernel.
-            let s = if node.innermost_parallelism() && prev_stmt_is_block_local_for {
-                Stmt::SyncPoint {block_local: true, i}
+            // its kind depends on the preceding for-loop.
+            let s = if node.innermost_parallelism() {
+                Stmt::SyncPoint {kind: prev_stmt_sync_kind, i}
             } else {
-                Stmt::SyncPoint {block_local, i}
+                Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i}
             };
             acc.push(s);
         },
         Stmt::For {var, lo, hi, step, body, par, i} => {
             let node = node.children.get(&var).unwrap_or(node);
-            let body = classify_synchronization_points_par_stmts(node, body);
+            let body = classify_synchronization_points_par_stmts(node, opts, body);
             acc.push(Stmt::For {var, lo, hi, step, body, par, i});
         },
         Stmt::While {cond, body, i} => {
-            let body = classify_synchronization_points_par_stmts(node, body);
+            let body = classify_synchronization_points_par_stmts(node, opts, body);
             acc.push(Stmt::While {cond, body, i});
         },
         Stmt::If {cond, thn, els, i} => {
-            let thn = classify_synchronization_points_par_stmts(node, thn);
-            let els = classify_synchronization_points_par_stmts(node, els);
+            let thn = classify_synchronization_points_par_stmts(node, opts, thn);
+            let els = classify_synchronization_points_par_stmts(node, opts, els);
             acc.push(Stmt::If {cond, thn, els, i});
         }
     };
@@ -94,38 +114,41 @@ fn classify_synchronization_points_par_stmt(
 
 fn classify_synchronization_points_par_stmts(
     par: &par_tree::ParNode,
+    opts: &option::CompileOptions,
     stmts: Vec<Stmt>
 ) -> Vec<Stmt> {
     stmts.into_iter()
-        .fold(vec![], |acc, s| classify_synchronization_points_par_stmt(par, acc, s))
+        .fold(vec![], |acc, s| classify_synchronization_points_par_stmt(par, opts, acc, s))
 }
 
 fn classify_synchronization_points_stmt(
     t: &par_tree::ParTree,
+    opts: &option::CompileOptions,
     s: Stmt
 ) -> Stmt {
     match s {
         Stmt::For {var, lo, hi, step, body, par, i} => {
             let body = if let Some(node) = t.roots.get(&var) {
-                classify_synchronization_points_par_stmts(&node, body)
+                classify_synchronization_points_par_stmts(&node, opts, body)
             } else {
-                body.smap(|s| classify_synchronization_points_stmt(t, s))
+                body.smap(|s| classify_synchronization_points_stmt(t, opts, s))
             };
             Stmt::For {var, lo, hi, step, body, par, i}
         },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
         Stmt::SyncPoint {..} | Stmt::While {..} | Stmt::If {..} |
         Stmt::Alloc {..} | Stmt::Free {..} => {
-            s.smap(|s| classify_synchronization_points_stmt(t, s))
+            s.smap(|s| classify_synchronization_points_stmt(t, opts, s))
         }
     }
 }
 
 fn classify_synchronization_points(
     par: &par_tree::ParTree,
+    opts: &option::CompileOptions,
     body: Vec<Stmt>
 ) -> Vec<Stmt> {
-    body.smap(|s| classify_synchronization_points_stmt(par, s))
+    body.smap(|s| classify_synchronization_points_stmt(par, opts, s))
 }
 
 fn extract_neutral_element(
@@ -283,15 +306,106 @@ fn single_block_reduce_loop(
     }
 }
 
-fn split_inter_block_parallel_reductions_stmt(s: Stmt) -> CompileResult<Stmt> {
-    let is_inter_block_reduction = |par: &LoopPar| {
-        par.reduction && par.nthreads > par.tpb
+/// The 'and' and 'or' operators are short-circuiting in both C and Python. However, we do not want
+/// to generate short-circuiting code, as the warp-level reductions will get stuck unless all
+/// threads have the same value (because some threads short-circuit, thereby ignoring the warp sync
+/// intrinsic call). To work around this, we use the bitwise operations, which are equivalent for
+/// boolean values assuming they are encoded as 0 or 1 (not necessarily true in C).
+fn non_short_circuiting_op(op: BinOp) -> BinOp {
+    match op {
+        BinOp::And => BinOp::BitAnd,
+        BinOp::Or => BinOp::BitOr,
+        _ => op
+    }
+}
+
+fn extract_bin_op(
+    expr: Expr
+) -> CompileResult<(Expr, BinOp, Expr, ElemSize, Info)> {
+    let i = expr.get_info();
+    match expr {
+        Expr::BinOp {lhs, op, rhs, ty, i} => {
+            match ty {
+                Type::Tensor {shape, sz} if shape.is_empty() => {
+                    Ok((*lhs, non_short_circuiting_op(op), *rhs, sz, i))
+                },
+                _ => prickle_compile_error!(i, "Expected the result of reduction \
+                                                to be a scalar value, found {0}",
+                                                ty.pprint_default())
+            }
+        },
+        Expr::Convert {e, ..} => extract_bin_op(*e),
+        _ => {
+            prickle_compile_error!(i, "RHS of reduction statement should be a \
+                                       binary operation.")
+        }
+    }
+}
+
+fn unwrap_convert(e: &Expr) -> Expr {
+    match e {
+        Expr::Convert {e, ..} => unwrap_convert(e),
+        _ => e.clone()
+    }
+}
+
+pub fn extract_reduction_operands(
+    mut body: Vec<Stmt>,
+    i: &Info
+) -> CompileResult<(Expr, BinOp, Expr, ElemSize, Info)> {
+    // The reduction loop body must contain a single statement.
+    if body.len() == 1 {
+        // The single statement must be a single (re)assignment.
+        if let Stmt::Assign {dst, expr, ..} = body.remove(0) {
+            // The right-hand side should be a binary operation, so we extract its constituents.
+            let (lhs, op, rhs, sz, i) = extract_bin_op(expr)?;
+            // The destination of the assignment must either be a variable or an access.
+            match dst {
+                Expr::Var {..} | Expr::TensorAccess {..} => {
+                    // The assignment destination must be equal to the left-hand side of the
+                    // reduction operation.
+                    if dst == unwrap_convert(&lhs) {
+                        Ok((dst, op, rhs, sz, i))
+                    } else {
+                        let msg = format!(
+                            "Invalid reduction. Left-hand side of binary \
+                             operation {0} is not equal to the assignment \
+                             target {1}.",
+                             lhs.pprint_default(), dst.pprint_default()
+                        );
+                        prickle_compile_error!(i, "{}", msg)
+                    }
+                },
+                _ => {
+                    prickle_compile_error!(i, "Left-hand side of reduction must \
+                                               be a variable or tensor access.")
+                }
+            }
+        } else {
+            prickle_compile_error!(i, "Reduction for-loop statement must be an \
+                                       assignment.")
+        }
+    } else {
+        prickle_compile_error!(i, "Reduction for-loop must contain a single \
+                                   statement.")
+    }
+}
+
+fn split_inter_block_parallel_reductions_stmt(
+    opts: &option::CompileOptions,
+    s: Stmt
+) -> CompileResult<Stmt> {
+    let is_parallel_inter_block_reduction = |par: &LoopPar| {
+        match classify_parallelism(opts, par) {
+            SyncPointKind::InterBlock if par.nthreads > 0 && par.reduction => true,
+            _ => false
+        }
     };
     match s {
-        Stmt::For {var, lo, hi, step, body, par, i} if is_inter_block_reduction(&par) => {
+        Stmt::For {var, lo, hi, step, body, par, i} if is_parallel_inter_block_reduction(&par) => {
             if par.nthreads % par.tpb == 0 {
                 let nblocks = (par.nthreads / par.tpb) as usize;
-                let (lhs, op, rhs, sz, i) = reduce::extract_reduction_operands(body, &i)?;
+                let (lhs, op, rhs, sz, i) = extract_reduction_operands(body, &i)?;
                 let ty = Type::Tensor {sz: sz.clone(), shape: vec![]};
                 let ne = extract_neutral_element(&op, &sz, &i)?;
                 let id = Name::sym_str("block_idx");
@@ -316,7 +430,7 @@ fn split_inter_block_parallel_reductions_stmt(s: Stmt) -> CompileResult<Stmt> {
                 );
                 let thn = vec![
                     l2,
-                    Stmt::SyncPoint {block_local: false, i: i.clone()},
+                    Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i: i.clone()},
                     l3
                 ];
                 let bool_ty = Type::Tensor {sz: ElemSize::Bool, shape: vec![]};
@@ -328,7 +442,7 @@ fn split_inter_block_parallel_reductions_stmt(s: Stmt) -> CompileResult<Stmt> {
                                          par.tpb)
             }
         },
-        _ => s.smap_result(split_inter_block_parallel_reductions_stmt)
+        _ => s.smap_result(|s| split_inter_block_parallel_reductions_stmt(opts, s))
     }
 }
 
@@ -360,15 +474,16 @@ fn flatten_true_conds(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
 }
 
 fn split_inter_block_parallel_reductions(
+    opts: &option::CompileOptions,
     body: Vec<Stmt>
 ) -> CompileResult<Vec<Stmt>> {
-    let body = body.smap_result(split_inter_block_parallel_reductions_stmt)?;
+    let body = body.smap_result(|s| split_inter_block_parallel_reductions_stmt(opts, s))?;
     Ok(body.into_iter().fold(vec![], flatten_true_conds))
 }
 
 fn is_inter_block_sync_point(s: &Stmt) -> bool {
     match s {
-        Stmt::SyncPoint {block_local: false, ..} => true,
+        Stmt::SyncPoint {kind: SyncPointKind::InterBlock, ..} => true,
         _ => false
     }
 }
@@ -646,7 +761,7 @@ fn eliminate_unnecessary_synchronization_points_stmt(
     s: Stmt,
 ) -> Vec<Stmt> {
     match s {
-        Stmt::SyncPoint {block_local: false, ..} if !env.in_parallel => (),
+        Stmt::SyncPoint {kind: SyncPointKind::InterBlock, ..} if !env.in_parallel => (),
         Stmt::For {var, lo, hi, step, body, par, i} => {
             let env = env.enter_loop(par.is_parallel());
             let body = eliminate_unnecessary_synchronization_points_stmts(env, body);
@@ -1004,7 +1119,10 @@ fn allocate_temporary_data(
 /// when this is required to maintain correctness after moving the code. Further, temporary data is
 /// allocated for representing local variables that are defined and used in separate kernels after
 /// transforming the AST. These are performed to restore the AST to a valid state.
-pub fn restructure_inter_block_synchronization(ast: Ast) -> CompileResult<Ast> {
+pub fn restructure_inter_block_synchronization(
+    opts: &option::CompileOptions,
+    ast: Ast
+) -> CompileResult<Ast> {
     // NOTE: We only apply this to the main function definition, which is the last one in the list.
     // The others are assumed to contain no parallelism.
     let Ast {mut defs, structs} = ast;
@@ -1014,13 +1132,13 @@ pub fn restructure_inter_block_synchronization(ast: Ast) -> CompileResult<Ast> {
     // of them whether they require inter-block synchronization.
     let body = insert_synchronization_points(body);
     let par = par_tree::build_tree(&body);
-    let body = classify_synchronization_points(&par, body);
+    let body = classify_synchronization_points(&par, opts, body);
 
     // Split up inter-block parallel reductions in two parts. In the first part, the full reduction
     // is split across the blocks, such that each block writes to its own temporary memory
     // location. Then, in the second part, we reduce these values to a single value, stored in the
     // original location.
-    let body = split_inter_block_parallel_reductions(body)?;
+    let body = split_inter_block_parallel_reductions(opts, body)?;
 
     // Hoist sequential loops inside parallel code containing inter-block synchronization points
     // such that they occur outside of the parallel code, and restructure the code to ensure the
@@ -1077,9 +1195,10 @@ mod test {
         assert_eq!(body, expected);
     }
 
-    fn assert_classify(body: Vec<Stmt>, expected: Vec<Stmt>) {
+    fn assert_classify(body: Vec<Stmt>, expected: Vec<Stmt>, opts: Option<option::CompileOptions>) {
         let par = par_tree::build_tree(&body);
-        let body = classify_synchronization_points(&par, body);
+        let opts = opts.unwrap_or(option::CompileOptions::default());
+        let body = classify_synchronization_points(&par, &opts, body);
         print_stmts(&body, &expected);
         assert_eq!(body, expected);
     }
@@ -1102,7 +1221,7 @@ mod test {
         let s = vec![for_("x", 10, vec![])];
         let expected = vec![
             for_("x", 10, vec![]),
-            sync_point(false)
+            sync_point(SyncPointKind::InterBlock)
         ];
         assert_sync(s, expected);
     }
@@ -1118,11 +1237,11 @@ mod test {
         let expected = vec![
             for_("x", 10, vec![
                 for_("y", 32, vec![]),
-                sync_point(false),
+                sync_point(SyncPointKind::InterBlock),
                 for_("z", 32, vec![]),
-                sync_point(false)
+                sync_point(SyncPointKind::InterBlock)
             ]),
-            sync_point(false)
+            sync_point(SyncPointKind::InterBlock)
         ];
         assert_sync(body, expected);
     }
@@ -1140,10 +1259,10 @@ mod test {
             for_("x", 10, vec![
                 for_("y", 0, vec![
                     for_("z", 15, vec![]),
-                    sync_point(false),
+                    sync_point(SyncPointKind::InterBlock),
                 ])
             ]),
-            sync_point(false)
+            sync_point(SyncPointKind::InterBlock)
         ];
         assert_sync(body, expected);
     }
@@ -1154,7 +1273,7 @@ mod test {
             for_("x", 10, vec![
                 for_("y", 0, vec![
                     for_("z", 15, vec![]),
-                    sync_point(false),
+                    sync_point(SyncPointKind::InterBlock),
                 ])
             ])
         ];
@@ -1162,11 +1281,11 @@ mod test {
             for_("x", 10, vec![
                 for_("y", 0, vec![
                     for_("z", 15, vec![]),
-                    sync_point(true),
+                    sync_point(SyncPointKind::BlockLocal),
                 ])
             ])
         ];
-        assert_classify(body, expected);
+        assert_classify(body, expected, None);
     }
 
     #[test]
@@ -1175,7 +1294,7 @@ mod test {
             for_("x", 10, vec![
                 for_("y", 0, vec![
                     for_("z", 15, vec![assign(var("q"), int(3))]),
-                    sync_point(true),
+                    sync_point(SyncPointKind::BlockLocal),
                 ])
             ])
         ];
@@ -1183,7 +1302,7 @@ mod test {
             for_("x", 10, vec![
                 for_("y", 0, vec![
                     for_("z", 15, vec![assign(var("q"), int(3))]),
-                    sync_point(true)
+                    sync_point(SyncPointKind::BlockLocal)
                 ])
             ])
         ];
@@ -1198,7 +1317,7 @@ mod test {
                 for_("y", 0, vec![
                     assign(var("b"), int(0)),
                     for_("z", 2048, vec![assign(var("c"), int(3))]),
-                    sync_point(false),
+                    sync_point(SyncPointKind::InterBlock),
                     assign(var("d"), int(1))
                 ]),
                 assign(var("e"), int(2))
@@ -1234,11 +1353,11 @@ mod test {
                     vec![],
                     vec![
                         for_("y", 10, vec![]),
-                        sync_point(false)
+                        sync_point(SyncPointKind::InterBlock)
                     ]
                 )
             ]),
-            sync_point(false)
+            sync_point(SyncPointKind::InterBlock)
         ];
         assert_sync(body, expected);
     }
@@ -1256,10 +1375,10 @@ mod test {
             for_("x", 10, vec![
                 while_loop(vec![
                     for_("y", 10, vec![]),
-                    sync_point(false)
+                    sync_point(SyncPointKind::InterBlock)
                 ])
             ]),
-            sync_point(false)
+            sync_point(SyncPointKind::InterBlock)
         ];
         assert_sync(body, expected);
     }
@@ -1270,7 +1389,7 @@ mod test {
             for_("x", 10, vec![
                 while_loop(vec![
                     for_("y", 10, vec![]),
-                    sync_point(false)
+                    sync_point(SyncPointKind::InterBlock)
                 ])
             ])
         ];
@@ -1278,11 +1397,11 @@ mod test {
             for_("x", 10, vec![
                 while_loop(vec![
                     for_("y", 10, vec![]),
-                    sync_point(true)
+                    sync_point(SyncPointKind::BlockLocal)
                 ])
             ])
         ];
-        assert_classify(body, expected)
+        assert_classify(body, expected, None)
     }
 
     #[test]
@@ -1304,15 +1423,78 @@ mod test {
                     for_("z", 10, vec![
                         for_("w", 0, vec![
                             for_("v", 10, vec![]),
-                            sync_point(false)
+                            sync_point(SyncPointKind::InterBlock)
                         ])
                     ]),
-                    sync_point(false)
+                    sync_point(SyncPointKind::InterBlock)
                 ])
             ]),
-            sync_point(false)
+            sync_point(SyncPointKind::InterBlock)
         ];
         assert_sync(body, expected);
+    }
+
+    #[test]
+    fn cluster_sync_point_classify() {
+        let body = vec![
+            for_("x", 10, vec![
+                for_("y", 2048, vec![]),
+                sync_point(SyncPointKind::InterBlock)
+            ]),
+            sync_point(SyncPointKind::InterBlock)
+        ];
+        let expected_fst = vec![
+            for_("x", 10, vec![
+                for_("y", 2048, vec![]),
+                sync_point(SyncPointKind::InterBlock)
+            ]),
+            sync_point(SyncPointKind::InterBlock)
+        ];
+        let expected_snd = vec![
+            for_("x", 10, vec![
+                for_("y", 2048, vec![]),
+                sync_point(SyncPointKind::BlockCluster)
+            ]),
+            sync_point(SyncPointKind::InterBlock)
+        ];
+        assert_classify(body.clone(), expected_fst, None);
+
+        let mut opts = option::CompileOptions::default();
+        opts.backend = option::CompileBackend::Cuda;
+        opts.use_cuda_thread_block_clusters = true;
+        assert_classify(body, expected_snd, Some(opts))
+    }
+
+    #[test]
+    fn cluster_extended_size_sync_point_classify() {
+        let body = vec![
+            for_("x", 10, vec![
+                for_("y", 16384, vec![]),
+                sync_point(SyncPointKind::InterBlock)
+            ]),
+            sync_point(SyncPointKind::InterBlock)
+        ];
+        let expected_fst = vec![
+            for_("x", 10, vec![
+                for_("y", 16384, vec![]),
+                sync_point(SyncPointKind::InterBlock)
+            ]),
+            sync_point(SyncPointKind::InterBlock)
+        ];
+        let expected_snd = vec![
+            for_("x", 10, vec![
+                for_("y", 16384, vec![]),
+                sync_point(SyncPointKind::BlockCluster)
+            ]),
+            sync_point(SyncPointKind::InterBlock)
+        ];
+        assert_classify(body.clone(), expected_fst.clone(), None);
+        let mut opts = option::CompileOptions::default();
+        opts.backend = option::CompileBackend::Cuda;
+        opts.use_cuda_thread_block_clusters = true;
+        assert_classify(body.clone(), expected_fst, Some(opts.clone()));
+        opts.max_thread_blocks_per_cluster = 16;
+        assert_classify(body, expected_snd, Some(opts.clone()))
     }
 
     #[test]
@@ -1323,10 +1505,10 @@ mod test {
                     for_("z", 10, vec![
                         for_("w", 0, vec![
                             for_("v", 10, vec![]),
-                            sync_point(false)
+                            sync_point(SyncPointKind::InterBlock)
                         ])
                     ]),
-                    sync_point(false)
+                    sync_point(SyncPointKind::InterBlock)
                 ])
             ])
         ];
@@ -1336,14 +1518,14 @@ mod test {
                     for_("z", 10, vec![
                         for_("w", 0, vec![
                             for_("v", 10, vec![]),
-                            sync_point(true)
+                            sync_point(SyncPointKind::BlockLocal)
                         ])
                     ]),
-                    sync_point(false)
+                    sync_point(SyncPointKind::InterBlock)
                 ])
             ])
         ];
-        assert_classify(identified_sync_points, expected);
+        assert_classify(identified_sync_points, expected, None)
     }
 
     #[test]
@@ -1355,10 +1537,10 @@ mod test {
                     for_("z", 10, vec![
                         for_("w", 0, vec![
                             for_("v", 10, vec![assign(var("b"), int(2))]),
-                            sync_point(true)
+                            sync_point(SyncPointKind::BlockLocal)
                         ])
                     ]),
-                    sync_point(false)
+                    sync_point(SyncPointKind::InterBlock)
                 ])
             ])
         ];
@@ -1369,7 +1551,7 @@ mod test {
                     for_("z", 10, vec![
                         for_("w", 0, vec![
                             for_("v", 10, vec![assign(var("b"), int(2))]),
-                            sync_point(true)
+                            sync_point(SyncPointKind::BlockLocal)
                         ])
                     ])
                 ])
@@ -1390,12 +1572,12 @@ mod test {
                         for_("w", 0, vec![
                             assign(var("d"), int(4)),
                             for_("v", 2048, vec![assign(var("e"), int(5))]),
-                            sync_point(false),
+                            sync_point(SyncPointKind::InterBlock),
                             assign(var("f"), int(6))
                         ]),
                         assign(var("g"), int(7))
                     ]),
-                    sync_point(false),
+                    sync_point(SyncPointKind::InterBlock),
                     assign(var("h"), int(8))
                 ]),
                 assign(var("i"), int(9))

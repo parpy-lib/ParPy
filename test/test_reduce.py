@@ -1,6 +1,8 @@
 import prickle
 import pytest
 import re
+import subprocess
+import tempfile
 import torch
 
 from common import *
@@ -166,9 +168,50 @@ def test_multi_block_reduction(fn, backend):
         compare_reduce(fn, N, M, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
 
+def ensure_thread_block_clusters_enabled(backend):
+    if backend != prickle.CompileBackend.Cuda:
+        pytest.skip("Thread block clusters are only supported in CUDA")
+    major, minor = torch.cuda.get_device_capability()
+    if major < 9:
+        pytest.skip("Thread block clusters require compute capability 9.0 " +
+                   f"or higher (found {major}.{minor})")
+
 @pytest.mark.parametrize('fn', reduce_funs)
 @pytest.mark.parametrize('backend', compiler_backends)
-def test_reduction_compiles(fn, backend):
+def test_clustered_reduction(fn, backend):
+    def helper():
+        ensure_thread_block_clusters_enabled(backend)
+        N = 100
+        M = 2048
+        p = {
+            'outer': prickle.threads(N),
+            'inner': prickle.threads(M).tpb(512)
+        }
+        opts = par_opts(backend, p)
+        opts.use_cuda_thread_block_clusters = True
+        compare_reduce(fn, N, M, opts)
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('fn', reduce_funs)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_extended_clustered_reduction(fn, backend):
+    def helper():
+        ensure_thread_block_clusters_enabled(backend)
+        N = 100
+        M = 8192
+        p = {
+            'outer': prickle.threads(N),
+            'inner': prickle.threads(M).tpb(512)
+        }
+        opts = par_opts(backend, p)
+        opts.use_cuda_thread_block_clusters = True
+        opts.max_thread_blocks_per_cluster = 16
+        compare_reduce(fn, N, M, opts)
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('fn', reduce_funs)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_reduction_codegen(fn, backend):
     N = 100
     M = 50
     x = torch.randn((N, M), dtype=torch.float32)
@@ -217,6 +260,49 @@ def test_reduction_compiles(fn, backend):
         assert re.search(pat, s3, re.DOTALL) is not None
     else:
         assert len(s3) != 0
+
+@pytest.mark.parametrize('fn', reduce_funs)
+def test_clustered_reduction_codegen_in_cuda(fn):
+    N = 100
+    M = 50
+    x = torch.randn((N, M), dtype=torch.float32)
+    out = torch.zeros(N, dtype=x.dtype)
+    p = {
+        'outer': prickle.threads(N),
+        'inner': prickle.threads(4096).tpb(512)
+    }
+    opts = par_opts(prickle.CompileBackend.Cuda, p)
+    opts.use_cuda_thread_block_clusters = True
+    s = prickle.print_compiled(fn, [x, out, N], opts)
+    if not fn in multi_dim_reduce_funs:
+        pat = r".*<<<dim3\(8, 100, 1\), dim3\(512, 1, 1\)>>>\(.*\);"
+        assert re.search(pat, s, re.DOTALL) is not None
+    else:
+        assert len(s) != 0
+
+@pytest.mark.parametrize('fn', reduce_funs)
+def test_clustered_reduction_compiles_in_cuda(fn):
+    def helper():
+        N = 100
+        M = 50
+        x = torch.randn((N, M), dtype=torch.float32)
+        out = torch.zeros(N, dtype=x.dtype)
+        p = {
+            'outer': prickle.threads(N),
+            'inner': prickle.threads(4096).tpb(512)
+        }
+        opts = par_opts(prickle.CompileBackend.Cuda, p)
+        opts.use_cuda_thread_block_clusters = True
+        code = prickle.print_compiled(fn, [x, out, N], opts)
+        with tempfile.NamedTemporaryFile() as tmp:
+            with open(tmp.name, "w") as f:
+                f.write(code)
+            with tempfile.NamedTemporaryFile() as temp_obj:
+                commands = ["nvcc", "-arch=sm_90", "-c", "-x", "cu", tmp.name, "-o", temp_obj.name]
+                r = subprocess.run(commands, capture_output=True)
+                assert r.returncode == 0
+    run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
+
 
 # Tests using a custom step size.
 @prickle.jit

@@ -8,6 +8,7 @@ pub use crate::gpu::ast::UnOp;
 pub use crate::gpu::ast::BinOp;
 pub use crate::gpu::ast::Dim;
 pub use crate::gpu::ast::Dim3;
+pub use crate::gpu::ast::SyncScope;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -43,7 +44,6 @@ pub enum Expr {
     Convert {e: Box<Expr>, ty: Type},
 
     // CUDA-specific nodes
-    ShflXorSync {value: Box<Expr>, idx: Box<Expr>, ty : Type, i: Info},
     ThreadIdx {dim: Dim, ty: Type, i: Info},
     BlockIdx {dim: Dim, ty: Type, i: Info},
 }
@@ -63,7 +63,6 @@ impl Expr {
             Expr::Struct {ty, ..} => ty,
             Expr::Call {ty, ..} => ty,
             Expr::Convert {ty, ..} => ty,
-            Expr::ShflXorSync {ty, ..} => ty,
             Expr::ThreadIdx {ty, ..} => ty,
             Expr::BlockIdx {ty, ..} => ty,
         }
@@ -94,7 +93,6 @@ impl InfoNode for Expr {
             Expr::Struct {i, ..} => i.clone(),
             Expr::Call {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
-            Expr::ShflXorSync {i, ..} => i.clone(),
             Expr::ThreadIdx {i, ..} => i.clone(),
             Expr::BlockIdx {i, ..} => i.clone(),
         }
@@ -130,10 +128,6 @@ impl PartialEq for Expr {
             , Expr::Call {id: rid, args: rargs, ..}) =>
                 lid.eq(rid) && largs.eq(rargs),
             (Expr::Convert {e: le, ..}, Expr::Convert {e: re, ..}) => le.eq(re),
-            ( Expr::ShflXorSync {value: lval, idx: lidx, ..}
-            , Expr::ShflXorSync {value: rval, idx: ridx, ..} ) => {
-                lval.eq(rval) && lidx.eq(ridx)
-            },
             (Expr::ThreadIdx {dim: ldim, ..}, Expr::ThreadIdx {dim: rdim, ..}) =>
                 ldim.eq(rdim),
             (Expr::BlockIdx {dim: ldim, ..}, Expr::BlockIdx {dim: rdim, ..}) =>
@@ -194,13 +188,6 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
             },
-            Expr::ShflXorSync {value, idx, ty, i} => {
-                let (acc, value) = f(acc?, *value)?;
-                let (acc, idx) = f(acc, *idx)?;
-                Ok((acc, Expr::ShflXorSync {
-                    value: Box::new(value), idx: Box::new(idx), ty, i
-                }))
-            },
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
             Expr::ThreadIdx {..} | Expr::BlockIdx {..} => Ok((acc?, self)),
         }
@@ -222,7 +209,6 @@ impl SFold<Expr> for Expr {
             Expr::Struct {fields, ..} => fields.sfold_result(acc, &f),
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
-            Expr::ShflXorSync {value, idx, ..} => f(f(acc?, value)?, idx),
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => acc,
         }
@@ -240,7 +226,7 @@ pub enum Stmt {
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>},
     While {cond: Expr, body: Vec<Stmt>},
     Return {value: Expr},
-    Syncthreads {},
+    Synchronize {scope: SyncScope},
     KernelLaunch {id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>},
     AllocShared {ty: Type, id: Name, sz: usize},
     MallocAsync {id: Name, elem_ty: Type, sz: usize},
@@ -285,7 +271,7 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::KernelLaunch {id, blocks, threads, args}))
             },
-            Stmt::AllocShared {..} | Stmt::Syncthreads {..} |
+            Stmt::AllocShared {..} | Stmt::Synchronize {..} |
             Stmt::MallocAsync {..} | Stmt::FreeAsync {..} => Ok((acc?, self))
         }
     }
@@ -305,7 +291,7 @@ impl SFold<Expr> for Stmt {
             Stmt::While {cond, ..} => f(acc?, cond),
             Stmt::Return {value, ..} => f(acc?, value),
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
-            Stmt::AllocShared {..} | Stmt::Syncthreads {} |
+            Stmt::AllocShared {..} | Stmt::Synchronize {..} |
             Stmt::MallocAsync {..} | Stmt::FreeAsync {..} => acc,
         }
     }
@@ -332,7 +318,7 @@ impl SMapAccum<Stmt> for Stmt {
                 Ok((acc, Stmt::While {cond, body}))
             },
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-            Stmt::AllocShared {..} | Stmt::Syncthreads {} | Stmt::MallocAsync {..} |
+            Stmt::AllocShared {..} | Stmt::Synchronize {..} | Stmt::MallocAsync {..} |
             Stmt::FreeAsync {..} | Stmt::KernelLaunch {..} => Ok((acc?, self))
         }
     }
@@ -349,7 +335,7 @@ impl SFold<Stmt> for Stmt {
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-            Stmt::AllocShared {..} | Stmt::Syncthreads {} | Stmt::MallocAsync {..} |
+            Stmt::AllocShared {..} | Stmt::Synchronize {..} | Stmt::MallocAsync {..} |
             Stmt::FreeAsync {..} | Stmt::KernelLaunch {..} => acc,
         }
     }
@@ -375,6 +361,7 @@ pub struct Param {
 #[derive(Clone, Debug)]
 pub enum Top {
     Include {header: String},
+    Namespace {ns: String, alias: Option<String>},
     StructDef {id: Name, fields: Vec<Field>},
     FunDef {
         attr: Attribute, ret_ty: Type, bounds_attr: Option<i64>,
@@ -389,7 +376,8 @@ impl SMapAccum<Stmt> for Top {
         f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
     ) -> Result<(A, Self), E> {
         match self {
-            Top::Include {..} | Top::StructDef {..} => Ok((acc?, self)),
+            Top::Include {..} | Top::Namespace {..} | Top::StructDef {..} =>
+                Ok((acc?, self)),
             Top::FunDef {attr, ret_ty, bounds_attr, id, params, body} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Top::FunDef {attr, ret_ty, bounds_attr, id, params, body}))

@@ -293,6 +293,11 @@ impl Default for LaunchArgs {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum SyncScope {
+    Block, Cluster
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Expr, i: Info},
     Assign {dst: Expr, expr: Expr, i: Info},
@@ -305,13 +310,23 @@ pub enum Stmt {
     Return {value: Expr, i: Info},
     Scope {body: Vec<Stmt>, i: Info},
 
-    // Synchronization among all threads of the same thread block, ensuring all writes to memory
-    // are completed before continuing.
-    SynchronizeBlock {i: Info},
+    // Intermediate node representing a parallel reduction.
+    ParallelReduction {
+        var_ty: Type, var: Name, init: Expr, cond: Expr, incr: Expr,
+        body: Vec<Stmt>, nthreads: i64, tpb: i64, i: Info
+    },
 
-    // Represents a warp-level reduction, whose exact implementation is determined by the selected
-    // GPU backend.
-    WarpReduce {value: Expr, op: BinOp, ty: Type, i: Info},
+    // Synchronization among threads in a given scope within a kernel. Ensures that all included
+    // threads have reached the synchronization point before continuing.
+    Synchronize {scope: SyncScope, i: Info},
+
+    // Abstract representation of parallel reductions, used to enable backend-specific behavior for
+    // these operations, when they are supported.
+    WarpReduce {value: Expr, op: BinOp, int_ty: Type, res_ty: Type, i: Info},
+    ClusterReduce {
+        block_idx: Expr, shared_var: Expr, temp_var: Expr, blocks_per_cluster: i128,
+        op: BinOp, int_ty: Type, res_ty: Type, i: Info
+    },
 
     // Represents the launch of a kernel with a specified name invoked with the provided vector of
     // arguments and the specified launch arguments, controlling the number of blocks and threads
@@ -340,8 +355,10 @@ impl InfoNode for Stmt {
             Stmt::While {i, ..} => i.clone(),
             Stmt::Return {i, ..} => i.clone(),
             Stmt::Scope {i, ..} => i.clone(),
-            Stmt::SynchronizeBlock {i} => i.clone(),
+            Stmt::ParallelReduction {i, ..} => i.clone(),
+            Stmt::Synchronize {i, ..} => i.clone(),
             Stmt::WarpReduce {i, ..} => i.clone(),
+            Stmt::ClusterReduce {i, ..} => i.clone(),
             Stmt::KernelLaunch {i, ..} => i.clone(),
             Stmt::AllocDevice {i, ..} => i.clone(),
             Stmt::AllocShared {i, ..} => i.clone(),
@@ -385,9 +402,24 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, value) = f(acc?, value)?;
                 Ok((acc, Stmt::Return {value, i}))
             },
-            Stmt::WarpReduce {value, op, ty, i} => {
+            Stmt::ParallelReduction {var_ty, var, init, cond, incr, body, nthreads, tpb, i} => {
+                let (acc, init) = f(acc?, init)?;
+                let (acc, cond) = f(acc, cond)?;
+                let (acc, incr) = f(acc, incr)?;
+                Ok((acc, Stmt::ParallelReduction {var_ty, var, init, cond, incr, body, nthreads, tpb, i}))
+            },
+            Stmt::WarpReduce {value, op, int_ty, res_ty, i} => {
                 let (acc, value) = f(acc?, value)?;
-                Ok((acc, Stmt::WarpReduce {value, op, ty, i}))
+                Ok((acc, Stmt::WarpReduce {value, op, int_ty, res_ty, i}))
+            },
+            Stmt::ClusterReduce {block_idx, shared_var, temp_var, blocks_per_cluster,
+                                 op, int_ty, res_ty, i} => {
+                let (acc, block_idx) = f(acc?, block_idx)?;
+                let (acc, shared_var) = f(acc, shared_var)?;
+                let (acc, temp_var) = f(acc, temp_var)?;
+                Ok((acc, Stmt::ClusterReduce {
+                    block_idx, shared_var, temp_var, blocks_per_cluster, op, int_ty, res_ty, i
+                }))
             },
             Stmt::KernelLaunch {id, args, grid, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
@@ -398,9 +430,8 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, dst) = f(acc, dst)?;
                 Ok((acc, Stmt::CopyMemory {elem_ty, src, dst, sz, src_mem, dst_mem, i}))
             },
-            Stmt::Scope {..} | Stmt::SynchronizeBlock {..} |
-            Stmt::AllocDevice {..} | Stmt::AllocShared {..} |
-            Stmt::FreeDevice {..} => Ok((acc?, self)),
+            Stmt::Scope {..} | Stmt::Synchronize {..} | Stmt::AllocDevice {..} |
+            Stmt::AllocShared {..} | Stmt::FreeDevice {..} => Ok((acc?, self)),
         }
     }
 }
@@ -418,12 +449,15 @@ impl SFold<Expr> for Stmt {
             Stmt::If {cond, ..} => f(acc?, cond),
             Stmt::While {cond, ..} => f(acc?, cond),
             Stmt::Return {value, ..} => f(acc?, value),
+            Stmt::ParallelReduction {init, cond, incr, ..} =>
+                f(f(f(acc?, init)?, cond)?, incr),
             Stmt::WarpReduce {value, ..} => f(acc?, value),
+            Stmt::ClusterReduce {block_idx, shared_var, temp_var, ..} =>
+                f(f(f(acc?, block_idx)?, shared_var)?, temp_var),
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
             Stmt::CopyMemory {src, dst, ..} => f(f(acc?, src)?, dst),
-            Stmt::Scope {..} | Stmt::SynchronizeBlock {..} |
-            Stmt::AllocDevice {..} | Stmt::AllocShared {..} |
-            Stmt::FreeDevice {..} => acc,
+            Stmt::Scope {..} | Stmt::Synchronize {..} | Stmt::AllocDevice {..} |
+            Stmt::AllocShared {..} | Stmt::FreeDevice {..} => acc,
         }
     }
 }
@@ -452,11 +486,14 @@ impl SMapAccum<Stmt> for Stmt {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::Scope {body, i}))
             },
+            Stmt::ParallelReduction {var_ty, var, init, cond, incr, body, nthreads, tpb, i} => {
+                let (acc, body) = body.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Stmt::ParallelReduction {var_ty, var, init, cond, incr, body, nthreads, tpb, i}))
+            },
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-            Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
-            Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
-            Stmt::AllocShared {..} | Stmt::FreeDevice {..} |
-            Stmt::CopyMemory {..} => {
+            Stmt::Synchronize {..} | Stmt::WarpReduce {..} | Stmt::ClusterReduce {..} |
+            Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} | Stmt::AllocShared {..} |
+            Stmt::FreeDevice {..} | Stmt::CopyMemory {..} => {
                 Ok((acc?, self))
             }
         }
@@ -474,11 +511,11 @@ impl SFold<Stmt> for Stmt {
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
             Stmt::Scope {body, ..} => body.sfold_result(acc, &f),
+            Stmt::ParallelReduction {body, ..} => body.sfold_result(acc, &f),
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-            Stmt::SynchronizeBlock {..} | Stmt::WarpReduce {..} |
-            Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
-            Stmt::AllocShared {..} | Stmt::FreeDevice {..} |
-            Stmt::CopyMemory {..} => acc,
+            Stmt::Synchronize {..} | Stmt::WarpReduce {..} | Stmt::ClusterReduce {..} |
+            Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} | Stmt::AllocShared {..} |
+            Stmt::FreeDevice {..} | Stmt::CopyMemory {..} => acc,
         }
     }
 }

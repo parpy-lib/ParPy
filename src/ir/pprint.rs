@@ -82,6 +82,17 @@ impl PrettyPrint for LoopPar {
     }
 }
 
+impl PrettyPrint for SyncPointKind {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let s = match self {
+            SyncPointKind::BlockLocal => format!("block_local"),
+            SyncPointKind::BlockCluster => format!("block_cluster"),
+            SyncPointKind::InterBlock => format!("inter_block"),
+        };
+        (env, s)
+    }
+}
+
 impl PrettyPrint for Stmt {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let indent = env.print_indent();
@@ -97,12 +108,9 @@ impl PrettyPrint for Stmt {
                 let (env, expr) = expr.pprint(env);
                 (env, format!("{indent}{dst} = {expr};"))
             },
-            Stmt::SyncPoint {block_local, ..} => {
-                if *block_local {
-                    (env, format!("{indent}__syncthreads();"))
-                } else {
-                    (env, format!("{indent}sync();"))
-                }
+            Stmt::SyncPoint {kind, ..} => {
+                let (env, kind) = kind.pprint(env);
+                (env, format!("{indent}sync({kind});"))
             },
             Stmt::For {var, lo, hi, step, body, par, ..} => {
                 let (env, var) = var.pprint(env);

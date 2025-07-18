@@ -246,6 +246,16 @@ impl PrettyPrint for LaunchArgs {
     }
 }
 
+impl PrettyPrint for SyncScope {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let s = match self {
+            SyncScope::Block => format!("block"),
+            SyncScope::Cluster => format!("cluster"),
+        };
+        (env, s)
+    }
+}
+
 impl PrettyPrint for Stmt {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let indent = env.print_indent();
@@ -305,13 +315,37 @@ impl PrettyPrint for Stmt {
                 let env = env.decr_indent();
                 (env, format!("{0}{{\n{1}\n{0}}}", indent, body))
             },
-            Stmt::SynchronizeBlock {..} => {
-                (env, format!("{indent}sync_block();"))
+            Stmt::ParallelReduction {var_ty, var, init, cond, incr, body, nthreads, tpb, ..} => {
+                let (env, var_ty) = var_ty.pprint(env);
+                let (env, var) = var.pprint(env);
+                let (env, init) = init.pprint(env);
+                let (env, cond) = cond.pprint(env);
+                let (env, incr) = incr.pprint(env);
+                let env = env.incr_indent();
+                let (env, body) = pprint_iter(body.iter(), env, "\n");
+                let env = env.decr_indent();
+                let threading = format!("(parallel reduction over {nthreads} threads with {tpb} threads per block)");
+                let s = format!(
+                    "{0}for ({1} {2} = {3}; {4}; {2} = {5}) {7}\n{{\n{6}\n{0}}}",
+                    indent, var_ty, var, init, cond, incr, body, threading
+                );
+                (env, s)
+            },
+            Stmt::Synchronize {scope, ..} => {
+                let (env, scope) = scope.pprint(env);
+                (env, format!("{indent}sync({scope});"))
             },
             Stmt::WarpReduce {value, op, ..} => {
                 let (env, value) = value.pprint(env);
                 let (env, op) = op.pprint(env);
                 (env, format!("{indent}{value} = warp_reduce({value}, {op});"))
+            },
+            Stmt::ClusterReduce {block_idx, shared_var, temp_var, op, ..} => {
+                let (env, block_idx) = block_idx.pprint(env);
+                let (env, shared_var) = shared_var.pprint(env);
+                let (env, temp_var) = temp_var.pprint(env);
+                let (env, op) = op.pprint(env);
+                (env, format!("{indent}{temp_var} = cluster_reduce({shared_var}[{block_idx}], {op});"))
             },
             Stmt::KernelLaunch {id, args, grid, ..} => {
                 let (env, id) = id.pprint(env);
@@ -586,8 +620,8 @@ mod test {
 
     #[test]
     fn pprint_syncblock() {
-        let s = Stmt::SynchronizeBlock {i: i()}.pprint_default();
-        assert_eq!(&s, "sync_block();");
+        let s = Stmt::Synchronize {scope: SyncScope::Block, i: i()}.pprint_default();
+        assert_eq!(&s, "sync(block);");
     }
 
     #[test]
@@ -690,7 +724,8 @@ mod test {
         let reduce = Stmt::WarpReduce {
             value: value.clone(),
             op: op.clone(),
-            ty: Type::Scalar {sz: ElemSize::F32},
+            int_ty: Type::Scalar {sz: ElemSize::I64},
+            res_ty: Type::Scalar {sz: ElemSize::F32},
             i: i()
         };
         let x = value.pprint_default();

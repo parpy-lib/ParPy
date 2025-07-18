@@ -240,11 +240,6 @@ impl PrettyPrint for Expr {
                 };
                 (env, s)
             },
-            Expr::ShflXorSync {value, idx, ..} => {
-                let (env, value) = value.pprint(env);
-                let (env, idx) = idx.pprint(env);
-                (env, format!("__shfl_xor_sync(0xFFFFFFFF, {value}, {idx})"))
-            },
             Expr::ThreadIdx {dim, ..} => {
                 let (env, dim) = dim.pprint(env);
                 (env, format!("threadIdx.{dim}"))
@@ -315,8 +310,12 @@ impl PrettyPrint for Stmt {
                 let (env, value) = value.pprint(env);
                 (env, format!("{indent}return {value};"))
             },
-            Stmt::Syncthreads {} => {
-                (env, format!("{indent}__syncthreads();"))
+            Stmt::Synchronize {scope} => {
+                let s = match scope {
+                    SyncScope::Block => "__syncthreads()",
+                    SyncScope::Cluster => "this_cluster().sync()",
+                };
+                (env, format!("{indent}{s};"))
             },
             Stmt::KernelLaunch {id, blocks, threads, args} => {
                 let (env, id) = id.pprint(env);
@@ -377,6 +376,13 @@ impl PrettyPrint for Top {
         match self {
             Top::Include {header} => {
                 (env, format!("#include {header}"))
+            },
+            Top::Namespace {ns, alias} => {
+                if let Some(a) = alias {
+                    (env, format!("using namespace {ns} = {a};"))
+                } else {
+                    (env, format!("using namespace {ns};"))
+                }
             },
             Top::StructDef {id, fields, ..} => {
                 let (env, id) = id.pprint(env);
@@ -590,8 +596,8 @@ mod test {
     }
 
     #[test]
-    fn pprint_syncthreads() {
-        let s = Stmt::Syncthreads {}.pprint_default();
+    fn pprint_synchronize_block() {
+        let s = Stmt::Synchronize {scope: SyncScope::Block}.pprint_default();
         assert_eq!(&s, "__syncthreads();");
     }
 

@@ -1,13 +1,11 @@
 use super::ast::*;
 use super::free_vars;
 use super::par::{GpuMap, GpuMapping};
-use super::pprint;
 use crate::prickle_compile_error;
 use crate::ir::ast as ir_ast;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::utils::reduce;
 
 use std::collections::BTreeMap;
 
@@ -239,191 +237,17 @@ fn subtract_from_grid(grid: LaunchArgs, m: &GpuMap) -> LaunchArgs {
     }
 }
 
-fn reduction_op_neutral_element(
-    op: &BinOp,
-    ty: Type,
-    i: Info
-) -> CompileResult<Expr> {
-    if let Type::Scalar {sz} = &ty {
-        match reduce::neutral_element(op, sz, &i) {
-            Some(literal) => Ok(literal),
-            None => {
-                let op = pprint::print_binop(op);
-                prickle_compile_error!(i, "Parallel reductions not supported for operator {op}")
-            }
+fn generate_sync_scope(kind: ir_ast::SyncPointKind, i: &Info) -> CompileResult<SyncScope> {
+    match kind {
+        ir_ast::SyncPointKind::BlockLocal => Ok(SyncScope::Block),
+        ir_ast::SyncPointKind::BlockCluster => Ok(SyncScope::Cluster),
+        ir_ast::SyncPointKind::InterBlock => {
+            prickle_compile_error!(i, "Found an inter-block synchronization point \
+                                       remaining in parallel code after the \
+                                       inter-block transformation. This is likely \
+                                       caused by a bug in the compiler.")
         }
-    } else {
-        prickle_compile_error!(i, "Parallel reductions not supported for non-scalar arguments")
     }
-}
-
-fn generate_warp_sync(
-    acc: &mut Vec<Stmt>,
-    temp_var: &Expr,
-    op: &BinOp,
-    i: &Info
-) -> () {
-    acc.push(Stmt::WarpReduce {
-        value: temp_var.clone(),
-        op: op.clone(),
-        ty: temp_var.get_type().clone(),
-        i: i.clone()
-    });
-}
-
-fn generate_parallel_reduction(
-    var_ty: Type,
-    var: Name,
-    init: Expr,
-    cond: Expr,
-    incr: Expr,
-    body: Vec<ir_ast::Stmt>,
-    nthreads: i64,
-    i: Info
-) -> CompileResult<Stmt> {
-    let (lhs, op, rhs, sz, i) = reduce::extract_reduction_operands(body, &i)?;
-    let lhs = from_ir_expr(lhs)?;
-    let rhs = from_ir_expr(rhs)?;
-    let ty = Type::Scalar {sz: sz.clone()};
-    let mut acc = Vec::new();
-    let ne = reduction_op_neutral_element(&op, ty.clone(), i.clone())?;
-    let temp_id = Name::sym_str("t");
-    let temp_var = Expr::Var {id: temp_id.clone(), ty: ty.clone(), i: i.clone()};
-    // Generate code for a warp-local reduction
-    acc.push(Stmt::Definition {
-        ty: ty.clone(),
-        id: temp_id.clone(),
-        expr: ne.clone(),
-        i: i.clone()
-    });
-    let temp_assign = Stmt::Assign {
-        dst: temp_var.clone(),
-        expr: Expr::BinOp {
-            lhs: Box::new(temp_var.clone()),
-            op: op.clone(),
-            rhs: Box::new(rhs),
-            ty: ty.clone(), i: i.clone()
-        },
-        i: i.clone()
-    };
-    acc.push(Stmt::For {
-        var_ty, var, init, cond, incr, body: vec![temp_assign], i: i.clone()
-    });
-    acc.push(Stmt::SynchronizeBlock {i: i.clone()});
-    generate_warp_sync(&mut acc, &temp_var.clone(), &op, &i);
-
-    // If the parallelism includes more than 32 threads, we are using more than one
-    // warp. In this case, we synchronize across all threads of the block.
-    let i64_ty = Type::Scalar {sz: ElemSize::I64};
-    if nthreads > 32 {
-        // Allocate shared memory and write to it
-        let shared_id = Name::sym_str("stemp");
-        let shared_var = Expr::Var {id: shared_id.clone(), ty: ty.clone(), i: i.clone()};
-        acc.push(Stmt::AllocShared {
-            elem_ty: ty.clone(), id: shared_id, sz: 32, i: i.clone()
-        });
-        let thread_warp_idx = Expr::BinOp {
-            lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()}),
-            op: BinOp::Rem,
-            rhs: Box::new(Expr::Int {v: 32, ty: i64_ty.clone(), i: i.clone()}),
-            ty: i64_ty.clone(),
-            i: i.clone()
-        };
-        let var_id = Name::sym_str("i");
-        let var = Expr::Var {id: var_id.clone(), ty: i64_ty.clone(), i: i.clone()};
-        acc.push(Stmt::For {
-            var_ty: i64_ty.clone(),
-            var: var_id.clone(),
-            init: Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()},
-            cond: Expr::BinOp {
-                lhs: Box::new(var.clone()),
-                op: BinOp::Lt,
-                rhs: Box::new(Expr::Int {v: 32, ty: i64_ty.clone(), i: i.clone()}),
-                ty: i64_ty.clone(),
-                i: i.clone()
-            },
-            incr: Expr::BinOp {
-                lhs: Box::new(var.clone()),
-                op: BinOp::Add,
-                rhs: Box::new(Expr::Int {
-                    v: nthreads as i128, ty: i64_ty.clone(), i: i.clone()
-                }),
-                ty: i64_ty.clone(),
-                i: i.clone()
-            },
-            body: vec![Stmt::Assign {
-                dst: Expr::ArrayAccess {
-                    target: Box::new(shared_var.clone()),
-                    idx: Box::new(var.clone()),
-                    ty: ty.clone(),
-                    i: i.clone()
-                },
-                expr: ne.clone(),
-                i: i.clone()
-            }],
-            i: i.clone()
-        });
-        acc.push(Stmt::SynchronizeBlock {i: i.clone()});
-        acc.push(Stmt::If {
-            cond: Expr::BinOp {
-                lhs: Box::new(thread_warp_idx.clone()),
-                op: BinOp::Eq,
-                rhs: Box::new(Expr::Int {v: 0, ty: i64_ty.clone(), i: i.clone()}),
-                ty: Type::Boolean,
-                i: i.clone()
-            },
-            thn: vec![Stmt::Assign {
-                dst: Expr::ArrayAccess {
-                    target: Box::new(shared_var.clone()),
-                    idx: Box::new(Expr::BinOp {
-                        lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty.clone(), i: i.clone()}),
-                        op: BinOp::Div,
-                        rhs: Box::new(Expr::Int {v: 32, ty: i64_ty.clone(), i: i.clone()}),
-                        ty: i64_ty.clone(),
-                        i: i.clone()
-                    }),
-                    ty: ty.clone(),
-                    i: i.clone()
-                },
-                expr: temp_var.clone(),
-                i: i.clone()
-            }],
-            els: vec![],
-            i: i.clone()
-        });
-        acc.push(Stmt::SynchronizeBlock {i: i.clone()});
-
-        // Load data from shared memory, and synchronize across the threads of the
-        // warp.
-        acc.push(Stmt::Assign {
-            dst: temp_var.clone(),
-            expr: Expr::ArrayAccess {
-                target: Box::new(shared_var),
-                idx: Box::new(thread_warp_idx),
-                ty: ty.clone(),
-                i: i.clone()
-            },
-            i: i.clone()
-        });
-        generate_warp_sync(&mut acc, &temp_var.clone(), &op, &i);
-    } else {
-        acc.push(Stmt::SynchronizeBlock {i: i.clone()});
-    }
-
-    // Write the result stored in the temporary value to the original target.
-    // If the target is an array access, only the first thread writes to reduce
-    // global array contention.
-    let assign_stmt = Stmt::Assign {
-        dst: lhs.clone(),
-        expr: Expr::BinOp {
-            lhs: Box::new(lhs.clone()), op,
-            rhs: Box::new(temp_var.clone()),
-            ty: ty.clone(), i: i.clone()
-        },
-        i: i.clone()
-    };
-    acc.push(assign_stmt);
-    Ok(Stmt::Scope {body: acc, i})
 }
 
 fn generate_kernel_stmt(
@@ -443,13 +267,9 @@ fn generate_kernel_stmt(
             let expr = from_ir_expr(expr)?;
             acc.push(Stmt::Assign {dst, expr, i});
         },
-        ir_ast::Stmt::SyncPoint {block_local: true, i} => {
-            acc.push(Stmt::SynchronizeBlock {i});
-        },
-        ir_ast::Stmt::SyncPoint {i, ..} => {
-            prickle_compile_error!(i, "Found an unsupported inter-block \
-                                     synchronization statement in parallel \
-                                     code, which is not supported")?
+        ir_ast::Stmt::SyncPoint {kind, i} => {
+            let scope = generate_sync_scope(kind, &i)?;
+            acc.push(Stmt::Synchronize {scope, i});
         },
         ir_ast::Stmt::For {var, lo, hi, step, body, par, i} => {
             let (p, grid, map) = if par.is_parallel() {
@@ -461,12 +281,13 @@ fn generate_kernel_stmt(
             };
             let var_ty = from_ir_type(lo.get_type().clone());
             let (init, cond, incr) = determine_loop_bounds(p, var.clone(), lo, hi, step)?;
+            let body = generate_kernel_stmts(grid, map, vec![], body)?;
             if par.is_parallel() && par.reduction {
-                acc.push(generate_parallel_reduction(
-                    var_ty, var, init, cond, incr, body, par.nthreads, i)?
-                );
+                acc.push(Stmt::ParallelReduction {
+                    var_ty, var, init, cond, incr, body, nthreads: par.nthreads,
+                    tpb: par.tpb, i
+                });
             } else {
-                let body = generate_kernel_stmts(grid, map, vec![], body)?;
                 acc.push(Stmt::For {var_ty, var, init, cond, incr, body, i});
             };
         },
@@ -729,9 +550,7 @@ pub fn from_general_ir(
         .into_iter()
         .map(struct_top_fields)
         .collect::<BTreeMap<Name, Vec<Field>>>();
-    let env = CodegenEnv {
-        gpu_mapping, struct_fields
-    };
+    let env = CodegenEnv {gpu_mapping, struct_fields};
 
     let main_def = ast.defs.pop().unwrap();
     tops.append(&mut ast.defs

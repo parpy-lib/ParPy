@@ -79,7 +79,7 @@ fn compile_ir<'py>(
     // * Inserts top-level struct definitions for each Python dictionary.
     // * Replaces uses of tuples for indexing with an integer expression.
     // * Adds the parallelization arguments directly to the AST.
-    let ir_ast = ir::from_python(py_ast, opts.parallelize, &debug_env)?;
+    let ir_ast = ir::from_python(py_ast, opts.parallelize.clone(), &debug_env)?;
     debug_env.print("IR AST", &ir_ast);
 
     // Compile using the backend-specific approach to code generation. In the end, we pretty-print
@@ -87,12 +87,12 @@ fn compile_ir<'py>(
     // symbols differ between two ASTs, they should be considered equivalent.
     match opts.backend {
         option::CompileBackend::Cuda => {
-            let ast = cuda::codegen(ir_ast, &debug_env)?;
+            let ast = cuda::codegen(ir_ast, &opts, &debug_env)?;
             debug_env.print("CUDA AST", &ast);
             Ok((ast.pprint_default(), ast.pprint_ignore_symbols()))
         },
         option::CompileBackend::Metal => {
-            let ast = metal::codegen(ir_ast, &debug_env)?;
+            let ast = metal::codegen(ir_ast, &opts, &debug_env)?;
             debug_env.print("Metal AST", &ast);
             Ok((ast.pprint_default(), ast.pprint_ignore_symbols()))
         },
