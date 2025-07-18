@@ -2,6 +2,7 @@ use super::ast::*;
 use super::free_vars;
 use super::par::{GpuMap, GpuMapping};
 use crate::prickle_compile_error;
+use crate::option;
 use crate::ir::ast as ir_ast;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -10,9 +11,10 @@ use crate::utils::name::Name;
 use std::collections::BTreeMap;
 
 #[derive(Debug)]
-struct CodegenEnv {
+struct CodegenEnv<'a> {
     gpu_mapping: BTreeMap<Name, GpuMapping>,
     struct_fields: BTreeMap<Name, Vec<Field>>,
+    opts: &'a option::CompileOptions,
 }
 
 fn from_ir_type(ty: ir_ast::Type) -> Type {
@@ -328,6 +330,22 @@ fn generate_kernel_stmts(
         .fold(Ok(acc), |acc, stmt| generate_kernel_stmt(grid.clone(), map, acc?, stmt))
 }
 
+fn get_cluster_mapping(
+    env: &CodegenEnv,
+    inner_mapping: &GpuMap
+) -> Option<i64> {
+    if env.opts.use_cuda_thread_block_clusters {
+        match inner_mapping {
+            GpuMap::ThreadBlock {nblocks, ..} => {
+                Some(*nblocks)
+            },
+            _ => None
+        }
+    } else {
+        None
+    }
+}
+
 fn from_ir_stmt(
     env: &CodegenEnv,
     fun_id: &Name,
@@ -360,8 +378,16 @@ fn from_ir_stmt(
                         .into_iter()
                         .map(|(id, ty)| Param {id, ty, i: i.clone()})
                         .collect::<Vec<Param>>();
+                    let mut attrs = vec![
+                        KernelAttribute::LaunchBounds {threads: m.grid.threads.prod()}
+                    ];
+                    if let Some(nblocks) = get_cluster_mapping(&env, &m.mapping.last().unwrap()) {
+                        let dims = Dim3::default()
+                            .with_dim(&Dim::X, nblocks);
+                        attrs.push(KernelAttribute::ClusterDims {dims});
+                    }
                     let kernel = Top::KernelFunDef {
-                        threads: m.grid.threads.prod(), id: kernel_id.clone(),
+                        attrs, id: kernel_id.clone(),
                         params: kernel_params, body: kernel_body
                     };
                     kernels.push(kernel);
@@ -539,6 +565,7 @@ fn struct_top_fields(t: Top) -> (Name, Vec<Field>) {
 }
 
 pub fn from_general_ir(
+    opts: &option::CompileOptions,
     mut ast: ir_ast::Ast,
     gpu_mapping: BTreeMap<Name, GpuMapping>
 ) -> CompileResult<Ast> {
@@ -550,7 +577,7 @@ pub fn from_general_ir(
         .into_iter()
         .map(struct_top_fields)
         .collect::<BTreeMap<Name, Vec<Field>>>();
-    let env = CodegenEnv {gpu_mapping, struct_fields};
+    let env = CodegenEnv {gpu_mapping, struct_fields, opts};
 
     let main_def = ast.defs.pop().unwrap();
     tops.append(&mut ast.defs

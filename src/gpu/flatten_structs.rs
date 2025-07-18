@@ -161,10 +161,10 @@ fn flatten_structs_top(
     mut env: StructEnv, t: Top
 ) -> CompileResult<(StructEnv, Option<Top>)> {
     match t {
-        Top::KernelFunDef {threads, id, params, body} => {
+        Top::KernelFunDef {attrs, id, params, body} => {
             let (env, params) = expand_kernel_params(env, params)?;
             let body = flatten_structs_kernel_body(&env, body)?;
-            Ok((env, Some(Top::KernelFunDef {threads, id, params, body})))
+            Ok((env, Some(Top::KernelFunDef {attrs, id, params, body})))
         },
         Top::FunDef {ret_ty, id, params, body, target} => {
             validate_return_type(&ret_ty)?;

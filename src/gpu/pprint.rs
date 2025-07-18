@@ -411,16 +411,29 @@ impl PrettyPrint for Target {
     }
 }
 
+impl PrettyPrint for KernelAttribute {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        match self {
+            KernelAttribute::LaunchBounds {threads} => (env, format!("threads({threads})")),
+            KernelAttribute::ClusterDims {dims} => {
+                let (env, dims) = dims.pprint(env);
+                (env, format!("cluster_dims({dims})"))
+            },
+        }
+    }
+}
+
 impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
-            Top::KernelFunDef {threads, id, params, body} => {
+            Top::KernelFunDef {attrs, id, params, body} => {
+                let (env, attrs) = pprint_iter(attrs.iter(), env, "\n");
                 let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("threads({threads})\nvoid {id}({params}) {{\n{body}\n}}"))
+                (env, format!("{attrs}\nvoid {id}({params}) {{\n{body}\n}}"))
             },
             Top::FunDef {ret_ty, id, params, body, target} => {
                 let (env, ret_ty) = ret_ty.pprint(env);
@@ -751,7 +764,7 @@ mod test {
     #[test]
     fn pprint_kernel_fun_def() {
         let def = Top::KernelFunDef {
-            threads: 1024,
+            attrs: vec![KernelAttribute::LaunchBounds {threads: 1024}],
             id: Name::new("f".to_string()),
             params: vec![],
             body: vec![Stmt::Assign {dst: var("x"), expr: var("y"), i: i()}]

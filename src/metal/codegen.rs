@@ -4,7 +4,7 @@ use crate::prickle_type_error;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::err::*;
 use crate::utils::info::*;
-use crate::utils::smap::SFold;
+use crate::utils::smap::*;
 
 struct CodegenEnv {
     pub on_device: bool
@@ -233,17 +233,32 @@ fn from_gpu_ir_param(env: &CodegenEnv, p: gpu_ast::Param) -> CompileResult<Param
     Ok(Param {id, ty: from_gpu_ir_type(env, ty, &i)?})
 }
 
+fn from_gpu_ir_attr(
+    attr: gpu_ast::KernelAttribute
+) -> CompileResult<KernelAttribute> {
+    match attr {
+        gpu_ast::KernelAttribute::LaunchBounds {threads} => {
+            Ok(KernelAttribute::LaunchBounds {threads})
+        },
+        gpu_ast::KernelAttribute::ClusterDims {..} => {
+            prickle_internal_error!(Info::default(), "Found unsupported cluster dimension \
+                                                      attribute in Metal backend.")
+        }
+    }
+}
+
 fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc> {
     match top {
-        gpu_ast::Top::KernelFunDef {threads, id, params, body} => {
+        gpu_ast::Top::KernelFunDef {attrs, id, params, body} => {
             let env = CodegenEnv::new(&gpu_ast::Target::Device);
+            let attrs = attrs.into_iter()
+                .map(from_gpu_ir_attr)
+                .collect::<CompileResult<Vec<KernelAttribute>>>()?;
             let params = params.into_iter()
                 .map(|p| from_gpu_ir_param(&env, p))
                 .collect::<CompileResult<Vec<Param>>>()?;
             let body = from_gpu_ir_stmts(&env, body)?;
-            acc.metal.push(Top::KernelDef {
-                maxthreads: threads as usize, id, params, body
-            });
+            acc.metal.push(Top::KernelDef {attrs, id, params, body});
             Ok(acc)
         },
         gpu_ast::Top::FunDef {ret_ty, id, params, body, target} => {

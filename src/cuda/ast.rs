@@ -359,12 +359,18 @@ pub struct Param {
 }
 
 #[derive(Clone, Debug)]
+pub enum KernelAttribute {
+    LaunchBounds {threads: i64},
+    ClusterDims {dims: Dim3},
+}
+
+#[derive(Clone, Debug)]
 pub enum Top {
     Include {header: String},
     Namespace {ns: String, alias: Option<String>},
     StructDef {id: Name, fields: Vec<Field>},
     FunDef {
-        attr: Attribute, ret_ty: Type, bounds_attr: Option<i64>,
+        dev_attr: Attribute, ret_ty: Type, attrs: Vec<KernelAttribute>,
         id: Name, params: Vec<Param>, body: Vec<Stmt>
     },
 }
@@ -378,9 +384,9 @@ impl SMapAccum<Stmt> for Top {
         match self {
             Top::Include {..} | Top::Namespace {..} | Top::StructDef {..} =>
                 Ok((acc?, self)),
-            Top::FunDef {attr, ret_ty, bounds_attr, id, params, body} => {
+            Top::FunDef {dev_attr, ret_ty, attrs, id, params, body} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Top::FunDef {attr, ret_ty, bounds_attr, id, params, body}))
+                Ok((acc, Top::FunDef {dev_attr, ret_ty, attrs, id, params, body}))
             },
         }
     }

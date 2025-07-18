@@ -206,16 +206,30 @@ fn from_gpu_ir_field(f: gpu_ast::Field) -> Field {
     Field {id, ty: from_gpu_ir_type(ty)}
 }
 
+fn from_gpu_ir_attr(attr: gpu_ast::KernelAttribute) -> KernelAttribute {
+    match attr {
+        gpu_ast::KernelAttribute::LaunchBounds {threads} => {
+            KernelAttribute::LaunchBounds {threads}
+        },
+        gpu_ast::KernelAttribute::ClusterDims {dims} => {
+            KernelAttribute::ClusterDims {dims}
+        },
+    }
+}
+
 fn from_gpu_ir_top(t: gpu_ast::Top) -> CompileResult<Top> {
     match t {
-        gpu_ast::Top::KernelFunDef {threads, id, params, body} => {
+        gpu_ast::Top::KernelFunDef {attrs, id, params, body} => {
+            let attrs = attrs.into_iter()
+                .map(from_gpu_ir_attr)
+                .collect::<Vec<KernelAttribute>>();
             let params = params.into_iter()
                 .map(from_gpu_ir_param)
                 .collect::<Vec<Param>>();
             let body = from_gpu_ir_stmts(body)?;
             Ok(Top::FunDef {
-                attr: Attribute::Global, ret_ty: Type::Void,
-                bounds_attr: Some(threads), id, params, body
+                dev_attr: Attribute::Global, ret_ty: Type::Void,
+                attrs, id, params, body
             })
         },
         gpu_ast::Top::FunDef {ret_ty, id, params, body, target} => {
@@ -224,12 +238,12 @@ fn from_gpu_ir_top(t: gpu_ast::Top) -> CompileResult<Top> {
                 .map(from_gpu_ir_param)
                 .collect::<Vec<Param>>();
             let body = from_gpu_ir_stmts(body)?;
-            let attr = match target {
+            let dev_attr = match target {
                 gpu_ast::Target::Host => Attribute::Entry,
                 gpu_ast::Target::Device => Attribute::Device,
             };
             Ok(Top::FunDef {
-                attr, ret_ty, bounds_attr: None,
+                dev_attr, ret_ty, attrs: vec![],
                 id, params, body
             })
         },

@@ -93,8 +93,13 @@ pub struct Param {
 }
 
 #[derive(Clone, Debug)]
+pub enum KernelAttribute {
+    LaunchBounds {threads: i64},
+}
+
+#[derive(Clone, Debug)]
 pub enum Top {
-    KernelDef {maxthreads: usize, id: Name, params: Vec<Param>, body: Vec<Stmt>},
+    KernelDef {attrs: Vec<KernelAttribute>, id: Name, params: Vec<Param>, body: Vec<Stmt>},
     FunDef {ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>},
 }
 

@@ -371,6 +371,32 @@ impl PrettyPrint for Param {
     }
 }
 
+impl PrettyPrint for KernelAttribute {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        match self {
+            KernelAttribute::LaunchBounds {threads} => {
+                (env, format!("__launch_bounds__({threads})"))
+            },
+            KernelAttribute::ClusterDims {dims} => {
+                let (env, dims) = dims.pprint(env);
+                (env, format!("__cluster_dims__({dims})"))
+            },
+        }
+    }
+}
+
+fn pprint_attrs(
+    attrs: &Vec<KernelAttribute>,
+    env: PrettyPrintEnv
+) -> (PrettyPrintEnv, String) {
+    if attrs.len() == 0 {
+        (env, " ".to_string())
+    } else {
+        let (env, attrs) = pprint_iter(attrs.iter(), env, "\n");
+        (env, format!("\n{attrs}\n"))
+    }
+}
+
 impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
@@ -391,19 +417,16 @@ impl PrettyPrint for Top {
                 let env = env.decr_indent();
                 (env, format!("struct {id} {{\n{fields}\n}};"))
             },
-            Top::FunDef {attr, ret_ty, bounds_attr, id, params, body, ..} => {
-                let (env, attr) = attr.pprint(env);
+            Top::FunDef {dev_attr, ret_ty, attrs, id, params, body, ..} => {
+                let (env, dev_attr) = dev_attr.pprint(env);
                 let (env, ret_ty) = ret_ty.pprint(env);
-                let bounds_annot = match bounds_attr {
-                    Some(tpb) => format!("\n__launch_bounds__({tpb})\n"),
-                    None => " ".to_string()
-                };
+                let (env, attrs) = pprint_attrs(attrs, env);
                 let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("{attr}\n{ret_ty}{bounds_annot}{id}({params}) {{\n{body}\n}}"))
+                (env, format!("{dev_attr}\n{ret_ty}{attrs}{id}({params}) {{\n{body}\n}}"))
             },
         }
     }
@@ -730,9 +753,9 @@ mod test {
     #[test]
     fn pprint_fun_def() {
         let def = Top::FunDef {
+            dev_attr: Attribute::Entry,
             ret_ty: Type::Void,
-            attr: Attribute::Entry,
-            bounds_attr: None,
+            attrs: vec![],
             id: Name::new("f".to_string()),
             params: vec![],
             body: vec![
@@ -747,9 +770,9 @@ mod test {
     #[test]
     fn pprint_cuda_kernel() {
         let def = Top::FunDef {
+            dev_attr: Attribute::Global,
             ret_ty: Type::Void,
-            attr: Attribute::Global,
-            bounds_attr: Some(256),
+            attrs: vec![KernelAttribute::LaunchBounds {threads: 256}],
             id: Name::new("f".to_string()),
             params: vec![],
             body: vec![

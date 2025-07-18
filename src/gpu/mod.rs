@@ -30,7 +30,7 @@ pub fn from_general_ir(
     let gpu_mapping = par::map_gpu_grid(par);
 
     // Translate the general IR AST to a representation used for all GPU targets.
-    let ast = codegen::from_general_ir(ast, gpu_mapping)?;
+    let ast = codegen::from_general_ir(opts, ast, gpu_mapping)?;
     debug_env.print("GPU AST", &ast);
 
     // Expand intermediate parallel reductions node to proper for-loops in the GPU IR AST.

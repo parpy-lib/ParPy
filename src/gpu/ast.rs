@@ -540,8 +540,14 @@ pub enum Target {
 }
 
 #[derive(Clone, Debug)]
+pub enum KernelAttribute {
+    LaunchBounds {threads: i64},
+    ClusterDims {dims: Dim3},
+}
+
+#[derive(Clone, Debug)]
 pub enum Top {
-    KernelFunDef {threads: i64, id: Name, params: Vec<Param>, body: Vec<Stmt>},
+    KernelFunDef {attrs: Vec<KernelAttribute>, id: Name, params: Vec<Param>, body: Vec<Stmt>},
     FunDef {ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>, target: Target},
     StructDef {id: Name, fields: Vec<Field>},
 }
@@ -553,9 +559,9 @@ impl SMapAccum<Stmt> for Top {
         f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
     ) -> Result<(A, Self), E> {
         match self {
-            Top::KernelFunDef {threads, id, params, body} => {
+            Top::KernelFunDef {attrs, id, params, body} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Top::KernelFunDef {threads, id, params, body}))
+                Ok((acc, Top::KernelFunDef {attrs, id, params, body}))
             },
             Top::FunDef {ret_ty, id, params, body, target} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;

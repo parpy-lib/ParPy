@@ -305,17 +305,26 @@ fn pprint_host_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrintE
     (env, strs.iter().join(", "))
 }
 
+impl PrettyPrint for KernelAttribute {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        match self {
+            KernelAttribute::LaunchBounds {threads} => {
+                (env, format!("[[max_total_threads_per_threadgroup({threads})]]"))
+            },
+        }
+    }
+}
+
 fn pprint_metal_top(env: PrettyPrintEnv, t: &Top) -> (PrettyPrintEnv, String) {
     match t {
-        Top::KernelDef {maxthreads, id, params, body} => {
+        Top::KernelDef {attrs, id, params, body} => {
             let (env, id) = id.pprint(env);
+            let (env, attrs) = pprint_iter(attrs.iter(), env, "\n");
             let env = env.incr_indent();
             let (env, params) = pprint_metal_params(env, params);
             let (env, body) = pprint_iter(body.iter(), env, "\n");
             let env = env.decr_indent();
-            (env, format!("\
-                [[max_total_threads_per_threadgroup({maxthreads})]]\n\
-                kernel void {id}(\n{params}\n) {{\n{body}\n}}"))
+            (env, format!("{attrs}\nkernel void {id}(\n{params}\n) {{\n{body}\n}}"))
         },
         Top::FunDef {ret_ty, id, params, body} => {
             let (env, ret_ty) = ret_ty.pprint(env);
