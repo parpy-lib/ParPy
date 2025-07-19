@@ -1,0 +1,114 @@
+use super::ast::*;
+use crate::option;
+use crate::utils::info::*;
+use crate::utils::name::Name;
+use crate::utils::smap::*;
+
+use std::collections::BTreeSet;
+
+const CUDA_STANDARD_MAX_BLOCKS_PER_CLUSTER: i64 = 8;
+
+fn find_cluster_dim_attribute(attrs: &Vec<KernelAttribute>) -> Option<i64> {
+    for attr in attrs {
+        if let KernelAttribute::ClusterDims {dims: Dim3 {x, ..}} = attr {
+            return Some(*x);
+        }
+    }
+    None
+}
+
+fn collect_nonstandard_cluster_kernel_name_top(mut acc: BTreeSet<Name>, t: &Top) -> BTreeSet<Name> {
+    match t {
+        Top::FunDef {attrs, id, ..} => {
+            if let Some(nblocks) = find_cluster_dim_attribute(attrs) {
+                if nblocks > CUDA_STANDARD_MAX_BLOCKS_PER_CLUSTER {
+                    acc.insert(id.clone());
+                }
+                acc
+            } else {
+                acc
+            }
+        },
+        _ => acc
+    }
+}
+
+fn collect_names_of_kernels_using_nonstandard_clusters(ast: &Ast) -> BTreeSet<Name> {
+    ast.iter().fold(BTreeSet::new(), collect_nonstandard_cluster_kernel_name_top)
+}
+
+fn collect_called_kernels_stmt(
+    mut acc: BTreeSet<Name>,
+    stmt: &Stmt,
+    kernels: &BTreeSet<Name>
+) -> BTreeSet<Name> {
+    match stmt {
+        Stmt::KernelLaunch {id, ..} if kernels.contains(id) => {
+            acc.insert(id.clone());
+            acc
+        },
+        _ => stmt.sfold(acc, |acc, s| collect_called_kernels_stmt(acc, s, kernels))
+    }
+}
+
+fn collect_called_kernels_in_body(stmts: &Vec<Stmt>, kernels: &BTreeSet<Name>) -> BTreeSet<Name> {
+    stmts.sfold(BTreeSet::new(), |acc, stmt| collect_called_kernels_stmt(acc, stmt, kernels))
+}
+
+fn insert_nonstandard_attribute_config_for_kernels(
+    body: Vec<Stmt>,
+    used_kernels: BTreeSet<Name>
+) -> Vec<Stmt> {
+    used_kernels.into_iter()
+        .map(|id| {
+            // TODO: check that the 'err' is cudaSuccess
+            let err_ty = Type::CudaError {};
+            let err_id = Name::sym_str("err");
+            Stmt::Definition {
+                ty: err_ty,
+                id: err_id.clone(),
+                expr: Expr::CudaFuncSetAttribute {
+                    func: id,
+                    attr: CudaFuncAttribute::NonPortableClusterSizeAllowed,
+                    value: Box::new(Expr::Int {
+                        v: 1, ty: Type::Scalar {sz: ElemSize::I64}, i: Info::default()
+                    }),
+                    ty: Type::CudaError {},
+                    i: Info::default()
+                },
+            }
+        })
+        .chain(body.into_iter())
+        .collect::<Vec<Stmt>>()
+}
+
+fn add_nonstandard_cluster_attribute_to_kernels_top(t: Top, kernels: &BTreeSet<Name>) -> Top {
+    match t {
+        Top::FunDef {dev_attr, ret_ty, attrs, id, params, body} => {
+            let used_kernels = collect_called_kernels_in_body(&body, kernels);
+            let body = insert_nonstandard_attribute_config_for_kernels(body, used_kernels);
+            Top::FunDef {dev_attr, ret_ty, attrs, id, params, body}
+        },
+        _ => t
+    }
+}
+
+fn add_nonstandard_cluster_attribute_to_kernels(ast: Ast, kernels: &BTreeSet<Name>) -> Ast {
+    ast.smap(|t| add_nonstandard_cluster_attribute_to_kernels_top(t, kernels))
+}
+
+pub fn insert_attribute_for_nonstandard_blocks_per_cluster(
+    ast: Ast,
+    opts: &option::CompileOptions
+) -> Ast {
+    // CUDA considers the use of more than eight thread blocks per cluster as non-standard. If we
+    // have a GPU supporting this, we can set an attribute to enable using more than eight per
+    // cluster.
+    if opts.use_cuda_thread_block_clusters &&
+       opts.max_thread_blocks_per_cluster > CUDA_STANDARD_MAX_BLOCKS_PER_CLUSTER {
+        let cluster_kernel_names = collect_names_of_kernels_using_nonstandard_clusters(&ast);
+        add_nonstandard_cluster_attribute_to_kernels(ast, &cluster_kernel_names)
+    } else {
+        ast
+    }
+}

@@ -1,4 +1,5 @@
 pub mod ast;
+mod clusters;
 mod codegen;
 mod pprint;
 mod reduce;
@@ -23,5 +24,7 @@ pub fn codegen(
     let gpu_ast = reduce::expand_parallel_reductions(gpu_ast);
 
     // Convert the GPU AST to a CUDA C++ AST.
-    codegen::from_gpu_ir(gpu_ast)
+    let cuda_ast = codegen::from_gpu_ir(gpu_ast)?;
+
+    Ok(clusters::insert_attribute_for_nonstandard_blocks_per_cluster(cuda_ast, opts))
 }

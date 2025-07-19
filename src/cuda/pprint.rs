@@ -19,6 +19,7 @@ impl PrettyPrint for Type {
                 let (env, id) = id.pprint(env);
                 (env, format!("{id}"))
             },
+            Type::CudaError {} => (env, "cudaError_t".to_string()),
         }
     }
 }
@@ -159,6 +160,16 @@ fn is_infix(op: &BinOp, ty: &Type) -> bool {
     }
 }
 
+impl PrettyPrint for CudaFuncAttribute {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let s = match self {
+            CudaFuncAttribute::NonPortableClusterSizeAllowed =>
+                format!("cudaFuncAttributeNonPortableClusterSizeAllowed"),
+        };
+        (env, s)
+    }
+}
+
 impl PrettyPrint for Expr {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
@@ -247,6 +258,12 @@ impl PrettyPrint for Expr {
             Expr::BlockIdx {dim, ..} => {
                 let (env, dim) = dim.pprint(env);
                 (env, format!("blockIdx.{dim}"))
+            },
+            Expr::CudaFuncSetAttribute {func, attr, value, ..} => {
+                let (env, func) = func.pprint(env);
+                let (env, attr) = attr.pprint(env);
+                let (env, value) = value.pprint(env);
+                (env, format!("cudaFuncSetAttribute({func}, {attr}, {value})"))
             },
         }
     }

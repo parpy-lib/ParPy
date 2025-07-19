@@ -17,6 +17,7 @@ pub enum Type {
     Scalar {sz: ElemSize},
     Pointer {ty: Box<Type>},
     Struct {id: Name},
+    CudaError {},
 }
 
 impl Type {
@@ -26,6 +27,11 @@ impl Type {
             _ => None,
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CudaFuncAttribute {
+    NonPortableClusterSizeAllowed
 }
 
 #[derive(Clone, Debug)]
@@ -46,6 +52,9 @@ pub enum Expr {
     // CUDA-specific nodes
     ThreadIdx {dim: Dim, ty: Type, i: Info},
     BlockIdx {dim: Dim, ty: Type, i: Info},
+    CudaFuncSetAttribute {
+        func: Name, attr: CudaFuncAttribute, value: Box<Expr>, ty: Type, i: Info
+    },
 }
 
 impl Expr {
@@ -65,6 +74,7 @@ impl Expr {
             Expr::Convert {ty, ..} => ty,
             Expr::ThreadIdx {ty, ..} => ty,
             Expr::BlockIdx {ty, ..} => ty,
+            Expr::CudaFuncSetAttribute {ty, ..} => ty,
         }
     }
 
@@ -95,6 +105,7 @@ impl InfoNode for Expr {
             Expr::Convert {e, ..} => e.get_info(),
             Expr::ThreadIdx {i, ..} => i.clone(),
             Expr::BlockIdx {i, ..} => i.clone(),
+            Expr::CudaFuncSetAttribute {i, ..} => i.clone(),
         }
     }
 }
@@ -132,6 +143,9 @@ impl PartialEq for Expr {
                 ldim.eq(rdim),
             (Expr::BlockIdx {dim: ldim, ..}, Expr::BlockIdx {dim: rdim, ..}) =>
                 ldim.eq(rdim),
+            ( Expr::CudaFuncSetAttribute {func: lfunc, attr: lattr, value: lvalue, ..}
+            , Expr::CudaFuncSetAttribute {func: rfunc, attr: rattr, value: rvalue, ..} ) =>
+                lfunc.eq(rfunc) && lattr.eq(rattr) && lvalue.eq(rvalue),
             (_, _) => false
         }
     }
@@ -188,6 +202,10 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
             },
+            Expr::CudaFuncSetAttribute {func, attr, value, ty, i} => {
+                let (acc, value) = f(acc?, *value)?;
+                Ok((acc, Expr::CudaFuncSetAttribute {func, attr, value: Box::new(value), ty, i}))
+            },
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
             Expr::ThreadIdx {..} | Expr::BlockIdx {..} => Ok((acc?, self)),
         }
@@ -209,6 +227,7 @@ impl SFold<Expr> for Expr {
             Expr::Struct {fields, ..} => fields.sfold_result(acc, &f),
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
+            Expr::CudaFuncSetAttribute {value, ..} => f(acc?, value),
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => acc,
         }

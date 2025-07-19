@@ -279,6 +279,25 @@ def test_clustered_reduction_codegen_in_cuda(fn):
         assert re.search(pat, s, re.DOTALL) is not None
         pat = r".*__cluster_dims__\(8, 1, 1\).*"
         assert re.search(pat, s, re.DOTALL) is not None
+        # This attribute should only be inserted when we use more than 8 thread
+        # blocks per cluster.
+        pat = r".*cudaFuncSetAttribute.*"
+        assert re.search(pat, s, re.DOTALL) is None
+    else:
+        assert len(s) != 0
+
+    p = {
+        'outer': prickle.threads(N),
+        'inner': prickle.threads(4096).tpb(256)
+    }
+    opts.parallelize = p
+    s = prickle.print_compiled(fn, [x, out, N], opts)
+    if not fn in multi_dim_reduce_funs:
+        # In this situation, where the kernel has 16 blocks, the compiler will
+        # not use clusters unless the user explicitly sets the maximum number
+        # of thread blocks (see the next example).
+        pat = r".*__cluster_dims__\(16, 1, 1\).*"
+        assert re.search(pat, s, re.DOTALL) is None
     else:
         assert len(s) != 0
 
@@ -293,6 +312,8 @@ def test_clustered_reduction_codegen_in_cuda(fn):
         pat = r".*<<<dim3\(16, 100, 1\), dim3\(256, 1, 1\)>>>\(.*\);"
         assert re.search(pat, s, re.DOTALL) is not None
         pat = r".*__cluster_dims__\(16, 1, 1\).*"
+        assert re.search(pat, s, re.DOTALL) is not None
+        pat = r".*cudaFuncSetAttribute.*"
         assert re.search(pat, s, re.DOTALL) is not None
     else:
         assert len(s) != 0
