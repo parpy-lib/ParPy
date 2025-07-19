@@ -277,6 +277,23 @@ def test_clustered_reduction_codegen_in_cuda(fn):
     if not fn in multi_dim_reduce_funs:
         pat = r".*<<<dim3\(8, 100, 1\), dim3\(512, 1, 1\)>>>\(.*\);"
         assert re.search(pat, s, re.DOTALL) is not None
+        pat = r".*__cluster_dims__\(8, 1, 1\).*"
+        assert re.search(pat, s, re.DOTALL) is not None
+    else:
+        assert len(s) != 0
+
+    p = {
+        'outer': prickle.threads(N),
+        'inner': prickle.threads(4096).tpb(256)
+    }
+    opts.parallelize = p
+    opts.max_thread_blocks_per_cluster = 16
+    s = prickle.print_compiled(fn, [x, out, N], opts)
+    if not fn in multi_dim_reduce_funs:
+        pat = r".*<<<dim3\(16, 100, 1\), dim3\(256, 1, 1\)>>>\(.*\);"
+        assert re.search(pat, s, re.DOTALL) is not None
+        pat = r".*__cluster_dims__\(16, 1, 1\).*"
+        assert re.search(pat, s, re.DOTALL) is not None
     else:
         assert len(s) != 0
 
@@ -302,7 +319,6 @@ def test_clustered_reduction_compiles_in_cuda(fn):
                 r = subprocess.run(commands, capture_output=True)
                 assert r.returncode == 0
     run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
-
 
 # Tests using a custom step size.
 @prickle.jit

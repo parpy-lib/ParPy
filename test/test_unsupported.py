@@ -65,3 +65,9 @@ def test_dict_with_int_key():
     with pytest.raises(RuntimeError) as e_info:
         dict_arg({'x': 2, 2: 4})
     assert e_info.match(r"(.*non-string key.*)|(Found no enabled GPU backends.*)")
+
+def test_invalid_max_thread_blocks_per_cluster():
+    opts = prickle.CompileOptions()
+    with pytest.raises(RuntimeError) as e_info:
+        opts.max_thread_blocks_per_cluster = 3
+    assert e_info.match(r".*number of thread blocks per cluster must be a power of two.*")

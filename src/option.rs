@@ -3,6 +3,7 @@ use crate::par::LoopPar;
 use std::collections::BTreeMap;
 
 use pyo3::prelude::*;
+use pyo3::exceptions::PyRuntimeError;
 
 #[pyclass(eq, eq_int)]
 #[derive(Clone, Debug, PartialEq)]
@@ -48,7 +49,7 @@ pub struct CompileOptions {
 
     // When the use of thread block clusters is enabled (see the above flag), this option sets the
     // maximum number of thread blocks per cluster.
-    #[pyo3(get, set)]
+    #[pyo3(get)]
     pub max_thread_blocks_per_cluster: i64,
 
     // Enable to make the compiler print intermediate ASTs to standard output.
@@ -108,6 +109,17 @@ impl CompileOptions {
 
     fn __str__(&self) -> String {
         format!("{self:?}")
+    }
+
+    #[setter]
+    fn set_max_thread_blocks_per_cluster(&mut self, n: i64) -> PyResult<()> {
+        if n > 0 && (n & (n-1)) == 0 {
+            self.max_thread_blocks_per_cluster = n;
+            Ok(())
+        } else {
+            Err(PyRuntimeError::new_err("The number of thread blocks per \
+                                         cluster must be a power of two."))
+        }
     }
 }
 
