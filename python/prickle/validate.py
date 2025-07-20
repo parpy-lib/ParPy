@@ -46,6 +46,8 @@ def check_arg(arg, i, in_dict, opts, execute):
             buf = Buffer.from_array(arg, opts.backend)
         callback = lambda: buf.cleanup()
         return [callback], buf
+    else:
+        raise RuntimeError(f"Argument {i} has unsupported type {type(arg)}")
 
 # Validate all arguments, ensuring that they have a supported type and that
 # all tensor data is contiguous and allocated on the GPU. At the same time, we
