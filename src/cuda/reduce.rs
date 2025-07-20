@@ -70,9 +70,25 @@ fn generate_cluster_init_shared_memory(
     block_smem: Expr,
     acc: &mut Vec<Stmt>
 ) {
-    acc.push(Stmt::Assign {
-        dst: block_smem,
-        expr: data.temp_var.clone(),
+    let i = &data.i;
+    let int_ty = &data.int_ty;
+    let is_first_thread_of_block = Expr::BinOp {
+        lhs: Box::new(Expr::ThreadIdx {
+            dim: Dim::X, ty: int_ty.clone(), i: i.clone()
+        }),
+        op: BinOp::Eq,
+        rhs: Box::new(Expr::Int {v: 0, ty: int_ty.clone(), i: i.clone()}),
+        ty: int_ty.clone(),
+        i: i.clone()
+    };
+    acc.push(Stmt::If {
+        cond: is_first_thread_of_block,
+        thn: vec![Stmt::Assign {
+            dst: block_smem,
+            expr: data.temp_var.clone(),
+            i: data.i.clone()
+        }],
+        els: vec![],
         i: data.i.clone()
     });
     acc.push(Stmt::Synchronize {scope: SyncScope::Cluster, i: data.i.clone()});
@@ -136,9 +152,23 @@ fn generate_cluster_iterative_reduction(
         ty: data.res_ty.clone(),
         i: i.clone()
     };
-    loop_body.push(Stmt::Assign {
-        dst: data.temp_var.clone(),
-        expr: combined_smem_data,
+    let is_first_thread_of_block = Expr::BinOp {
+        lhs: Box::new(Expr::ThreadIdx {
+            dim: Dim::X, ty: int_ty.clone(), i: i.clone()
+        }),
+        op: BinOp::Eq,
+        rhs: Box::new(Expr::Int {v: 0, ty: int_ty.clone(), i: i.clone()}),
+        ty: int_ty.clone(),
+        i: i.clone()
+    };
+    loop_body.push(Stmt::If {
+        cond: is_first_thread_of_block,
+        thn: vec![Stmt::Assign {
+            dst: data.temp_var.clone(),
+            expr: combined_smem_data,
+            i: i.clone()
+        }],
+        els: vec![],
         i: i.clone()
     });
     loop_body.push(Stmt::Synchronize {scope: SyncScope::Cluster, i: data.i.clone()});
@@ -191,35 +221,18 @@ fn generate_cluster_temp_assignment(
     });
 }
 
-fn generate_cluster_reduction(data: ClusterData) -> Stmt {
-    let i = &data.i;
-    let int_ty = &data.int_ty;
+fn generate_cluster_reduction(data: ClusterData) -> Vec<Stmt> {
     let block_smem = Expr::ArrayAccess {
         target: Box::new(data.shared_var.clone()),
         idx: Box::new(data.block_idx.clone()),
         ty: data.res_ty.clone(),
-        i: i.clone()
+        i: data.i.clone()
     };
-    let mut cond_body = vec![];
-    generate_cluster_init_shared_memory(&data, block_smem.clone(), &mut cond_body);
-    generate_cluster_iterative_reduction(&data, block_smem.clone(), &mut cond_body);
-    generate_cluster_temp_assignment(&data, block_smem.clone(), &mut cond_body);
-
-    let is_first_thread_of_block = Expr::BinOp {
-        lhs: Box::new(Expr::ThreadIdx {
-            dim: Dim::X, ty: int_ty.clone(), i: i.clone()
-        }),
-        op: BinOp::Eq,
-        rhs: Box::new(Expr::Int {v: 0, ty: int_ty.clone(), i: i.clone()}),
-        ty: int_ty.clone(),
-        i: i.clone()
-    };
-    Stmt::If {
-        cond: is_first_thread_of_block,
-        thn: cond_body,
-        els: vec![],
-        i: i.clone()
-    }
+    let mut body = vec![];
+    generate_cluster_init_shared_memory(&data, block_smem.clone(), &mut body);
+    generate_cluster_iterative_reduction(&data, block_smem.clone(), &mut body);
+    generate_cluster_temp_assignment(&data, block_smem.clone(), &mut body);
+    body
 }
 
 fn expand_parallel_reductions_stmt(mut acc: Vec<Stmt>, stmt: Stmt) -> Vec<Stmt> {
@@ -235,7 +248,7 @@ fn expand_parallel_reductions_stmt(mut acc: Vec<Stmt>, stmt: Stmt) -> Vec<Stmt> 
                 block_idx, shared_var, temp_var, blocks_per_cluster, op,
                 int_ty, res_ty, i
             };
-            acc.push(generate_cluster_reduction(data));
+            acc.append(&mut generate_cluster_reduction(data));
             acc
         },
         _ => stmt.sflatten(acc, expand_parallel_reductions_stmt)
