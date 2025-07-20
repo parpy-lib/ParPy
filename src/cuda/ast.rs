@@ -236,7 +236,7 @@ impl SFold<Expr> for Expr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
-    Definition {ty: Type, id: Name, expr: Expr},
+    Definition {ty: Type, id: Name, expr: Option<Expr>},
     Assign {dst: Expr, expr: Expr},
     For {
         var_ty: Type, var: Name, init: Expr, cond: Expr,
@@ -259,9 +259,12 @@ impl SMapAccum<Expr> for Stmt {
         f: impl Fn(A, Expr) -> Result<(A, Expr), E>
     ) -> Result<(A, Self), E> {
         match self {
-            Stmt::Definition {ty, id, expr} => {
-                let (acc, expr) = f(acc?, expr)?;
-                Ok((acc, Stmt::Definition {ty, id, expr}))
+            Stmt::Definition {ty, id, expr} => match expr {
+                Some(e) => {
+                    let (acc, e) = f(acc?, e)?;
+                    Ok((acc, Stmt::Definition {ty, id, expr: Some(e)}))
+                },
+                None => Ok((acc?, Stmt::Definition {ty, id, expr}))
             },
             Stmt::Assign {dst, expr} => {
                 let (acc, dst) = f(acc?, dst)?;
@@ -303,7 +306,10 @@ impl SFold<Expr> for Stmt {
         f: impl Fn(A, &Expr) -> Result<A, E>
     ) -> Result<A, E> {
         match self {
-            Stmt::Definition {expr, ..} => f(acc?, expr),
+            Stmt::Definition {expr, ..} => match expr {
+                Some(e) => f(acc?, e),
+                None => acc
+            },
             Stmt::Assign {dst, expr} => f(f(acc?, dst)?, expr),
             Stmt::For {init, cond, incr, ..} => f(f(f(acc?, init)?, cond)?, incr),
             Stmt::If {cond, ..} => f(acc?, cond),

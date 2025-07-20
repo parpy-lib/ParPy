@@ -121,7 +121,7 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
         gpu_ast::Stmt::Definition {ty, id, expr, ..} => {
             let ty = from_gpu_ir_type(ty);
             let expr = from_gpu_ir_expr(expr)?;
-            Ok(Stmt::Definition {ty, id, expr})
+            Ok(Stmt::Definition {ty, id, expr: Some(expr)})
         },
         gpu_ast::Stmt::Assign {dst, expr, ..} => {
             let dst = from_gpu_ir_expr(dst)?;

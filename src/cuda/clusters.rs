@@ -67,7 +67,7 @@ fn insert_nonstandard_attribute_config_for_kernels(
             Stmt::Definition {
                 ty: err_ty,
                 id: err_id.clone(),
-                expr: Expr::CudaFuncSetAttribute {
+                expr: Some(Expr::CudaFuncSetAttribute {
                     func: id,
                     attr: CudaFuncAttribute::NonPortableClusterSizeAllowed,
                     value: Box::new(Expr::Int {
@@ -75,7 +75,7 @@ fn insert_nonstandard_attribute_config_for_kernels(
                     }),
                     ty: Type::CudaError {},
                     i: Info::default()
-                },
+                }),
             }
         })
         .chain(body.into_iter())

@@ -276,8 +276,13 @@ impl PrettyPrint for Stmt {
             Stmt::Definition {ty, id, expr} => {
                 let (env, ty) = ty.pprint(env);
                 let (env, id) = id.pprint(env);
-                let (env, expr) = expr.pprint(env);
-                (env, format!("{indent}{ty} {id} = {expr};"))
+                match expr {
+                    Some(e) => {
+                        let (env, e) = e.pprint(env);
+                        (env, format!("{indent}{ty} {id} = {e};"))
+                    },
+                    None => (env, format!("{indent}{ty} {id};"))
+                }
             },
             Stmt::Assign {dst, expr} => {
                 let (env, dst) = dst.pprint(env);
