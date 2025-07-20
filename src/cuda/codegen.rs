@@ -1,4 +1,5 @@
 use super::ast::*;
+use crate::option;
 use crate::prickle_internal_error;
 use crate::prickle_type_error;
 use crate::gpu::ast as gpu_ast;
@@ -256,14 +257,19 @@ fn from_gpu_ir_top(t: gpu_ast::Top) -> CompileResult<Top> {
     }
 }
 
-pub fn from_gpu_ir(ast: gpu_ast::Ast) -> CompileResult<Ast> {
+pub fn from_gpu_ir(
+    ast: gpu_ast::Ast,
+    opts: &option::CompileOptions
+) -> CompileResult<Ast> {
     let mut tops = vec![
         Top::Include {header: "<cmath>".to_string()},
         Top::Include {header: "<cstdint>".to_string()},
         Top::Include {header: "<cuda_fp16.h>".to_string()},
-        Top::Include {header: "<cooperative_groups.h>".to_string()},
-        Top::Namespace {ns: "cooperative_groups".to_string(), alias: None},
     ];
+    if opts.use_cuda_thread_block_clusters {
+        tops.push(Top::Include {header: "<cooperative_groups.h>".to_string()});
+        tops.push(Top::Namespace {ns: "cooperative_groups".to_string(), alias: None});
+    }
     let mut cu_ast = ast.into_iter()
         .map(from_gpu_ir_top)
         .collect::<CompileResult<Vec<Top>>>()?;
