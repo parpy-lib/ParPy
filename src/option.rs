@@ -52,6 +52,9 @@ pub struct CompileOptions {
     #[pyo3(get)]
     pub max_thread_blocks_per_cluster: i64,
 
+    #[pyo3(get, set)]
+    pub use_cuda_graphs: bool,
+
     // Enable to make the compiler print intermediate ASTs to standard output.
     #[pyo3(get, set)]
     pub debug_print: bool,
@@ -87,6 +90,7 @@ impl Default for CompileOptions {
             backend: CompileBackend::Auto,
             use_cuda_thread_block_clusters: false,
             max_thread_blocks_per_cluster: 8,
+            use_cuda_graphs: false,
             debug_print: false,
             debug_perf: false,
             includes: vec![],

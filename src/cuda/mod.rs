@@ -1,6 +1,7 @@
 pub mod ast;
 mod clusters;
 mod codegen;
+mod graphs;
 mod pprint;
 mod reduce;
 
@@ -25,6 +26,9 @@ pub fn codegen(
 
     // Convert the GPU AST to a CUDA C++ AST.
     let cuda_ast = codegen::from_gpu_ir(gpu_ast, opts)?;
+
+    // Update all kernel entry points to make use of CUDA graphs.
+    let cuda_ast = graphs::use_if_enabled(cuda_ast, opts);
 
     Ok(clusters::insert_attribute_for_nonstandard_blocks_per_cluster(cuda_ast, opts))
 }

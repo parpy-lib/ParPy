@@ -5,6 +5,7 @@ use crate::prickle_type_error;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::err::*;
 use crate::utils::info::Info;
+use crate::utils::name::Name;
 use crate::utils::pprint::PrettyPrint;
 use crate::utils::smap::*;
 
@@ -173,18 +174,31 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
                 .map(from_gpu_ir_expr)
                 .collect::<CompileResult<Vec<Expr>>>()?;
             let gpu_ast::LaunchArgs {blocks, threads} = grid;
-            Ok(Stmt::KernelLaunch {id, blocks, threads, args})
+            Ok(Stmt::KernelLaunch {id, blocks, threads, args, stream: Stream::Default})
         },
-        gpu_ast::Stmt::AllocDevice {elem_ty, id, sz, ..} => {
+        gpu_ast::Stmt::AllocDevice {elem_ty, id, sz, i} => {
             let ty = from_gpu_ir_type(elem_ty);
-            Ok(Stmt::MallocAsync {id, elem_ty: ty, sz})
+            let err_id = Name::sym_str("err");
+            Ok(Stmt::Definition {
+                ty: Type::Error, id: err_id,
+                expr: Some(Expr::MallocAsync {
+                    id, elem_ty: ty, sz, stream: Stream::Default,
+                    ty: Type::Error, i
+                })
+            })
         },
         gpu_ast::Stmt::AllocShared {elem_ty, id, sz, ..} => {
             let ty = from_gpu_ir_type(elem_ty);
             Ok(Stmt::AllocShared {ty, id, sz})
         },
-        gpu_ast::Stmt::FreeDevice {id, ..} => {
-            Ok(Stmt::FreeAsync {id})
+        gpu_ast::Stmt::FreeDevice {id, i} => {
+            let err_id = Name::sym_str("err");
+            Ok(Stmt::Definition {
+                ty: Type::Error, id: err_id,
+                expr: Some(Expr::FreeAsync {
+                    id, stream: Stream::Default, ty: Type::Error, i
+                })
+            })
         },
         gpu_ast::Stmt::CopyMemory {i, ..} => {
             prickle_internal_error!(i, "Memory copying not supported in CUDA backend")

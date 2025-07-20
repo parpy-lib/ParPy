@@ -2,6 +2,10 @@ import numpy as np
 import prickle
 import pytest
 import re
+import subprocess
+import tempfile
+
+from common import *
 
 np.random.seed(1234)
 
@@ -48,3 +52,43 @@ def test_cuda_clusters_enabled_includes():
     code = gen_code(np.float32, opts)
     assert not includes_cuda_fp16(code)
     assert includes_cooperative_groups(code)
+
+def records_cuda_graph(code):
+    pat = r""".*cudaStreamBeginCapture.*cudaStreamEndCapture.*cudaGraphLaunch.*"""
+    return re.search(pat, code, re.DOTALL) is not None
+
+def test_cuda_graphs_included():
+    opts = prickle.CompileOptions()
+    opts.use_cuda_graphs = True
+    code = gen_code(np.float32, opts)
+    assert records_cuda_graph(code)
+
+def test_cuda_graphs_compiles():
+    def helper():
+        opts = prickle.CompileOptions()
+        opts.use_cuda_graphs = True
+        code = gen_code(np.float32, opts)
+        fn = prickle.compile_string("col_sum", code, opts)
+        assert fn is not None
+    run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
+
+def test_cuda_graph_runs_correctly():
+    def helper():
+        opts = prickle.CompileOptions()
+        opts.use_cuda_graphs = True
+        code = gen_code(np.float32, opts)
+        fn = prickle.compile_string("col_sum", code, opts)
+
+        # Run the program sequentially and in parallel using CUDA graphs and
+        # ensure we get the same result.
+        N = 20
+        M = 10
+        x = np.random.randn(N, M).astype(np.float32)
+        y1 = np.zeros((N,)).astype(np.float32)
+        opts.seq = True
+        col_sum(x, y1, 20, opts=opts)
+        opts.seq = False
+        y2 = np.zeros((N,)).astype(np.float32)
+        fn(x, y2, 20)
+        assert np.allclose(y1, y2)
+    run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)

@@ -17,7 +17,13 @@ pub enum Type {
     Scalar {sz: ElemSize},
     Pointer {ty: Box<Type>},
     Struct {id: Name},
-    CudaError {},
+
+    // CUDA-specific types
+    Error,
+    Stream,
+    Graph,
+    GraphExec,
+    GraphExecUpdateResultInfo,
 }
 
 impl Type {
@@ -30,8 +36,13 @@ impl Type {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum CudaFuncAttribute {
+pub enum FuncAttribute {
     NonPortableClusterSizeAllowed
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Error {
+    Success
 }
 
 #[derive(Clone, Debug)]
@@ -52,9 +63,23 @@ pub enum Expr {
     // CUDA-specific nodes
     ThreadIdx {dim: Dim, ty: Type, i: Info},
     BlockIdx {dim: Dim, ty: Type, i: Info},
-    CudaFuncSetAttribute {
-        func: Name, attr: CudaFuncAttribute, value: Box<Expr>, ty: Type, i: Info
+    Error {e: Error, ty: Type, i: Info},
+    FuncSetAttribute {
+        func: Name, attr: FuncAttribute, value: Box<Expr>, ty: Type, i: Info
     },
+    MallocAsync {
+        id: Name, elem_ty: Type, sz: usize, stream: Stream, ty: Type, i: Info
+    },
+    FreeAsync {id: Name, stream: Stream, ty: Type, i: Info},
+    StreamCreate {id: Name, ty: Type, i: Info},
+    StreamDestroy {id: Name, ty: Type, i: Info},
+    StreamBeginCapture {stream: Stream, ty: Type, i: Info},
+    StreamEndCapture {stream: Stream, graph: Name, ty: Type, i: Info},
+    GraphDestroy {id: Name, ty: Type, i: Info},
+    GraphExecInstantiate {exec_graph: Name, graph: Name, ty: Type, i: Info},
+    GraphExecDestroy {id: Name, ty: Type, i: Info},
+    GraphExecUpdate {exec_graph: Name, graph: Name, update: Name, ty: Type, i: Info},
+    GraphExecLaunch {id: Name, ty: Type, i: Info},
 }
 
 impl Expr {
@@ -74,7 +99,19 @@ impl Expr {
             Expr::Convert {ty, ..} => ty,
             Expr::ThreadIdx {ty, ..} => ty,
             Expr::BlockIdx {ty, ..} => ty,
-            Expr::CudaFuncSetAttribute {ty, ..} => ty,
+            Expr::Error {ty, ..} => ty,
+            Expr::FuncSetAttribute {ty, ..} => ty,
+            Expr::MallocAsync {ty, ..} => ty,
+            Expr::FreeAsync {ty, ..} => ty,
+            Expr::StreamCreate {ty, ..} => ty,
+            Expr::StreamDestroy {ty, ..} => ty,
+            Expr::StreamBeginCapture {ty, ..} => ty,
+            Expr::StreamEndCapture {ty, ..} => ty,
+            Expr::GraphDestroy {ty, ..} => ty,
+            Expr::GraphExecInstantiate {ty, ..} => ty,
+            Expr::GraphExecDestroy {ty, ..} => ty,
+            Expr::GraphExecUpdate {ty, ..} => ty,
+            Expr::GraphExecLaunch {ty, ..} => ty,
         }
     }
 
@@ -82,7 +119,8 @@ impl Expr {
         match self {
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::Call {..} |
-            Expr::ThreadIdx {..} | Expr::BlockIdx {..} => true,
+            Expr::ThreadIdx {..} | Expr::BlockIdx {..} |
+            Expr::Error {..} => true,
             _ => false
         }
     }
@@ -105,48 +143,19 @@ impl InfoNode for Expr {
             Expr::Convert {e, ..} => e.get_info(),
             Expr::ThreadIdx {i, ..} => i.clone(),
             Expr::BlockIdx {i, ..} => i.clone(),
-            Expr::CudaFuncSetAttribute {i, ..} => i.clone(),
-        }
-    }
-}
-
-impl PartialEq for Expr {
-    fn eq(&self, other: &Expr) -> bool {
-        match (self, other) {
-            (Expr::Var {id: lid, ..}, Expr::Var {id: rid, ..}) => lid.eq(rid),
-            (Expr::Bool {v: lv, ..}, Expr::Bool {v: rv, ..}) => lv.eq(rv),
-            (Expr::Int {v: lv, ..}, Expr::Int {v: rv, ..}) => lv.eq(rv),
-            (Expr::Float {v: lv, ..}, Expr::Float {v: rv, ..}) => lv.eq(rv),
-            ( Expr::UnOp {op: lop, arg: larg, ..}
-            , Expr::UnOp {op: rop, arg: rarg, ..} ) =>
-                lop.eq(rop) && larg.eq(rarg),
-            ( Expr::BinOp {lhs: llhs, op: lop, rhs: lrhs, ..}
-            , Expr::BinOp {lhs: rlhs, op: rop, rhs: rrhs, ..} ) =>
-                llhs.eq(rlhs) && lop.eq(rop) && lrhs.eq(rrhs),
-            ( Expr::Ternary {cond: lcond, thn: lthn, els: lels, ..}
-            , Expr::Ternary {cond: rcond, thn: rthn, els: rels, ..} ) =>
-                lcond.eq(rcond) && lthn.eq(rthn) && lels.eq(rels),
-            ( Expr::StructFieldAccess {target: ltarget, label: llabel, ..}
-            , Expr::StructFieldAccess {target: rtarget, label: rlabel, ..} ) =>
-                ltarget.eq(rtarget) && llabel.eq(rlabel),
-            ( Expr::ArrayAccess {target: ltarget, idx: lidx, ..}
-            , Expr::ArrayAccess {target: rtarget, idx: ridx, ..} ) =>
-                ltarget.eq(rtarget) && lidx.eq(ridx),
-            ( Expr::Struct {id: lid, fields: lfields, ..}
-            , Expr::Struct {id: rid, fields: rfields, ..} ) =>
-                lid.eq(rid) && lfields.eq(rfields),
-            ( Expr::Call {id: lid, args: largs, ..}
-            , Expr::Call {id: rid, args: rargs, ..}) =>
-                lid.eq(rid) && largs.eq(rargs),
-            (Expr::Convert {e: le, ..}, Expr::Convert {e: re, ..}) => le.eq(re),
-            (Expr::ThreadIdx {dim: ldim, ..}, Expr::ThreadIdx {dim: rdim, ..}) =>
-                ldim.eq(rdim),
-            (Expr::BlockIdx {dim: ldim, ..}, Expr::BlockIdx {dim: rdim, ..}) =>
-                ldim.eq(rdim),
-            ( Expr::CudaFuncSetAttribute {func: lfunc, attr: lattr, value: lvalue, ..}
-            , Expr::CudaFuncSetAttribute {func: rfunc, attr: rattr, value: rvalue, ..} ) =>
-                lfunc.eq(rfunc) && lattr.eq(rattr) && lvalue.eq(rvalue),
-            (_, _) => false
+            Expr::Error {i, ..} => i.clone(),
+            Expr::FuncSetAttribute {i, ..} => i.clone(),
+            Expr::MallocAsync {i, ..} => i.clone(),
+            Expr::FreeAsync {i, ..} => i.clone(),
+            Expr::StreamCreate {i, ..} => i.clone(),
+            Expr::StreamDestroy {i, ..} => i.clone(),
+            Expr::StreamBeginCapture {i, ..} => i.clone(),
+            Expr::StreamEndCapture {i, ..} => i.clone(),
+            Expr::GraphDestroy {i, ..} => i.clone(),
+            Expr::GraphExecInstantiate {i, ..} => i.clone(),
+            Expr::GraphExecDestroy {i, ..} => i.clone(),
+            Expr::GraphExecUpdate {i, ..} => i.clone(),
+            Expr::GraphExecLaunch {i, ..} => i.clone(),
         }
     }
 }
@@ -202,12 +211,17 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
             },
-            Expr::CudaFuncSetAttribute {func, attr, value, ty, i} => {
+            Expr::FuncSetAttribute {func, attr, value, ty, i} => {
                 let (acc, value) = f(acc?, *value)?;
-                Ok((acc, Expr::CudaFuncSetAttribute {func, attr, value: Box::new(value), ty, i}))
+                Ok((acc, Expr::FuncSetAttribute {func, attr, value: Box::new(value), ty, i}))
             },
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
-            Expr::ThreadIdx {..} | Expr::BlockIdx {..} => Ok((acc?, self)),
+            Expr::ThreadIdx {..} | Expr::BlockIdx {..} | Expr::Error {..} |
+            Expr::MallocAsync {..} | Expr::FreeAsync {..} | Expr::StreamCreate {..} |
+            Expr::StreamDestroy {..} | Expr::StreamBeginCapture {..} |
+            Expr::StreamEndCapture {..} | Expr::GraphDestroy {..} |
+            Expr::GraphExecInstantiate {..} | Expr::GraphExecDestroy {..} |
+            Expr::GraphExecUpdate {..} | Expr::GraphExecLaunch {..} => Ok((acc?, self)),
         }
     }
 }
@@ -227,14 +241,26 @@ impl SFold<Expr> for Expr {
             Expr::Struct {fields, ..} => fields.sfold_result(acc, &f),
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
-            Expr::CudaFuncSetAttribute {value, ..} => f(acc?, value),
+            Expr::FuncSetAttribute {value, ..} => f(acc?, value),
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
-            Expr::Float {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => acc,
+            Expr::Float {..} | Expr::Error {..} | Expr::ThreadIdx {..} |
+            Expr::BlockIdx {..} | Expr::MallocAsync {..} | Expr::FreeAsync {..} |
+            Expr::StreamCreate {..} | Expr::StreamDestroy {..} |
+            Expr::StreamBeginCapture {..} | Expr::StreamEndCapture {..} |
+            Expr::GraphDestroy {..} | Expr::GraphExecInstantiate {..} |
+            Expr::GraphExecDestroy {..} | Expr::GraphExecUpdate {..} |
+            Expr::GraphExecLaunch {..} => acc
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum Stream {
+    Default,
+    Id(Name)
+}
+
+#[derive(Clone, Debug)]
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Option<Expr>},
     Assign {dst: Expr, expr: Expr},
@@ -245,11 +271,13 @@ pub enum Stmt {
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>},
     While {cond: Expr, body: Vec<Stmt>},
     Return {value: Expr},
+
+    // CUDA-specific nodes
     Synchronize {scope: SyncScope},
-    KernelLaunch {id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>},
+    KernelLaunch {
+        id: Name, blocks: Dim3, threads: Dim3, stream: Stream, args: Vec<Expr>
+    },
     AllocShared {ty: Type, id: Name, sz: usize},
-    MallocAsync {id: Name, elem_ty: Type, sz: usize},
-    FreeAsync {id: Name}
 }
 
 impl SMapAccum<Expr> for Stmt {
@@ -289,12 +317,11 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, value) = f(acc?, value)?;
                 Ok((acc, Stmt::Return {value}))
             },
-            Stmt::KernelLaunch {id, blocks, threads, args} => {
+            Stmt::KernelLaunch {id, blocks, threads, args, stream} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Stmt::KernelLaunch {id, blocks, threads, args}))
+                Ok((acc, Stmt::KernelLaunch {id, blocks, threads, args, stream}))
             },
-            Stmt::AllocShared {..} | Stmt::Synchronize {..} |
-            Stmt::MallocAsync {..} | Stmt::FreeAsync {..} => Ok((acc?, self))
+            Stmt::AllocShared {..} | Stmt::Synchronize {..} => Ok((acc?, self))
         }
     }
 }
@@ -316,8 +343,7 @@ impl SFold<Expr> for Stmt {
             Stmt::While {cond, ..} => f(acc?, cond),
             Stmt::Return {value, ..} => f(acc?, value),
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
-            Stmt::AllocShared {..} | Stmt::Synchronize {..} |
-            Stmt::MallocAsync {..} | Stmt::FreeAsync {..} => acc,
+            Stmt::AllocShared {..} | Stmt::Synchronize {..} => acc
         }
     }
 }
@@ -343,8 +369,8 @@ impl SMapAccum<Stmt> for Stmt {
                 Ok((acc, Stmt::While {cond, body}))
             },
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-            Stmt::AllocShared {..} | Stmt::Synchronize {..} | Stmt::MallocAsync {..} |
-            Stmt::FreeAsync {..} | Stmt::KernelLaunch {..} => Ok((acc?, self))
+            Stmt::AllocShared {..} | Stmt::Synchronize {..} |
+            Stmt::KernelLaunch {..} => Ok((acc?, self))
         }
     }
 }
@@ -360,8 +386,8 @@ impl SFold<Stmt> for Stmt {
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-            Stmt::AllocShared {..} | Stmt::Synchronize {..} | Stmt::MallocAsync {..} |
-            Stmt::FreeAsync {..} | Stmt::KernelLaunch {..} => acc,
+            Stmt::AllocShared {..} | Stmt::Synchronize {..} |
+            Stmt::KernelLaunch {..} => acc
         }
     }
 }
@@ -394,6 +420,7 @@ pub enum Top {
     Include {header: String},
     Namespace {ns: String, alias: Option<String>},
     StructDef {id: Name, fields: Vec<Field>},
+    VarDef {ty: Type, id: Name, init: Option<Expr>},
     FunDef {
         dev_attr: Attribute, ret_ty: Type, attrs: Vec<KernelAttribute>,
         id: Name, params: Vec<Param>, body: Vec<Stmt>
@@ -407,11 +434,13 @@ impl SMapAccum<Stmt> for Top {
         f: impl Fn(A, Stmt) -> Result<(A, Stmt), E>
     ) -> Result<(A, Self), E> {
         match self {
-            Top::Include {..} | Top::Namespace {..} | Top::StructDef {..} =>
-                Ok((acc?, self)),
             Top::FunDef {dev_attr, ret_ty, attrs, id, params, body} => {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Top::FunDef {dev_attr, ret_ty, attrs, id, params, body}))
+            },
+            Top::Include {..} | Top::Namespace {..} | Top::StructDef {..} |
+            Top::VarDef {..} => {
+                Ok((acc?, self))
             },
         }
     }

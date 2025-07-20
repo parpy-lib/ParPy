@@ -19,7 +19,11 @@ impl PrettyPrint for Type {
                 let (env, id) = id.pprint(env);
                 (env, format!("{id}"))
             },
-            Type::CudaError {} => (env, "cudaError_t".to_string()),
+            Type::Error => (env, format!("cudaError_t")),
+            Type::Stream => (env, format!("cudaStream_t")),
+            Type::Graph => (env, format!("cudaGraph_t")),
+            Type::GraphExec => (env, format!("cudaGraphExec_t")),
+            Type::GraphExecUpdateResultInfo => (env, format!("cudaGraphExecUpdateResultInfo"))
         }
     }
 }
@@ -160,11 +164,20 @@ fn is_infix(op: &BinOp, ty: &Type) -> bool {
     }
 }
 
-impl PrettyPrint for CudaFuncAttribute {
+impl PrettyPrint for FuncAttribute {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
-            CudaFuncAttribute::NonPortableClusterSizeAllowed =>
+            FuncAttribute::NonPortableClusterSizeAllowed =>
                 format!("cudaFuncAttributeNonPortableClusterSizeAllowed"),
+        };
+        (env, s)
+    }
+}
+
+impl PrettyPrint for Error {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let s = match self {
+            Error::Success => format!("cudaSuccess"),
         };
         (env, s)
     }
@@ -259,12 +272,77 @@ impl PrettyPrint for Expr {
                 let (env, dim) = dim.pprint(env);
                 (env, format!("blockIdx.{dim}"))
             },
-            Expr::CudaFuncSetAttribute {func, attr, value, ..} => {
+            Expr::Error {e, ..} => {
+                let (env, e) = e.pprint(env);
+                (env, format!("{e}"))
+            },
+            Expr::FuncSetAttribute {func, attr, value, ..} => {
                 let (env, func) = func.pprint(env);
                 let (env, attr) = attr.pprint(env);
                 let (env, value) = value.pprint(env);
                 (env, format!("cudaFuncSetAttribute({func}, {attr}, {value})"))
             },
+            Expr::MallocAsync {id, elem_ty, sz, stream, ..} => {
+                let (env, id) = id.pprint(env);
+                let (env, elem_ty) = elem_ty.pprint(env);
+                let (env, stream) = stream.pprint(env);
+                (env, format!("cudaMallocAsync(&{id}, {sz} * sizeof({elem_ty}), {stream})"))
+            },
+            Expr::FreeAsync {id, stream, ..} => {
+                let (env, id) = id.pprint(env);
+                let (env, stream) = stream.pprint(env);
+                (env, format!("cudaFreeAsync({id}, {stream})"))
+            },
+            Expr::StreamCreate {id, ..} => {
+                let (env, id) = id.pprint(env);
+                (env, format!("cudaStreamCreate(&{id})"))
+            },
+            Expr::StreamDestroy {id, ..} => {
+                let (env, id) = id.pprint(env);
+                (env, format!("cudaStreamDestroy({id})"))
+            },
+            Expr::StreamBeginCapture {stream, ..} => {
+                let (env, stream) = stream.pprint(env);
+                (env, format!("cudaStreamBeginCapture({stream}, cudaStreamCaptureModeGlobal)"))
+            },
+            Expr::StreamEndCapture {stream, graph, ..} => {
+                let (env, stream) = stream.pprint(env);
+                let (env, graph) = graph.pprint(env);
+                (env, format!("cudaStreamEndCapture({stream}, &{graph})"))
+            },
+            Expr::GraphDestroy {id, ..} => {
+                let (env, id) = id.pprint(env);
+                (env, format!("cudaGraphDestroy({id})"))
+            },
+            Expr::GraphExecInstantiate {exec_graph, graph, ..} => {
+                let (env, exec_graph) = exec_graph.pprint(env);
+                let (env, graph) = graph.pprint(env);
+                (env, format!("cudaGraphInstantiate(&{exec_graph}, {graph})"))
+            },
+            Expr::GraphExecDestroy {id, ..} => {
+                let (env, id) = id.pprint(env);
+                (env, format!("cudaGraphExecDestroy({id})"))
+            },
+            Expr::GraphExecUpdate {exec_graph, graph, update, ..} => {
+                let (env, exec_graph) = exec_graph.pprint(env);
+                let (env, graph) = graph.pprint(env);
+                let (env, update) = update.pprint(env);
+                (env, format!("cudaGraphExecUpdate({exec_graph}, {graph}, &{update})"))
+            },
+            Expr::GraphExecLaunch {id, ..} => {
+                let (env, id) = id.pprint(env);
+                let (env, s) = Stream::Default.pprint(env);
+                (env, format!("cudaGraphLaunch({id}, {s})"))
+            },
+        }
+    }
+}
+
+impl PrettyPrint for Stream {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        match self {
+            Stream::Default => (env, "0".to_string()),
+            Stream::Id(n) => n.pprint(env),
         }
     }
 }
@@ -339,22 +417,14 @@ impl PrettyPrint for Stmt {
                 };
                 (env, format!("{indent}{s};"))
             },
-            Stmt::KernelLaunch {id, blocks, threads, args} => {
+            Stmt::KernelLaunch {id, blocks, threads, args, stream} => {
                 let (env, id) = id.pprint(env);
                 let (env, blocks) = blocks.pprint(env);
                 let (env, threads) = threads.pprint(env);
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
-                (env, format!("{indent}{id}<<<dim3({blocks}), dim3({threads})>>>({args});"))
+                let (env, stream) = stream.pprint(env);
+                (env, format!("{indent}{id}<<<dim3({blocks}), dim3({threads}), 0, {stream}>>>({args});"))
             },
-            Stmt::MallocAsync {id, elem_ty, sz} => {
-                let (env, id) = id.pprint(env);
-                let (env, elem_ty) = elem_ty.pprint(env);
-                (env, format!("{indent}cudaMallocAsync(&{id}, {sz} * sizeof({elem_ty}), 0);"))
-            },
-            Stmt::FreeAsync {id} => {
-                let (env, id) = id.pprint(env);
-                (env, format!("{indent}cudaFreeAsync({id}, 0);"))
-            }
         }
     }
 }
@@ -432,14 +502,24 @@ impl PrettyPrint for Top {
                     (env, format!("using namespace {ns};"))
                 }
             },
-            Top::StructDef {id, fields, ..} => {
+            Top::StructDef {id, fields} => {
                 let (env, id) = id.pprint(env);
                 let env = env.incr_indent();
                 let (env, fields) = pprint_iter(fields.iter(), env, "\n");
                 let env = env.decr_indent();
                 (env, format!("struct {id} {{\n{fields}\n}};"))
             },
-            Top::FunDef {dev_attr, ret_ty, attrs, id, params, body, ..} => {
+            Top::VarDef {ty, id, init} => {
+                let (env, ty) = ty.pprint(env);
+                let (env, id) = id.pprint(env);
+                if let Some(e) = init {
+                    let (env, e) = e.pprint(env);
+                    (env, format!("{ty} {id} = {e};"))
+                } else {
+                    (env, format!("{ty} {id};"))
+                }
+            },
+            Top::FunDef {dev_attr, ret_ty, attrs, id, params, body} => {
                 let (env, dev_attr) = dev_attr.pprint(env);
                 let (env, ret_ty) = ret_ty.pprint(env);
                 let (env, attrs) = pprint_attrs(attrs, env);

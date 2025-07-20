@@ -62,18 +62,17 @@ fn insert_nonstandard_attribute_config_for_kernels(
     used_kernels.into_iter()
         .map(|id| {
             // TODO: check that the 'err' is cudaSuccess
-            let err_ty = Type::CudaError {};
             let err_id = Name::sym_str("err");
             Stmt::Definition {
-                ty: err_ty,
+                ty: Type::Error,
                 id: err_id.clone(),
-                expr: Some(Expr::CudaFuncSetAttribute {
+                expr: Some(Expr::FuncSetAttribute {
                     func: id,
-                    attr: CudaFuncAttribute::NonPortableClusterSizeAllowed,
+                    attr: FuncAttribute::NonPortableClusterSizeAllowed,
                     value: Box::new(Expr::Int {
                         v: 1, ty: Type::Scalar {sz: ElemSize::I64}, i: Info::default()
                     }),
-                    ty: Type::CudaError {},
+                    ty: Type::Error,
                     i: Info::default()
                 }),
             }
