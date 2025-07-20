@@ -93,7 +93,9 @@ def reduce_wrap(reduce_fn, x, opts):
 
 def compare_reduce(reduce_fn, N, M, opts):
     x = torch.randn((N, M), dtype=torch.float32)
+    opts.seq = True
     expected = reduce_wrap(reduce_fn, x, opts)
+    opts.seq = False
     actual = reduce_wrap(reduce_fn, x, opts)
     assert torch.allclose(expected, actual, atol=1e-4), f"{expected}\n{actual}"
 

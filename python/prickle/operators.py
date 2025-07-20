@@ -12,7 +12,7 @@ def min(x, y=None, axis=None):
         if axis is None:
             return np.min(x)
         else:
-            return np.min(x, axis=axis).values
+            return np.min(x, axis=axis)
     else:
         assert axis is None
         return builtins.min(x, y)
@@ -22,7 +22,7 @@ def max(x, y=None, axis=None):
         if axis is None:
             return np.max(x)
         else:
-            return np.max(x, axis=axis).values
+            return np.max(x, axis=axis)
     else:
         assert axis is None
         return builtins.max(x, y)
