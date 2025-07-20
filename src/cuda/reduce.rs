@@ -162,7 +162,7 @@ fn generate_cluster_iterative_reduction(
         i: i.clone()
     };
     loop_body.push(Stmt::If {
-        cond: is_first_thread_of_block,
+        cond: is_first_thread_of_block.clone(),
         thn: vec![Stmt::Assign {
             dst: data.temp_var.clone(),
             expr: combined_smem_data,
@@ -175,9 +175,14 @@ fn generate_cluster_iterative_reduction(
 
     // Update the local shared memory value of each block. We store the intermediate results in the
     // temporary variable and synchronize to avoid data races.
-    loop_body.push(Stmt::Assign {
-        dst: block_smem.clone(),
-        expr: data.temp_var.clone(),
+    loop_body.push(Stmt::If {
+        cond: is_first_thread_of_block,
+        thn: vec![Stmt::Assign {
+            dst: block_smem.clone(),
+            expr: data.temp_var.clone(),
+            i: i.clone()
+        }],
+        els: vec![],
         i: i.clone()
     });
     loop_body.push(Stmt::Synchronize {scope: SyncScope::Cluster, i: data.i.clone()});
