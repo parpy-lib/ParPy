@@ -6,6 +6,7 @@ use crate::gpu::ast as gpu_ast;
 use crate::utils::err::*;
 use crate::utils::info::Info;
 use crate::utils::pprint::PrettyPrint;
+use crate::utils::smap::*;
 
 fn from_gpu_ir_type(ty: gpu_ast::Type) -> Type {
     match ty {
@@ -257,6 +258,49 @@ fn from_gpu_ir_top(t: gpu_ast::Top) -> CompileResult<Top> {
     }
 }
 
+fn type_contains_16_bit_floats(acc: bool, ty: &gpu_ast::Type) -> bool {
+    match ty {
+        gpu_ast::Type::Scalar {sz: ElemSize::F16} => true,
+        gpu_ast::Type::Pointer {ty, ..} => type_contains_16_bit_floats(acc, ty),
+        gpu_ast::Type::Void | gpu_ast::Type::Boolean | gpu_ast::Type::Scalar {..} |
+        gpu_ast::Type::Struct {..} => acc,
+    }
+}
+
+fn uses_16_bit_floats_param(acc: bool, p: &gpu_ast::Param) -> bool {
+    type_contains_16_bit_floats(acc, &p.ty)
+}
+
+fn uses_16_bit_floats_expr(acc: bool, e: &gpu_ast::Expr) -> bool {
+    let acc = type_contains_16_bit_floats(acc, e.get_type());
+    e.sfold(acc, uses_16_bit_floats_expr)
+}
+
+fn uses_16_bit_floats_stmt(acc: bool, s: &gpu_ast::Stmt) -> bool {
+    let acc = s.sfold(acc, uses_16_bit_floats_stmt);
+    s.sfold(acc, uses_16_bit_floats_expr)
+}
+
+fn uses_16_bit_floats_top(acc: bool, t: &gpu_ast::Top) -> bool {
+    match t {
+        gpu_ast::Top::KernelFunDef {params, body, ..} => {
+            let acc = params.sfold(acc, uses_16_bit_floats_param);
+            body.sfold(acc, uses_16_bit_floats_stmt)
+        },
+        gpu_ast::Top::FunDef {ret_ty, params, body, ..} => {
+            let acc = type_contains_16_bit_floats(acc, ret_ty);
+            let acc = params.sfold(acc, uses_16_bit_floats_param);
+            body.sfold(acc, uses_16_bit_floats_stmt)
+        },
+        _ => acc
+    }
+}
+
+fn uses_16_bit_floats(ast: &gpu_ast::Ast) -> bool {
+    ast.iter()
+        .fold(false, uses_16_bit_floats_top)
+}
+
 pub fn from_gpu_ir(
     ast: gpu_ast::Ast,
     opts: &option::CompileOptions
@@ -264,8 +308,12 @@ pub fn from_gpu_ir(
     let mut tops = vec![
         Top::Include {header: "<cmath>".to_string()},
         Top::Include {header: "<cstdint>".to_string()},
-        Top::Include {header: "<cuda_fp16.h>".to_string()},
     ];
+    // NOTE(larshum, 2025-07-20): Conditionally insert includes for headers that have a noticeable
+    // impact on the compilation times of nvcc.
+    if uses_16_bit_floats(&ast) {
+        tops.push(Top::Include {header: "<cuda_fp16.h>".to_string()});
+    }
     if opts.use_cuda_thread_block_clusters {
         tops.push(Top::Include {header: "<cooperative_groups.h>".to_string()});
         tops.push(Top::Namespace {ns: "cooperative_groups".to_string(), alias: None});
