@@ -1,6 +1,6 @@
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::utils::smap::{SFold, SMapAccum};
+use crate::utils::smap::*;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MemSpace {
@@ -517,6 +517,41 @@ impl SFold<Stmt> for Stmt {
             Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} | Stmt::AllocShared {..} |
             Stmt::FreeDevice {..} | Stmt::CopyMemory {..} => acc,
         }
+    }
+}
+
+impl SFlatten<Stmt> for Stmt {
+    fn sflatten_result<E>(
+        self,
+        mut acc: Vec<Stmt>,
+        f: impl Fn(Vec<Stmt>, Stmt) -> Result<Vec<Stmt>, E>
+    ) -> Result<Vec<Stmt>, E> {
+        match self {
+            Stmt::For {var_ty, var, init, cond, incr, body, i} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::For {var_ty, var, init, cond, incr, body, i});
+            },
+            Stmt::If {cond, thn, els, i} => {
+                let thn = thn.sflatten_result(vec![], &f)?;
+                let els = els.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::If {cond, thn, els, i});
+            },
+            Stmt::While {cond, body, i} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::While {cond, body, i});
+            },
+            Stmt::Scope {body, i} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::Scope {body, i})
+            }
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
+            Stmt::ParallelReduction {..} | Stmt::Synchronize {..} | Stmt::WarpReduce {..} |
+            Stmt::ClusterReduce {..} | Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
+            Stmt::AllocShared {..} | Stmt::FreeDevice {..} | Stmt::CopyMemory {..} => {
+                acc.push(self);
+            }
+        };
+        Ok(acc)
     }
 }
 

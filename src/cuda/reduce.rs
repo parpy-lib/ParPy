@@ -1,7 +1,7 @@
 use crate::gpu::ast::*;
 use crate::utils::info::Info;
 use crate::utils::name::Name;
-use crate::utils::smap::SMapAccum;
+use crate::utils::smap::*;
 
 fn generate_warp_reduction(
     value: Expr, op: BinOp, int_ty: Type, res_ty: Type, i: Info
@@ -222,10 +222,11 @@ fn generate_cluster_reduction(data: ClusterData) -> Stmt {
     }
 }
 
-fn expand_parallel_reductions_stmt(stmt: Stmt) -> Stmt {
+fn expand_parallel_reductions_stmt(mut acc: Vec<Stmt>, stmt: Stmt) -> Vec<Stmt> {
     match stmt {
         Stmt::WarpReduce {value, op, int_ty, res_ty, i} => {
-            generate_warp_reduction(value, op, int_ty, res_ty, i)
+            acc.push(generate_warp_reduction(value, op, int_ty, res_ty, i));
+            acc
         },
         Stmt::ClusterReduce {
             block_idx, shared_var, temp_var, blocks_per_cluster, op, int_ty, res_ty, i
@@ -234,14 +235,15 @@ fn expand_parallel_reductions_stmt(stmt: Stmt) -> Stmt {
                 block_idx, shared_var, temp_var, blocks_per_cluster, op,
                 int_ty, res_ty, i
             };
-            generate_cluster_reduction(data)
+            acc.push(generate_cluster_reduction(data));
+            acc
         },
-        _ => stmt.smap(expand_parallel_reductions_stmt) 
+        _ => stmt.sflatten(acc, expand_parallel_reductions_stmt)
     }
 }
 
 fn expand_parallel_reductions_stmts(stmts: Vec<Stmt>) -> Vec<Stmt> {
-    stmts.smap(expand_parallel_reductions_stmt)
+    stmts.sflatten(vec![], expand_parallel_reductions_stmt)
 }
 
 fn expand_parallel_reductions_top(t: Top) -> Top {

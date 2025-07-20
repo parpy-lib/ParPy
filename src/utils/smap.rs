@@ -157,3 +157,30 @@ impl<T: Clone> SFold<T> for Option<Box<T>> {
         }
     }
 }
+
+pub trait SFlatten<T: Clone> {
+    fn sflatten_result<E>(
+        self,
+        acc: Vec<T>,
+        f: impl Fn(Vec<T>, T) -> Result<Vec<T>, E>
+    ) -> Result<Vec<T>, E>;
+
+    fn sflatten(
+        self,
+        acc: Vec<T>,
+        f: impl Fn(Vec<T>, T) -> Vec<T>
+    ) -> Vec<T> where Self: Sized {
+        self.sflatten_result(acc, |acc, t| Ok::<Vec<T>, ()>(f(acc, t))).unwrap()
+    }
+}
+
+impl<T: Clone> SFlatten<T> for Vec<T> {
+    fn sflatten_result<E>(
+        self,
+        acc: Vec<T>,
+        f: impl Fn(Vec<T>, T) -> Result<Vec<T>, E>
+    ) -> Result<Vec<T>, E> {
+        self.into_iter()
+            .fold(Ok(acc), |acc, t| f(acc?, t))
+    }
+}
