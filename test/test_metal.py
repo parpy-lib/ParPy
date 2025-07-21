@@ -24,8 +24,9 @@ def test_metal_no_parallelism(backend):
     p = {'M': prickle.threads(M)}
     opts = par_opts(backend, p)
     if backend == prickle.CompileBackend.Metal:
-        sum_elems_per_row(x, y, N, opts=opts)
-        assert np.allclose(np.sum(x, axis=1), y, atol=1e-5)
+        if prickle.backend.is_enabled(backend):
+            sum_elems_per_row(x, y, N, opts=opts)
+            assert np.allclose(np.sum(x, axis=1), y, atol=1e-5)
         return
     with pytest.raises(RuntimeError) as e_info:
         code = prickle.print_compiled(sum_elems_per_row, [x, y, N], opts)
