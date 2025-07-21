@@ -276,6 +276,9 @@ impl PrettyPrint for Expr {
                 let (env, e) = e.pprint(env);
                 (env, format!("{e}"))
             },
+            Expr::GetLastError {..} => {
+                (env, format!("cudaGetLastError()"))
+            },
             Expr::FuncSetAttribute {func, attr, value, ..} => {
                 let (env, func) = func.pprint(env);
                 let (env, attr) = attr.pprint(env);
@@ -367,11 +370,6 @@ impl PrettyPrint for Stmt {
                 let (env, expr) = expr.pprint(env);
                 (env, format!("{indent}{dst} = {expr};"))
             },
-            Stmt::AllocShared {ty, id, sz} => {
-                let (env, ty) = ty.pprint(env);
-                let (env, id) = id.pprint(env);
-                (env, format!("{indent}__shared__ {ty} {id}[{sz}];"))
-            },
             Stmt::For {var_ty, var, init, cond, incr, body} => {
                 let (env, var_ty) = var_ty.pprint(env);
                 let (env, var) = var.pprint(env);
@@ -424,6 +422,15 @@ impl PrettyPrint for Stmt {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 let (env, stream) = stream.pprint(env);
                 (env, format!("{indent}{id}<<<dim3({blocks}), dim3({threads}), 0, {stream}>>>({args});"))
+            },
+            Stmt::AllocShared {ty, id, sz} => {
+                let (env, ty) = ty.pprint(env);
+                let (env, id) = id.pprint(env);
+                (env, format!("{indent}__shared__ {ty} {id}[{sz}];"))
+            },
+            Stmt::CheckError {e} => {
+                let (env, e) = e.pprint(env);
+                (env, format!("{indent}prickle_cuda_check_error({e});"))
             },
         }
     }

@@ -6,6 +6,7 @@ import torch
 import shutil
 import subprocess
 from pathlib import Path
+from .buffer import PARIR_NATIVE_PATH
 from .prickle import CompileBackend
 
 cache_path = Path(f"{os.path.expanduser('~')}/.cache/prickle")
@@ -36,7 +37,8 @@ def build_cuda_shared_library(key, source, opts):
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
-        include_cmd = flatten([["-I", include] for include in opts.includes])
+        includes = opts.includes + [str(PARIR_NATIVE_PATH)]
+        include_cmd = flatten([["-I", include] for include in includes])
         lib_cmd = flatten([["-L", lib] for lib in opts.libs])
         commands = [
             "-O3", "--shared", "-Xcompiler", "-fPIC", f"-arch={arch}",
@@ -54,7 +56,7 @@ def build_cuda_shared_library(key, source, opts):
             raise RuntimeError(f"Compilation of generated CUDA code failed with exit code {r.returncode}:\nstdout:\n{stdout}\nstderr:\n{stderr}\nWrote generated code to file {temp_file}.")
 
 def build_metal_shared_library(key, source, opts):
-    from .buffer import try_load_metal_base_lib, PARIR_METAL_PATH, PARIR_METAL_BASE_LIB_PATH
+    from .buffer import try_load_metal_base_lib, PARIR_METAL_BASE_LIB_PATH
     from .state import get_metal_cpp_header_path
     libpath = get_library_path(key)
     with tempfile.NamedTemporaryFile() as tmp:
@@ -62,7 +64,7 @@ def build_metal_shared_library(key, source, opts):
             f.write(source)
         try_load_metal_base_lib()
         metal_cpp_path = get_metal_cpp_header_path()
-        includes = opts.includes + [metal_cpp_path, str(PARIR_METAL_PATH)]
+        includes = opts.includes + [metal_cpp_path, str(PARIR_NATIVE_PATH)]
         frameworks = ["-framework", "Metal", "-framework", "Foundation", "-framework", "MetalKit"]
         include_cmd = flatten([["-I", include] for include in includes])
         lib_cmd = flatten([["-L", lib] for lib in opts.libs])

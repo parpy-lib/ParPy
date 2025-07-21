@@ -320,6 +320,7 @@ pub fn from_gpu_ir(
     opts: &option::CompileOptions
 ) -> CompileResult<Ast> {
     let mut tops = vec![
+        Top::Include {header: "\"prickle_cuda.h\"".to_string()},
         Top::Include {header: "<cmath>".to_string()},
         Top::Include {header: "<cstdint>".to_string()},
     ];

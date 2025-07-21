@@ -324,6 +324,9 @@ def test_clustered_reduction_codegen_in_cuda(fn):
 @pytest.mark.parametrize('fn', reduce_funs)
 def test_clustered_reduction_compiles_in_cuda(fn):
     def helper():
+        major, _ = torch.cuda.get_device_capability()
+        if major < 9:
+            pytest.skip("Test requires compute capability 9.0")
         N = 100
         M = 50
         x = torch.randn((N, M), dtype=torch.float32)
@@ -334,14 +337,7 @@ def test_clustered_reduction_compiles_in_cuda(fn):
         }
         opts = par_opts(prickle.CompileBackend.Cuda, p)
         opts.use_cuda_thread_block_clusters = True
-        code = prickle.print_compiled(fn, [x, out, N], opts)
-        with tempfile.NamedTemporaryFile() as tmp:
-            with open(tmp.name, "w") as f:
-                f.write(code)
-            with tempfile.NamedTemporaryFile() as temp_obj:
-                commands = ["nvcc", "-arch=sm_90", "-c", "-x", "cu", tmp.name, "-o", temp_obj.name]
-                r = subprocess.run(commands, capture_output=True)
-                assert r.returncode == 0
+        fn(x, out, N, opts=opts)
     run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
 
 # Tests using a custom step size.

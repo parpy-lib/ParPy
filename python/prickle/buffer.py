@@ -10,8 +10,8 @@ from .prickle import CompileBackend
 import prickle.state
 
 DEFAULT_METAL_COMMAND_QUEUE_SIZE = 64
-PARIR_METAL_PATH = pathlib.Path(__file__).parent / "native"
-PARIR_METAL_BASE_LIB_PATH = PARIR_METAL_PATH / "prickle_metal_lib.so"
+PARIR_NATIVE_PATH = pathlib.Path(__file__).parent / "native"
+PARIR_METAL_BASE_LIB_PATH = PARIR_NATIVE_PATH / "prickle_metal_lib.so"
 
 metal_lib = None
 

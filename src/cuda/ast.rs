@@ -1,6 +1,6 @@
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::utils::smap::{SFold, SMapAccum};
+use crate::utils::smap::*;
 
 // Re-use nodes from the GPU IR AST.
 pub use crate::gpu::ast::ElemSize;
@@ -64,6 +64,7 @@ pub enum Expr {
     ThreadIdx {dim: Dim, ty: Type, i: Info},
     BlockIdx {dim: Dim, ty: Type, i: Info},
     Error {e: Error, ty: Type, i: Info},
+    GetLastError {ty: Type, i: Info},
     FuncSetAttribute {
         func: Name, attr: FuncAttribute, value: Box<Expr>, ty: Type, i: Info
     },
@@ -100,6 +101,7 @@ impl Expr {
             Expr::ThreadIdx {ty, ..} => ty,
             Expr::BlockIdx {ty, ..} => ty,
             Expr::Error {ty, ..} => ty,
+            Expr::GetLastError {ty, ..} => ty,
             Expr::FuncSetAttribute {ty, ..} => ty,
             Expr::MallocAsync {ty, ..} => ty,
             Expr::FreeAsync {ty, ..} => ty,
@@ -144,6 +146,7 @@ impl InfoNode for Expr {
             Expr::ThreadIdx {i, ..} => i.clone(),
             Expr::BlockIdx {i, ..} => i.clone(),
             Expr::Error {i, ..} => i.clone(),
+            Expr::GetLastError {i, ..} => i.clone(),
             Expr::FuncSetAttribute {i, ..} => i.clone(),
             Expr::MallocAsync {i, ..} => i.clone(),
             Expr::FreeAsync {i, ..} => i.clone(),
@@ -217,8 +220,8 @@ impl SMapAccum<Expr> for Expr {
             },
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
             Expr::ThreadIdx {..} | Expr::BlockIdx {..} | Expr::Error {..} |
-            Expr::MallocAsync {..} | Expr::FreeAsync {..} | Expr::StreamCreate {..} |
-            Expr::StreamDestroy {..} | Expr::StreamBeginCapture {..} |
+            Expr::GetLastError {..} | Expr::MallocAsync {..} | Expr::FreeAsync {..} |
+            Expr::StreamCreate {..} | Expr::StreamDestroy {..} | Expr::StreamBeginCapture {..} |
             Expr::StreamEndCapture {..} | Expr::GraphDestroy {..} |
             Expr::GraphExecInstantiate {..} | Expr::GraphExecDestroy {..} |
             Expr::GraphExecUpdate {..} | Expr::GraphExecLaunch {..} => Ok((acc?, self)),
@@ -242,8 +245,8 @@ impl SFold<Expr> for Expr {
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
             Expr::FuncSetAttribute {value, ..} => f(acc?, value),
-            Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
-            Expr::Float {..} | Expr::Error {..} | Expr::ThreadIdx {..} |
+            Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
+            Expr::Error {..} | Expr::GetLastError {..} | Expr::ThreadIdx {..} |
             Expr::BlockIdx {..} | Expr::MallocAsync {..} | Expr::FreeAsync {..} |
             Expr::StreamCreate {..} | Expr::StreamDestroy {..} |
             Expr::StreamBeginCapture {..} | Expr::StreamEndCapture {..} |
@@ -278,6 +281,7 @@ pub enum Stmt {
         id: Name, blocks: Dim3, threads: Dim3, stream: Stream, args: Vec<Expr>
     },
     AllocShared {ty: Type, id: Name, sz: usize},
+    CheckError {e: Expr},
 }
 
 impl SMapAccum<Expr> for Stmt {
@@ -321,6 +325,10 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::KernelLaunch {id, blocks, threads, args, stream}))
             },
+            Stmt::CheckError {e} => {
+                let (acc, e) = f(acc?, e)?;
+                Ok((acc, Stmt::CheckError {e}))
+            },
             Stmt::AllocShared {..} | Stmt::Synchronize {..} => Ok((acc?, self))
         }
     }
@@ -343,6 +351,7 @@ impl SFold<Expr> for Stmt {
             Stmt::While {cond, ..} => f(acc?, cond),
             Stmt::Return {value, ..} => f(acc?, value),
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
+            Stmt::CheckError {e} => f(acc?, e),
             Stmt::AllocShared {..} | Stmt::Synchronize {..} => acc
         }
     }
@@ -370,7 +379,7 @@ impl SMapAccum<Stmt> for Stmt {
             },
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
             Stmt::AllocShared {..} | Stmt::Synchronize {..} |
-            Stmt::KernelLaunch {..} => Ok((acc?, self))
+            Stmt::KernelLaunch {..} | Stmt::CheckError {..} => Ok((acc?, self))
         }
     }
 }
@@ -387,8 +396,38 @@ impl SFold<Stmt> for Stmt {
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
             Stmt::AllocShared {..} | Stmt::Synchronize {..} |
-            Stmt::KernelLaunch {..} => acc
+            Stmt::KernelLaunch {..} | Stmt::CheckError {..} => acc
         }
+    }
+}
+
+impl SFlatten<Stmt> for Stmt {
+    fn sflatten_result<E>(
+        self,
+        mut acc: Vec<Stmt>,
+        f: impl Fn(Vec<Stmt>, Stmt) -> Result<Vec<Stmt>, E>
+    ) -> Result<Vec<Stmt>, E> {
+        match self {
+            Stmt::For {var_ty, var, init, cond, incr, body} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::For {var_ty, var, init, cond, incr, body});
+            },
+            Stmt::If {cond, thn, els} => {
+                let thn = thn.sflatten_result(vec![], &f)?;
+                let els = els.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::If {cond, thn, els});
+            },
+            Stmt::While {cond, body} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::While {cond, body});
+            },
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
+            Stmt::Synchronize {..} | Stmt::KernelLaunch {..} |
+            Stmt::AllocShared {..} | Stmt::CheckError {..} => {
+                acc.push(self);
+            }
+        };
+        Ok(acc)
     }
 }
 
