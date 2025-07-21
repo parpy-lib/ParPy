@@ -222,7 +222,7 @@ def test_reduction_codegen(fn, backend):
     s1 = prickle.print_compiled(fn, [x, out, N], par_opts(backend, p))
     if not fn in multi_dim_reduce_funs:
         if backend == prickle.CompileBackend.Cuda:
-            pat = r".*<<<dim3\(1, 1, 1\), dim3\(128, 1, 1\)>>>\(.*\);"
+            pat = r".*<<<dim3\(1, 1, 1\), dim3\(128, 1, 1\).*>>>\(.*\);"
         elif backend == prickle.CompileBackend.Metal:
             pat = r"prickle_metal::launch_kernel\(.*1, 1, 1, 128, 1, 1\);"
         else:
@@ -238,7 +238,7 @@ def test_reduction_codegen(fn, backend):
     s2 = prickle.print_compiled(fn, [x, out, N], par_opts(backend, p))
     if not fn in multi_dim_reduce_funs:
         if backend == prickle.CompileBackend.Cuda:
-            pat = r".*<<<dim3\(1, 100, 1\), dim3\(128, 1, 1\)>>>\(.*\);"
+            pat = r".*<<<dim3\(1, 100, 1\), dim3\(128, 1, 1\).*>>>\(.*\);"
         elif backend == prickle.CompileBackend.Metal:
             pat = r"prickle_metal::launch_kernel\(.*1, 100, 1, 128, 1, 1\);"
         else:
@@ -254,7 +254,7 @@ def test_reduction_codegen(fn, backend):
     s3 = prickle.print_compiled(fn, [x, out, N], par_opts(backend, p))
     if not fn in multi_dim_reduce_funs:
         if backend == prickle.CompileBackend.Cuda:
-            pat = r".*<<<dim3\(1, 8, 100\), dim3\(128, 1, 1\)>>>\(.*\);"
+            pat = r".*<<<dim3\(1, 8, 100\), dim3\(128, 1, 1\).*>>>\(.*\);"
         elif backend == prickle.CompileBackend.Metal:
             pat = r"prickle_metal::launch_kernel\(.*1, 8, 100, 128, 1, 1\);"
         else:
@@ -276,8 +276,9 @@ def test_clustered_reduction_codegen_in_cuda(fn):
     opts = par_opts(prickle.CompileBackend.Cuda, p)
     opts.use_cuda_thread_block_clusters = True
     s = prickle.print_compiled(fn, [x, out, N], opts)
+    print(s)
     if not fn in multi_dim_reduce_funs:
-        pat = r".*<<<dim3\(8, 100, 1\), dim3\(512, 1, 1\)>>>\(.*\);"
+        pat = r".*<<<dim3\(8, 100, 1\), dim3\(512, 1, 1\).*>>>\(.*\);"
         assert re.search(pat, s, re.DOTALL) is not None
         pat = r".*__cluster_dims__\(8, 1, 1\).*"
         assert re.search(pat, s, re.DOTALL) is not None
@@ -311,7 +312,7 @@ def test_clustered_reduction_codegen_in_cuda(fn):
     opts.max_thread_blocks_per_cluster = 16
     s = prickle.print_compiled(fn, [x, out, N], opts)
     if not fn in multi_dim_reduce_funs:
-        pat = r".*<<<dim3\(16, 100, 1\), dim3\(256, 1, 1\)>>>\(.*\);"
+        pat = r".*<<<dim3\(16, 100, 1\), dim3\(256, 1, 1\).*>>>\(.*\);"
         assert re.search(pat, s, re.DOTALL) is not None
         pat = r".*__cluster_dims__\(16, 1, 1\).*"
         assert re.search(pat, s, re.DOTALL) is not None
