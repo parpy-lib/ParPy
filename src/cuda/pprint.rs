@@ -831,9 +831,10 @@ mod test {
             threads: Dim3::default()
                 .with_dim(&Dim::Y, 6)
                 .with_dim(&Dim::Z, 7),
+            stream: Stream::Default,
             args: vec![var("x"), var("y")],
         };
-        let expected = format!("{id}<<<dim3(4, 1, 2), dim3(1, 6, 7)>>>(x, y);");
+        let expected = format!("{id}<<<dim3(4, 1, 2), dim3(1, 6, 7), 0, 0>>>(x, y);");
         assert_eq!(kernel.pprint_default(), expected);
     }
 
