@@ -177,13 +177,15 @@ impl PrettyPrint for Expr {
                 };
                 (env, format!("{fun_str}({arg})"))
             },
+            // These nodes should be eliminated and replaced by named references, to avoid the risk
+            // of users defining variables with the same name.
             Expr::ThreadIdx {dim, ..} => {
                 let (env, dim) = dim.pprint(env);
-                (env, format!("threadIdx.{dim}"))
+                (env, format!("<threadIdx.{dim}>"))
             },
             Expr::BlockIdx {dim, ..} => {
                 let (env, dim) = dim.pprint(env);
-                (env, format!("blockIdx.{dim}"))
+                (env, format!("<blockIdx.{dim}>"))
             },
         }
     }
