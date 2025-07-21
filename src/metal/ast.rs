@@ -45,6 +45,7 @@ pub enum Expr {
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     Ternary {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
+    HostArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Call {id: String, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 
@@ -94,6 +95,13 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, target) = f(acc?, *target)?;
                 let (acc, idx) = f(acc, *idx)?;
                 Ok((acc, Expr::ArrayAccess {
+                    target: Box::new(target), idx: Box::new(idx), ty, i
+                }))
+            },
+            Expr::HostArrayAccess {target, idx, ty, i} => {
+                let (acc, target) = f(acc?, *target)?;
+                let (acc, idx) = f(acc, *idx)?;
+                Ok((acc, Expr::HostArrayAccess {
                     target: Box::new(target), idx: Box::new(idx), ty, i
                 }))
             },

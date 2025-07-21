@@ -3,6 +3,7 @@ mod clusters;
 mod codegen;
 mod error;
 mod graphs;
+mod memory;
 mod pprint;
 mod reduce;
 
@@ -24,6 +25,9 @@ pub fn codegen(
     // Expand the abstract representations of warp and cluster reductions. We do this separately
     // from this codegen to avoid making it unnecessarily complex.
     let gpu_ast = reduce::expand_parallel_reductions(gpu_ast);
+
+    // Ensure we perform no accesses into GPU memory from the host code.
+    memory::validate_gpu_memory_access(&gpu_ast)?;
 
     // Convert the GPU AST to a CUDA C++ AST.
     let cuda_ast = codegen::from_gpu_ir(gpu_ast, opts)?;

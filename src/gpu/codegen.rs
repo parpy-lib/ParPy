@@ -354,12 +354,21 @@ fn from_ir_stmt(
     stmt: ir_ast::Stmt
 ) -> CompileResult<(Vec<Stmt>, Vec<Top>)> {
     let kernels = match stmt {
-        ir_ast::Stmt::Definition {i, ..} | ir_ast::Stmt::Assign {i, ..} => {
-            prickle_compile_error!(i, "Assignments are not allowed outside parallel code")
+        ir_ast::Stmt::Definition {ty, id, expr, i} => {
+            let ty = from_ir_type(ty);
+            let expr = from_ir_expr(expr)?;
+            host_body.push(Stmt::Definition {ty, id, expr, i});
+            Ok(kernels)
+        },
+        ir_ast::Stmt::Assign {dst, expr, i} => {
+            let dst = from_ir_expr(dst)?;
+            let expr = from_ir_expr(expr)?;
+            host_body.push(Stmt::Assign {dst, expr, i});
+            Ok(kernels)
         },
         ir_ast::Stmt::SyncPoint {i, ..} => {
             prickle_compile_error!(i, "Internal error: Found synchronization point \
-                                     outside parallel code")
+                                       outside parallel code")
         },
         ir_ast::Stmt::For {var, lo, hi, step, body, par, i} => {
             let var_ty = from_ir_type(lo.get_type().clone());

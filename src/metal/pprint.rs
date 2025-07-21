@@ -144,6 +144,12 @@ impl PrettyPrint for Expr {
                 let (env, idx) = idx.pprint(env);
                 (env, format!("{target}[{idx}]"))
             },
+            Expr::HostArrayAccess {target, idx, ty, ..} => {
+                let (env, ty) = ty.pprint(env);
+                let (env, target) = target.pprint(env);
+                let (env, idx) = idx.pprint(env);
+                (env, format!("(({ty}*){target}->contents())[{idx}]"))
+            },
             Expr::Call {id, args, ..} => {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{id}({args})"))

@@ -100,12 +100,16 @@ fn from_gpu_ir_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
         },
         gpu_ast::Expr::StructFieldAccess {i, ..} => {
             prickle_internal_error!(i, "Found struct field access in the Metal backend,\
-                                      where structs are not supported.")
+                                        where structs are not supported.")
         },
         gpu_ast::Expr::ArrayAccess {target, idx, i, ..} => {
             let target = Box::new(from_gpu_ir_expr(env, *target)?);
             let idx = Box::new(from_gpu_ir_expr(env, *idx)?);
-            Ok(Expr::ArrayAccess {target, idx, ty, i})
+            if env.on_device {
+                Ok(Expr::ArrayAccess {target, idx, ty, i})
+            } else {
+                Ok(Expr::HostArrayAccess {target, idx, ty, i})
+            }
         },
         gpu_ast::Expr::Call {id, args, i, ..} => {
             let args = args.into_iter()
@@ -119,7 +123,7 @@ fn from_gpu_ir_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
         },
         gpu_ast::Expr::Struct {id, i, ..} => {
             prickle_internal_error!(i, "Found struct {id} in the Metal backend,\
-                                      where structs are not supported.")
+                                        where structs are not supported.")
         },
         gpu_ast::Expr::ThreadIdx {dim, i, ..} => Ok(Expr::ThreadIdx {dim, ty, i}),
         gpu_ast::Expr::BlockIdx {dim, i, ..} => Ok(Expr::BlockIdx {dim, ty, i}),
