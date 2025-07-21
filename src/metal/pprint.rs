@@ -35,7 +35,8 @@ impl PrettyPrint for Type {
                 let (env, mem) = mem.pprint(env);
                 (env, format!("{mem} {ty}*"))
             },
-            Type::MetalBuffer => (env, "MTL::Buffer*".to_string())
+            Type::Buffer => (env, "MTL::Buffer*".to_string()),
+            Type::Uint3 => (env, "uint3".to_string()),
         }
     }
 }
@@ -157,6 +158,10 @@ impl PrettyPrint for Expr {
                 };
                 (env, s)
             },
+            Expr::Projection {e, label, ..} => {
+                let (env, e) = e.pprint(env);
+                (env, format!("{e}.{label}"))
+            },
             Expr::SimdOp {op, arg, i, ..} => {
                 let (env, arg) = arg.pprint(env);
                 let fun_str = match op {
@@ -237,7 +242,7 @@ impl PrettyPrint for Stmt {
                 let (env, value) = value.pprint(env);
                 (env, format!("{indent}return {value};"))
             },
-            Stmt::ThreadgroupBarrier {} => {
+            Stmt::ThreadgroupBarrier => {
                 (env, format!("{indent}metal::threadgroup_barrier(metal::mem_flags::mem_threadgroup);"))
             },
             Stmt::KernelLaunch {id, blocks, threads, args} => {
@@ -248,7 +253,7 @@ impl PrettyPrint for Stmt {
                 (env, format!("{indent}prickle_metal::launch_kernel({id}, {{{args}}}, \
                                {bx}, {by}, {bz}, {tx}, {ty}, {tz});"))
             },
-            Stmt::SubmitWork {} => {
+            Stmt::SubmitWork => {
                 (env, format!("{indent}prickle_metal::submit_work();"))
             },
             Stmt::AllocDevice {elem_ty, id, sz} => {
@@ -277,32 +282,30 @@ impl PrettyPrint for Stmt {
     }
 }
 
-fn pprint_metal_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrintEnv, String) {
-    let indent = env.print_indent();
-    let (env, mut strs) = params.iter()
-        .enumerate()
-        .fold((env, vec![]), |(env, mut strs), (i, Param {id, ty})| {
-            let (env, id) = id.pprint(env);
-            let (env, ty_str) = ty.pprint(env);
-            strs.push(format!("{indent}{ty_str} {id} [[buffer({i})]]"));
-            (env, strs)
-        });
-    // Hard-code the definition of special variables representing the thread
-    // and block index.
-    strs.push(format!("{indent}uint3 threadIdx [[thread_position_in_threadgroup]]"));
-    strs.push(format!("{indent}uint3 blockIdx [[threadgroup_position_in_grid]]"));
-    (env, strs.iter().join(",\n"))
+impl PrettyPrint for ParamAttribute {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let s = match self {
+            ParamAttribute::Buffer {idx} => format!("buffer({idx})"),
+            ParamAttribute::ThreadIndex => format!("thread_position_in_threadgroup"),
+            ParamAttribute::BlockIndex => format!("threadgroup_position_in_grid"),
+        };
+        (env, s)
+    }
 }
 
-fn pprint_host_params(env: PrettyPrintEnv, params: &Vec<Param>) -> (PrettyPrintEnv, String) {
-    let (env, strs) = params.iter()
-        .fold((env, vec![]), |(env, mut strs), Param {id, ty}| {
-            let (env, id) = id.pprint(env);
-            let (env, ty) = ty.pprint(env);
-            strs.push(format!("{ty} {id}"));
-            (env, strs)
-        });
-    (env, strs.iter().join(", "))
+impl PrettyPrint for Param {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let indent = env.print_indent();
+        let Param {id, ty, attr} = self;
+        let (env, id) = id.pprint(env);
+        let (env, ty_str) = ty.pprint(env);
+        if let Some(a) = attr {
+            let (env, a) = a.pprint(env);
+            (env, format!("{indent}{ty_str} {id} [[{a}]]"))
+        } else {
+            (env, format!("{indent}{ty_str} {id}"))
+        }
+    }
 }
 
 impl PrettyPrint for KernelAttribute {
@@ -321,7 +324,7 @@ fn pprint_metal_top(env: PrettyPrintEnv, t: &Top) -> (PrettyPrintEnv, String) {
             let (env, id) = id.pprint(env);
             let (env, attrs) = pprint_iter(attrs.iter(), env, "\n");
             let env = env.incr_indent();
-            let (env, params) = pprint_metal_params(env, params);
+            let (env, params) = pprint_iter(params.iter(), env, ",\n");
             let (env, body) = pprint_iter(body.iter(), env, "\n");
             let env = env.decr_indent();
             (env, format!("{attrs}\nkernel void {id}(\n{params}\n) {{\n{body}\n}}"))
@@ -330,10 +333,10 @@ fn pprint_metal_top(env: PrettyPrintEnv, t: &Top) -> (PrettyPrintEnv, String) {
             let (env, ret_ty) = ret_ty.pprint(env);
             let (env, id) = id.pprint(env);
             let env = env.incr_indent();
-            let (env, params) = pprint_host_params(env, params);
+            let (env, params) = pprint_iter(params.iter(), env, ",\n");
             let (env, body) = pprint_iter(body.iter(), env, "\n");
             let env = env.decr_indent();
-            (env, format!("{ret_ty} {id}({params}) {{\n{body}\n}}"))
+            (env, format!("{ret_ty} {id}(\n{params}\n) {{\n{body}\n}}"))
         },
     }
 }
@@ -344,11 +347,11 @@ fn pprint_host_top(env: PrettyPrintEnv, t: &Top) -> (PrettyPrintEnv, String) {
         Top::FunDef {ret_ty, id, params, body} => {
             let (env, ret_ty) = ret_ty.pprint(env);
             let (env, id) = id.pprint(env);
-            let (env, params) = pprint_host_params(env, params);
+            let (env, params) = pprint_iter(params.iter(), env, ",\n");
             let env = env.incr_indent();
             let (env, body) = pprint_iter(body.iter(), env, "\n");
             let env = env.decr_indent();
-            (env, format!("extern \"C\" {ret_ty} {id}({params}) {{\n{body}\n}}"))
+            (env, format!("extern \"C\" {ret_ty} {id}(\n{params}\n) {{\n{body}\n}}"))
         },
     }
 }

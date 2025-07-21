@@ -4,6 +4,8 @@ use crate::prickle_type_error;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::err::*;
 use crate::utils::info::*;
+use crate::utils::name::Name;
+use crate::utils::pprint::*;
 use crate::utils::smap::*;
 
 struct CodegenEnv {
@@ -65,7 +67,7 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
             if env.on_device {
                 Ok(Type::Pointer {ty, mem})
             } else {
-                Ok(Type::MetalBuffer)
+                Ok(Type::Buffer)
             }
         },
         gpu_ast::Type::Struct {id} => {
@@ -168,7 +170,7 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
                                         that should have been eliminated.")
         },
         gpu_ast::Stmt::Synchronize {scope, i} => match scope {
-            gpu_ast::SyncScope::Block => Ok(Stmt::ThreadgroupBarrier {}),
+            gpu_ast::SyncScope::Block => Ok(Stmt::ThreadgroupBarrier),
             gpu_ast::SyncScope::Cluster => {
                 prickle_internal_error!(i, "Found cluster-level synchronization point, \
                                             which is not supported by the Metal backend.")
@@ -228,9 +230,14 @@ fn from_gpu_ir_stmts(env: &CodegenEnv, stmts: Vec<gpu_ast::Stmt>) -> CompileResu
         .collect::<CompileResult<Vec<Stmt>>>()
 }
 
-fn from_gpu_ir_param(env: &CodegenEnv, p: gpu_ast::Param) -> CompileResult<Param> {
+fn from_gpu_ir_param(
+    env: &CodegenEnv,
+    p: gpu_ast::Param,
+    idx: Option<i64>
+) -> CompileResult<Param> {
     let gpu_ast::Param {id, ty, i} = p;
-    Ok(Param {id, ty: from_gpu_ir_type(env, ty, &i)?})
+    let attr = idx.map(|idx| ParamAttribute::Buffer {idx});
+    Ok(Param {id, ty: from_gpu_ir_type(env, ty, &i)?, attr})
 }
 
 fn from_gpu_ir_attr(
@@ -255,7 +262,8 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
                 .map(from_gpu_ir_attr)
                 .collect::<CompileResult<Vec<KernelAttribute>>>()?;
             let params = params.into_iter()
-                .map(|p| from_gpu_ir_param(&env, p))
+                .enumerate()
+                .map(|(idx, p)| from_gpu_ir_param(&env, p, Some(idx as i64)))
                 .collect::<CompileResult<Vec<Param>>>()?;
             let body = from_gpu_ir_stmts(&env, body)?;
             acc.metal.push(Top::KernelDef {attrs, id, params, body});
@@ -265,11 +273,11 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
             let env = CodegenEnv::new(&target);
             let ret_ty = from_gpu_ir_type(&env, ret_ty, &Info::default())?;
             let params = params.into_iter()
-                .map(|p| from_gpu_ir_param(&env, p))
+                .map(|p| from_gpu_ir_param(&env, p, None))
                 .collect::<CompileResult<Vec<Param>>>()?;
             let mut body = from_gpu_ir_stmts(&env, body)?;
             if let gpu_ast::Target::Host = target {
-                body.push(Stmt::SubmitWork {});
+                body.push(Stmt::SubmitWork);
                 acc.host.push(Top::FunDef {ret_ty, id, params, body});
             } else {
                 acc.metal.push(Top::FunDef {ret_ty, id, params, body});
@@ -278,16 +286,95 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
         },
         gpu_ast::Top::StructDef {id, ..} => {
             prickle_internal_error!(Info::default(), "Found struct definition {id} \
-                                                    in the Metal backend, where \
-                                                    structs are not supported.")
+                                                      in the Metal backend, where \
+                                                      structs are not supported.")
         }
     }
+}
+
+struct GridIds<'a> {
+    thread_idx: &'a Name,
+    block_idx: &'a Name,
+}
+
+fn update_grid_index_references_in_kernel_expr(
+    ids: &GridIds,
+    e: Expr
+) -> Expr {
+    match e {
+        Expr::ThreadIdx {dim, ty, i} => {
+            let id = ids.thread_idx.clone();
+            let label = dim.pprint_default();
+            Expr::Projection {
+                e: Box::new(Expr::Var {
+                    id, ty: Type::Scalar {sz: ElemSize::I32}, i: Info::default()
+                }),
+                label, ty, i
+            }
+        },
+        Expr::BlockIdx {dim, ty, i} => {
+            let id = ids.block_idx.clone();
+            let label = dim.pprint_default();
+            Expr::Projection {
+                e: Box::new(Expr::Var {
+                    id, ty: Type::Scalar {sz: ElemSize::I32}, i: Info::default()
+                }),
+                label, ty ,i
+            }
+        },
+        _ => e.smap(|e| update_grid_index_references_in_kernel_expr(ids, e))
+    }
+}
+
+fn update_grid_index_references_in_kernel_stmt(
+    ids: &GridIds,
+    s: Stmt
+) -> Stmt {
+    s.smap(|s| update_grid_index_references_in_kernel_stmt(ids, s))
+        .smap(|e| update_grid_index_references_in_kernel_expr(ids, e))
+}
+
+fn update_grid_index_references_in_kernel_body(
+    ids: GridIds,
+    body: Vec<Stmt>
+) -> Vec<Stmt> {
+    body.smap(|s| update_grid_index_references_in_kernel_stmt(&ids, s))
+}
+
+fn add_grid_index_arguments_to_kernels_top(t: Top) -> Top {
+    match t {
+        Top::KernelDef {attrs, id, mut params, body} => {
+            let thread_idx_id = Name::sym_str("thread_idx");
+            let block_idx_id = Name::sym_str("block_idx");
+            let ids = GridIds {
+                thread_idx: &thread_idx_id,
+                block_idx: &block_idx_id
+            };
+            let body = update_grid_index_references_in_kernel_body(ids, body);
+            params.push(Param {
+                id: thread_idx_id.clone(), ty: Type::Uint3,
+                attr: Some(ParamAttribute::ThreadIndex)
+            });
+            params.push(Param {
+                id: block_idx_id.clone(), ty: Type::Uint3,
+                attr: Some(ParamAttribute::BlockIndex)
+            });
+            Top::KernelDef {attrs, id, params, body}
+        },
+        _ => t
+    }
+}
+
+fn add_grid_index_arguments_to_kernels(mut tops: TopsAcc) -> TopsAcc {
+    tops.metal = tops.metal.smap(add_grid_index_arguments_to_kernels_top);
+    tops
 }
 
 pub fn from_gpu_ir(ast: gpu_ast::Ast) -> CompileResult<Ast> {
     let includes = vec!["\"prickle_metal.h\"".to_string()];
     let tops_init = Ok(TopsAcc::default());
     let tops = ast.sfold_owned_result(tops_init, from_gpu_ir_top)?;
+    let tops = add_grid_index_arguments_to_kernels(tops);
     Ok(Ast {
         includes,
         metal_tops: tops.metal,

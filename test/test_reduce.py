@@ -276,7 +276,6 @@ def test_clustered_reduction_codegen_in_cuda(fn):
     opts = par_opts(prickle.CompileBackend.Cuda, p)
     opts.use_cuda_thread_block_clusters = True
     s = prickle.print_compiled(fn, [x, out, N], opts)
-    print(s)
     if not fn in multi_dim_reduce_funs:
         pat = r".*<<<dim3\(8, 100, 1\), dim3\(512, 1, 1\).*>>>\(.*\);"
         assert re.search(pat, s, re.DOTALL) is not None
