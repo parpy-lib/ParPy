@@ -530,6 +530,11 @@ fn from_ir_fun_def_helper(
     if is_main {
         let (mut params_init, unwrapped_params) = unwrap_params(env, params)?;
         params_init.append(&mut host_body);
+        let ret_ty = Type::Scalar {sz: ElemSize::I32};
+        params_init.push(Stmt::Return {
+            value: Expr::Int {v: 0, ty: ret_ty.clone(), i: Info::default()},
+            i: Info::default()
+        });
         kernel_tops.push(Top::FunDef {
             ret_ty, id, params: unwrapped_params, body: params_init, target: Target::Host
         });

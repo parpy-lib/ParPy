@@ -50,6 +50,8 @@ pub enum Expr {
     Convert {e: Box<Expr>, ty: Type},
 
     // Metal-specific nodes
+    KernelLaunch {id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>, i: Info},
+    AllocDevice {id: Name, elem_ty: Type, sz: usize, i: Info},
     Projection {e: Box<Expr>, label: String, ty: Type, i: Info},
     SimdOp {op: BinOp, arg: Box<Expr>, ty: Type, i: Info},
     ThreadIdx {dim: Dim, ty: Type, i: Info},
@@ -113,6 +115,10 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
             },
+            Expr::KernelLaunch {id, blocks, threads, args, i} => {
+                let (acc, args) = args.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::KernelLaunch {id, blocks, threads, args, i}))
+            },
             Expr::Projection {e, label, ty, i} => {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Projection {e: Box::new(e), label, ty, i}))
@@ -122,7 +128,9 @@ impl SMapAccum<Expr> for Expr {
                 Ok((acc, Expr::SimdOp {op, arg: Box::new(arg), ty, i}))
             },
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
-            Expr::ThreadIdx {..} | Expr::BlockIdx {..} => Ok((acc?, self))
+            Expr::AllocDevice {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => {
+                Ok((acc?, self))
+            }
         }
     }
 }
@@ -138,18 +146,17 @@ pub enum Stmt {
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>},
     While {cond: Expr, body: Vec<Stmt>},
     Return {value: Expr},
-    ThreadgroupBarrier,
-    KernelLaunch {id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>},
-    SubmitWork,
 
-    // Statements related to memory management.
-    AllocDevice {elem_ty: Type, id: Name, sz: usize},
+    // Metal-specific statements
     AllocThreadgroup {elem_ty: Type, id: Name, sz: usize},
-    FreeDevice {id: Name},
     CopyMemory {
         elem_ty: Type, src: Expr, src_mem: MemSpace,
         dst: Expr, dst_mem: MemSpace, sz: usize
     },
+    FreeDevice {id: Name},
+    ThreadgroupBarrier,
+    SubmitWork,
+    CheckError {e: Expr},
 }
 
 impl SMapAccum<Expr> for Stmt {
@@ -186,17 +193,17 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, value) = f(acc?, value)?;
                 Ok((acc, Stmt::Return {value}))
             },
-            Stmt::KernelLaunch {id, blocks, threads, args} => {
-                let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Stmt::KernelLaunch {id, blocks, threads, args}))
-            },
             Stmt::CopyMemory {elem_ty, src, src_mem, dst, dst_mem, sz} => {
                 let (acc, src) = f(acc?, src)?;
                 let (acc, dst) = f(acc, dst)?;
                 Ok((acc, Stmt::CopyMemory {elem_ty, src, src_mem, dst, dst_mem, sz}))
             },
-            Stmt::ThreadgroupBarrier | Stmt::SubmitWork | Stmt::AllocDevice {..} |
-            Stmt::AllocThreadgroup {..} | Stmt::FreeDevice {..} => {
+            Stmt::CheckError {e} => {
+                let (acc, e) = f(acc?, e)?;
+                Ok((acc, Stmt::CheckError {e}))
+            },
+            Stmt::AllocThreadgroup {..} | Stmt::FreeDevice {..} |
+            Stmt::ThreadgroupBarrier | Stmt::SubmitWork => {
                 Ok((acc?, self))
             },
         }
@@ -224,12 +231,43 @@ impl SMapAccum<Stmt> for Stmt {
                 Ok((acc, Stmt::While {cond, body}))
             },
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-            Stmt::ThreadgroupBarrier | Stmt::KernelLaunch {..} | Stmt::SubmitWork |
-            Stmt::CopyMemory {..} | Stmt::AllocDevice {..} |
-            Stmt::AllocThreadgroup {..} | Stmt::FreeDevice {..} => {
+            Stmt::AllocThreadgroup {..} | Stmt::CopyMemory {..} |
+            Stmt::FreeDevice {..} | Stmt::ThreadgroupBarrier | Stmt::SubmitWork |
+            Stmt::CheckError {..} => {
                 Ok((acc?, self))
             },
         }
+    }
+}
+
+impl SFlatten<Stmt> for Stmt {
+    fn sflatten_result<E>(
+        self,
+        mut acc: Vec<Stmt>,
+        f: impl Fn(Vec<Stmt>, Stmt) -> Result<Vec<Stmt>, E>
+    ) -> Result<Vec<Stmt>, E> {
+        match self {
+            Stmt::For {var_ty, var, init, cond, incr, body} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::For {var_ty, var, init, cond, incr, body});
+            },
+            Stmt::If {cond, thn, els} => {
+                let thn = thn.sflatten_result(vec![], &f)?;
+                let els = els.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::If {cond, thn, els});
+            },
+            Stmt::While {cond, body} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::While {cond, body});
+            },
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
+            Stmt::AllocThreadgroup {..} | Stmt::ThreadgroupBarrier {..} |
+            Stmt::CopyMemory {..} | Stmt::FreeDevice {..} | Stmt::SubmitWork |
+            Stmt::CheckError {..} => {
+                acc.push(self);
+            }
+        };
+        Ok(acc)
     }
 }
 

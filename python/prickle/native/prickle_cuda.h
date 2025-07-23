@@ -2,11 +2,19 @@
 
 #include <cstdio>
 
+#define prickle_cuda_check_error(e) \
+  do { \
+    if (e != cudaSuccess) { \
+      prickle_cuda::error_message = cudaGetErrorString(e); \
+      return 1; \
+    } \
+  } while (0)
+
 namespace prickle_cuda {
-  void check_error(cudaError_t err) {
-    if (err != cudaSuccess) {
-      fprintf(stderr, "CUDA error: %s\n", cudaGetErrorString(err));
-      exit(1);
-    }
-  }
+  const char *error_message;
+}
+
+extern "C"
+const char *prickle_get_error_message() {
+  return prickle_cuda::error_message;
 }

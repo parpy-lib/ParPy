@@ -1,6 +1,7 @@
 pub mod ast;
 mod buffers;
 mod codegen;
+mod error;
 mod pprint;
 
 use ast::*;
@@ -28,5 +29,7 @@ pub fn codegen(
     let gpu_ast = buffers::transform_scalars_to_buffers(gpu_ast);
 
     // Convert the GPU AST to a Metal AST.
-    codegen::from_gpu_ir(gpu_ast)
+    let metal_ast = codegen::from_gpu_ir(gpu_ast)?;
+
+    Ok(error::add_error_handling(metal_ast))
 }

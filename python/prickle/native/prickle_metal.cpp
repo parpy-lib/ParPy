@@ -29,8 +29,8 @@ extern "C" void prickle_sync() {
 extern "C" MTL::Buffer *prickle_alloc_buffer(int64_t nbytes) {
   MTL::Buffer *buf = device->newBuffer(nbytes, MTL::ResourceStorageModeShared);
   if (buf == nullptr) {
-    fprintf(stderr, "Failed to allocate buffer of %lld bytes\n", nbytes);
-    exit(1);
+    prickle_metal::error_message = "Failed to allocate buffer";
+    return nullptr;
   }
   return buf;
 }
@@ -69,8 +69,9 @@ namespace prickle_metal {
     return f;
   }
 
-  MTL::Buffer *alloc(int64_t nbytes) {
-    return prickle_alloc_buffer(nbytes);
+  int32_t alloc(MTL::Buffer **buf, int64_t nbytes) {
+    *buf = prickle_alloc_buffer(nbytes);
+    return *buf == nullptr;
   }
 
   void free(MTL::Buffer *b) {
@@ -91,7 +92,7 @@ namespace prickle_metal {
     prickle_memcpy(dst, src, nbytes);
   }
 
-  void launch_kernel(
+  int32_t launch_kernel(
       MTL::Function *kernel,
       std::vector<MTL::Buffer*> args,
       int64_t block_x, int64_t block_y, int64_t block_z,
@@ -100,24 +101,24 @@ namespace prickle_metal {
       if (cb != nullptr) cb->release();
       cb = cq->commandBuffer();
       if (cb == nullptr) {
-        fprintf(stderr, "Failed to set up command buffer\n");
-        exit(1);
+        prickle_metal::error_message = "Failed to set up command buffer";
+        return 1;
       }
     }
 
     if (ce == nullptr) {
       ce = cb->computeCommandEncoder();
       if (ce == nullptr) {
-        fprintf(stderr, "Failed to set up compute command encoder\n");
-        exit(1);
+        prickle_metal::error_message = "Failed to set up compute command encoder";
+        return 1;
       }
     }
 
     NS::Error *err;
     MTL::ComputePipelineState *state = device->newComputePipelineState(kernel, &err);
     if (state == nullptr) {
-      fprintf(stderr, "Error setting up compute pipeline state: %s\n", err->description()->utf8String());
-      exit(1);
+      prickle_metal::error_message = "Error setting up compute pipeline state";
+      return 1;
     }
 
     ce->setComputePipelineState(state);
@@ -127,8 +128,8 @@ namespace prickle_metal {
 
     int simd_width = state->threadExecutionWidth();
     if (simd_width != 32) {
-      fprintf(stderr, "Expected SIMD width of 32, found %d which is not supported\n", simd_width);
-      exit(1);
+      prickle_metal::error_message = "Prickle only supports target with a SIMD width of 32";
+      return 1;
     }
     NS::UInteger maxthreads = state->maxTotalThreadsPerThreadgroup();
     assert(thread_x * thread_y * thread_z <= maxthreads);

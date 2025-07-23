@@ -185,7 +185,7 @@ fn use_env_stream_stmts(env: &GraphEnv, stmts: Vec<Stmt>) -> Vec<Stmt> {
     stmts.smap(|s| use_env_stream_stmt(&stream, s))
 }
 
-fn use_cuda_graphs_kernel_body(body: Vec<Stmt>) -> (Vec<Top>, Vec<Stmt>) {
+fn use_cuda_graphs_kernel_body(mut body: Vec<Stmt>) -> (Vec<Top>, Vec<Stmt>) {
     let inst_id = Name::sym_str("instantiated");
     let exec_graph_id = Name::sym_str("exec_graph");
     let graph_id = Name::sym_str("graph");
@@ -211,8 +211,10 @@ fn use_cuda_graphs_kernel_body(body: Vec<Stmt>) -> (Vec<Top>, Vec<Stmt>) {
     // is to reduce the overhead of repeated CUDA API calls.
     let mut acc_body = vec![];
     generate_pre_kernel_body_statements(&env, &mut acc_body);
+    let tail_ret = body.pop().unwrap();
     acc_body.append(&mut use_env_stream_stmts(&env, body));
     generate_post_kernel_body_statements(&env, &mut acc_body);
+    acc_body.push(tail_ret);
 
     (added_top_var_defs, acc_body)
 }
@@ -235,8 +237,7 @@ fn use_cuda_graphs_top(mut acc: Vec<Top>, t: Top) -> Vec<Top> {
 }
 
 fn use_cuda_graphs_ast(ast: Ast) -> Ast {
-    ast.into_iter()
-        .fold(vec![], use_cuda_graphs_top)
+    ast.into_iter().fold(vec![], use_cuda_graphs_top)
 }
 
 pub fn use_if_enabled(ast: Ast, opts: &option::CompileOptions) -> Ast {

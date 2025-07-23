@@ -164,6 +164,19 @@ impl PrettyPrint for Expr {
                 };
                 (env, s)
             },
+            Expr::KernelLaunch {id, blocks, threads, args, ..} => {
+                let (env, id) = id.pprint(env);
+                let (env, args) = pprint_iter(args.iter(), env, ", ");
+                let Dim3 {x: bx, y: by, z: bz} = blocks;
+                let Dim3 {x: tx, y: ty, z: tz} = threads;
+                (env, format!("prickle_metal::launch_kernel({id}, {{{args}}}, \
+                               {bx}, {by}, {bz}, {tx}, {ty}, {tz})"))
+            },
+            Expr::AllocDevice {id, elem_ty, sz, ..} => {
+                let (env, id) = id.pprint(env);
+                let (env, ty) = elem_ty.pprint(env);
+                (env, format!("prickle_metal::alloc(&{id}, {sz} * sizeof({ty}))"))
+            },
             Expr::Projection {e, label, ..} => {
                 let (env, e) = e.pprint(env);
                 (env, format!("{e}.{label}"))
@@ -253,30 +266,13 @@ impl PrettyPrint for Stmt {
             Stmt::ThreadgroupBarrier => {
                 (env, format!("{indent}metal::threadgroup_barrier(metal::mem_flags::mem_threadgroup);"))
             },
-            Stmt::KernelLaunch {id, blocks, threads, args} => {
-                let (env, id) = id.pprint(env);
-                let (env, args) = pprint_iter(args.iter(), env, ", ");
-                let Dim3 {x: bx, y: by, z: bz} = blocks;
-                let Dim3 {x: tx, y: ty, z: tz} = threads;
-                (env, format!("{indent}prickle_metal::launch_kernel({id}, {{{args}}}, \
-                               {bx}, {by}, {bz}, {tx}, {ty}, {tz});"))
-            },
             Stmt::SubmitWork => {
                 (env, format!("{indent}prickle_metal::submit_work();"))
-            },
-            Stmt::AllocDevice {elem_ty, id, sz} => {
-                let (env, ty) = elem_ty.pprint(env);
-                let (env, id) = id.pprint(env);
-                (env, format!("{indent}{id} = prickle_metal::alloc({sz} * sizeof({ty}));"))
             },
             Stmt::AllocThreadgroup {elem_ty, id, sz} => {
                 let (env, ty) = elem_ty.pprint(env);
                 let (env, id) = id.pprint(env);
                 (env, format!("{indent}threadgroup {ty} {id}[{sz}];"))
-            },
-            Stmt::FreeDevice {id} => {
-                let (env, id) = id.pprint(env);
-                (env, format!("{indent}prickle_metal::free({id});"))
             },
             Stmt::CopyMemory {elem_ty, src, src_mem, dst, dst_mem, sz} => {
                 let (env, ty) = elem_ty.pprint(env);
@@ -285,6 +281,14 @@ impl PrettyPrint for Stmt {
                 let k = memcopy_kind(&src_mem, &dst_mem);
                 (env, format!("{indent}prickle_metal::copy((void*){dst}, \
                                (void*){src}, {sz} * sizeof({ty}), {k});"))
+            },
+            Stmt::FreeDevice {id} => {
+                let (env, id) = id.pprint(env);
+                (env, format!("{indent}prickle_metal::free({id});"))
+            },
+            Stmt::CheckError {e} => {
+                let (env, e) = e.pprint(env);
+                (env, format!("{indent}prickle_check_error({e});"))
             },
         }
     }

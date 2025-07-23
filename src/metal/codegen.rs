@@ -191,7 +191,7 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
         gpu_ast::Stmt::ClusterReduce {i, ..} => {
             prickle_internal_error!(i, "Cluster reductions are not supported in Metal.")
         },
-        gpu_ast::Stmt::KernelLaunch {id, args, grid, ..} => {
+        gpu_ast::Stmt::KernelLaunch {id, args, grid, i} => {
             let is_pointer_type = |ty: &gpu_ast::Type| match ty {
                 gpu_ast::Type::Pointer {..} => true,
                 _ => false
@@ -204,11 +204,17 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
                 .map(|e| from_gpu_ir_expr(env, e))
                 .collect::<CompileResult<Vec<Expr>>>()?;
             let gpu_ast::LaunchArgs {blocks, threads} = grid;
-            Ok(Stmt::KernelLaunch {id, blocks, threads, args})
+            Ok(Stmt::Definition {
+                ty: Type::Scalar {sz: ElemSize::I32}, id: Name::sym_str("err"),
+                expr: Expr::KernelLaunch {id, blocks, threads, args, i}
+            })
         },
         gpu_ast::Stmt::AllocDevice {elem_ty, id, sz, i} => {
             let elem_ty = from_gpu_ir_type(env, elem_ty, &i)?;
-            Ok(Stmt::AllocDevice {elem_ty, id, sz})
+            Ok(Stmt::Definition {
+                ty: Type::Scalar {sz: ElemSize::I32}, id: Name::sym_str("err"),
+                expr: Expr::AllocDevice {id, elem_ty, sz, i}
+            })
         },
         gpu_ast::Stmt::AllocShared {elem_ty, id, sz, i} => {
             let elem_ty = from_gpu_ir_type(env, elem_ty, &i)?;

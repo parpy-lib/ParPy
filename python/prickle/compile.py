@@ -149,6 +149,11 @@ def get_wrapper(name, key, opts):
             exp_args = [expand_arg(a) for a in args]
             args = [x for xs in exp_args for x in xs]
         getattr(lib, name).argtypes = [get_ctype(arg) for arg in args]
-        getattr(lib, name)(*[value_or_ptr(arg) for arg in args])
+        getattr(lib, name).restype = ctypes.c_int32
+        status = getattr(lib, name)(*[value_or_ptr(arg) for arg in args])
+        if status != 0:
+            lib.prickle_get_error_message.restype = ctypes.c_char_p
+            msg = lib.prickle_get_error_message()
+            raise RuntimeError(f"{msg.decode('ascii')}")
     wrapper.__name__ = name
     return wrapper
