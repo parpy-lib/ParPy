@@ -6,6 +6,7 @@ mod inline_calls;
 mod inline_const;
 mod insert_called_functions;
 mod labels;
+mod no_return;
 mod par;
 mod pprint;
 mod slices;
@@ -89,6 +90,10 @@ pub fn specialize_ast_on_arguments<'py>(
     debug_env.print("Python-like AST after slice transformation", &ast);
     let (_, ast) = type_check::type_check_body(ast, float_size)?;
     debug_env.print("Python-like AST after type-checking", &ast);
+
+    // Ensure that the main function contains return statements, as we cannot return values from
+    // within a kernel or within the entry point function.
+    no_return::check_no_return_in_main_function(&ast)?;
 
     Ok(ast)
 }

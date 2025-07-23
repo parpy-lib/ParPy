@@ -5,8 +5,7 @@
 #include <string>
 #include <vector>
 
-#define prickle_check_error(e) \
-  if (e != 0) return 1;
+#define prickle_check_error(e) if (e != 0) return 1;
 
 // Functions used by the Parir library when initializing, synchronizing with
 // running GPU code, and operating on buffers.

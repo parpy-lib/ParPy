@@ -487,7 +487,7 @@ fn type_check_builtin(
                     ty: Type::Tensor {sz: sz.clone(), shape: vec![]}
                 })
             } else {
-                py_type_error!(i, "Unexpected type {ty} of type conversion")
+                py_type_error!(i, "Expected scalar type in type conversion, found {ty}")
             }
         },
         // Binary operations on scalar values
