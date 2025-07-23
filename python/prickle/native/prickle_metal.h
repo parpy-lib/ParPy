@@ -20,7 +20,7 @@ extern "C" void prickle_free_buffer(MTL::Buffer*);
 // The below functions are to be used in the generated kernel code from C++. We
 // wrap these in a namespace to avoid risk of name conflicts.
 namespace prickle_metal {
-  const char *error_message;
+  const char *error_message = nullptr;
 
   MTL::Library *load_library(const char*);
   MTL::Function *get_fun(MTL::Library*, const char*);
@@ -35,6 +35,6 @@ namespace prickle_metal {
 }
 
 extern "C"
-char *prickle_get_error_message() {
+const char *prickle_get_error_message() {
   return prickle_metal::error_message;
 }

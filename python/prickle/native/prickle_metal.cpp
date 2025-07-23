@@ -140,6 +140,7 @@ namespace prickle_metal {
     if (++queue_size == queue_cap) {
       submit_work();
     }
+    return 0;
   }
 
   void submit_work() {

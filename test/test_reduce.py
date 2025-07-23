@@ -224,7 +224,7 @@ def test_reduction_codegen(fn, backend):
         if backend == prickle.CompileBackend.Cuda:
             pat = r".*<<<dim3\(1, 1, 1\), dim3\(128, 1, 1\).*>>>\(.*\);"
         elif backend == prickle.CompileBackend.Metal:
-            pat = r"prickle_metal::launch_kernel\(.*1, 1, 1, 128, 1, 1\);"
+            pat = r"prickle_metal::launch_kernel\(.*1, 1, 1, 128, 1, 1\).*"
         else:
             pat = ""
         assert re.search(pat, s1, re.DOTALL) is not None
@@ -240,7 +240,7 @@ def test_reduction_codegen(fn, backend):
         if backend == prickle.CompileBackend.Cuda:
             pat = r".*<<<dim3\(1, 100, 1\), dim3\(128, 1, 1\).*>>>\(.*\);"
         elif backend == prickle.CompileBackend.Metal:
-            pat = r"prickle_metal::launch_kernel\(.*1, 100, 1, 128, 1, 1\);"
+            pat = r"prickle_metal::launch_kernel\(.*1, 100, 1, 128, 1, 1\).*"
         else:
             pat = ""
         assert re.search(pat, s2, re.DOTALL) is not None
@@ -256,7 +256,7 @@ def test_reduction_codegen(fn, backend):
         if backend == prickle.CompileBackend.Cuda:
             pat = r".*<<<dim3\(1, 8, 100\), dim3\(128, 1, 1\).*>>>\(.*\);"
         elif backend == prickle.CompileBackend.Metal:
-            pat = r"prickle_metal::launch_kernel\(.*1, 8, 100, 128, 1, 1\);"
+            pat = r"prickle_metal::launch_kernel\(.*1, 8, 100, 128, 1, 1\).*"
         else:
             pat = ""
         assert re.search(pat, s3, re.DOTALL) is not None

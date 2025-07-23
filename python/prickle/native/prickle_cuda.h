@@ -11,7 +11,7 @@
   } while (0)
 
 namespace prickle_cuda {
-  const char *error_message;
+  const char *error_message = nullptr;
 }
 
 extern "C"

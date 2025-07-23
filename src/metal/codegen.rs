@@ -287,7 +287,9 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
                 .collect::<CompileResult<Vec<Param>>>()?;
             let mut body = from_gpu_ir_stmts(&env, body)?;
             if let gpu_ast::Target::Host = target {
+                let tail_ret = body.pop().unwrap();
                 body.push(Stmt::SubmitWork);
+                body.push(tail_ret);
                 acc.host.push(Top::FunDef {ret_ty, id, params, body});
             } else {
                 acc.metal.push(Top::FunDef {ret_ty, id, params, body});
