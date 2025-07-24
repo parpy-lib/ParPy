@@ -1,6 +1,6 @@
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::utils::smap::{SFold, SMapAccum};
+use crate::utils::smap::*;
 
 use strum_macros::EnumIter;
 use itertools::Itertools;
@@ -600,6 +600,43 @@ impl SFold<Stmt> for Stmt {
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
             Stmt::Label {..} | Stmt::Call {..} => acc
         }
+    }
+}
+
+impl SFlatten<Stmt> for Stmt {
+    fn sflatten_result<E>(
+        self,
+        mut acc: Vec<Stmt>,
+        f: impl Fn(Vec<Stmt>, Stmt) -> Result<Vec<Stmt>, E>
+    ) -> Result<Vec<Stmt>, E> {
+        match self {
+            Stmt::For {var, lo, hi, step, body, labels, i} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::For {var, lo, hi, step, body, labels, i});
+            },
+            Stmt::While {cond, body, i} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::While {cond, body, i});
+            },
+            Stmt::If {cond, thn, els, i} => {
+                let thn = thn.sflatten_result(vec![], &f)?;
+                let els = els.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::If {cond, thn, els, i});
+            },
+            Stmt::Scope {body, i} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::Scope {body, i});
+            },
+            Stmt::WithGpuContext {body, i} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::WithGpuContext {body, i});
+            },
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
+            Stmt::Call {..} | Stmt::Label {..} => {
+                acc.push(self);
+            },
+        };
+        Ok(acc)
     }
 }
 

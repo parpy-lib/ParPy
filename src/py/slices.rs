@@ -5,7 +5,7 @@ use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::reduce;
-use crate::utils::smap::{SFold, SMapAccum};
+use crate::utils::smap::*;
 
 use pyo3::prelude::*;
 
@@ -515,34 +515,11 @@ fn replace_slices_with_for_loops_stmt(s: Stmt) -> PyResult<Stmt> {
     }
 }
 
-fn eliminate_scopes_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
+fn eliminate_scopes_stmt(acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
     match s {
-        Stmt::For {var, lo, hi, step, body, labels, i} => {
-            let body = body.into_iter().fold(vec![], eliminate_scopes_stmt);
-            acc.push(Stmt::For {var, lo, hi, step, body, labels, i});
-        },
-        Stmt::While {cond, body, i} => {
-            let body = body.into_iter().fold(vec![], eliminate_scopes_stmt);
-            acc.push(Stmt::While {cond, body, i});
-        },
-        Stmt::If {cond, thn, els, i} => {
-            let thn = thn.into_iter().fold(vec![], eliminate_scopes_stmt);
-            let els = els.into_iter().fold(vec![], eliminate_scopes_stmt);
-            acc.push(Stmt::If {cond, thn, els, i});
-        },
-        Stmt::WithGpuContext {body, i} => {
-            let body = body.into_iter().fold(vec![], eliminate_scopes_stmt);
-            acc.push(Stmt::WithGpuContext {body, i});
-        },
-        Stmt::Scope {body, ..} => {
-            acc = body.into_iter().fold(acc, eliminate_scopes_stmt);
-        },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-        Stmt::Call {..} | Stmt::Label {..} => {
-            acc.push(s);
-        },
-    };
-    acc
+        Stmt::Scope {body, ..} => body.sflatten(acc, eliminate_scopes_stmt),
+        _ => s.sflatten(acc, eliminate_scopes_stmt)
+    }
 }
 
 fn ensure_no_remaining_reduction_ops_expr(acc: (), e: &Expr) -> PyResult<()> {
@@ -567,7 +544,7 @@ fn ensure_no_remaining_reduction_ops_stmt(acc: (), s: &Stmt) -> PyResult<()> {
 fn replace_slices_with_for_loops_def(fun: FunDef) -> PyResult<FunDef> {
     validate_slices(&fun.body)?;
     let body = fun.body.smap_result(replace_slices_with_for_loops_stmt)?;
-    let body = body.into_iter().fold(vec![], eliminate_scopes_stmt);
+    let body = body.sflatten(vec![], eliminate_scopes_stmt);
     body.sfold_result(Ok(()), ensure_no_remaining_reduction_ops_stmt)?;
     Ok(FunDef {body, ..fun})
 }
