@@ -21,11 +21,19 @@ impl FilePos {
         FilePos {line: self.line, col: self.col + ofs}
     }
 
-    pub fn merge(l: FilePos, r: FilePos) -> FilePos {
+    fn merge(l: FilePos, r: FilePos, f: impl Fn(usize, usize) -> usize) -> FilePos {
         FilePos {
-            line: l.line.min(r.line),
-            col: l.col.min(r.col)
+            line: f(l.line, r.line),
+            col: f(l.col, r.col)
         }
+    }
+
+    pub fn merge_down(l: FilePos, r: FilePos) -> FilePos {
+        FilePos::merge(l, r, usize::min)
+    }
+
+    pub fn merge_up(l: FilePos, r: FilePos) -> FilePos {
+        FilePos::merge(l, r, usize::max)
     }
 }
 
@@ -74,8 +82,8 @@ impl Info {
         };
         Info {
             filename,
-            start: FilePos::merge(l.start, r.start),
-            end: FilePos::merge(l.end, r.end),
+            start: FilePos::merge_down(l.start, r.start),
+            end: FilePos::merge_up(l.end, r.end),
         }
     }
 
@@ -123,4 +131,60 @@ impl Default for Info {
 
 pub trait InfoNode {
     fn get_info(&self) -> Info;
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn file_pos_with_offsets() {
+        let fp = FilePos::default()
+            .with_line_offset(1)
+            .with_column_offset(2);
+        assert_eq!(fp.line, 1);
+        assert_eq!(fp.col, 2);
+    }
+
+    #[test]
+    fn merge_down_file_pos() {
+        let f1 = FilePos::new(4, 5);
+        let f2 = FilePos::new(5, 4);
+        assert_eq!(FilePos::merge_down(f1, f2), FilePos::new(4, 4));
+    }
+
+    #[test]
+    fn merge_up_file_pos() {
+        let f1 = FilePos::new(4, 5);
+        let f2 = FilePos::new(5, 4);
+        assert_eq!(FilePos::merge_up(f1, f2), FilePos::new(5, 5));
+    }
+
+    #[test]
+    fn info_with_offsets() {
+        let f1 = FilePos::new(1, 2);
+        let f2 = FilePos::new(3, 4);
+        let i = Info::new("", f1, f2)
+            .with_line_offset(1)
+            .with_column_offset(2);
+        assert_eq!(i.start.line, 2);
+        assert_eq!(i.start.col, 4);
+        assert_eq!(i.end.line, 4);
+        assert_eq!(i.end.col, 6);
+    }
+
+    #[test]
+    fn merge_info() {
+        let f1 = FilePos::new(1, 2);
+        let f2 = FilePos::new(3, 4);
+        let i1 = Info::new("", f1, f2);
+        let f3 = FilePos::new(8, 7);
+        let f4 = FilePos::new(6, 5);
+        let i2 = Info::new("", f4, f3);
+        let i = Info::merge(i1, i2);
+        assert_eq!(i.start.line, 1);
+        assert_eq!(i.start.col, 2);
+        assert_eq!(i.end.line, 8);
+        assert_eq!(i.end.col, 7);
+    }
 }
