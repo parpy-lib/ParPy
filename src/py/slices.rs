@@ -584,7 +584,7 @@ mod test {
     fn count_slices_in_subscript() {
         let e = Expr::Subscript {
             target: Box::new(var("x", tyuk())),
-            idx: Box::new(int(1)),
+            idx: Box::new(int(1, None)),
             ty: Type::Unknown,
             i: Info::default()
         };
@@ -596,8 +596,8 @@ mod test {
         let e = subscript(
             var("x", tyuk()),
             tuple(vec![
-                slice(None, Some(int(1))),
-                slice(Some(int(2)), None)
+                slice(None, Some(int(1, None))),
+                slice(Some(int(2, None)), None)
             ])
         );
         assert_eq!(count_slices_expr(0, &e), 2);
@@ -608,11 +608,11 @@ mod test {
         let e = subscript(
             var("x", tyuk()),
             binop(
-                slice(None, Some(int(2))),
+                slice(None, Some(int(2, None))),
                 BinOp::Add,
                 tuple(vec![
-                    slice(Some(int(1)), None),
-                    int(4),
+                    slice(Some(int(1, None)), None),
+                    int(4, None),
                     slice(None, Some(var("y", tyuk())))
                 ])
             )

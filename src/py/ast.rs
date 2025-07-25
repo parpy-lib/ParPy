@@ -9,9 +9,9 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum ElemSize {
-    Bool, I8, I16, I32, I64, U8, U16, U32, U64, F16, F32, F64
+    #[default] Bool, I8, I16, I32, I64, U8, U16, U32, U64, F16, F32, F64
 }
 
 impl ElemSize {
@@ -67,14 +67,14 @@ impl fmt::Display for ElemSize {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, EnumIter)]
 pub enum Type {
     String,
     Tensor {sz: ElemSize, shape: Vec<i64>},
     Tuple {elems: Vec<Type>},
     Dict {fields: BTreeMap<String, Type>},
     Void,
-    Unknown
+    #[default] Unknown
 }
 
 impl Type {
@@ -161,9 +161,9 @@ impl fmt::Display for Type {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Builtin {
-    Exp, Inf, Log, Max, Min, Abs, Cos, Sin, Sqrt, Tanh, Atan2,
+    #[default] Exp, Inf, Log, Max, Min, Abs, Cos, Sin, Sqrt, Tanh, Atan2,
     Sum, Prod,
     Convert {sz: ElemSize}, Label, GpuContext
 }
@@ -204,20 +204,20 @@ impl SFold<Type> for Type {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UnOp {
-    Sub, Not, BitNeg, Addressof, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
+    #[default] Sub, Not, BitNeg, Addressof, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BinOp {
-    Add, Sub, Mul, FloorDiv, Div, Rem, Pow, And, Or,
+    #[default] Add, Sub, Mul, FloorDiv, Div, Rem, Pow, And, Or,
     BitAnd, BitOr, BitXor, BitShl, BitShr,
     Eq, Neq, Leq, Geq, Lt, Gt,
     Max, Min, Atan2
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, EnumIter)]
 pub enum Expr {
     Var {id: Name, ty: Type, i: Info},
     String {v: String, ty: Type, i: Info},
@@ -363,6 +363,12 @@ impl InfoNode for Expr {
             Expr::Builtin {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
         }
+    }
+}
+
+impl Default for Expr {
+    fn default() -> Expr {
+        Expr::Var {id: Name::default(), ty: Type::default(), i: Info::default()}
     }
 }
 
@@ -657,3 +663,70 @@ pub struct FunDef {
 }
 
 pub type Ast = Vec<FunDef>;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use strum::IntoEnumIterator;
+
+    #[test]
+    fn scalar_elem_size_unknown() {
+        let ty = Type::Unknown;
+        assert_eq!(ty.get_scalar_elem_size(), None);
+    }
+
+    #[test]
+    fn scalar_elem_size_scalar_tensor() {
+        let ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
+        assert_eq!(ty.get_scalar_elem_size(), Some(&ElemSize::I64));
+    }
+
+    #[test]
+    fn scalar_elem_size_vector() {
+        let ty = Type::Tensor {sz: ElemSize::I64, shape: vec![10]};
+        assert_eq!(ty.get_scalar_elem_size(), None);
+    }
+
+    #[test]
+    fn scalar_elem_size_multi_dim_tensor() {
+        let ty = Type::Tensor {sz: ElemSize::I64, shape: vec![10,20]};
+        assert_eq!(ty.get_scalar_elem_size(), None);
+    }
+
+    #[test]
+    fn compare_type_discriminators() {
+        for (i, ty1) in Type::iter().enumerate() {
+            for (j, ty2) in Type::iter().enumerate() {
+                assert_eq!(ty1.discriminator().cmp(&ty2.discriminator()), i.cmp(&j));
+            }
+        }
+    }
+
+    #[test]
+    fn compare_types() {
+        for (i, ty1) in Type::iter().enumerate() {
+            for (j, ty2) in Type::iter().enumerate() {
+                assert_eq!(ty1.cmp(&ty2), i.cmp(&j));
+            }
+        }
+    }
+
+    #[test]
+    fn compare_expr_discriminators() {
+        for (i, e1) in Expr::iter().enumerate() {
+            for (j, e2) in Expr::iter().enumerate() {
+                assert_eq!(e1.discriminator().cmp(&e2.discriminator()), i.cmp(&j));
+            }
+        }
+    }
+
+    #[test]
+    fn compare_exprs() {
+        for (i, e1) in Expr::iter().enumerate() {
+            for (j, e2) in Expr::iter().enumerate() {
+                assert_eq!(e1.cmp(&e2), i.cmp(&j));
+            }
+        }
+    }
+}

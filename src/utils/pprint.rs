@@ -20,13 +20,7 @@ pub struct PrettyPrintEnv {
 
 impl PrettyPrintEnv {
     pub fn new() -> Self {
-        PrettyPrintEnv {
-            strs: BTreeSet::new(),
-            vars: BTreeMap::new(),
-            ignore_symbols: false,
-            indent: 0,
-            indent_increment: DEFAULT_INDENT,
-        }
+        PrettyPrintEnv::default()
     }
 
     pub fn incr_indent(self) -> Self {
@@ -41,6 +35,18 @@ impl PrettyPrintEnv {
 
     pub fn print_indent(&self) -> String {
         " ".repeat(self.indent)
+    }
+}
+
+impl Default for PrettyPrintEnv {
+    fn default() -> PrettyPrintEnv {
+        PrettyPrintEnv {
+            strs: BTreeSet::new(),
+            vars: BTreeMap::new(),
+            ignore_symbols: false,
+            indent: 0,
+            indent_increment: DEFAULT_INDENT,
+        }
     }
 }
 
@@ -131,14 +137,10 @@ fn parenthesize_if_predicate(
     p: impl Fn(Ordering) -> bool
 ) -> String {
     match inner_op_opt {
-        Some(inner_op) => {
-            if p(inner_op.precedence().cmp(&outer_op.precedence())) {
-                format!("({s})")
-            } else {
-                s
-            }
+        Some(inner_op) if p(inner_op.precedence().cmp(&outer_op.precedence())) => {
+            format!("({s})")
         },
-        None => s
+        _ => s
     }
 }
 
@@ -201,6 +203,59 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_root_indent_print() {
+        let env = PrettyPrintEnv::new();
+        assert_eq!(env.print_indent(), "");
+    }
+
+    #[test]
+    fn test_incr_indent_print() {
+        let env = PrettyPrintEnv::new().incr_indent();
+        assert_eq!(env.print_indent(), " ".repeat(DEFAULT_INDENT));
+    }
+
+    #[test]
+    fn test_incr_custom_indent_print() {
+        let mut env = PrettyPrintEnv::new();
+        env.indent_increment = 4;
+        let env = env.incr_indent();
+        assert_eq!(env.print_indent(), " ".repeat(4));
+    }
+
+    #[test]
+    fn test_multi_incr_indent_print() {
+        let env = PrettyPrintEnv::new().incr_indent().incr_indent();
+        assert_eq!(env.print_indent(), " ".repeat(2 * DEFAULT_INDENT));
+    }
+
+    #[test]
+    fn test_incr_decr_indent_print() {
+        let env = PrettyPrintEnv::new().incr_indent().decr_indent();
+        assert_eq!(env.print_indent(), "");
+    }
+
+    #[test]
+    fn print_integer_float() {
+        let env = PrettyPrintEnv::new();
+        let (_, s) = print_float(env, &1.0, "inf");
+        assert_eq!(s, "1.0");
+    }
+
+    #[test]
+    fn print_inf_float() {
+        let env = PrettyPrintEnv::new();
+        let (_, s) = print_float(env, &f64::INFINITY, "inf");
+        assert_eq!(s, "inf");
+    }
+
+    #[test]
+    fn print_neg_inf_float() {
+        let env = PrettyPrintEnv::new();
+        let (_, s) = print_float(env, &f64::NEG_INFINITY, "inf");
+        assert_eq!(s, "-inf");
+    }
+
+    #[test]
     fn test_distinct_names_print() {
         let n1 = Name::sym_str("x");
         let n2 = n1.clone().with_new_sym();
@@ -210,5 +265,26 @@ mod test {
         assert!(s1 != s2);
         let (_, s3) = n2.pprint(env);
         assert_eq!(s2, s3);
+    }
+
+    #[test]
+    fn test_print_paren_predicate() {
+        let s = "a + b".to_string();
+        let s = parenthesize_if_lower_precedence(Some(BinOp::Add), &BinOp::Mul, s);
+        assert_eq!(s, "(a + b)");
+    }
+
+    #[test]
+    fn test_no_paren_predicate() {
+        let s = "a + b".to_string();
+        let s = parenthesize_if_lower_precedence(Some(BinOp::Add), &BinOp::Add, s);
+        assert_eq!(s, "a + b");
+    }
+
+    #[test]
+    fn test_paren_predicate_same_precedence() {
+        let s = "a + b".to_string();
+        let s = parenthesize_if_lower_or_same_precedence(Some(BinOp::Add), &BinOp::Add, s);
+        assert_eq!(s, "(a + b)");
     }
 }

@@ -50,6 +50,12 @@ impl Name {
     }
 }
 
+impl Default for Name {
+    fn default() -> Name {
+        Name::new("".to_string())
+    }
+}
+
 impl fmt::Display for Name {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{0}", self.s)
@@ -93,5 +99,105 @@ impl hash::Hash for Name {
         } else {
             self.sym.hash(state);
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use std::cmp::Ordering;
+
+    fn name(s: &str) -> Name {
+        Name::new(s.to_string())
+    }
+
+    #[test]
+    fn default_name_no_sym() {
+        assert_eq!(Name::default().sym, None);
+    }
+
+    #[test]
+    fn sym_str_has_sym() {
+        assert!(Name::sym_str("").sym.is_some());
+    }
+
+    #[test]
+    fn unsymb_name_eq() {
+        assert_eq!(name("a"), name("a"));
+    }
+
+    #[test]
+    fn unsymb_name_neq() {
+        let n1 = name("a");
+        let n2 = name("aa");
+        assert!(n1 != n2);
+    }
+
+    #[test]
+    fn symb_name_eq() {
+        let n = Name::sym_str("abc");
+        assert_eq!(n, n);
+    }
+
+    #[test]
+    fn distinct_symb_neq() {
+        let n1 = Name::sym_str("a");
+        let n2 = Name::sym_str("a");
+        assert!(n1 != n2);
+    }
+
+    #[test]
+    fn symb_unsymb_neq() {
+        let n1 = Name::sym_str("a");
+        let n2 = name("a");
+        assert!(n1 != n2);
+    }
+
+    #[test]
+    fn print_unsymb() {
+        assert_eq!(name("abc").print_with_sym(), "abc");
+    }
+
+    #[test]
+    fn print_symb() {
+        let n = Name::sym_str("abc");
+        let s = n.sym.unwrap_or(0);
+        assert_eq!(n.print_with_sym(), format!("abc_{s}"));
+    }
+
+    #[test]
+    fn distinct_new_symb() {
+        let n1 = Name::sym_str("a");
+        let n2 = n1.clone().with_new_sym();
+        assert!(n1 != n2);
+    }
+
+    #[test]
+    fn unsymb_ordering() {
+        let n1 = name("abc");
+        let n2 = name("def");
+        assert_eq!(n1.cmp(&n2), Ordering::Less);
+    }
+
+    #[test]
+    fn symb_greater_than_unsymb() {
+        let n1 = Name::sym_str("abc");
+        let n2 = name("def");
+        assert_eq!(n1.cmp(&n2), Ordering::Greater);
+    }
+
+    #[test]
+    fn symb_unsymb_ordering_reversed() {
+        let n1 = Name::sym_str("abc");
+        let n2 = name("def");
+        assert_eq!(n2.cmp(&n1), Ordering::Less);
+    }
+
+    #[test]
+    fn symb_ordering() {
+        let n1 = Name::sym_str("abc");
+        let n2 = Name::sym_str("def");
+        assert_eq!(n1.cmp(&n2), n1.sym.cmp(&n2.sym));
     }
 }

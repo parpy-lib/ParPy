@@ -113,27 +113,27 @@ mod test {
 
     #[test]
     fn resolve_lower_bound() {
-        let e = slice_ex1(None, Some(int(4)));
+        let e = slice_ex1(None, Some(int(4, None)));
         let expected = subscript_with_index(tuple(vec![
-            slice(Some(int(0)), Some(int(4)))
+            slice(Some(int(0, None)), Some(int(4, None)))
         ]));
         assert_eq!(resolve_indices_expr(e).unwrap(), expected);
     }
 
     #[test]
     fn resolve_upper_bound() {
-        let e = slice_ex1(Some(int(1)), None);
+        let e = slice_ex1(Some(int(1, None)), None);
         let expected = subscript_with_index(tuple(vec![
-            slice(Some(int(1)), Some(int(10)))
+            slice(Some(int(1, None)), Some(int(10, None)))
         ]));
         assert_eq!(resolve_indices_expr(e).unwrap(), expected);
     }
 
     #[test]
     fn resolve_negative_index() {
-        let e = slice_ex1(Some(int(0)), Some(int(-1)));
+        let e = slice_ex1(Some(int(0, None)), Some(int(-1, None)));
         let expected = subscript_with_index(tuple(vec![
-            slice(Some(int(0)), Some(int(9)))
+            slice(Some(int(0, None)), Some(int(9, None)))
         ]));
         assert_eq!(resolve_indices_expr(e).unwrap(), expected);
     }

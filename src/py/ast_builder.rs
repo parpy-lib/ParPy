@@ -18,8 +18,20 @@ pub fn var(v: &str, ty: Type) -> Expr {
     Expr::Var {id: id(v), ty, i: Info::default()}
 }
 
-pub fn int(v: i64) -> Expr {
-    Expr::Int {v: v as i128, ty: Type::Unknown, i: Info::default()}
+pub fn int(v: i64, o: Option<ElemSize>) -> Expr {
+    let ty = if let Some(sz) = o {
+        Type::Tensor {sz, shape: vec![]}
+    } else {
+        Type::Unknown
+    };
+    Expr::Int {v: v as i128, ty, i: Info::default()}
+}
+
+pub fn binop(lhs: Expr, op: BinOp, rhs: Expr) -> Expr {
+    Expr::BinOp {
+        lhs: Box::new(lhs), op, rhs: Box::new(rhs),
+        ty: Type::Unknown, i: Info::default()
+    }
 }
 
 pub fn subscript(target: Expr, idx: Expr) -> Expr {
@@ -27,10 +39,6 @@ pub fn subscript(target: Expr, idx: Expr) -> Expr {
         target: Box::new(target), idx: Box::new(idx),
         ty: Type::Unknown, i: Info::default()
     }
-}
-
-pub fn tuple(elems: Vec<Expr>) -> Expr {
-    Expr::Tuple {elems, ty: Type::Unknown, i: Info::default()}
 }
 
 pub fn slice(lo: Option<Expr>, hi: Option<Expr>) -> Expr {
@@ -45,11 +53,8 @@ pub fn slice(lo: Option<Expr>, hi: Option<Expr>) -> Expr {
     Expr::Slice {lo: wrap_box(lo), hi: wrap_box(hi), ty, i: Info::default()}
 }
 
-pub fn binop(lhs: Expr, op: BinOp, rhs: Expr) -> Expr {
-    Expr::BinOp {
-        lhs: Box::new(lhs), op, rhs: Box::new(rhs),
-        ty: Type::Unknown, i: Info::default()
-    }
+pub fn tuple(elems: Vec<Expr>) -> Expr {
+    Expr::Tuple {elems, ty: Type::Unknown, i: Info::default()}
 }
 
 pub fn call(f: &str, args: Vec<Expr>, ty: Type) -> Expr {
