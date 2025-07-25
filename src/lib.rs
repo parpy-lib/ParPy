@@ -66,7 +66,7 @@ fn compile_ir<'py>(
         ir_ast_cap.reference()
     };
 
-    let debug_env = utils::debug::init(&opts);
+    let debug_env = utils::debug::DebugEnv::new(&opts);
     debug_env.print("Untyped Python-like AST", untyped_ir_def);
 
     // Specialize the Python-like AST based on the provided arguments, inferring the types of all
