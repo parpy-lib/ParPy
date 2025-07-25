@@ -161,13 +161,6 @@ impl fmt::Display for Type {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Builtin {
-    #[default] Exp, Inf, Log, Max, Min, Abs, Cos, Sin, Sqrt, Tanh, Atan2,
-    Sum, Prod,
-    Convert {sz: ElemSize}, Label, GpuContext
-}
-
 impl SMapAccum<Type> for Type {
     fn smap_accum_l_result<A, E>(
         self,
@@ -205,6 +198,13 @@ impl SFold<Type> for Type {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Builtin {
+    #[default] Exp, Inf, Log, Max, Min, Abs, Cos, Sin, Sqrt, Tanh, Atan2,
+    Sum, Prod,
+    Convert {sz: ElemSize}, Label, GpuContext
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UnOp {
     #[default] Sub, Not, BitNeg, Addressof, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
 }
@@ -217,7 +217,7 @@ pub enum BinOp {
     Max, Min, Atan2
 }
 
-#[derive(Clone, Debug, PartialEq, EnumIter)]
+#[derive(Clone, Debug, EnumIter)]
 pub enum Expr {
     Var {id: Name, ty: Type, i: Info},
     String {v: String, ty: Type, i: Info},
@@ -339,6 +339,12 @@ impl Ord for Expr {
 impl PartialOrd for Expr {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for Expr {
+    fn eq(&self, other: &Expr) -> bool {
+        self.cmp(other) == Ordering::Equal
     }
 }
 

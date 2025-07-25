@@ -614,7 +614,8 @@ mod test {
                     slice(Some(int(1, None)), None),
                     int(4, None),
                     slice(None, Some(var("y", tyuk())))
-                ])
+                ]),
+                scalar(ElemSize::I64)
             )
         );
         assert_eq!(count_slices_expr(0, &e), 3);

@@ -20,9 +20,7 @@ struct ConvertEnv<'py, 'a> {
     col_ofs: usize
 }
 
-fn extract_node_info<'py>(
-    node: &'py Bound<'py, PyAny>
-) -> PyResult<Info> {
+fn extract_node_info<'py>(node: &'py Bound<'py, PyAny>) -> PyResult<Info> {
     let l1 = node.getattr("lineno")?.extract::<usize>()?;
     let c1 = node.getattr("col_offset")?.extract::<usize>()?;
     let start = FilePos::new(l1, c1);
@@ -285,8 +283,7 @@ fn convert_expr<'py, 'a>(
             let v = val.extract::<String>()?;
             Ok(Expr::String {v, ty, i})
         } else {
-            let ty = expr.get_type();
-            py_runtime_error!(i, "Unsupported constant {val:?} of type {ty:?}")
+            py_runtime_error!(i, "Unsupported literal value {val:?}")
         }
     } else if expr.is_instance(&env.ast.getattr("UnaryOp")?)? {
         let op = convert_unary_op(expr.getattr("op")?, env, &i)?;
@@ -319,7 +316,7 @@ fn convert_expr<'py, 'a>(
             let rhs = convert_expr(comps.try_iter()?.next().unwrap()?, env)?;
             Ok(Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i})
         } else {
-            py_runtime_error!(i, "Compare nodes with multiple comparisons in sequence are not supported")
+            py_runtime_error!(i, "Sequences of comparisons are not supported")
         }
     } else if expr.is_instance(&env.ast.getattr("IfExp")?)? {
         let cond = Box::new(convert_expr(expr.getattr("test")?, env)?);
@@ -369,8 +366,7 @@ fn convert_expr<'py, 'a>(
                     if axis.is_none() {
                         Ok(Expr::Call {id: id.to_string(), args, ty, i})
                     } else {
-                        py_runtime_error!(i, "Keyword arguments are not supported \
-                                              in calls to user-defined functions")
+                        py_runtime_error!(i, "Unsupported keyword argument in call: axis")
                     }
                 } else {
                     py_runtime_error!(i, "Call to unknown function {0}", id.to_string())
@@ -627,8 +623,11 @@ pub fn to_untyped_ir<'py>(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::py::ast_builder::*;
 
     use pyo3::types::*;
+    use regex::Regex;
+    use std::fmt;
 
     fn parse_str<'py>(
         py: Python<'py>,
@@ -690,6 +689,18 @@ mod test {
             let ast = parse_str_expr(py, s)?;
             assert!(lookup_builtin_expr(&ast, &Info::default()).is_err());
             Ok(())
+        })
+    }
+
+    fn assert_error_matches<T: fmt::Debug>(r: PyResult<T>, pat: &str) {
+        Python::with_gil(|py| {
+            let e = r.unwrap_err();
+            let err_msg = e.value(py).to_string();
+            let re = Regex::new(pat).unwrap();
+            assert!(
+                re.is_match(&err_msg),
+                "Error message \"{0}\" did not match expected pattern \"{1}\".",
+                err_msg, pat);
         })
     }
 
@@ -800,14 +811,17 @@ mod test {
         lookup_builtin_fail("torch.all")
     }
 
-    fn convert_expr_wrap(s: &str) -> PyResult<Expr> {
+    fn convert_expr_wrap_helper(s: &str, ir_ast_def: Vec<String>) -> PyResult<Expr> {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let expr = parse_str_expr(py, s)?;
+            let ir_asts = ir_ast_def.into_iter()
+                .map(|id| (id, PyCapsule::new(py, 0, None).unwrap()))
+                .collect::<BTreeMap<String, Bound<_>>>();
             let env = ConvertEnv {
                 ast: py.import("ast")?,
-                ir_asts: &BTreeMap::new(),
-                filepath: &String::from("<test>"),
+                ir_asts: &ir_asts,
+                filepath: "<test>",
                 line_ofs: 0,
                 col_ofs: 0
             };
@@ -815,19 +829,19 @@ mod test {
         })
     }
 
-    fn mkinfo(line1: usize, col1: usize, line2: usize, col2: usize) -> Info {
-        Info::new("<test>", FilePos::new(line1, col1), FilePos::new(line2, col2))
+    fn convert_expr_wrap(s: &str) -> PyResult<Expr> {
+        convert_expr_wrap_helper(s, vec![])
     }
 
-    fn var(s: &str) -> Name {
-        Name::new(s.to_string())
+    fn mkinfo(line1: usize, col1: usize, line2: usize, col2: usize) -> Info {
+        Info::new("<test>", FilePos::new(line1, col1), FilePos::new(line2, col2))
     }
 
     #[test]
     fn convert_expr_variable() {
         let expr = convert_expr_wrap("a").unwrap();
         assert_eq!(expr, Expr::Var {
-            id: var("a"),
+            id: id("a"),
             ty: Type::Unknown,
             i: mkinfo(1, 0, 1, 1)
         });
@@ -870,6 +884,12 @@ mod test {
     }
 
     #[test]
+    fn convert_expr_bytes_literal() {
+        let e = convert_expr_wrap("b'123'");
+        assert_error_matches(e, r"Unsupported literal value b'123'");
+    }
+
+    #[test]
     fn convert_expr_unop_int_negation() {
         let expr = convert_expr_wrap("-2").unwrap();
         assert_eq!(expr, Expr::UnOp {
@@ -900,17 +920,12 @@ mod test {
     }
 
     #[test]
-    fn convert_expr_binop_add() {
-        let expr = convert_expr_wrap("1 + 1").unwrap();
-        assert_eq!(expr, Expr::BinOp {
-            lhs: Box::new(Expr::Int {
-                v: 1,
-                ty: Type::Unknown,
-                i: mkinfo(1, 0, 1, 1)
-            }),
-            op: BinOp::Add,
-            rhs: Box::new(Expr::Int {
-                v: 1,
+    fn convert_expr_unop_not() {
+        let expr = convert_expr_wrap("not a").unwrap();
+        assert_eq!(expr, Expr::UnOp {
+            op: UnOp::Not,
+            arg: Box::new(Expr::Var {
+                id: id("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 4, 1, 5)
             }),
@@ -920,42 +935,109 @@ mod test {
     }
 
     #[test]
-    fn convert_expr_binop_pow() {
-        let expr = convert_expr_wrap("2 ** 4").unwrap();
-        assert_eq!(expr, Expr::BinOp {
-            lhs: Box::new(Expr::Int {
-                v: 2,
+    fn convert_expr_unop_inv() {
+        let expr = convert_expr_wrap("~a").unwrap();
+        assert_eq!(expr, Expr::UnOp {
+            op: UnOp::BitNeg,
+            arg: Box::new(Expr::Var {
+                id: id("a"),
                 ty: Type::Unknown,
-                i: mkinfo(1, 0, 1, 1)
-            }),
-            op: BinOp::Pow,
-            rhs: Box::new(Expr::Int {
-                v: 4,
-                ty: Type::Unknown,
-                i: mkinfo(1, 5, 1, 6)
+                i: mkinfo(1, 1, 1, 2)
             }),
             ty: Type::Unknown,
-            i: mkinfo(1, 0, 1, 6)
+            i: mkinfo(1, 0, 1, 2)
         });
     }
 
-    #[test]
-    fn convert_expr_equality() {
-        let expr = convert_expr_wrap("a == b").unwrap();
-        assert_eq!(expr, Expr::BinOp {
-            lhs: Box::new(Expr::Var {
-                id: var("a"),
+    fn binop_info(op: BinOp) -> Expr {
+        Expr::BinOp {
+            lhs: Box::new(Expr::Int {
+                v: 1,
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
-            op: BinOp::Eq,
-            rhs: Box::new(Expr::Var {
-                id: var("b"),
+            op,
+            rhs: Box::new(Expr::Int {
+                v: 2,
                 ty: Type::Unknown,
-                i: mkinfo(1, 5, 1, 6)
+                i: mkinfo(1, 4, 1, 5)
             }),
             ty: Type::Unknown,
-            i: mkinfo(1, 0, 1, 6)
+            i: mkinfo(1, 0, 1, 5)
+        }
+    }
+
+    #[test]
+    fn convert_expr_binop_add() {
+        let expr = convert_expr_wrap("1 + 2").unwrap();
+        assert_eq!(expr, binop_info(BinOp::Add));
+    }
+
+    #[test]
+    fn convert_expr_binop_sub() {
+        let expr = convert_expr_wrap("1 - 2").unwrap();
+        assert_eq!(expr, binop_info(BinOp::Sub));
+    }
+
+    #[test]
+    fn convert_expr_binop_mul() {
+        let expr = convert_expr_wrap("1 * 2").unwrap();
+        assert_eq!(expr, binop_info(BinOp::Mul));
+    }
+
+    #[test]
+    fn convert_expr_binop_div() {
+        let expr = convert_expr_wrap("1 / 2").unwrap();
+        assert_eq!(expr, binop_info(BinOp::Div));
+    }
+
+    #[test]
+    fn convert_expr_binop_floor_div() {
+        let expr = convert_expr_wrap("1// 2").unwrap();
+        assert_eq!(expr, binop_info(BinOp::FloorDiv));
+    }
+
+    #[test]
+    fn convert_expr_binop_mod() {
+        let expr = convert_expr_wrap("1 % 2").unwrap();
+        assert_eq!(expr, binop_info(BinOp::Rem));
+    }
+
+    #[test]
+    fn convert_expr_binop_pow() {
+        let expr = convert_expr_wrap("1** 2").unwrap();
+        assert_eq!(expr, binop_info(BinOp::Pow));
+    }
+
+    #[test]
+    fn convert_expr_binop_eq() {
+        let expr = convert_expr_wrap("1== 2").unwrap();
+        assert_eq!(expr, binop_info(BinOp::Eq));
+    }
+
+    #[test]
+    fn convert_expr_binop_equality_sequence() {
+        let e = convert_expr_wrap("a == b == c");
+        assert_error_matches(e, r"Sequences of comparisons are not supported");
+    }
+
+    #[test]
+    fn convert_expr_binop_and() {
+        let expr = convert_expr_wrap("a and b").unwrap();
+        assert_eq!(expr, Expr::BinOp {
+            lhs: Box::new(Expr::Var {
+                id: id("a"),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            op: BinOp::And,
+            rhs: Box::new(Expr::Var {
+                id: id("b"),
+                ty: Type::Unknown,
+                i: mkinfo(1, 6, 1, 7)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 7)
         });
     }
 
@@ -964,7 +1046,7 @@ mod test {
         let expr = convert_expr_wrap("0 if x else 1").unwrap();
         assert_eq!(expr, Expr::IfExpr {
             cond: Box::new(Expr::Var {
-                id: var("x"),
+                id: id("x"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 5, 1, 6)
             }),
@@ -988,7 +1070,7 @@ mod test {
         let expr = convert_expr_wrap("a['x']").unwrap();
         assert_eq!(expr, Expr::Subscript {
             target: Box::new(Expr::Var {
-                id: var("a"),
+                id: id("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
@@ -1007,7 +1089,7 @@ mod test {
         let expr = convert_expr_wrap("a[0]").unwrap();
         assert_eq!(expr, Expr::Subscript {
             target: Box::new(Expr::Var {
-                id: var("a"),
+                id: id("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
@@ -1026,14 +1108,14 @@ mod test {
         let expr = convert_expr_wrap("a[x, y]").unwrap();
         assert_eq!(expr, Expr::Subscript {
             target: Box::new(Expr::Var {
-                id: var("a"),
+                id: id("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
             idx: Box::new(Expr::Tuple {
                 elems: vec![
-                    Expr::Var {id: var("x"), ty: Type::Unknown, i: mkinfo(1, 2, 1, 3)},
-                    Expr::Var {id: var("y"), ty: Type::Unknown, i: mkinfo(1, 5, 1, 6)}
+                    Expr::Var {id: id("x"), ty: Type::Unknown, i: mkinfo(1, 2, 1, 3)},
+                    Expr::Var {id: id("y"), ty: Type::Unknown, i: mkinfo(1, 5, 1, 6)}
                 ],
                 ty: Type::Unknown,
                 i: mkinfo(1, 2, 1, 6)
@@ -1048,7 +1130,7 @@ mod test {
         let expr = convert_expr_wrap("a[3:10]").unwrap();
         assert_eq!(expr, Expr::Subscript {
             target: Box::new(Expr::Var {
-                id: var("a"),
+                id: id("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
@@ -1072,7 +1154,7 @@ mod test {
         let expr = convert_expr_wrap("a[:5]").unwrap();
         assert_eq!(expr, Expr::Subscript {
             target: Box::new(Expr::Var {
-                id: var("a"),
+                id: id("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
@@ -1094,7 +1176,7 @@ mod test {
         let expr = convert_expr_wrap("a[2:]").unwrap();
         assert_eq!(expr, Expr::Subscript {
             target: Box::new(Expr::Var {
-                id: var("a"),
+                id: id("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             }),
@@ -1112,8 +1194,157 @@ mod test {
     }
 
     #[test]
+    fn convert_expr_slice_no_bounds() {
+        let expr = convert_expr_wrap("a[:]").unwrap();
+        assert_eq!(expr, Expr::Subscript {
+            target: Box::new(Expr::Var {
+                id: id("a"),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            }),
+            idx: Box::new(Expr::Slice {
+                lo: None,
+                hi: None,
+                ty: Type::Unknown,
+                i: mkinfo(1, 2, 1, 3)
+            }),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 4)
+        });
+    }
+
+    #[test]
+    fn convert_expr_slice_with_step_size() {
+        let e = convert_expr_wrap("a[1:10:2]");
+        assert_error_matches(e, r"Slices with a step size.*not supported");
+    }
+
+    #[test]
+    fn convert_expr_label() {
+        let e = convert_expr_wrap("prickle.label('a')").unwrap();
+        assert_eq!(e, Expr::Builtin {
+            func: Builtin::Label,
+            args: vec![Expr::String {
+                v: "a".to_string(),
+                ty: Type::Unknown,
+                i: mkinfo(1, 14, 1, 17)
+            }],
+            axis: None,
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 18)
+        });
+    }
+
+    #[test]
+    fn convert_expr_sum_no_axis() {
+        let e = convert_expr_wrap("prickle.sum(x[:])").unwrap();
+        assert_eq!(e, Expr::Builtin {
+            func: Builtin::Sum,
+            args: vec![Expr::Subscript {
+                target: Box::new(Expr::Var {
+                    id: id("x"),
+                    ty: Type::Unknown,
+                    i: mkinfo(1, 12, 1, 13)
+                }),
+                idx: Box::new(Expr::Slice {
+                    lo: None, hi: None, ty: Type::Unknown, i: mkinfo(1, 14, 1, 15)
+                }),
+                ty: Type::Unknown,
+                i: mkinfo(1, 12, 1, 17)
+            }],
+            axis: None,
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 17)
+        });
+    }
+
+    #[test]
+    fn convert_expr_sum_axis() {
+        let e = convert_expr_wrap("prickle.sum(x[:,:], axis=1)").unwrap();
+        assert_eq!(e, Expr::Builtin {
+            func: Builtin::Sum,
+            args: vec![Expr::Subscript {
+                target: Box::new(Expr::Var {
+                    id: id("x"),
+                    ty: Type::Unknown,
+                    i: mkinfo(1, 12, 1, 13)
+                }),
+                idx: Box::new(Expr::Tuple {
+                    elems: vec![
+                        Expr::Slice {
+                            lo: None, hi: None, ty: Type::Unknown, i: mkinfo(1, 14, 1, 15)
+                        },
+                        Expr::Slice {
+                            lo: None, hi: None, ty: Type::Unknown, i: mkinfo(1, 16, 1, 17)
+                        }
+                    ],
+                    ty: Type::Unknown,
+                    i: mkinfo(1, 14, 1, 17)
+                }),
+                ty: Type::Unknown,
+                i: mkinfo(1, 12, 1, 18)
+            }],
+            axis: Some(1),
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 27)
+        });
+    }
+
+    #[test]
+    fn convert_expr_sum_invalid_axis_form() {
+        let e = convert_expr_wrap("prickle.sum(x[:], axis='x')");
+        assert_error_matches(e, r"Expected integer literal value.*");
+    }
+
+    #[test]
     fn convert_expr_call_to_undefined() {
-        assert!(convert_expr_wrap("f(2, 3)").is_err());
+        let e = convert_expr_wrap("f(2, 3)");
+        assert_error_matches(e, r"Call to unknown function.*");
+    }
+
+    #[test]
+    fn convert_expr_call_no_args() {
+        let e = convert_expr_wrap_helper("f()", vec!["f".to_string()]).unwrap();
+        assert_eq!(e, Expr::Call {
+            id: "f".to_string(),
+            args: vec![],
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 3)
+        });
+    }
+
+    #[test]
+    fn convert_expr_call_multi_args() {
+        let e = convert_expr_wrap_helper("f(2, 3)", vec!["f".to_string()]).unwrap();
+        assert_eq!(e, Expr::Call {
+            id: "f".to_string(),
+            args: vec![
+                Expr::Int {
+                    v: 2,
+                    ty: Type::Unknown,
+                    i: mkinfo(1, 2, 1, 3)
+                },
+                Expr::Int {
+                    v: 3,
+                    ty: Type::Unknown,
+                    i: mkinfo(1, 5, 1, 6)
+                }
+            ],
+            ty: Type::Unknown,
+            i: mkinfo(1, 0, 1, 7)
+        });
+    }
+
+    #[test]
+    fn convert_expr_call_keyword_args() {
+        let e = convert_expr_wrap_helper("f(2, y=3)", vec!["f".to_string()]);
+        assert_error_matches(e, r"Unsupported keyword argument in call.*y");
+    }
+
+    #[test]
+    fn convert_expr_call_axis_keyword_arg() {
+        let e = convert_expr_wrap_helper("f(2, axis=3)", vec!["f".to_string()]);
+        assert_error_matches(e, r"Unsupported keyword argument in call.*axis");
     }
 
     fn convert_stmt_wrap(s: &str) -> PyResult<Stmt> {
@@ -1132,11 +1363,23 @@ mod test {
     }
 
     #[test]
+    fn convert_stmt_label_invalid_arg() {
+        let e = convert_stmt_wrap("prickle.label(4)");
+        assert_error_matches(e, r"First argument.*should be a string literal");
+    }
+
+    #[test]
+    fn convert_stmt_label_multi_args() {
+        let e = convert_stmt_wrap("prickle.label('a', 'b')");
+        assert_error_matches(e, r"Label statement expects one argument");
+    }
+
+    #[test]
     fn convert_stmt_assignment() {
         let stmt = convert_stmt_wrap("a = 2").unwrap();
         assert_eq!(stmt, Stmt::Assign {
             dst: Expr::Var {
-                id: var("a"),
+                id: id("a"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 0, 1, 1)
             },
@@ -1151,10 +1394,51 @@ mod test {
     }
 
     #[test]
+    fn convert_stmt_assign_multi_target() {
+        let e = convert_stmt_wrap("a = b = 2");
+        assert_error_matches(e, r"Cannot have more than one target of assignment");
+    }
+
+    #[test]
+    fn convert_stmt_assign_tuple_target() {
+        let e = convert_stmt_wrap("a, b = 2, 3");
+        assert_error_matches(e, r"Unsupported form of assignment");
+    }
+
+    #[test]
+    fn convert_stmt_aug_assignment() {
+        let stmt = convert_stmt_wrap("a += 2").unwrap();
+        assert_eq!(stmt, Stmt::Assign {
+            dst: Expr::Var {
+                id: id("a"),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 1)
+            },
+            expr: Expr::BinOp {
+                lhs: Box::new(Expr::Var {
+                    id: id("a"),
+                    ty: Type::Unknown,
+                    i: mkinfo(1, 0, 1, 1)
+                }),
+                op: BinOp::Add,
+                rhs: Box::new(Expr::Int {
+                    v: 2,
+                    ty: Type::Unknown,
+                    i: mkinfo(1, 5, 1, 6)
+                }),
+                ty: Type::Unknown,
+                i: mkinfo(1, 0, 1, 6)
+            },
+            labels: vec![],
+            i: mkinfo(1, 0, 1, 6)
+        });
+    }
+
+    #[test]
     fn convert_stmt_for_loop_range() {
         let stmt = convert_stmt_wrap("for i in range(1, 10):\n  x[i] = i").unwrap();
         assert_eq!(stmt, Stmt::For {
-            var: var("i"),
+            var: id("i"),
             lo: Expr::Int {v: 1, ty: Type::Unknown, i: mkinfo(1, 15, 1, 16)},
             hi: Expr::Int {v: 10, ty: Type::Unknown, i: mkinfo(1, 18, 1, 20)},
             step: 1,
@@ -1162,12 +1446,12 @@ mod test {
                 Stmt::Assign {
                     dst: Expr::Subscript {
                         target: Box::new(Expr::Var {
-                            id: var("x"),
+                            id: id("x"),
                             ty: Type::Unknown,
                             i: mkinfo(2, 2, 2, 3)
                         }),
                         idx: Box::new(Expr::Var {
-                            id: var("i"),
+                            id: id("i"),
                             ty: Type::Unknown,
                             i: mkinfo(2, 4, 2, 5)
                         }),
@@ -1175,7 +1459,7 @@ mod test {
                         i: mkinfo(2, 2, 2, 6)
                     },
                     expr: Expr::Var {
-                        id: var("i"),
+                        id: id("i"),
                         ty: Type::Unknown,
                         i: mkinfo(2, 9, 2, 10)
                     },
@@ -1192,7 +1476,7 @@ mod test {
     fn convert_stmt_for_range_negative_step() {
         let stmt = convert_stmt_wrap("for i in range(10, 1, -2):\n  x[i] = i").unwrap();
         assert_eq!(stmt, Stmt::For {
-            var: var("i"),
+            var: id("i"),
             lo: Expr::Int {v: 10, ty: Type::Unknown, i: mkinfo(1, 15, 1, 17)},
             hi: Expr::Int {v: 1, ty: Type::Unknown, i: mkinfo(1, 19, 1, 20)},
             step: -2,
@@ -1200,12 +1484,12 @@ mod test {
                 Stmt::Assign {
                     dst: Expr::Subscript {
                         target: Box::new(Expr::Var {
-                            id: var("x"),
+                            id: id("x"),
                             ty: Type::Unknown,
                             i: mkinfo(2, 2, 2, 3)
                         }),
                         idx: Box::new(Expr::Var {
-                            id: var("i"),
+                            id: id("i"),
                             ty: Type::Unknown,
                             i: mkinfo(2, 4, 2, 5)
                         }),
@@ -1213,7 +1497,7 @@ mod test {
                         i: mkinfo(2, 2, 2, 6)
                     },
                     expr: Expr::Var {
-                        id: var("i"),
+                        id: id("i"),
                         ty: Type::Unknown,
                         i: mkinfo(2, 9, 2, 10)
                     },
@@ -1228,8 +1512,20 @@ mod test {
 
     #[test]
     fn convert_stmt_for_in_loop_fail() {
-        let result = convert_stmt_wrap("for x in s:\n  x = x + 1");
-        assert!(result.is_err());
+        let e = convert_stmt_wrap("for x in s:\n  x = x + 1");
+        assert_error_matches(e, r".*must iterate using the range builtin");
+    }
+
+    #[test]
+    fn convert_stmt_for_invalid_range_call() {
+        let e = convert_stmt_wrap("for x in range(1, 2, 3, 4):\n  a = 1");
+        assert_error_matches(e, r"Invalid number of arguments passed to range");
+    }
+
+    #[test]
+    fn convert_stmt_for_with_else_clause() {
+        let e = convert_stmt_wrap("for x in range(1, 2):\n  a = 1\nelse:\n  a = 2");
+        assert_error_matches(e, r"else-clause.*not supported.*");
     }
 
     #[test]
@@ -1237,14 +1533,14 @@ mod test {
         let stmt = convert_stmt_wrap("if x:\n  y = 1\nelse:\n  y = 2").unwrap();
         assert_eq!(stmt, Stmt::If {
             cond: Expr::Var {
-                id: var("x"),
+                id: id("x"),
                 ty: Type::Unknown,
                 i: mkinfo(1, 3, 1, 4)
             },
             thn: vec![
                 Stmt::Assign {
                     dst: Expr::Var {
-                        id: var("y"),
+                        id: id("y"),
                         ty: Type::Unknown,
                         i: mkinfo(2, 2, 2, 3)
                     },
@@ -1256,7 +1552,7 @@ mod test {
             els: vec![
                 Stmt::Assign {
                     dst: Expr::Var {
-                        id: var("y"),
+                        id: id("y"),
                         ty: Type::Unknown,
                         i: mkinfo(4, 2, 4, 3)
                     },
@@ -1277,7 +1573,7 @@ mod test {
             body: vec![
                 Stmt::Assign {
                     dst: Expr::Var {
-                        id: var("y"),
+                        id: id("y"),
                         ty: Type::Unknown,
                         i: mkinfo(2, 2, 2, 3)
                     },
@@ -1291,12 +1587,60 @@ mod test {
     }
 
     #[test]
+    fn convert_while_else_stmt() {
+        let e = convert_stmt_wrap("while True:\n  y = 1\nelse:\n  y = 2");
+        assert_error_matches(e, r".*else-clause.*");
+    }
+
+    #[test]
     fn convert_return_stmt() {
         let stmt = convert_stmt_wrap("return 3").unwrap();
         assert_eq!(stmt, Stmt::Return {
             value: Expr::Int {v: 3, ty: Type::Unknown, i: mkinfo(1, 7, 1, 8)},
             i: mkinfo(1, 0, 1, 8)
         });
+    }
+
+    #[test]
+    fn convert_empty_return_stmt() {
+        let e = convert_stmt_wrap("return");
+        assert_error_matches(e, r"Empty return statement.*");
+    }
+
+    #[test]
+    fn convert_with_gpu_context_stmt() {
+        let stmt = convert_stmt_wrap("with prickle.gpu:\n  a = 2").unwrap();
+        assert_eq!(stmt, Stmt::WithGpuContext {
+            body: vec![Stmt::Assign {
+                dst: Expr::Var {
+                    id: id("a"),
+                    ty: Type::Unknown,
+                    i: mkinfo(2, 2, 2, 3)
+                },
+                expr: Expr::Int {v: 2, ty: Type::Unknown, i: mkinfo(2, 6, 2, 7)},
+                labels: vec![],
+                i: mkinfo(2, 2, 2, 7)
+            }],
+            i: mkinfo(1, 0, 2, 7)
+        });
+    }
+
+    #[test]
+    fn convert_with_as_err() {
+        let e = convert_stmt_wrap("with prickle.gpu as x:\n  a = 2");
+        assert_error_matches(e, r"With statements.*'as' keyword.*");
+    }
+
+    #[test]
+    fn convert_with_unknown_context() {
+        let e = convert_stmt_wrap("with ctx:\n  a = 2");
+        assert_error_matches(e, r"With statements are only supported for.*");
+    }
+
+    #[test]
+    fn convert_with_multi_items() {
+        let e = convert_stmt_wrap("with a, b:\n  c = 2");
+        assert_error_matches(e, r"With statements using multiple items.*");
     }
 
     fn convert_stmts_wrap(s: &str) -> PyResult<Vec<Stmt>> {
