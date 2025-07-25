@@ -55,13 +55,10 @@ pub struct CompileOptions {
     #[pyo3(get, set)]
     pub use_cuda_graphs: bool,
 
-    // Enable to make the compiler print intermediate ASTs to standard output.
+    // Enable to have the compiler report the time spent in various passes and print the AST after
+    // each major transformation pass.
     #[pyo3(get, set)]
     pub debug_print: bool,
-
-    // Enable to have to compiler report the time spent in various passes.
-    #[pyo3(get, set)]
-    pub debug_perf: bool,
 
     /////////////////
     // BUILD FLAGS //
@@ -92,7 +89,6 @@ impl Default for CompileOptions {
             max_thread_blocks_per_cluster: 8,
             use_cuda_graphs: false,
             debug_print: false,
-            debug_perf: false,
             includes: vec![],
             libs: vec![],
             extra_flags: vec![],
@@ -108,7 +104,7 @@ impl CompileOptions {
     }
 
     fn is_debug_enabled(&self) -> bool {
-        self.debug_print || self.debug_perf
+        self.debug_print
     }
 
     fn __str__(&self) -> String {
