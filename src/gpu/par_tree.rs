@@ -100,7 +100,7 @@ pub fn build_tree(body: &Vec<Stmt>) -> ParTree {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ir::ir_builder::*;
+    use crate::ir::ast_builder::*;
 
     fn assert_par_tree(body: Vec<Stmt>, expected: ParTree) {
         let t = build_tree(&body);

@@ -1172,7 +1172,7 @@ pub fn restructure_inter_block_synchronization(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ir::ir_builder::*;
+    use crate::ir::ast_builder::*;
 
     fn for_(id: &str, n: i64, body: Vec<Stmt>) -> Stmt {
         let var = Name::new(id.to_string());

@@ -317,11 +317,11 @@ pub fn map_gpu_grid(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ir::ir_builder;
-    use crate::ir::ir_builder::*;
+    use crate::ir::ast_builder;
+    use crate::ir::ast_builder::*;
 
     fn id(s: &str) -> Name {
-        ir_builder::id(s).with_new_sym()
+        ast_builder::id(s).with_new_sym()
     }
 
     fn find_structure(def: FunDef) -> BTreeMap<Name, ParEntry> {

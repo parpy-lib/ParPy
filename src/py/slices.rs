@@ -460,10 +460,9 @@ fn replace_slices_assignment(
                            in the right-hand side expression than in the \
                            left-hand side expression.";
                 assert_slice_count(lslices >= rslices, &i, msg)?;
-                let msg = format!(
+                validate_nlabels(labels.len(), nslices, &i, &format!(
                     "Expected zero or {nslices} labels, found {0}", labels.len()
-                );
-                validate_nlabels(labels.len(), nslices, &i, &msg)?;
+                ))?;
                 match def_id {
                     None => {
                         let inner_stmt = Stmt::Assign {
@@ -472,11 +471,10 @@ fn replace_slices_assignment(
                         generate_for_loops(inner_stmt, dims, labels, None)
                     },
                     Some(id) => {
-                        let msg = format!(
+                        slice_err(&i, &format!(
                             "Slice expression cannot be assigned to fresh \
                              variable {id}."
-                        );
-                        slice_err(&i, &msg)
+                        ))
                     }
                 }
             }
@@ -551,4 +549,125 @@ fn replace_slices_with_for_loops_def(fun: FunDef) -> PyResult<FunDef> {
 
 pub fn replace_slices_with_for_loops(ast: Ast) -> PyResult<Ast> {
     ast.smap_result(replace_slices_with_for_loops_def)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::py::ast_builder::*;
+
+    fn ex1() -> (Expr, Expr) {
+        let lhs = subscript(var("x", shape(vec![10])), slice(None, None));
+        let rhs = Expr::Builtin {
+            func: Builtin::Sum,
+            args: vec![subscript(
+                var("y", shape(vec![10, 20])),
+                tuple(vec![
+                    slice(None, None),
+                    slice(None, None)
+                ])
+            )],
+            axis: Some(1),
+            ty: shape(vec![10]),
+            i: Info::default()
+        };
+        (lhs, rhs)
+    }
+
+    #[test]
+    fn count_slices_in_non_slice_expr() {
+        let e = Expr::Int {v: 42, ty: Type::Unknown, i: Info::default()};
+        assert_eq!(count_slices_expr(0, &e), 0);
+    }
+
+    #[test]
+    fn count_slices_in_subscript() {
+        let e = Expr::Subscript {
+            target: Box::new(var("x", tyuk())),
+            idx: Box::new(int(1)),
+            ty: Type::Unknown,
+            i: Info::default()
+        };
+        assert_eq!(count_slices_expr(0, &e), 0);
+    }
+
+    #[test]
+    fn count_slices_multi_dim_slice() {
+        let e = subscript(
+            var("x", tyuk()),
+            tuple(vec![
+                slice(None, Some(int(1))),
+                slice(Some(int(2)), None)
+            ])
+        );
+        assert_eq!(count_slices_expr(0, &e), 2);
+    }
+
+    #[test]
+    fn count_slices_bin_op() {
+        let e = subscript(
+            var("x", tyuk()),
+            binop(
+                slice(None, Some(int(2))),
+                BinOp::Add,
+                tuple(vec![
+                    slice(Some(int(1)), None),
+                    int(4),
+                    slice(None, Some(var("y", tyuk())))
+                ])
+            )
+        );
+        assert_eq!(count_slices_expr(0, &e), 3);
+    }
+
+    #[test]
+    fn valid_slices_assignment() {
+        let s = assignment(
+            subscript(var("x", shape(vec![10])), slice(None, None)),
+            subscript(var("y", shape(vec![10])), slice(None, None))
+        );
+        assert!(validate_slices_stmt((), &s).is_ok());
+    }
+
+    #[test]
+    fn invalid_slice_statement() {
+        let s = Stmt::Return {
+            value: subscript(var("x", shape(vec![10])), slice(None, None)),
+            i: Info::default()
+        };
+        assert!(validate_slices_stmt((), &s).is_err());
+    }
+
+    #[test]
+    fn invalid_slice_target() {
+        let s = assignment(
+            var("x", shape(vec![10])),
+            subscript(
+                call("f", vec![], tyuk()),
+                slice(None, None)
+            )
+        );
+        assert!(validate_slices_stmt((), &s).is_err());
+    }
+
+    #[test]
+    fn invalid_partial_slice_reference() {
+        let s = assignment(
+            var("x", shape(vec![10])),
+            subscript(
+                var("y", shape(vec![10, 20])),
+                slice(None, None)
+            )
+        );
+        assert!(validate_slices_stmt((), &s).is_err());
+    }
+
+    #[test]
+    fn valid_full_slice_reference() {
+        let (lhs, rhs) = ex1();
+        assert_eq!(count_slices_expr(0, &lhs), 1);
+        assert_eq!(count_slices_expr(0, &rhs), 2);
+        let s = assignment(lhs, rhs);
+        assert!(validate_slices_stmt((), &s).is_ok());
+    }
 }

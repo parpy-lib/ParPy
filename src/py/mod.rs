@@ -13,6 +13,9 @@ mod slices;
 mod symbolize;
 mod type_check;
 
+#[cfg(test)]
+mod ast_builder;
+
 use ast::ElemSize;
 use symbolize::Symbolize;
 use crate::option::*;

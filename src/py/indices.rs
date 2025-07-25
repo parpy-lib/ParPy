@@ -94,3 +94,47 @@ fn resolve_indices_def(fun: FunDef) -> PyResult<FunDef> {
 pub fn resolve_indices(ast: Ast) -> PyResult<Ast> {
     ast.smap_result(resolve_indices_def)
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::py::ast_builder::*;
+
+    fn subscript_with_index(idx: Expr) -> Expr {
+        subscript(
+            Expr::Var {id: id("x"), ty: shape(vec![10]), i: Info::default()},
+            idx
+        )
+    }
+
+    fn slice_ex1(lo: Option<Expr>, hi: Option<Expr>) -> Expr {
+        subscript_with_index(slice(lo, hi))
+    }
+
+    #[test]
+    fn resolve_lower_bound() {
+        let e = slice_ex1(None, Some(int(4)));
+        let expected = subscript_with_index(tuple(vec![
+            slice(Some(int(0)), Some(int(4)))
+        ]));
+        assert_eq!(resolve_indices_expr(e).unwrap(), expected);
+    }
+
+    #[test]
+    fn resolve_upper_bound() {
+        let e = slice_ex1(Some(int(1)), None);
+        let expected = subscript_with_index(tuple(vec![
+            slice(Some(int(1)), Some(int(10)))
+        ]));
+        assert_eq!(resolve_indices_expr(e).unwrap(), expected);
+    }
+
+    #[test]
+    fn resolve_negative_index() {
+        let e = slice_ex1(Some(int(0)), Some(int(-1)));
+        let expected = subscript_with_index(tuple(vec![
+            slice(Some(int(0)), Some(int(9)))
+        ]));
+        assert_eq!(resolve_indices_expr(e).unwrap(), expected);
+    }
+}

@@ -114,7 +114,7 @@ pub fn fold(ast: Ast) -> Ast {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ir::ir_builder::*;
+    use crate::ir::ast_builder::*;
 
     fn cf(e: &Expr) -> Expr {
         fold_expr(e.clone())

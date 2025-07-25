@@ -15,8 +15,8 @@ fn merge_tpb(ltpb: i64, rtpb: i64, i: &Info) -> CompileResult<i64> {
         Ok(ltpb)
     } else {
         prickle_compile_error!(i, "Found inconsistent threads per block {0} and \
-                                 {1} among labels within parallel for-loop.",
-                                 ltpb, rtpb)
+                                   {1} among labels within parallel for-loop.",
+                                   ltpb, rtpb)
     }
 }
 
@@ -71,4 +71,50 @@ fn propagate_configuration_fun_def(fun: FunDef) -> CompileResult<FunDef> {
 pub fn propagate_configuration(ast: Ast) -> CompileResult<Ast> {
     let defs = ast.defs.smap_result(propagate_configuration_fun_def)?;
     Ok(Ast {defs, ..ast})
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::ir::ast_builder::*;
+
+    #[test]
+    fn test_no_propagation_for_sequential_loops() {
+        let p = LoopPar::default().tpb(512).unwrap();
+        let body = vec![
+            for_loop_complete(id("x"), int(0), int(10), 1, p, vec![
+                for_loop(id("y"), 10, vec![])
+            ])
+        ];
+        match propagate_configuration_stmts(body).unwrap().get(0).unwrap() {
+            Stmt::For {body, par, ..} => {
+                assert_eq!(par.tpb, 512);
+                match body.get(0).unwrap() {
+                    Stmt::For {par, ..} => assert_eq!(par.tpb, par::DEFAULT_TPB),
+                    _ => assert!(false)
+                };
+            },
+            _ => assert!(false)
+        }
+    }
+
+    #[test]
+    fn test_propagation_nested_for_loops() {
+        let p = LoopPar::default().threads(10).unwrap().tpb(512).unwrap();
+        let body = vec![
+            for_loop_complete(id("x"), int(0), int(10), 1, p, vec![
+                for_loop(id("y"), 10, vec![])
+            ])
+        ];
+        match propagate_configuration_stmts(body).unwrap().get(0).unwrap() {
+            Stmt::For {body, par, ..} => {
+                assert_eq!(par.tpb, 512);
+                match body.get(0).unwrap() {
+                    Stmt::For {par, ..} => assert_eq!(par.tpb, 512),
+                    _ => assert!(false)
+                };
+            },
+            _ => assert!(false)
+        }
+    }
 }
