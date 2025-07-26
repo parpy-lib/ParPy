@@ -1,6 +1,7 @@
 use super::ast::*;
 use crate::utils::pprint::*;
 
+use itertools::Itertools;
 use std::fmt;
 
 impl PrettyPrint for Builtin {
@@ -72,6 +73,25 @@ impl PrettyPrint for BinOp {
             BinOp::Max => "max",
             BinOp::Min => "min",
             BinOp::Atan2 => "atan2"
+        };
+        (env, s.to_string())
+    }
+}
+
+impl PrettyPrint for Type {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let s = match self {
+            Type::String => format!("<string>"),
+            Type::Tensor {sz, shape} => format!("<tensor|{sz:?},{shape:?}>"),
+            Type::Tuple {elems} => format!("<({0})>", elems.into_iter().join(", ")),
+            Type::Dict {fields} => {
+                let s = fields.into_iter()
+                    .map(|(k, v)| format!("{k}: {v}"))
+                    .join(", ");
+                format!("<{{{0}}}>", s)
+            },
+            Type::Void => format!("<void>"),
+            Type::Unknown => format!("<unknown>")
         };
         (env, s.to_string())
     }

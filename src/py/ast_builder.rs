@@ -77,3 +77,11 @@ pub fn call(f: &str, args: Vec<Expr>, ty: Type) -> Expr {
 pub fn assignment(lhs: Expr, rhs: Expr) -> Stmt {
     Stmt::Assign {dst: lhs, expr: rhs, labels: vec![], i: Info::default()}
 }
+
+pub fn label(l: &str) -> Stmt {
+    Stmt::Label {label: l.to_string(), i: Info::default()}
+}
+
+pub fn return_stmt(value: Expr) -> Stmt {
+    Stmt::Return {value, i: Info::default()}
+}

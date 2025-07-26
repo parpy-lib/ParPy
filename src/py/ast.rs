@@ -652,14 +652,14 @@ impl SFlatten<Stmt> for Stmt {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Param {
     pub id: Name,
     pub ty: Type,
     pub i: Info
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunDef {
     pub id: Name,
     pub params: Vec<Param>,

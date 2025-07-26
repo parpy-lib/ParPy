@@ -158,10 +158,7 @@ impl Symbolize for FunDef {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    fn name(s: &str) -> Name {
-        Name::new(s.to_string())
-    }
+    use crate::py::ast_builder::*;
 
     fn sym_env(entries: Vec<Name>) -> SymbolizeEnv {
         let vars = entries.into_iter()
@@ -177,27 +174,55 @@ mod test {
         }
     }
 
-    fn var(s: &str) -> Expr {
-        nvar(&Name::new(s.to_string()))
+    #[test]
+    fn sym_env_empty_has_symbol() {
+        let env = sym_env(vec![]);
+        assert!(!env.has_symbol(&id("x")));
     }
 
-    fn int(v: i64) -> Expr {
-        Expr::Int {
-            v: v as i128, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]},
-            i: Info::default()
-        }
+    #[test]
+    fn sym_env_contains_symbol() {
+        let env = sym_env(vec![id("x")]);
+        assert!(env.has_symbol(&id("x")));
+    }
+
+    #[test]
+    fn sym_env_get_unknown_sym() {
+        let env = sym_env(vec![]);
+        assert!(env.get_symbol(id("x")).is_err());
+    }
+
+    #[test]
+    fn sym_env_get_existing_sym() {
+        let env = sym_env(vec![Name::sym_str("x")]);
+        assert!(env.get_symbol(id("x")).unwrap().has_sym());
+    }
+
+    #[test]
+    fn sym_env_get_symbolized_name() {
+        let env = sym_env(vec![]);
+        assert!(env.get_symbol(Name::sym_str("x")).unwrap().has_sym());
+    }
+
+    #[test]
+    fn sym_env_set_sym() {
+        let env = sym_env(vec![id("x")]);
+        assert!(!env.get_symbol(id("x")).unwrap().has_sym());
+        let (env, x) = env.set_symbol(id("x"));
+        assert!(env.get_symbol(id("x")).unwrap().has_sym());
+        assert!(x.has_sym());
     }
 
     #[test]
     fn symbolize_unknown_var_fail() {
-        assert!(var("x").symbolize_default().is_err());
+        assert!(var("x", Type::Unknown).symbolize_default().is_err());
     }
 
     #[test]
     fn symbolize_known_var_ok() {
-        let x = name("x");
+        let x = id("x");
         let env = sym_env(vec![x.clone()]);
-        let (_, var) = var("x").symbolize(env).unwrap();
+        let (_, var) = var("x", Type::Unknown).symbolize(env).unwrap();
         if let Expr::Var {id, ..} = var {
             assert_eq!(x, id);
         } else {
@@ -207,10 +232,10 @@ mod test {
 
     #[test]
     fn symbolize_defining_assignment_stmt() {
-        let id = name("x");
+        let id = id("x");
         let i = Info::default();
         let s = Stmt::Assign {
-            dst: nvar(&id), expr: int(0), labels: vec![], i: i.clone()
+            dst: nvar(&id), expr: int(0, Some(ElemSize::I64)), labels: vec![], i: i.clone()
         };
         let env = sym_env(vec![]);
         let (env, stmt) = s.symbolize(env).unwrap();
@@ -225,10 +250,10 @@ mod test {
 
     #[test]
     fn symbolize_reassignment_stmt() {
-        let id = name("x");
+        let id = id("x");
         let i = Info::default();
         let s = Stmt::Assign {
-            dst: nvar(&id), expr: int(0), labels: vec![], i: i.clone()
+            dst: nvar(&id), expr: int(0, Some(ElemSize::I64)), labels: vec![], i: i.clone()
         };
         let id_sym = id.clone().with_new_sym();
         let env = sym_env(vec![id_sym.clone()]);
@@ -244,13 +269,13 @@ mod test {
 
     #[test]
     fn symbolize_for_stmt() {
-        let x = name("x");
-        let y = name("y");
+        let x = id("x");
+        let y = id("y");
         let i = Info::default();
         let s = Stmt::For {
             var: x.clone(),
-            lo: int(0),
-            hi: int(10),
+            lo: int(0, Some(ElemSize::I64)),
+            hi: int(10, Some(ElemSize::I64)),
             step: 1,
             body: vec![Stmt::Assign {
                 dst: nvar(&y), expr: nvar(&x), labels: vec![], i: i.clone()

@@ -53,3 +53,61 @@ pub fn ensure_parallelism(
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::py::ast_builder::*;
+    use crate::utils::info::*;
+
+    fn fun_with_body(body: Vec<Stmt>) -> FunDef {
+        FunDef {
+            id: id("f"),
+            params: vec![],
+            body,
+            res_ty: Type::Void,
+            i: Info::default()
+        }
+    }
+
+    #[test]
+    fn ensure_parallelism_label() {
+        let def = fun_with_body(vec![label("x")]);
+        let p = vec![
+            ("x".to_string(), LoopPar::default())
+        ].into_iter().collect::<BTreeMap<String, LoopPar>>();
+        assert!(ensure_parallelism(&def, &p).is_ok());
+    }
+
+    #[test]
+    fn ensure_parallelism_with_gpu_ctx() {
+        let def = fun_with_body(vec![Stmt::WithGpuContext {
+            body: vec![],
+            i: Info::default()
+        }]);
+        assert!(ensure_parallelism(&def, &BTreeMap::new()).is_ok());
+    }
+
+    #[test]
+    fn ensure_parallelism_labelled_for_loop() {
+        let def = fun_with_body(vec![Stmt::For {
+            var: id("x"),
+            lo: int(0, None),
+            hi: int(10, None),
+            step: 1,
+            body: vec![],
+            labels: vec!["x".to_string()],
+            i: Info::default()
+        }]);
+        let p = vec![
+            ("x".to_string(), LoopPar::default())
+        ].into_iter().collect::<BTreeMap<String, LoopPar>>();
+        assert!(ensure_parallelism(&def, &p).is_ok());
+    }
+
+    #[test]
+    fn ensure_parallelism_fails() {
+        let def = fun_with_body(vec![]);
+        assert!(ensure_parallelism(&def, &BTreeMap::new()).is_err());
+    }
+}

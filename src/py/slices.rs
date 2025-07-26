@@ -117,7 +117,7 @@ fn validate_slices(body: &Vec<Stmt>) -> PyResult<()> {
     body.sfold_result(Ok(()), validate_slices_stmt)
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum ReduceDim {
     One(i64),
     All,
@@ -622,6 +622,42 @@ mod test {
     }
 
     #[test]
+    fn reduce_dim_mapping() {
+        let e = Expr::BinOp {
+            lhs: Box::new(int(1, None)),
+            op: BinOp::Add,
+            rhs: Box::new(int(2, None)),
+            ty: Type::Unknown,
+            i: Info::default()
+        };
+        assert_eq!(find_reduce_dim(&e), ReduceDim::None);
+    }
+
+    #[test]
+    fn reduce_dim_one_dim() {
+        let e = Expr::Builtin {
+            func: Builtin::Prod,
+            args: vec![var("x", shape(vec![10]))],
+            axis: Some(1),
+            ty: Type::Unknown,
+            i: Info::default()
+        };
+        assert_eq!(find_reduce_dim(&e), ReduceDim::One(1));
+    }
+
+    #[test]
+    fn reduce_dim_all() {
+        let e = Expr::Builtin {
+            func: Builtin::Sum,
+            args: vec![var("x", shape(vec![10]))],
+            axis: None,
+            ty: Type::Unknown,
+            i: Info::default()
+        };
+        assert_eq!(find_reduce_dim(&e), ReduceDim::All);
+    }
+
+    #[test]
     fn valid_slices_assignment() {
         let s = assignment(
             subscript(var("x", shape(vec![10])), slice(None, None)),
@@ -670,5 +706,75 @@ mod test {
         assert_eq!(count_slices_expr(0, &rhs), 2);
         let s = assignment(lhs, rhs);
         assert!(validate_slices_stmt((), &s).is_ok());
+    }
+
+    fn find_sym_stmt(s: &Stmt) -> Name {
+        if let Stmt::For {var, ..} = s {
+            var.clone()
+        } else {
+            panic!("Unexpected form of statement")
+        }
+    }
+
+    fn find_sym(def: &Vec<FunDef>) -> Name {
+        find_sym_stmt(&def[0].body[0])
+    }
+
+    #[test]
+    fn replace_slice_with_for_loop() {
+        let fun_def = |body| FunDef {
+            id: id("f"),
+            params: vec![
+                Param {id: id("x"), ty: shape(vec![10]), i: Info::default()}
+            ],
+            body,
+            res_ty: Type::Void,
+            i: Info::default()
+        };
+        let s = vec![fun_def(vec![Stmt::Assign {
+            dst: Expr::Subscript {
+                target: Box::new(var("x", shape(vec![10]))),
+                idx: Box::new(Expr::Slice {
+                    lo: None,
+                    hi: None,
+                    ty: shape(vec![10]),
+                    i: Info::default()
+                }),
+                ty: shape(vec![10]),
+                i: Info::default()
+            },
+            expr: int(1, None),
+            labels: vec![],
+            i: Info::default()
+        }])];
+        let r = replace_slices_with_for_loops(s.clone()).unwrap();
+        let slice_dim_id = find_sym(&r);
+        let expected = vec![fun_def(vec![Stmt::For {
+            var: slice_dim_id.clone(),
+            lo: int(0, None),
+            hi: int(10, None),
+            step: 1,
+            body: vec![
+                assignment(
+                    subscript(
+                        var("x", shape(vec![10])),
+                        binop(
+                            int(0, None),
+                            BinOp::Add,
+                            Expr::Var {
+                                id: slice_dim_id,
+                                ty: scalar(ElemSize::I64),
+                                i: Info::default()
+                            },
+                            scalar(ElemSize::I64)
+                        )
+                    ),
+                    int(1, None)
+                )
+            ],
+            labels: vec![],
+            i: Info::default()
+        }])];
+        assert_eq!(r, expected);
     }
 }

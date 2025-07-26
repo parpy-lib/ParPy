@@ -623,11 +623,10 @@ pub fn to_untyped_ir<'py>(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::py::test::*;
     use crate::py::ast_builder::*;
 
     use pyo3::types::*;
-    use regex::Regex;
-    use std::fmt;
 
     fn parse_str<'py>(
         py: Python<'py>,
@@ -689,18 +688,6 @@ mod test {
             let ast = parse_str_expr(py, s)?;
             assert!(lookup_builtin_expr(&ast, &Info::default()).is_err());
             Ok(())
-        })
-    }
-
-    fn assert_error_matches<T: fmt::Debug>(r: PyResult<T>, pat: &str) {
-        Python::with_gil(|py| {
-            let e = r.unwrap_err();
-            let err_msg = e.value(py).to_string();
-            let re = Regex::new(pat).unwrap();
-            assert!(
-                re.is_match(&err_msg),
-                "Error message \"{0}\" did not match expected pattern \"{1}\".",
-                err_msg, pat);
         })
     }
 
