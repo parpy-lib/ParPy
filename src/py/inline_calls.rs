@@ -49,16 +49,8 @@ fn substitute_variables_expr(e: Expr, sub_map: &BTreeMap<Name, Expr>) -> Expr {
 }
 
 fn substitute_variables_stmt(s: Stmt, sub_map: &BTreeMap<Name, Expr>) -> Stmt {
-    match s {
-        Stmt::Assign {dst, expr, labels, i} => {
-            let expr = substitute_variables_expr(expr, sub_map);
-            Stmt::Assign {dst, expr, labels, i}
-        },
-        _ => {
-            s.smap(|s| substitute_variables_stmt(s, sub_map))
-                .smap(|e| substitute_variables_expr(e, sub_map))
-        }
-    }
+    s.smap(|s| substitute_variables_stmt(s, sub_map))
+        .smap(|e| substitute_variables_expr(e, sub_map))
 }
 
 fn inline_function_calls_stmt<'py>(
@@ -141,8 +133,9 @@ mod test {
     fn sub_vars_lhs() {
         let s = assignment(var("a", Type::Unknown), var("b", Type::Unknown));
         let mut sub_map = BTreeMap::new();
-        sub_map.insert(id("a"), int(1, None));
-        assert_eq!(substitute_variables_stmt(s.clone(), &sub_map), s);
+        sub_map.insert(id("a"), var("c", Type::Unknown));
+        let expected = assignment(var("c", Type::Unknown), var("b", Type::Unknown));
+        assert_eq!(substitute_variables_stmt(s.clone(), &sub_map), expected);
     }
 
     #[test]
