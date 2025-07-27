@@ -1,4 +1,4 @@
-use crate::py::ast::BinOp;
+use crate::utils::ast::{ExprType, BinOp, UnOp};
 use crate::utils::name::Name;
 
 use itertools::Itertools;
@@ -144,7 +144,7 @@ fn parenthesize_if_predicate(
     }
 }
 
-pub fn parenthesize_if_lower_precedence(
+pub fn parenthesize_if_lt_precedence(
     inner_op_opt: Option<BinOp>,
     outer_op: &BinOp,
     s: String
@@ -152,7 +152,7 @@ pub fn parenthesize_if_lower_precedence(
     parenthesize_if_predicate(inner_op_opt, outer_op, s, |p| p == Ordering::Less)
 }
 
-pub fn parenthesize_if_lower_or_same_precedence(
+pub fn parenthesize_if_ge_precedence(
     inner_op_opt: Option<BinOp>,
     outer_op: &BinOp,
     s: String
@@ -160,42 +160,88 @@ pub fn parenthesize_if_lower_or_same_precedence(
     parenthesize_if_predicate(inner_op_opt, outer_op, s, |p| p != Ordering::Greater)
 }
 
-pub fn print_if_condition<'a, E: PrettyPrint + 'a, S: Clone + PrettyPrint + 'a>(
-    env: PrettyPrintEnv,
-    cond: &E,
-    thn: &'a Vec<S>,
-    els: &'a Vec<S>,
-    extract_elseif: impl Fn(Vec<S>) -> Option<(E, Vec<S>, Vec<S>)>
-) -> (PrettyPrintEnv, String) {
-    let indent = env.print_indent();
-    let (env, cond) = cond.pprint(env);
-    let env = env.incr_indent();
-    let (env, thn_str) = pprint_iter(thn.iter(), env, "\n");
-    let (env, thn, els) = match extract_elseif(els.clone()) {
-        Some((elif_cond, elif_thn, elif_els)) => {
-            let (env, elif_cond) = elif_cond.pprint(env);
-            let (env, elif_thn) = pprint_iter(elif_thn.iter(), env, "\n");
-            let s = format!(
-                "{0}\n{1}}} else if ({2}) {{\n{3}",
-                thn_str, indent, elif_cond, elif_thn
-            );
-            (env, s, elif_els)
-        },
-        None => (env, thn_str, els.clone())
-    };
-    let (env, s) = if els.is_empty() {
-        let s = format!("{0}if ({1}) {{\n{2}\n{0}}}", indent, cond, thn);
+pub trait PrettyPrintUnOp<T>: PrettyPrint + ExprType<T> + Sized {
+    fn extract_unop<'a>(&'a self) -> Option<(&'a UnOp, &'a Self)>;
+    fn is_function(op: &UnOp) -> bool;
+    fn print_unop(op: &UnOp, argty: &T) -> String;
+
+    fn print_parenthesized_unop(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let (op, arg) = self.extract_unop().unwrap();
+        let op_str = Self::print_unop(op, arg.get_type());
+        let (env, arg_str) = arg.pprint(env);
+        if Self::is_function(op) {
+            (env, format!("{op_str}({arg_str})"))
+        } else {
+            (env, format!("{op_str}{arg_str}"))
+        }
+    }
+}
+
+pub trait PrettyPrintBinOp<T>: PrettyPrint + ExprType<T> + Sized {
+    fn extract_binop<'a>(&'a self) -> Option<(&'a Self, &'a BinOp, &'a Self, &'a T)>;
+    fn is_infix(op: &BinOp, argty: &T) -> bool;
+    fn print_binop(op: &BinOp, argty: &T, ty: &T) -> String;
+
+    fn try_get_binop<'a>(&'a self) -> Option<BinOp> {
+        if let Some((_, op, _, _)) = self.extract_binop() {
+            Some(op.clone())
+        } else {
+            None
+        }
+    }
+
+    fn print_parenthesized_binop(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let (lhs, op, rhs, ty) = self.extract_binop().unwrap();
+        let argty = lhs.get_type();
+        let (env, lhs_str) = lhs.pprint(env);
+        let op_str = Self::print_binop(op, argty, ty);
+        let (env, rhs_str) = rhs.pprint(env);
+        if Self::is_infix(op, argty) {
+            let lhs_op = lhs.try_get_binop();
+            let rhs_op = rhs.try_get_binop();
+            let lhs_str = parenthesize_if_lt_precedence(lhs_op, &op, lhs_str);
+            let rhs_str = parenthesize_if_ge_precedence(rhs_op, &op, rhs_str);
+            (env, format!("{lhs_str} {op_str} {rhs_str}"))
+        } else {
+            (env, format!("{op_str}({lhs_str}, {rhs_str})"))
+        }
+    }
+}
+
+pub trait PrettyPrintCond<E: PrettyPrint>: PrettyPrint + Sized {
+    fn extract_if<'a>(&'a self) -> Option<(&'a E, &'a Vec<Self>, &'a Vec<Self>)>;
+    fn extract_elseif<'a>(&'a self) -> Option<(&'a E, &'a Vec<Self>, &'a Vec<Self>)>;
+
+    fn print_cond(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let (cond, thn, els) = self.extract_if().unwrap();
+        let indent = env.print_indent();
+        let (env, cond_str) = cond.pprint(env);
+        let env = env.incr_indent();
+        let (env, thn_str) = pprint_iter(thn.iter(), env, "\n");
+        let (env, thn_str, els) = match self.extract_elseif() {
+            Some((elif_cond, elif_thn, elif_els)) => {
+                let (env, elif_cond) = elif_cond.pprint(env);
+                let (env, elif_thn) = pprint_iter(elif_thn.iter(), env, "\n");
+                let s = format!(
+                    "{0}\n{1}}} else if ({2}) {{\n{3}",
+                    thn_str, indent, elif_cond, elif_thn
+                );
+                (env, s, elif_els)
+            },
+            None => (env, thn_str, els)
+        };
+        let (env, s) = if els.is_empty() {
+            (env, format!("{0}if ({1}) {{\n{2}\n{0}}}", indent, cond_str, thn_str))
+        } else {
+            let (env, els_str) = pprint_iter(els.iter(), env, "\n");
+            (env, format!(
+                "{0}if ({1}) {{\n{2}\n{0}}} else {{\n{3}\n{0}}}",
+                indent, cond_str, thn_str, els_str
+            ))
+        };
+        let env = env.decr_indent();
         (env, s)
-    } else {
-        let (env, els) = pprint_iter(els.iter(), env, "\n");
-        let s = format!(
-            "{0}if ({1}) {{\n{2}\n{0}}} else {{\n{3}\n{0}}}",
-            indent, cond, thn, els
-        );
-        (env, s)
-    };
-    let env = env.decr_indent();
-    (env, s)
+    }
 }
 
 #[cfg(test)]
@@ -270,21 +316,21 @@ mod test {
     #[test]
     fn test_print_paren_predicate() {
         let s = "a + b".to_string();
-        let s = parenthesize_if_lower_precedence(Some(BinOp::Add), &BinOp::Mul, s);
+        let s = parenthesize_if_lt_precedence(Some(BinOp::Add), &BinOp::Mul, s);
         assert_eq!(s, "(a + b)");
     }
 
     #[test]
     fn test_no_paren_predicate() {
         let s = "a + b".to_string();
-        let s = parenthesize_if_lower_precedence(Some(BinOp::Add), &BinOp::Add, s);
+        let s = parenthesize_if_lt_precedence(Some(BinOp::Add), &BinOp::Add, s);
         assert_eq!(s, "a + b");
     }
 
     #[test]
     fn test_paren_predicate_same_precedence() {
         let s = "a + b".to_string();
-        let s = parenthesize_if_lower_or_same_precedence(Some(BinOp::Add), &BinOp::Add, s);
+        let s = parenthesize_if_ge_precedence(Some(BinOp::Add), &BinOp::Add, s);
         assert_eq!(s, "(a + b)");
     }
 }

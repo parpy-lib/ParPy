@@ -1,5 +1,4 @@
 use super::ast::*;
-use super::pprint;
 use crate::option;
 use crate::prickle_compile_error;
 use crate::prickle_internal_error;
@@ -7,7 +6,7 @@ use crate::utils::reduce;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::utils::pprint::PrettyPrint;
+use crate::utils::pprint::*;
 use crate::utils::smap::SMapAccum;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -146,7 +145,7 @@ fn reduction_op_neutral_element(
     match reduce::neutral_element(op, sz, &i) {
         Some(literal) => Ok(literal),
         None => {
-            let op = pprint::print_binop(op);
+            let op = Expr::print_binop(op, &Type::Void, &Type::Void);
             prickle_compile_error!(i, "Parallel reductions not supported for operator {op}.")
         },
     }

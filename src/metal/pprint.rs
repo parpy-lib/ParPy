@@ -4,8 +4,6 @@ use crate::utils::pprint::*;
 
 use itertools::Itertools;
 
-use std::borrow::Borrow;
-
 impl PrettyPrint for MemSpace {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
@@ -42,62 +40,83 @@ impl PrettyPrint for Type {
     }
 }
 
-pub fn print_unop(op: &UnOp) -> String {
-    let s = match op {
-        UnOp::Sub => "-",
-        UnOp::Not => "!",
-        UnOp::BitNeg => "~",
-        UnOp::Addressof => "&",
-        UnOp::Exp => "metal::exp",
-        UnOp::Log => "metal::log",
-        UnOp::Cos => "metal::cos",
-        UnOp::Sin => "metal::sin",
-        UnOp::Sqrt => "metal::sqrt",
-        UnOp::Tanh => "metal::tanh",
-        UnOp::Abs => "metal::abs",
-    };
-    s.to_string()
-}
+impl PrettyPrintUnOp<Type> for Expr {
+    fn extract_unop<'a>(&'a self) -> Option<(&'a UnOp, &'a Expr)> {
+        if let Expr::UnOp {op, arg, ..} = self {
+            Some((op, arg))
+        } else {
+            None
+        }
+    }
 
-pub fn print_binop(op: &BinOp) -> String {
-    let s = match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::FloorDiv | BinOp::Div => "/",
-        BinOp::Rem => "%",
-        BinOp::Pow => "metal::pow",
-        BinOp::And => "&&",
-        BinOp::Or => "||",
-        BinOp::BitAnd => "&",
-        BinOp::BitOr => "|",
-        BinOp::BitXor => "^",
-        BinOp::BitShl => "<<",
-        BinOp::BitShr => ">>",
-        BinOp::Eq => "==",
-        BinOp::Neq => "!=",
-        BinOp::Leq => "<=",
-        BinOp::Geq => ">=",
-        BinOp::Lt => "<",
-        BinOp::Gt => ">",
-        BinOp::Max => "metal::max",
-        BinOp::Min => "metal::min",
-        BinOp::Atan2 => "metal::atan2",
-    };
-    s.to_string()
-}
+    fn is_function(op: &UnOp) -> bool {
+        match op {
+            UnOp::Sub | UnOp::Not | UnOp::BitNeg | UnOp::Addressof => false,
+            UnOp::Exp | UnOp::Log | UnOp::Cos | UnOp::Sin | UnOp::Sqrt |
+            UnOp::Tanh | UnOp::Abs => true,
+        }
+    }
 
-fn try_get_binop(e: &Box<Expr>) -> Option<BinOp> {
-    match e.borrow() {
-        Expr::BinOp {op, ..} => Some(op.clone()),
-        _ => None
+    fn print_unop(op: &UnOp, _argty: &Type) -> String {
+        let s = match op {
+            UnOp::Sub => "-",
+            UnOp::Not => "!",
+            UnOp::BitNeg => "~",
+            UnOp::Addressof => "&",
+            UnOp::Exp => "metal::exp",
+            UnOp::Log => "metal::log",
+            UnOp::Cos => "metal::cos",
+            UnOp::Sin => "metal::sin",
+            UnOp::Sqrt => "metal::sqrt",
+            UnOp::Tanh => "metal::tanh",
+            UnOp::Abs => "metal::abs",
+        };
+        s.to_string()
     }
 }
 
-fn is_infix(op: &BinOp) -> bool {
-    match op {
-        BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => false,
-        _ => true
+impl PrettyPrintBinOp<Type> for Expr {
+    fn extract_binop<'a>(&'a self) -> Option<(&'a Expr, &'a BinOp, &'a Expr, &'a Type)> {
+        if let Expr::BinOp {lhs, op, rhs, ty, ..} = self {
+            Some((lhs, op, rhs, ty))
+        } else {
+            None
+        }
+    }
+
+    fn is_infix(op: &BinOp, _argty: &Type) -> bool {
+        match op {
+            BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => false,
+            _ => true
+        }
+    }
+
+    fn print_binop(op: &BinOp, _argty: &Type, _ty: &Type) -> String {
+        let s = match op {
+            BinOp::Add => "+",
+            BinOp::Sub => "-",
+            BinOp::Mul => "*",
+            BinOp::FloorDiv | BinOp::Div => "/",
+            BinOp::Rem => "%",
+            BinOp::Pow => "metal::pow",
+            BinOp::And => "&&",
+            BinOp::Or => "||",
+            BinOp::BitAnd => "&",
+            BinOp::BitOr => "|",
+            BinOp::BitXor => "^",
+            BinOp::BitShl => "<<",
+            BinOp::BitShr => ">>",
+            BinOp::Eq => "==",
+            BinOp::Neq => "!=",
+            BinOp::Leq => "<=",
+            BinOp::Geq => ">=",
+            BinOp::Lt => "<",
+            BinOp::Gt => ">",
+            BinOp::Max => "metal::max",
+            BinOp::Min => "metal::min",
+            BinOp::Atan2 => "metal::atan2",
+        };
+        s.to_string()
     }
 }
 
@@ -115,25 +134,8 @@ impl PrettyPrint for Expr {
                 };
                 print_float(env, v, s)
             },
-            Expr::UnOp {op, arg, ..} => {
-                let op_str = print_unop(&op);
-                let (env, arg_str) = arg.pprint(env);
-                (env, format!("{op_str}({arg_str})"))
-            },
-            Expr::BinOp {lhs, op, rhs, ..} => {
-                let (env, lhs_str) = lhs.pprint(env);
-                let op_str = print_binop(&op);
-                let (env, rhs_str) = rhs.pprint(env);
-                if is_infix(&op) {
-                    let lhs_op = try_get_binop(lhs);
-                    let rhs_op = try_get_binop(rhs);
-                    let lhs_str = parenthesize_if_lower_precedence(lhs_op, &op, lhs_str);
-                    let rhs_str = parenthesize_if_lower_or_same_precedence(rhs_op, &op, rhs_str);
-                    (env, format!("{lhs_str} {op_str} {rhs_str}"))
-                } else {
-                    (env, format!("{op_str}({lhs_str}, {rhs_str})"))
-                }
-            },
+            Expr::UnOp {..} => self.print_parenthesized_unop(env),
+            Expr::BinOp {..} => self.print_parenthesized_binop(env),
             Expr::Ternary {cond, thn, els, ..} => {
                 let (env, cond) = cond.pprint(env);
                 let (env, thn) = thn.pprint(env);
@@ -182,7 +184,7 @@ impl PrettyPrint for Expr {
                 let (env, e) = e.pprint(env);
                 (env, format!("{e}.{label}"))
             },
-            Expr::SimdOp {op, arg, i, ..} => {
+            Expr::SimdOp {op, arg, ty, i} => {
                 let (env, arg) = arg.pprint(env);
                 let fun_str = match op {
                     BinOp::Add => "metal::simd_sum",
@@ -190,7 +192,7 @@ impl PrettyPrint for Expr {
                     BinOp::Max => "metal::simd_max",
                     BinOp::Min => "metal::simd_min",
                     _ => {
-                        let op = print_binop(op);
+                        let op = Expr::print_binop(op, &ty, &ty);
                         let msg = format!("Reduction on unsupported binary operation {op}");
                         panic!("{}", i.error_msg(msg))
                     }
@@ -207,6 +209,28 @@ impl PrettyPrint for Expr {
                 let (env, dim) = dim.pprint(env);
                 (env, format!("<blockIdx.{dim}>"))
             },
+        }
+    }
+}
+
+impl PrettyPrintCond<Expr> for Stmt {
+    fn extract_if<'a>(&'a self) -> Option<(&'a Expr, &'a Vec<Stmt>, &'a Vec<Stmt>)> {
+        if let Stmt::If {cond, thn, els} = self {
+            Some((cond, thn, els))
+        } else {
+            None
+        }
+    }
+
+    fn extract_elseif<'a>(&'a self) -> Option<(&'a Expr, &'a Vec<Stmt>, &'a Vec<Stmt>)> {
+        if let Stmt::If {els: outer_els, ..} = self {
+            if let [Stmt::If {cond, thn, els}] = &outer_els[..] {
+                Some((cond, thn, els))
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
 }
@@ -241,17 +265,7 @@ impl PrettyPrint for Stmt {
                 );
                 (env, s)
             },
-            Stmt::If {cond, thn, els} => {
-                let f = |els: Vec<Stmt>| {
-                    match &els[..] {
-                        [Stmt::If {cond, thn, els}] if !thn.is_empty() => {
-                            Some((cond.clone(), thn.clone(), els.clone()))
-                        },
-                        _ => None
-                    }
-                };
-                print_if_condition(env, cond, thn, els, f)
-            },
+            Stmt::If {..} => self.print_cond(env),
             Stmt::While {cond, body} => {
                 let (env, cond) = cond.pprint(env);
                 let env = env.incr_indent();
