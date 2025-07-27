@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#define prickle_check_error(e) if (e != 0) return 1;
+#define prickle_metal_check_error(e) if (e != 0) return 1;
 
 // Functions used by the Parir library when initializing, synchronizing with
 // running GPU code, and operating on buffers.
@@ -15,6 +15,7 @@ extern "C" MTL::Buffer *prickle_alloc_buffer(int64_t);
 extern "C" void *prickle_ptr_buffer(MTL::Buffer*);
 extern "C" void prickle_memcpy(void*, void*, int64_t);
 extern "C" void prickle_free_buffer(MTL::Buffer*);
+extern "C" const char *prickle_get_error_message();
 
 // The below functions are to be used in the generated kernel code from C++. We
 // wrap these in a namespace to avoid risk of name conflicts.
@@ -31,9 +32,4 @@ namespace prickle_metal {
       int64_t, int64_t, int64_t);
   void submit_work();
   void sync();
-}
-
-extern "C"
-const char *prickle_get_error_message() {
-  return prickle_metal::error_message;
 }

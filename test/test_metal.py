@@ -31,3 +31,19 @@ def test_metal_no_parallelism(backend):
     with pytest.raises(RuntimeError) as e_info:
         code = prickle.print_compiled(sum_elems_per_row, [x, y, N], opts)
     assert e_info.match(r".*Assignments are not allowed outside parallel code.*")
+
+def test_metal_catch_runtime_error():
+    code = """
+#include "prickle_metal.h"
+extern "C"
+int32_t f() {
+    MTL::Buffer *buf;
+    prickle_metal_check_error(prickle_metal::alloc(&buf, -1));
+    return 0;
+}
+    """
+    with pytest.raises(RuntimeError) as e_info:
+        opts = par_opts(prickle.CompileBackend.Metal, {})
+        fn = prickle.compile_string("f", code, opts)
+        fn()
+    assert e_info.match(r"Buffer allocation failed")

@@ -47,6 +47,10 @@ extern "C" void prickle_free_buffer(MTL::Buffer *buf) {
   buf->release();
 }
 
+extern "C" const char *prickle_get_error_message() {
+  return prickle_metal::error_message;
+}
+
 namespace prickle_metal {
   MTL::Library *load_library(const char *lib_str) {
     NS::String *code = NS::String::string(lib_str, NS::ASCIIStringEncoding);
@@ -71,7 +75,11 @@ namespace prickle_metal {
 
   int32_t alloc(MTL::Buffer **buf, int64_t nbytes) {
     *buf = prickle_alloc_buffer(nbytes);
-    return *buf == nullptr;
+    if (*buf == nullptr) {
+      prickle_metal::error_message = "Buffer allocation failed";
+      return 1;
+    }
+    return 0;
   }
 
   void free(MTL::Buffer *b) {

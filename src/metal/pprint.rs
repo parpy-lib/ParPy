@@ -318,7 +318,7 @@ impl PrettyPrint for Stmt {
             },
             Stmt::CheckError {e} => {
                 let (env, e) = e.pprint(env);
-                (env, format!("{indent}prickle_check_error({e});"))
+                (env, format!("{indent}prickle_metal_check_error({e});"))
             },
         }
     }
