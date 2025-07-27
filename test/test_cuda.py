@@ -92,3 +92,20 @@ def test_cuda_graph_runs_correctly():
         fn(x, y2, 20)
         assert np.allclose(y1, y2)
     run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
+
+def test_cuda_catch_runtime_error():
+    def helper():
+        code = """
+#include "prickle_cuda.h"
+extern "C"
+int32_t f() {
+    float *y;
+    prickle_cuda_check_error(cudaMalloc(&y, -1));
+    return 0;
+}
+        """
+        fn = prickle.compile_string("f", code, prickle.CompileOptions())
+        with pytest.raises(RuntimeError) as e_info:
+            fn()
+        assert e_info.match(r"out of memory")
+    run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
