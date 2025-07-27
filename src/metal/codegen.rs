@@ -270,10 +270,10 @@ fn from_gpu_ir_param(
 
 fn from_gpu_ir_attr(
     attr: gpu_ast::KernelAttribute
-) -> CompileResult<KernelAttribute> {
+) -> CompileResult<FunAttribute> {
     match attr {
         gpu_ast::KernelAttribute::LaunchBounds {threads} => {
-            Ok(KernelAttribute::LaunchBounds {threads})
+            Ok(FunAttribute::LaunchBounds {threads})
         },
         gpu_ast::KernelAttribute::ClusterDims {..} => {
             prickle_internal_error!(Info::default(), "Found unsupported cluster dimension \
@@ -288,13 +288,15 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
             let env = CodegenEnv::new(&gpu_ast::Target::Device);
             let attrs = attrs.into_iter()
                 .map(from_gpu_ir_attr)
-                .collect::<CompileResult<Vec<KernelAttribute>>>()?;
+                .collect::<CompileResult<Vec<FunAttribute>>>()?;
             let params = params.into_iter()
                 .enumerate()
                 .map(|(idx, p)| from_gpu_ir_param(&env, p, Some(idx as i64)))
                 .collect::<CompileResult<Vec<Param>>>()?;
             let body = from_gpu_ir_stmts(&env, body)?;
-            acc.metal.push(Top::KernelDef {attrs, id, params, body});
+            acc.metal.push(Top::FunDef {
+                attrs, is_kernel: true, ret_ty: Type::Void, id, params, body
+            });
             Ok(acc)
         },
         gpu_ast::Top::FunDef {ret_ty, id, params, body, target} => {
@@ -308,9 +310,14 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
                 let tail_ret = body.pop().unwrap();
                 body.push(Stmt::SubmitWork);
                 body.push(tail_ret);
-                acc.host.push(Top::FunDef {ret_ty, id, params, body});
+                let attrs = vec![FunAttribute::ExternC];
+                acc.host.push(Top::FunDef {
+                    attrs, is_kernel: false, ret_ty, id, params, body
+                });
             } else {
-                acc.metal.push(Top::FunDef {ret_ty, id, params, body});
+                acc.metal.push(Top::FunDef {
+                    attrs: vec![], is_kernel: false, ret_ty, id, params, body
+                });
             };
             Ok(acc)
         },
@@ -373,7 +380,7 @@ fn update_grid_index_references_in_kernel_body(
 
 fn add_grid_index_arguments_to_kernels_top(t: Top) -> Top {
     match t {
-        Top::KernelDef {attrs, id, mut params, body} => {
+        Top::FunDef {attrs, is_kernel: true, ret_ty, id, mut params, body} => {
             let thread_idx_id = Name::sym_str("thread_idx");
             let block_idx_id = Name::sym_str("block_idx");
             let ids = GridIds {
@@ -389,7 +396,7 @@ fn add_grid_index_arguments_to_kernels_top(t: Top) -> Top {
                 id: block_idx_id.clone(), ty: Type::Uint3,
                 attr: Some(ParamAttribute::BlockIndex)
             });
-            Top::KernelDef {attrs, id, params, body}
+            Top::FunDef {attrs, is_kernel: true, ret_ty, id, params, body}
         },
         _ => t
     }
@@ -400,14 +407,44 @@ fn add_grid_index_arguments_to_kernels(mut tops: TopsAcc) -> TopsAcc {
     tops
 }
 
+fn add_top_kernel_def(mut acc: Vec<Top>, t: &Top, lib_id: &Name) -> Vec<Top> {
+    if let Top::FunDef {is_kernel: true, id, ..} = t {
+        let get_fun_expr = Expr::GetFun {
+            lib: lib_id.clone(), fun_id: id.clone(), ty: Type::Function,
+            i: Info::default()
+        };
+        acc.push(Top::VarDef {
+            ty: Type::Function, id: id.clone(), init: Some(get_fun_expr)
+        });
+    }
+    acc
+}
+
+fn add_top_kernel_defs(acc: Vec<Top>, tops: &Vec<Top>, lib_id: &Name) -> Vec<Top> {
+    tops.sfold(acc, |acc, t| add_top_kernel_def(acc, t, lib_id))
+}
+
+fn generate_kernel_library_top(lib_id: Name, tops: Vec<Top>) -> Top {
+    Top::VarDef {
+        ty: Type::Library, id: lib_id,
+        init: Some(Expr::LoadLibrary {tops, ty: Type::Library, i: Info::default()})
+    }
+}
+
 pub fn from_gpu_ir(ast: gpu_ast::Ast) -> CompileResult<Ast> {
-    let includes = vec!["\"prickle_metal.h\"".to_string()];
-    let tops_init = Ok(TopsAcc::default());
-    let tops = ast.sfold_owned_result(tops_init, from_gpu_ir_top)?;
-    let tops = add_grid_index_arguments_to_kernels(tops);
-    Ok(Ast {
-        includes,
-        metal_tops: tops.metal,
-        host_tops: tops.host
-    })
+    let mut tops = vec![
+        Top::Include {header: "\"prickle_metal.h\"".to_string()}
+    ];
+    let acc = Ok(TopsAcc::default());
+    let acc = ast.sfold_owned_result(acc, from_gpu_ir_top)?;
+    let mut acc = add_grid_index_arguments_to_kernels(acc);
+
+    let lib_id = Name::sym_str("lib");
+    let mut fun_defs = add_top_kernel_defs(vec![], &acc.metal, &lib_id);
+    let kernel_lib_def = generate_kernel_library_top(lib_id, acc.metal);
+
+    tops.push(kernel_lib_def);
+    tops.append(&mut fun_defs);
+    tops.append(&mut acc.host);
+    Ok(Ast {tops})
 }

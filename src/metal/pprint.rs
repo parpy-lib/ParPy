@@ -35,6 +35,8 @@ impl PrettyPrint for Type {
                 (env, format!("{mem} {ty}*"))
             },
             Type::Buffer => (env, "MTL::Buffer*".to_string()),
+            Type::Function => (env, "MTL::Function*".to_string()),
+            Type::Library => (env, "MTL::Library*".to_string()),
             Type::Uint3 => (env, "uint3".to_string()),
         }
     }
@@ -207,6 +209,21 @@ impl PrettyPrint for Expr {
             // users defining variables with the same name.
             Expr::ThreadIdx {..} => panic!("Thread index should have been eliminated"),
             Expr::BlockIdx {..} => panic!("Block index should have been eliminated"),
+            Expr::GetFun {lib, fun_id, ..} => {
+                let (env, lib) = lib.pprint(env);
+                let (env, fun_id) = fun_id.pprint(env);
+                (env, format!("prickle_metal::get_fun({lib}, \"{fun_id}\")"))
+            },
+            Expr::LoadLibrary {tops, ..} => {
+                // The library code is included as a string literal. We escape the end of each line
+                // with a newline to get proper errors of the generated Metal code. We also add a
+                // backslash as required for multi-line string literals.
+                let (env, tops) = pprint_iter(tops.iter(), env, "\n");
+                let tops = tops.lines()
+                    .map(|l| format!("{l}\\n\\"))
+                    .join("\n");
+                (env, format!("prickle_metal::load_library(\"\\\n{tops}\n\")"))
+            },
         }
     }
 }
@@ -333,117 +350,52 @@ impl PrettyPrint for Param {
     }
 }
 
-impl PrettyPrint for KernelAttribute {
+impl PrettyPrint for FunAttribute {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
-            KernelAttribute::LaunchBounds {threads} => {
+            FunAttribute::LaunchBounds {threads} => {
                 (env, format!("[[max_total_threads_per_threadgroup({threads})]]"))
+            },
+            FunAttribute::ExternC => {
+                (env, format!("extern \"C\""))
             },
         }
     }
 }
 
-fn pprint_metal_top(env: PrettyPrintEnv, t: &Top) -> (PrettyPrintEnv, String) {
-    match t {
-        Top::KernelDef {attrs, id, params, body} => {
-            let (env, id) = id.pprint(env);
-            let (env, attrs) = pprint_iter(attrs.iter(), env, "\n");
-            let env = env.incr_indent();
-            let (env, params) = pprint_iter(params.iter(), env, ",\n");
-            let (env, body) = pprint_iter(body.iter(), env, "\n");
-            let env = env.decr_indent();
-            (env, format!("{attrs}\nkernel void {id}(\n{params}\n) {{\n{body}\n}}"))
-        },
-        Top::FunDef {ret_ty, id, params, body} => {
-            let (env, ret_ty) = ret_ty.pprint(env);
-            let (env, id) = id.pprint(env);
-            let env = env.incr_indent();
-            let (env, params) = pprint_iter(params.iter(), env, ",\n");
-            let (env, body) = pprint_iter(body.iter(), env, "\n");
-            let env = env.decr_indent();
-            (env, format!("{ret_ty} {id}(\n{params}\n) {{\n{body}\n}}"))
-        },
-    }
-}
-
-fn pprint_host_top(env: PrettyPrintEnv, t: &Top) -> (PrettyPrintEnv, String) {
-    match t {
-        Top::KernelDef {id, ..} => panic!("Found definition of kernel {id} in host code"),
-        Top::FunDef {ret_ty, id, params, body} => {
-            let (env, ret_ty) = ret_ty.pprint(env);
-            let (env, id) = id.pprint(env);
-            let (env, params) = pprint_iter(params.iter(), env, ",\n");
-            let env = env.incr_indent();
-            let (env, body) = pprint_iter(body.iter(), env, "\n");
-            let env = env.decr_indent();
-            (env, format!("extern \"C\" {ret_ty} {id}(\n{params}\n) {{\n{body}\n}}"))
-        },
-    }
-}
-
-fn pprint_tops(
-    env: PrettyPrintEnv,
-    tops: &Vec<Top>,
-    pptop: impl Fn(PrettyPrintEnv, &Top) -> (PrettyPrintEnv, String)
-) -> (PrettyPrintEnv, String) {
-    let (env, strs) = tops.iter()
-        .fold((env, vec![]), |(env, mut strs), t| {
-            let (env, s) = pptop(env, t);
-            strs.push(s);
-            (env, strs)
-        });
-    (env, strs.into_iter().join("\n"))
-}
-
-fn pprint_metal_tops(env: PrettyPrintEnv, tops: &Vec<Top>) -> (PrettyPrintEnv, String) {
-    pprint_tops(env, tops, pprint_metal_top)
-}
-
-fn pprint_host_tops(env: PrettyPrintEnv, tops: &Vec<Top>) -> (PrettyPrintEnv, String) {
-    pprint_tops(env, tops, pprint_host_top)
-}
-
-fn generate_metal_kernel_function_definitions(
-    env: PrettyPrintEnv, metal_tops: &Vec<Top>
-) -> (PrettyPrintEnv, String) {
-    let (env, tops) = metal_tops.iter()
-        .fold((env, vec![]), |(env, mut strs), t| {
-            let env = if let Top::KernelDef {id, ..} = t {
+impl PrettyPrint for Top {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        match self {
+            Top::Include {header} => (env, format!("#include {header}")),
+            Top::VarDef {ty, id, init} => {
+                let (env, ty) = ty.pprint(env);
                 let (env, id) = id.pprint(env);
-                let s = format!("MTL::Function* {id} = prickle_metal::get_fun(lib, \"{id}\");");
-                strs.push(s);
-                env
-            } else {
-                env
-            };
-            (env, strs)
-        });
-    (env, tops.into_iter().join("\n"))
-}
-
-// Adds a backslash at the end of each line of the given string. This is required for the C++
-// compiler to consider a multi-line string valid.
-fn add_backslash_at_end_of_line(s: String) -> String {
-    s.lines()
-        .map(|l| format!("{l}\\n\\"))
-        .join("\n")
+                let (env, init) = if let Some(e) = init {
+                    let (env, e) = e.pprint(env);
+                    (env, format!(" = {e}"))
+                } else {
+                    (env, "".to_string())
+                };
+                (env, format!("{ty} {id}{init};"))
+            },
+            Top::FunDef {attrs, is_kernel, ret_ty, id, params, body} => {
+                let (env, attrs) = pprint_iter(attrs.iter(), env, "\n");
+                let (env, ret_ty) = ret_ty.pprint(env);
+                let (env, id) = id.pprint(env);
+                let env = env.incr_indent();
+                let (env, params) = pprint_iter(params.iter(), env, ",\n");
+                let (env, body) = pprint_iter(body.iter(), env, "\n");
+                let env = env.decr_indent();
+                let kernel_attr = if *is_kernel { "kernel " } else { "" }.to_string();
+                (env, format!("{attrs}\n{kernel_attr}{ret_ty} {id}(\n{params}\n) {{\n{body}\n}}"))
+            },
+        }
+    }
 }
 
 impl PrettyPrint for Ast {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Ast {includes, metal_tops, host_tops} = self;
-        let includes = includes.iter()
-            .map(|s| format!("#include {s}"))
-            .join("\n");
-        let (env, metal_tops_str) = pprint_metal_tops(env, metal_tops);
-        let metal_tops_str = add_backslash_at_end_of_line(metal_tops_str);
-        let (env, host_tops_str) = pprint_host_tops(env, host_tops);
-        let (env, metal_fun_defs) = generate_metal_kernel_function_definitions(env, metal_tops);
-        (env, format!("\
-            {includes}\n\
-            MTL::Library* lib = prickle_metal::load_library(\"\\\n{metal_tops_str}\n\");\n\
-            {metal_fun_defs}\n\
-            {host_tops_str}"))
+        pprint_iter(self.tops.iter(), env, "\n")
     }
 }
 

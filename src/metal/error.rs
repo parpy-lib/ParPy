@@ -15,17 +15,15 @@ fn add_error_handling_stmt(s: Stmt) -> Stmt {
 
 fn add_error_handling_top(t: Top) -> Top {
     match t {
-        Top::FunDef {ret_ty, id, params, body} => {
+        Top::FunDef {attrs, is_kernel: false, ret_ty, id, params, body} => {
             let body = body.smap(add_error_handling_stmt);
-            Top::FunDef {ret_ty, id, params, body}
+            Top::FunDef {attrs, is_kernel: false, ret_ty, id, params, body}
         },
         _ => t
     }
 }
 
 pub fn add_error_handling(mut ast: Ast) -> Ast {
-    ast.host_tops = ast.host_tops.into_iter()
-        .map(add_error_handling_top)
-        .collect::<Vec<Top>>();
+    ast.tops = ast.tops.smap(add_error_handling_top);
     ast
 }

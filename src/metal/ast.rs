@@ -23,6 +23,8 @@ pub enum Type {
 
     // Metal-specific types
     Buffer,
+    Function,
+    Library,
     Uint3,
 }
 
@@ -63,6 +65,8 @@ pub enum Expr {
     SimdOp {op: SimdOp, arg: Box<Expr>, ty: Type, i: Info},
     ThreadIdx {dim: Dim, ty: Type, i: Info},
     BlockIdx {dim: Dim, ty: Type, i: Info},
+    GetFun {lib: Name, fun_id: Name, ty: Type, i: Info},
+    LoadLibrary {tops: Vec<Top>, ty: Type, i: Info},
 }
 
 impl ExprType<Type> for Expr {
@@ -85,6 +89,8 @@ impl ExprType<Type> for Expr {
             Expr::SimdOp {ty, ..} => ty,
             Expr::ThreadIdx {ty, ..} => ty,
             Expr::BlockIdx {ty, ..} => ty,
+            Expr::GetFun {ty, ..} => ty,
+            Expr::LoadLibrary {ty, ..} => ty,
         }
     }
 
@@ -118,6 +124,8 @@ impl InfoNode for Expr {
             Expr::SimdOp {i, ..} => i.clone(),
             Expr::ThreadIdx {i, ..} => i.clone(),
             Expr::BlockIdx {i, ..} => i.clone(),
+            Expr::GetFun {i, ..} => i.clone(),
+            Expr::LoadLibrary {i, ..} => i.clone(),
         }
     }
 }
@@ -181,7 +189,8 @@ impl SMapAccum<Expr> for Expr {
                 Ok((acc, Expr::SimdOp {op, arg: Box::new(arg), ty, i}))
             },
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
-            Expr::AllocDevice {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => {
+            Expr::AllocDevice {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} |
+            Expr::GetFun {..} | Expr::LoadLibrary {..} => {
                 Ok((acc?, self))
             }
         }
@@ -324,33 +333,35 @@ impl SFlatten<Stmt> for Stmt {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ParamAttribute {
     Buffer {idx: i64},
     ThreadIndex, BlockIndex
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Param {
     pub id: Name,
     pub ty: Type,
     pub attr: Option<ParamAttribute>
 }
 
-#[derive(Clone, Debug)]
-pub enum KernelAttribute {
+#[derive(Clone, Debug, PartialEq)]
+pub enum FunAttribute {
     LaunchBounds {threads: i64},
+    ExternC,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Top {
-    KernelDef {attrs: Vec<KernelAttribute>, id: Name, params: Vec<Param>, body: Vec<Stmt>},
-    FunDef {ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>},
+    Include {header: String},
+    VarDef {ty: Type, id: Name, init: Option<Expr>},
+    FunDef {
+        attrs: Vec<FunAttribute>, is_kernel: bool, ret_ty: Type, id: Name,
+        params: Vec<Param>, body: Vec<Stmt>
+    },
 }
 
-#[derive(Clone, Debug)]
 pub struct Ast {
-    pub includes: Vec<String>,
-    pub metal_tops: Vec<Top>,
-    pub host_tops: Vec<Top>
+    pub tops: Vec<Top>
 }
