@@ -38,3 +38,21 @@ pub fn from_python(
     let ast = constant_fold::fold(ast);
     Ok(ast)
 }
+
+#[cfg(test)]
+mod test {
+    use crate::utils::err::*;
+
+    use regex::Regex;
+    use std::fmt;
+
+    pub fn assert_error_matches<T: fmt::Debug>(r: CompileResult<T>, pat: &str) {
+        let err_msg = format!("{}", r.unwrap_err());
+        let re = Regex::new(pat).unwrap();
+        assert!(
+            re.is_match(&err_msg),
+            "Error message \"{0}\" did not match expected pattern \"{1}\".",
+            err_msg, pat
+        );
+    }
+}

@@ -69,7 +69,7 @@ impl CFType for Type {
     }
 }
 
-fn fold_expr(e: Expr) -> Expr {
+pub fn fold_expr(e: Expr) -> Expr {
     match e {
         Expr::UnOp {op, arg, ty, i} => {
             let arg = fold_expr(*arg);
@@ -122,94 +122,98 @@ mod test {
 
     #[test]
     fn add() {
-        let e = binop(int(2), BinOp::Add, int(3), None);
-        assert_eq!(cf(&e), int(5));
+        let e = binop(int(2, None), BinOp::Add, int(3, None), None);
+        assert_eq!(cf(&e), int(5, None));
     }
 
     #[test]
     fn nested_sub_mul() {
-        let e = binop(binop(int(4), BinOp::Sub, int(1), None), BinOp::Mul, int(2), None);
-        assert_eq!(cf(&e), int(6));
+        let e = binop(
+            binop(int(4, None), BinOp::Sub, int(1, None), None),
+            BinOp::Mul, int(2, None), None
+        );
+        assert_eq!(cf(&e), int(6, None));
     }
 
     #[test]
     fn float_sub() {
-        let e = binop(float(2.5), BinOp::Sub, float(1.5), None);
-        assert_eq!(cf(&e), float(1.0));
+        let e = binop(float(2.5, None), BinOp::Sub, float(1.5, None), None);
+        assert_eq!(cf(&e), float(1.0, None));
     }
 
     #[test]
     fn unary_sub() {
-        let e = unop(UnOp::Sub, float(2.5));
-        assert_eq!(cf(&e), float(-2.5));
+        let e = unop(UnOp::Sub, float(2.5, None));
+        assert_eq!(cf(&e), float(-2.5, None));
     }
 
     #[test]
     fn exp_sub() {
-        let e = unop(UnOp::Exp, binop(float(2.5), BinOp::Sub, float(2.5), None));
-        assert_eq!(cf(&e), float(1.0));
+        let e = unop(UnOp::Exp, binop(float(2.5, None), BinOp::Sub, float(2.5, None), None));
+        assert_eq!(cf(&e), float(1.0, None));
     }
 
     #[test]
     fn int_equality() {
-        let e = binop(int(2), BinOp::Eq, int(3), Some(bool_ty()));
+        let e = binop(int(2, None), BinOp::Eq, int(3, None), Some(bool_ty()));
         assert_eq!(cf(&e), bool_expr(false));
     }
 
     #[test]
     fn float_lt() {
-        let e = binop(float(1.5), BinOp::Lt, float(2.5), Some(bool_ty()));
+        let e = binop(float(1.5, None), BinOp::Lt, float(2.5, None), Some(bool_ty()));
         assert_eq!(cf(&e), bool_expr(true));
     }
 
     #[test]
     fn div_by_zero_untouched() {
-        let e = binop(int(3), BinOp::Div, int(0), None);
+        let e = binop(int(3, None), BinOp::Div, int(0, None), None);
         assert_eq!(cf(&e), e);
     }
 
     #[test]
     fn log_zero_untouched() {
-        let e = unop(UnOp::Log, float(0.0));
+        let e = unop(UnOp::Log, float(0.0, None));
         assert_eq!(cf(&e), e);
     }
 
     #[test]
     fn invalid_types_untouched() {
-        let e = binop(int(2), BinOp::Add, float(3.0), None);
+        let e = binop(int(2, None), BinOp::Add, float(3.0, None), None);
         assert_eq!(cf(&e), e);
     }
 
     #[test]
     fn convert_float32_inf() {
-        let float32 = Type::Tensor {sz: ElemSize::F32, shape: vec![]};
         let e = Expr::Convert {
-            e: Box::new(float(f64::INFINITY)),
-            ty: float32.clone()
+            e: Box::new(float(f64::INFINITY, Some(ElemSize::F32))),
+            ty: scalar(ElemSize::F32)
         };
-        assert_eq!(cf(&e), float_with_ty(f64::INFINITY, Some(float32)));
+        assert_eq!(cf(&e), float(f64::INFINITY, Some(ElemSize::F32)));
     }
 
     #[test]
     fn convert_float32_neginf() {
-        let float32 = Type::Tensor {sz: ElemSize::F32, shape: vec![]};
         let e = Expr::Convert {
-            e: Box::new(float(-f64::INFINITY)),
-            ty: float32.clone()
+            e: Box::new(float(-f64::INFINITY, Some(ElemSize::F32))),
+            ty: scalar(ElemSize::F32)
         };
-        assert_eq!(cf(&e), float_with_ty(-f64::INFINITY, Some(float32)));
+        assert_eq!(cf(&e), float(-f64::INFINITY, Some(ElemSize::F32)));
     }
 
     #[test]
     fn complicated_constant_fold_not_supported() {
         // Could be simplified to 2x + 2
-        let x = var("x");
-        let e = binop(binop(x.clone(), BinOp::Add, int(1), None), BinOp::Mul, int(2), None);
+        let x = var("x", scalar(ElemSize::I64));
+        let e = binop(
+            binop(x.clone(), BinOp::Add, int(1, None), None),
+            BinOp::Mul, int(2, None), None
+        );
         assert_eq!(cf(&e), e);
     }
 
     fn test_identity(op: BinOp, id: Expr, rhs: bool) {
-        let x = var("x");
+        let x = var("x", id.get_type().clone());
         let e = if rhs {
             binop(x.clone(), op, id, None)
         } else {
@@ -220,34 +224,34 @@ mod test {
 
     #[test]
     fn add_identity() {
-        test_identity(BinOp::Add, float(0.0), true);
-        test_identity(BinOp::Add, float(0.0), false);
-        test_identity(BinOp::Add, int(0), true);
-        test_identity(BinOp::Add, int(0), false);
+        test_identity(BinOp::Add, float(0.0, None), true);
+        test_identity(BinOp::Add, float(0.0, None), false);
+        test_identity(BinOp::Add, int(0, None), true);
+        test_identity(BinOp::Add, int(0, None), false);
     }
 
     #[test]
     fn sub_identity_rhs() {
-        test_identity(BinOp::Sub, int(0), true);
+        test_identity(BinOp::Sub, int(0, None), true);
     }
 
     #[test]
     #[should_panic]
     fn sub_identity_lhs() {
-        test_identity(BinOp::Sub, int(0), false);
+        test_identity(BinOp::Sub, int(0, None), false);
     }
 
     #[test]
     fn mul_identity() {
-        test_identity(BinOp::Mul, float(1.0), true);
-        test_identity(BinOp::Mul, float(1.0), false);
-        test_identity(BinOp::Mul, int(1), true);
-        test_identity(BinOp::Mul, int(1), false);
+        test_identity(BinOp::Mul, float(1.0, None), true);
+        test_identity(BinOp::Mul, float(1.0, None), false);
+        test_identity(BinOp::Mul, int(1, None), true);
+        test_identity(BinOp::Mul, int(1, None), false);
     }
 
     #[test]
     fn div_identity() {
-        test_identity(BinOp::Div, float(1.0), true);
-        test_identity(BinOp::Div, int(1), true);
+        test_identity(BinOp::Div, float(1.0, None), true);
+        test_identity(BinOp::Div, int(1, None), true);
     }
 }

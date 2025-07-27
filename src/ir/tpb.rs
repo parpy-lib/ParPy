@@ -82,7 +82,7 @@ mod test {
     fn test_no_propagation_for_sequential_loops() {
         let p = LoopPar::default().tpb(512).unwrap();
         let body = vec![
-            for_loop_complete(id("x"), int(0), int(10), 1, p, vec![
+            for_loop_complete(id("x"), int(0, None), int(10, None), 1, p, vec![
                 for_loop(id("y"), 10, vec![])
             ])
         ];
@@ -102,7 +102,7 @@ mod test {
     fn test_propagation_nested_for_loops() {
         let p = LoopPar::default().threads(10).unwrap().tpb(512).unwrap();
         let body = vec![
-            for_loop_complete(id("x"), int(0), int(10), 1, p, vec![
+            for_loop_complete(id("x"), int(0, None), int(10, None), 1, p, vec![
                 for_loop(id("y"), 10, vec![])
             ])
         ];

@@ -104,7 +104,8 @@ mod test {
     fn subscript_with_index(idx: Expr) -> Expr {
         subscript(
             Expr::Var {id: id("x"), ty: shape(vec![10]), i: Info::default()},
-            idx
+            idx,
+            tyuk()
         )
     }
 

@@ -130,8 +130,7 @@ mod test {
 
     pub fn assert_error_matches<T: fmt::Debug>(r: PyResult<T>, pat: &str) {
         Python::with_gil(|py| {
-            let e = r.unwrap_err();
-            let err_msg = e.value(py).to_string();
+            let err_msg = r.unwrap_err().value(py).to_string();
             let re = Regex::new(pat).unwrap();
             assert!(
                 re.is_match(&err_msg),

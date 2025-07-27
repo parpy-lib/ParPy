@@ -558,7 +558,7 @@ mod test {
     use crate::py::ast_builder::*;
 
     fn ex1() -> (Expr, Expr) {
-        let lhs = subscript(var("x", shape(vec![10])), slice(None, None));
+        let lhs = subscript(var("x", shape(vec![10])), slice(None, None), tyuk());
         let rhs = Expr::Builtin {
             func: Builtin::Sum,
             args: vec![subscript(
@@ -566,7 +566,8 @@ mod test {
                 tuple(vec![
                     slice(None, None),
                     slice(None, None)
-                ])
+                ]),
+                tyuk()
             )],
             axis: Some(1),
             ty: shape(vec![10]),
@@ -583,12 +584,7 @@ mod test {
 
     #[test]
     fn count_slices_in_subscript() {
-        let e = Expr::Subscript {
-            target: Box::new(var("x", tyuk())),
-            idx: Box::new(int(1, None)),
-            ty: Type::Unknown,
-            i: Info::default()
-        };
+        let e = subscript(var("x", tyuk()), int(1, None), tyuk());
         assert_eq!(count_slices_expr(0, &e), 0);
     }
 
@@ -599,7 +595,8 @@ mod test {
             tuple(vec![
                 slice(None, Some(int(1, None))),
                 slice(Some(int(2, None)), None)
-            ])
+            ]),
+            tyuk()
         );
         assert_eq!(count_slices_expr(0, &e), 2);
     }
@@ -617,7 +614,8 @@ mod test {
                     slice(None, Some(var("y", tyuk())))
                 ]),
                 scalar(ElemSize::I64)
-            )
+            ),
+            tyuk()
         );
         assert_eq!(count_slices_expr(0, &e), 3);
     }
@@ -661,8 +659,8 @@ mod test {
     #[test]
     fn valid_slices_assignment() {
         let s = assignment(
-            subscript(var("x", shape(vec![10])), slice(None, None)),
-            subscript(var("y", shape(vec![10])), slice(None, None))
+            subscript(var("x", shape(vec![10])), slice(None, None), tyuk()),
+            subscript(var("y", shape(vec![10])), slice(None, None), tyuk())
         );
         assert!(validate_slices_stmt((), &s).is_ok());
     }
@@ -670,7 +668,7 @@ mod test {
     #[test]
     fn invalid_slice_statement() {
         let s = Stmt::Return {
-            value: subscript(var("x", shape(vec![10])), slice(None, None)),
+            value: subscript(var("x", shape(vec![10])), slice(None, None), tyuk()),
             i: Info::default()
         };
         assert!(validate_slices_stmt((), &s).is_err());
@@ -682,7 +680,8 @@ mod test {
             var("x", shape(vec![10])),
             subscript(
                 call("f", vec![], tyuk()),
-                slice(None, None)
+                slice(None, None),
+                tyuk()
             )
         );
         assert!(validate_slices_stmt((), &s).is_err());
@@ -694,7 +693,8 @@ mod test {
             var("x", shape(vec![10])),
             subscript(
                 var("y", shape(vec![10, 20])),
-                slice(None, None)
+                slice(None, None),
+                tyuk()
             )
         );
         assert!(validate_slices_stmt((), &s).is_err());
@@ -768,7 +768,8 @@ mod test {
                                 i: Info::default()
                             },
                             scalar(ElemSize::I64)
-                        )
+                        ),
+                        tyuk()
                     ),
                     int(1, None)
                 )

@@ -1,6 +1,7 @@
 use super::ast::*;
 
 use crate::prickle_compile_error;
+use crate::prickle_internal_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
@@ -207,7 +208,7 @@ fn to_ir_expr(
             Ok(Expr::Var {id, ty, i})
         },
         py_ast::Expr::String {i, ..} => {
-            prickle_compile_error!(i, "String literal may only be used for dict lookups")
+            prickle_compile_error!(i, "String literal may only be used in dict lookups")
         },
         py_ast::Expr::Bool {v, ty, i} => {
             let ty = to_ir_type(env, &i, ty)?;
@@ -261,9 +262,9 @@ fn to_ir_expr(
                         let target = Box::new(target);
                         Ok(Expr::TensorAccess {target, idx, ty: res_ty, i})
                     } else {
-                        let msg = concat!(
-                            "Invalid dimensions. Indexing into tensor of shape ",
-                            "{shape:?} using {n} indices"
+                        let msg = format!(
+                            "Invalid dimensions. Indexing into tensor of shape \
+                             {shape:?} using {n} indices"
                         );
                         prickle_compile_error!(i, "{msg}")
                     }
@@ -277,7 +278,7 @@ fn to_ir_expr(
             prickle_compile_error!(i, "Slices are not allowed outside of indexing")
         },
         py_ast::Expr::Tuple {i, ..} => {
-            prickle_compile_error!(i, "Tuple literals are not supported outside of indexing")
+            prickle_compile_error!(i, "Tuples are not allowed outside of indexing")
         },
         py_ast::Expr::Call {id, args, ty, i} => {
             let args = args.into_iter()
@@ -287,7 +288,7 @@ fn to_ir_expr(
             Ok(Expr::Call {id, args, ty, i})
         },
         py_ast::Expr::NeutralElement {i, ..} => {
-            prickle_compile_error!(i, "Intermediate reduction node remaining during IR translation")
+            prickle_internal_error!(i, "Intermediate reduction node remaining during IR translation")
         },
         py_ast::Expr::Builtin {func, args, ty, i, ..} => {
             let args = args.into_iter()
@@ -434,118 +435,337 @@ pub fn to_ir_defs(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::ir::ast_builder::*;
+    use crate::ir::constant_fold;
+    use crate::ir::test::*;
+    use crate::py::ast_builder as py;
+
+    use std::collections::BTreeMap;
 
     fn i() -> Info {
         Info::default()
     }
 
+    fn ir_env() -> IREnv {
+        IREnv::new(BTreeMap::new(), BTreeMap::new())
+    }
+
+    fn conv_ir_type(ty: py_ast::Type) -> CompileResult<Type> {
+        to_ir_type(&ir_env(), &i(), ty)
+    }
+
     #[test]
-    fn dict_subscript_to_ir() {
-        let x = "x".to_string();
-        let y = Name::sym_str("y");
-        let elem_ty = py_ast::Type::Tensor {sz: ElemSize::I64, shape: vec![]};
-        let mut fields = BTreeMap::new();
-        fields.insert(x.clone(), elem_ty.clone());
-        let ty = py_ast::Type::Dict {fields};
-        let py_expr = py_ast::Expr::Subscript {
-            target: Box::new(py_ast::Expr::Var {id: y.clone(), ty: ty.clone(), i: i()}),
-            idx: Box::new(py_ast::Expr::String {
-                v: x.clone(), ty: py_ast::Type::String, i: i()
-            }),
-            ty: elem_ty.clone(), i: i()
+    fn convert_struct_def() {
+        let env = ir_env();
+        let id = id("x");
+        let ty = py::dict_ty(vec![("y", py::scalar(ElemSize::I32))]);
+        let expected = StructDef {
+            id: id.clone(),
+            fields: vec![Field {
+                id: "y".to_string(), ty: scalar(ElemSize::I32), i: i()
+            }],
+            i: i()
         };
-        let y_struct = Name::sym_str("dict_y");
+        assert_eq!(to_struct_def(&env, id, ty).unwrap(), expected);
+    }
+
+    #[test]
+    fn string_ir_type() {
+        let r = conv_ir_type(py_ast::Type::String);
+        assert_error_matches(r, r"standalone string type");
+    }
+
+    #[test]
+    fn scalar_ir_type() {
+        let r = conv_ir_type(py::scalar(ElemSize::I32));
+        assert_eq!(r.unwrap(), scalar(ElemSize::I32));
+    }
+
+    #[test]
+    fn tensor_vector_ir_type() {
+        let r = conv_ir_type(py::shape(vec![10]));
+        assert_eq!(r.unwrap(), shape(vec![10]));
+    }
+
+    #[test]
+    fn tuple_ir_type() {
+        let r = conv_ir_type(py_ast::Type::Tuple {elems: vec![]});
+        assert_error_matches(r, r"standalone tuple type");
+    }
+
+    #[test]
+    fn unknown_dict_type() {
+        let r = conv_ir_type(py_ast::Type::Dict {fields: BTreeMap::new()});
+        assert_error_matches(r, r"unknown dictionary type");
+    }
+
+    #[test]
+    fn known_dict_type() {
+        let dty = py::dict_ty(vec![("x", py::scalar(ElemSize::I32))]);
         let mut structs = BTreeMap::new();
-        structs.insert(ty, y_struct.clone());
+        let id = id("y");
+        structs.insert(dty.clone(), id.clone());
         let env = IREnv::new(structs, BTreeMap::new());
-        let res = to_ir_expr(&env, py_expr).unwrap();
-        assert_eq!(res, Expr::StructFieldAccess {
-            target: Box::new(Expr::Var {
-                id: y, ty: Type::Struct {id: y_struct.clone()}, i: i()
-            }),
-            label: x,
-            ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]},
-            i: i()
-        });
-    }
-
-    fn py_tensor_ty(shape: Vec<i64>) -> py_ast::Type {
-        py_ast::Type::Tensor {sz: ElemSize::I64, shape}
-    }
-
-    fn py_tuple_ty(nelems: usize) -> py_ast::Type {
-        let elems = (0..nelems).map(|_| py_tensor_ty(vec![]))
-            .collect::<Vec<py_ast::Type>>();
-        py_ast::Type::Tuple {elems}
-    }
-
-    fn py_int(v: i64) -> py_ast::Expr {
-        py_ast::Expr::Int {v: v as i128, ty: py_tensor_ty(vec![]), i: i()}
-    }
-
-    fn ir_tensor_ty(shape: Vec<i64>) -> Type {
-        Type::Tensor {sz: ElemSize::I64, shape}
-    }
-
-    fn ir_int_ty() -> Type {
-        ir_tensor_ty(vec![])
-    }
-
-    fn ir_int(v: i64) -> Expr {
-        Expr::Int {v: v as i128, ty: ir_int_ty(), i: i()}
-    }
-
-    fn ir_binop(lhs: Expr, op: BinOp, rhs: Expr, ty: Type) -> Expr {
-        Expr::BinOp {
-            lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i: i()
-        }
+        assert_eq!(to_ir_type(&env, &i(), dty).unwrap(), Type::Struct {id});
     }
 
     #[test]
-    fn nested_tensor_index_to_ir() {
-        let x = Name::new("x".to_string());
-        let py_expr = py_ast::Expr::Subscript {
-            target: Box::new(py_ast::Expr::Subscript {
-                target: Box::new(py_ast::Expr::Var {
-                    id: x.clone(), ty: py_tensor_ty(vec![3,4,5,6]), i: i()
-                }),
-                idx: Box::new(py_ast::Expr::Tuple {
-                    elems: vec![py_int(1), py_int(2)],
-                    ty: py_tuple_ty(2),
-                    i: i()
-                }),
-                ty: py_tensor_ty(vec![5,6]),
-                i: i()
-            }),
-            idx: Box::new(py_int(3)),
-            ty: py_tensor_ty(vec![6]),
+    fn void_type() {
+        assert_eq!(conv_ir_type(py_ast::Type::Void).unwrap(), Type::Void);
+    }
+
+    #[test]
+    fn unknown_type() {
+        let r = conv_ir_type(py_ast::Type::Unknown);
+        assert_error_matches(r, r"unknown type when translating to IR");
+    }
+
+    #[test]
+    fn inf_float_literal_builtin() {
+        let r = to_float_literal_value(py_ast::Builtin::Inf, &i());
+        assert_eq!(r.unwrap(), f64::INFINITY);
+    }
+
+    #[test]
+    fn non_float_literal_builtin() {
+        let r = to_float_literal_value(py_ast::Builtin::Max, &i());
+        assert_error_matches(r, r"Invalid builtin literal value");
+    }
+
+    #[test]
+    fn invalid_unop_builtin_max() {
+        let r = to_unary_op(py_ast::Builtin::Max, &i());
+        assert_error_matches(r, r"Invalid builtin unary");
+    }
+
+    #[test]
+    fn invalid_binop_builtin_exp() {
+        let r = to_binary_op(py_ast::Builtin::Exp, &i());
+        assert_error_matches(r, r"Invalid builtin binary");
+    }
+
+    #[test]
+    fn to_float_inf_expr() {
+        let r = to_builtin(py_ast::Builtin::Inf, vec![], scalar(ElemSize::F32), i());
+        assert_eq!(r.unwrap(), float(f64::INFINITY, None));
+    }
+
+    #[test]
+    fn builtin_to_unop_expr() {
+        let r = to_builtin(
+            py_ast::Builtin::Log, vec![float(1.5, None)], scalar(ElemSize::F32), i()
+        );
+        assert_eq!(r.unwrap(), unop(UnOp::Log, float(1.5, None)));
+    }
+
+    #[test]
+    fn builtin_to_binop_expr() {
+        let ty = scalar(ElemSize::F32);
+        let r = to_builtin(
+            py_ast::Builtin::Min, vec![float(1.0, None), float(2.0, None)], ty.clone(), i()
+        );
+        let expected = binop(float(1.0, None), BinOp::Min, float(2.0, None), Some(ty));
+        assert_eq!(r.unwrap(), expected);
+    }
+
+    #[test]
+    fn builtin_too_many_args() {
+        let args = vec![float(1.0, None), float(2.0, None), float(3.0, None)];
+        let r = to_builtin(py_ast::Builtin::Sum, args, scalar(ElemSize::F32), i());
+        assert_error_matches(r, r"does not expect 3 arguments");
+    }
+
+    #[test]
+    fn flatten_1d_index() {
+        let shape = vec![10];
+        let indices = vec![int(2, None)];
+        let e = flatten_indices(shape, indices, &i()).unwrap();
+        assert_eq!(e, binop(
+            binop(int(2, None), BinOp::Mul, int(1, None), None),
+            BinOp::Add,
+            int(0, None),
+            None
+        ));
+    }
+
+    #[test]
+    fn flatten_2d_index() {
+        let shape = vec![10, 10];
+        let indices = vec![int(1, None), int(2, None)];
+        let e = flatten_indices(shape, indices, &i()).unwrap();
+        assert_eq!(constant_fold::fold_expr(e), int(12, None));
+    }
+
+    #[test]
+    fn flatten_3d_index() {
+        let shape = vec![10, 20, 30];
+        let indices = vec![int(3, None), int(2, None), int(1, None)];
+        let e = flatten_indices(shape, indices, &i()).unwrap();
+        assert_eq!(constant_fold::fold_expr(e), int(1861, None));
+    }
+
+    #[test]
+    fn var_expr_to_ir() {
+        let r = to_ir_expr(&ir_env(), py::var("x", py::scalar(ElemSize::I32)));
+        assert_eq!(r.unwrap(), var("x", scalar(ElemSize::I32)));
+    }
+
+    #[test]
+    fn string_expr_to_ir() {
+        let s = py_ast::Expr::String {v: "x".to_string(), ty: py_ast::Type::String, i: i()};
+        assert_error_matches(to_ir_expr(&ir_env(), s), r"literal may only be used in");
+    }
+
+    #[test]
+    fn binop_to_ir() {
+        let e = py::binop(
+            py::int(1, Some(ElemSize::I64)),
+            BinOp::Add,
+            py::int(2, Some(ElemSize::I64)),
+            py::scalar(ElemSize::I64)
+        );
+        let expected = binop(
+            int(1, Some(ElemSize::I64)),
+            BinOp::Add,
+            int(2, Some(ElemSize::I64)),
+            None
+        );
+        assert_eq!(to_ir_expr(&ir_env(), e).unwrap(), expected);
+    }
+
+    #[test]
+    fn dict_subscript_expr_to_ir() {
+        let dty = py::dict_ty(vec![("y", py::scalar(ElemSize::I64))]);
+        let mut structs = BTreeMap::new();
+        let id = id("z");
+        structs.insert(dty.clone(), id.clone());
+        let env = IREnv::new(structs, BTreeMap::new());
+        let subscript = py::subscript(
+            py::var("x", dty), py::string("y"), py::scalar(ElemSize::I64)
+        );
+        let expected = Expr::StructFieldAccess {
+            target: Box::new(var("x", Type::Struct {id})),
+            label: "y".to_string(),
+            ty: scalar(ElemSize::I64),
             i: i()
         };
-        let env = IREnv::new(BTreeMap::new(), BTreeMap::new());
-        let res = to_ir_expr(&env, py_expr).unwrap();
-        let idx_expr = ir_binop(
-            ir_binop(ir_int(1), BinOp::Mul, ir_int(120), ir_int_ty()),
-            BinOp::Add,
-            ir_binop(
-                ir_binop(ir_int(2), BinOp::Mul, ir_int(30), ir_int_ty()),
-                BinOp::Add,
-                ir_binop(
-                    ir_binop(ir_int(3), BinOp::Mul, ir_int(6), ir_int_ty()),
-                    BinOp::Add,
-                    ir_int(0),
-                    ir_int_ty()
-                ),
-                ir_int_ty()
-            ),
-            ir_int_ty()
+        assert_eq!(to_ir_expr(&env, subscript).unwrap(), expected);
+    }
+
+    #[test]
+    fn tensor_subscript_non_tensor_target() {
+        let dty = py::dict_ty(vec![]);
+        let e = py::subscript(
+            py::var("x", dty.clone()),
+            py::int(1, Some(ElemSize::I32)),
+            py::scalar(ElemSize::I32)
         );
-        assert_eq!(res, Expr::TensorAccess {
-            target: Box::new(Expr::Var {
-                id: x, ty: ir_tensor_ty(vec![3,4,5,6]), i: i()
-            }),
-            idx: Box::new(idx_expr),
-            ty: Type::Tensor {sz: ElemSize::I64, shape: vec![6]},
-            i: i()
-        });
+        let mut structs = BTreeMap::new();
+        structs.insert(dty, id("?"));
+        let env = IREnv::new(structs, BTreeMap::new());
+        assert_error_matches(to_ir_expr(&env, e), r"non-tensor target.*not supported");
+    }
+
+    #[test]
+    fn tensor_subscript_invalid_dims() {
+        let e = py::subscript(
+            py::var("x", py::scalar(ElemSize::I32)),
+            py::int(1, Some(ElemSize::I32)),
+            py::scalar(ElemSize::I32)
+        );
+        let pat = r"Indexing into tensor of shape \[\] using 1 indices";
+        assert_error_matches(to_ir_expr(&ir_env(), e), pat);
+    }
+
+    #[test]
+    fn tensor_subscript_expr_to_ir() {
+        let e = py::subscript(
+            py::var("x", py::shape(vec![10, 20])),
+            py::tuple(vec![py::int(1, Some(ElemSize::I64)), py::int(2, Some(ElemSize::I64))]),
+            py::scalar(ElemSize::I64)
+        );
+        let r = to_ir_expr(&ir_env(), e);
+        let expected = tensor_access(
+            var("x", shape(vec![200])),
+            int(22, None),
+            scalar(ElemSize::I64)
+        );
+        assert_eq!(constant_fold::fold_expr(r.unwrap()), expected);
+    }
+
+    #[test]
+    fn slice_expr_to_ir() {
+        let r = to_ir_expr(&ir_env(), py::slice(None, None));
+        assert_error_matches(r, r"compile error.*Slices are not allowed outside");
+    }
+
+    #[test]
+    fn tuple_expr_to_ir() {
+        let r = to_ir_expr(&ir_env(), py::tuple(vec![]));
+        assert_error_matches(r, r"compile error.*Tuples are not allowed outside");
+    }
+
+    #[test]
+    fn neutral_element_expr_to_ir() {
+        let ne = py_ast::Expr::NeutralElement {
+            op: BinOp::Add, tyof: Box::new(py::int(1, Some(ElemSize::I64))),
+            i: Info::default()
+        };
+        let r = to_ir_expr(&ir_env(), ne);
+        assert_error_matches(r, r"Internal.*Intermediate reduction node");
+    }
+
+    fn make_par_map(v: Vec<(&str, LoopPar)>) -> BTreeMap<String, LoopPar> {
+        v.into_iter()
+            .map(|(id, p)| (id.to_string(), p))
+            .collect::<BTreeMap<String, LoopPar>>()
+    }
+
+    #[test]
+    fn lookup_unknown_labels() {
+        let par = make_par_map(vec![]);
+        let labels = vec!["x".to_string()];
+        assert_eq!(lookup_labels(&par, labels, &i()).unwrap(), LoopPar::default());
+    }
+
+    #[test]
+    fn lookup_known_label() {
+        let p = LoopPar::default().threads(2).unwrap();
+        let par = make_par_map(vec![
+            ("x", p.clone()),
+        ]);
+        let labels = vec!["x".to_string()];
+        assert_eq!(lookup_labels(&par, labels, &i()).unwrap(), p);
+    }
+
+    #[test]
+    fn lookup_inconsistent_labels() {
+        let par = make_par_map(vec![
+            ("x", LoopPar::default().threads(2).unwrap()),
+            ("y", LoopPar::default().threads(4).unwrap()),
+        ]);
+        let labels = vec!["x".to_string(), "y".to_string()];
+        assert_error_matches(lookup_labels(&par, labels, &i()), r"conflicting number of threads");
+    }
+
+    #[test]
+    fn lookup_consistent_labels() {
+        let par = make_par_map(vec![
+            ("x", LoopPar::default().threads(4).unwrap()),
+            ("y", LoopPar::default().tpb(512).unwrap()),
+            ("z", LoopPar::default().threads(4).unwrap()),
+        ]);
+        let labels = ["x", "y", "z"].into_iter().map(|x| x.to_string()).collect::<Vec<String>>();
+        let expected = LoopPar::default()
+            .threads(4).unwrap()
+            .tpb(512).unwrap();
+        assert_eq!(lookup_labels(&par, labels, &i()).unwrap(), expected);
+    }
+
+    #[test]
+    fn with_gpu_context_stmt_to_ir() {
+        let s = py_ast::Stmt::WithGpuContext {body: vec![], i: i()};
+        let s = to_ir_stmt(&ir_env(), s).unwrap();
+        assert!(matches!(s, Stmt::For {..}));
     }
 }

@@ -1179,6 +1179,10 @@ mod test {
         for_loop(var, n, body)
     }
 
+    fn uvar(id: &str) -> Expr {
+        var(id, scalar(ElemSize::Bool))
+    }
+
     fn stmts_str(stmts: &Vec<Stmt>) -> String {
         let (_, s) = pprint_iter(stmts.iter(), PrettyPrintEnv::new(), "\n");
         s
@@ -1293,7 +1297,7 @@ mod test {
         let body = vec![
             for_("x", 10, vec![
                 for_("y", 0, vec![
-                    for_("z", 15, vec![assign(var("q"), int(3))]),
+                    for_("z", 15, vec![assign(uvar("q"), int(3, None))]),
                     sync_point(SyncPointKind::BlockLocal),
                 ])
             ])
@@ -1301,7 +1305,7 @@ mod test {
         let expected = vec![
             for_("x", 10, vec![
                 for_("y", 0, vec![
-                    for_("z", 15, vec![assign(var("q"), int(3))]),
+                    for_("z", 15, vec![assign(uvar("q"), int(3, None))]),
                     sync_point(SyncPointKind::BlockLocal)
                 ])
             ])
@@ -1313,26 +1317,26 @@ mod test {
     fn par_seq_par_loops_inter_block_sync_hoisting() {
         let body = vec![
             for_("x", 10, vec![
-                assign(var("a"), int(4)),
+                assign(uvar("a"), int(4, None)),
                 for_("y", 0, vec![
-                    assign(var("b"), int(0)),
-                    for_("z", 2048, vec![assign(var("c"), int(3))]),
+                    assign(uvar("b"), int(0, None)),
+                    for_("z", 2048, vec![assign(uvar("c"), int(3, None))]),
                     sync_point(SyncPointKind::InterBlock),
-                    assign(var("d"), int(1))
+                    assign(uvar("d"), int(1, None))
                 ]),
-                assign(var("e"), int(2))
+                assign(uvar("e"), int(2, None))
             ])
         ];
         let expected = vec![
-            for_("x", 10, vec![assign(var("a"), int(4))]),
+            for_("x", 10, vec![assign(uvar("a"), int(4, None))]),
             for_("y", 0, vec![
                 for_("x", 10, vec![
-                    assign(var("b"), int(0)),
-                    for_("z", 2048, vec![assign(var("c"), int(3))])
+                    assign(uvar("b"), int(0, None)),
+                    for_("z", 2048, vec![assign(uvar("c"), int(3, None))])
                 ]),
-                for_("x", 10, vec![assign(var("d"), int(1))])
+                for_("x", 10, vec![assign(uvar("d"), int(1, None))])
             ]),
-            for_("x", 10, vec![assign(var("e"), int(2))])
+            for_("x", 10, vec![assign(uvar("e"), int(2, None))])
         ];
         assert_hoist(body, expected)
     }
@@ -1532,11 +1536,11 @@ mod test {
     fn par_seq_par_seq_par_hoisting() {
         let body = vec![
             for_("x", 10, vec![
-                assign(var("a"), int(1)),
+                assign(uvar("a"), int(1, None)),
                 for_("y", 0, vec![
                     for_("z", 10, vec![
                         for_("w", 0, vec![
-                            for_("v", 10, vec![assign(var("b"), int(2))]),
+                            for_("v", 10, vec![assign(uvar("b"), int(2, None))]),
                             sync_point(SyncPointKind::BlockLocal)
                         ])
                     ]),
@@ -1545,12 +1549,12 @@ mod test {
             ])
         ];
         let expected = vec![
-            for_("x", 10, vec![assign(var("a"), int(1))]),
+            for_("x", 10, vec![assign(uvar("a"), int(1, None))]),
             for_("y", 0, vec![
                 for_("x", 10, vec![
                     for_("z", 10, vec![
                         for_("w", 0, vec![
-                            for_("v", 10, vec![assign(var("b"), int(2))]),
+                            for_("v", 10, vec![assign(uvar("b"), int(2, None))]),
                             sync_point(SyncPointKind::BlockLocal)
                         ])
                     ])
@@ -1564,49 +1568,49 @@ mod test {
     fn par_seq_par_seq_par_double_inter_block_hoisting() {
         let body = vec![
             for_("x", 10, vec![
-                assign(var("a"), int(1)),
+                assign(uvar("a"), int(1, None)),
                 for_("y", 0, vec![
-                    assign(var("b"), int(2)),
+                    assign(uvar("b"), int(2, None)),
                     for_("z", 10, vec![
-                        assign(var("c"), int(3)),
+                        assign(uvar("c"), int(3, None)),
                         for_("w", 0, vec![
-                            assign(var("d"), int(4)),
-                            for_("v", 2048, vec![assign(var("e"), int(5))]),
+                            assign(uvar("d"), int(4, None)),
+                            for_("v", 2048, vec![assign(uvar("e"), int(5, None))]),
                             sync_point(SyncPointKind::InterBlock),
-                            assign(var("f"), int(6))
+                            assign(uvar("f"), int(6, None))
                         ]),
-                        assign(var("g"), int(7))
+                        assign(uvar("g"), int(7, None))
                     ]),
                     sync_point(SyncPointKind::InterBlock),
-                    assign(var("h"), int(8))
+                    assign(uvar("h"), int(8, None))
                 ]),
-                assign(var("i"), int(9))
+                assign(uvar("i"), int(9, None))
             ])
         ];
         let expected = vec![
-            for_("x", 10, vec![assign(var("a"), int(1))]),
+            for_("x", 10, vec![assign(uvar("a"), int(1, None))]),
             for_("y", 0, vec![
                 for_("x", 10, vec![
-                    assign(var("b"), int(2)),
-                    for_("z", 10, vec![assign(var("c"), int(3))])
+                    assign(uvar("b"), int(2, None)),
+                    for_("z", 10, vec![assign(uvar("c"), int(3, None))])
                 ]),
                 for_("w", 0, vec![
                     for_("x", 10, vec![
                         for_("z", 10, vec![
-                            assign(var("d"), int(4)),
-                            for_("v", 2048, vec![assign(var("e"), int(5))]),
+                            assign(uvar("d"), int(4, None)),
+                            for_("v", 2048, vec![assign(uvar("e"), int(5, None))]),
                         ])
                     ]),
                     for_("x", 10, vec![
-                        for_("z", 10, vec![assign(var("f"), int(6))]),
+                        for_("z", 10, vec![assign(uvar("f"), int(6, None))]),
                     ]),
                 ]),
                 for_("x", 10, vec![
-                    for_("z", 10, vec![assign(var("g"), int(7))]),
+                    for_("z", 10, vec![assign(uvar("g"), int(7, None))]),
                 ]),
-                for_("x", 10, vec![assign(var("h"), int(8))]),
+                for_("x", 10, vec![assign(uvar("h"), int(8, None))]),
             ]),
-            for_("x", 10, vec![assign(var("i"), int(9))])
+            for_("x", 10, vec![assign(uvar("i"), int(9, None))])
         ];
         assert_hoist(body, expected)
     }

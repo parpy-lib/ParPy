@@ -435,7 +435,7 @@ mod test {
     #[test]
     fn print_slice_assign_implicit_ends() {
         let s = assignment(
-            subscript(var("x", scalar(ElemSize::I64)), slice(None, None)),
+            subscript(var("x", scalar(ElemSize::I64)), slice(None, None), tyuk()),
             ufloat(1.0)
         );
         assert_eq!(s.pprint_default(), "x[:] = 1.0");
@@ -444,7 +444,7 @@ mod test {
     #[test]
     fn print_slice_assign_implicit_upper() {
         let s = assignment(
-            subscript(var("x", scalar(ElemSize::I64)), slice(Some(uint(0)), None)),
+            subscript(var("x", scalar(ElemSize::I64)), slice(Some(uint(0)), None), tyuk()),
             ufloat(1.0)
         );
         assert_eq!(s.pprint_default(), "x[0:] = 1.0");
@@ -453,7 +453,7 @@ mod test {
     #[test]
     fn print_slice_assign_implicit_lower() {
         let s = assignment(
-            subscript(var("x", scalar(ElemSize::I64)), slice(None, Some(uint(5)))),
+            subscript(var("x", scalar(ElemSize::I64)), slice(None, Some(uint(5))), tyuk()),
             ufloat(1.0)
         );
         assert_eq!(s.pprint_default(), "x[:5] = 1.0");
@@ -462,7 +462,7 @@ mod test {
     #[test]
     fn print_slice_assign_explicit_bounds() {
         let s = assignment(
-            subscript(var("x", scalar(ElemSize::I64)), slice(Some(uint(1)), Some(uint(5)))),
+            subscript(var("x", scalar(ElemSize::I64)), slice(Some(uint(1)), Some(uint(5))), tyuk()),
             ufloat(1.0)
         );
         assert_eq!(s.pprint_default(), "x[1:5] = 1.0");

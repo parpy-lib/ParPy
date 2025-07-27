@@ -1,4 +1,5 @@
 use crate::py::ast::*;
+use crate::utils::ast::ExprType;
 use crate::utils::info::*;
 use crate::utils::name::Name;
 
@@ -46,6 +47,10 @@ pub fn float(v: f64, o: Option<ElemSize>) -> Expr {
     Expr::Float {v, ty, i: Info::default()}
 }
 
+pub fn string(v: &str) -> Expr {
+    Expr::String {v: v.to_string(), ty: Type::String, i: Info::default()}
+}
+
 pub fn unop(op: UnOp, arg: Expr) -> Expr {
     Expr::UnOp {op, arg: Box::new(arg), ty: Type::Unknown, i: Info::default()}
 }
@@ -56,10 +61,10 @@ pub fn binop(lhs: Expr, op: BinOp, rhs: Expr, ty: Type) -> Expr {
     }
 }
 
-pub fn subscript(target: Expr, idx: Expr) -> Expr {
+pub fn subscript(target: Expr, idx: Expr, ty: Type) -> Expr {
     Expr::Subscript {
         target: Box::new(target), idx: Box::new(idx),
-        ty: Type::Unknown, i: Info::default()
+        ty, i: Info::default()
     }
 }
 
@@ -76,7 +81,11 @@ pub fn slice(lo: Option<Expr>, hi: Option<Expr>) -> Expr {
 }
 
 pub fn tuple(elems: Vec<Expr>) -> Expr {
-    Expr::Tuple {elems, ty: Type::Unknown, i: Info::default()}
+    let elem_tys = elems.iter()
+        .map(|e| e.get_type().clone())
+        .collect::<Vec<Type>>();
+    let ty = Type::Tuple {elems: elem_tys};
+    Expr::Tuple {elems, ty, i: Info::default()}
 }
 
 pub fn call(f: &str, args: Vec<Expr>, ty: Type) -> Expr {
