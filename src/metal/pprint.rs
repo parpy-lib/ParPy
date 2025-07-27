@@ -118,6 +118,10 @@ impl PrettyPrintBinOp<Type> for Expr {
         };
         s.to_string()
     }
+
+    fn associativity(_op: &BinOp) -> Assoc {
+        Assoc::Left
+    }
 }
 
 impl PrettyPrint for Expr {
@@ -128,8 +132,8 @@ impl PrettyPrint for Expr {
             Expr::Int {v, ..} => (env, v.to_string()),
             Expr::Float {v, ty, ..} => {
                 let s = match ty.get_scalar_elem_size() {
+                    Some(ElemSize::F16) => "HUGE_VALH",
                     Some(ElemSize::F32) => "HUGE_VALF",
-                    Some(ElemSize::F64) => "HUGE_VAL",
                     _ => panic!("Invalid type of floating-point literal")
                 };
                 print_float(env, v, s)
@@ -199,16 +203,10 @@ impl PrettyPrint for Expr {
                 };
                 (env, format!("{fun_str}({arg})"))
             },
-            // These nodes should be eliminated and replaced by named references, to avoid the risk
-            // of users defining variables with the same name.
-            Expr::ThreadIdx {dim, ..} => {
-                let (env, dim) = dim.pprint(env);
-                (env, format!("<threadIdx.{dim}>"))
-            },
-            Expr::BlockIdx {dim, ..} => {
-                let (env, dim) = dim.pprint(env);
-                (env, format!("<blockIdx.{dim}>"))
-            },
+            // These nodes should have been replaced by named references, to avoid the risk of
+            // users defining variables with the same name.
+            Expr::ThreadIdx {..} => panic!("Thread index should have been eliminated"),
+            Expr::BlockIdx {..} => panic!("Block index should have been eliminated"),
         }
     }
 }
@@ -446,5 +444,107 @@ impl PrettyPrint for Ast {
             MTL::Library* lib = prickle_metal::load_library(\"\\\n{metal_tops_str}\n\");\n\
             {metal_fun_defs}\n\
             {host_tops_str}"))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::metal::ast_builder::*;
+    use crate::utils::info::Info;
+
+    #[test]
+    fn print_mem_space_host() {
+        assert_eq!(MemSpace::Host.pprint_default(), "");
+    }
+
+    #[test]
+    fn print_mem_space_device() {
+        assert_eq!(MemSpace::Device.pprint_default(), "device");
+    }
+
+    #[test]
+    fn memcopy_host_to_host() {
+        assert_eq!(memcopy_kind(&MemSpace::Host, &MemSpace::Host), 0);
+    }
+
+    #[test]
+    fn memcopy_host_to_device() {
+        assert_eq!(memcopy_kind(&MemSpace::Host, &MemSpace::Device), 1);
+    }
+
+    #[test]
+    fn memcopy_device_to_host() {
+        assert_eq!(memcopy_kind(&MemSpace::Device, &MemSpace::Host), 2);
+    }
+
+    #[test]
+    fn memcopy_device_to_device() {
+        assert_eq!(memcopy_kind(&MemSpace::Device, &MemSpace::Device), 3);
+    }
+
+    #[test]
+    fn print_inf_f16() {
+        assert_eq!(float(f64::INFINITY, ElemSize::F16).pprint_default(), "HUGE_VALH");
+    }
+
+    #[test]
+    fn print_inf_f32() {
+        assert_eq!(float(f64::INFINITY, ElemSize::F32).pprint_default(), "HUGE_VALF");
+    }
+
+    #[test]
+    #[should_panic]
+    fn print_inf_f64() {
+        assert_eq!(float(f64::INFINITY, ElemSize::F64).pprint_default(), "HUGE_VAL");
+    }
+
+    fn simd_op(op: BinOp) -> Expr {
+        Expr::SimdOp {
+            op,
+            arg: Box::new(var("x", scalar(ElemSize::F32))),
+            ty: scalar(ElemSize::F32),
+            i: Info::default()
+        }
+    }
+
+    #[test]
+    fn print_simd_op_add() {
+        assert_eq!(simd_op(BinOp::Add).pprint_default(), "metal::simd_sum(x)");
+    }
+
+    #[test]
+    fn print_simd_op_mul() {
+        assert_eq!(simd_op(BinOp::Mul).pprint_default(), "metal::simd_product(x)");
+    }
+
+    #[test]
+    fn print_simd_op_max() {
+        assert_eq!(simd_op(BinOp::Max).pprint_default(), "metal::simd_max(x)");
+    }
+
+    #[test]
+    fn print_simd_op_min() {
+        assert_eq!(simd_op(BinOp::Min).pprint_default(), "metal::simd_min(x)");
+    }
+
+    #[test]
+    #[should_panic]
+    fn print_simd_op_sub() {
+        simd_op(BinOp::Sub).pprint_default();
+    }
+
+    #[test]
+    #[should_panic]
+    fn print_thread_index_fails() {
+        let e = Expr::ThreadIdx {dim: Dim::X, ty: Type::Uint3, i: Info::default()};
+        e.pprint_default();
+    }
+
+    #[test]
+    #[should_panic]
+    fn print_block_index_fails() {
+        let e = Expr::BlockIdx {dim: Dim::X, ty: Type::Uint3, i: Info::default()};
+        e.pprint_default();
     }
 }

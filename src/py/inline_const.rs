@@ -4,6 +4,7 @@
 
 use super::ast::*;
 use crate::py_runtime_error;
+use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::smap::SMapAccum;

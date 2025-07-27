@@ -152,7 +152,7 @@ pub fn parenthesize_if_lt_precedence(
     parenthesize_if_predicate(inner_op_opt, outer_op, s, |p| p == Ordering::Less)
 }
 
-pub fn parenthesize_if_ge_precedence(
+pub fn parenthesize_if_le_precedence(
     inner_op_opt: Option<BinOp>,
     outer_op: &BinOp,
     s: String
@@ -177,10 +177,13 @@ pub trait PrettyPrintUnOp<T>: PrettyPrint + ExprType<T> + Sized {
     }
 }
 
+pub enum Assoc { Left, Right }
+
 pub trait PrettyPrintBinOp<T>: PrettyPrint + ExprType<T> + Sized {
     fn extract_binop<'a>(&'a self) -> Option<(&'a Self, &'a BinOp, &'a Self, &'a T)>;
     fn is_infix(op: &BinOp, argty: &T) -> bool;
     fn print_binop(op: &BinOp, argty: &T, ty: &T) -> String;
+    fn associativity(op: &BinOp) -> Assoc;
 
     fn try_get_binop<'a>(&'a self) -> Option<BinOp> {
         if let Some((_, op, _, _)) = self.extract_binop() {
@@ -199,9 +202,17 @@ pub trait PrettyPrintBinOp<T>: PrettyPrint + ExprType<T> + Sized {
         if Self::is_infix(op, argty) {
             let lhs_op = lhs.try_get_binop();
             let rhs_op = rhs.try_get_binop();
-            let lhs_str = parenthesize_if_lt_precedence(lhs_op, &op, lhs_str);
-            let rhs_str = parenthesize_if_ge_precedence(rhs_op, &op, rhs_str);
-            (env, format!("{lhs_str} {op_str} {rhs_str}"))
+            let (lstr, rstr) = match Self::associativity(op) {
+                Assoc::Left => {
+                    ( parenthesize_if_lt_precedence(lhs_op, op, lhs_str)
+                    , parenthesize_if_le_precedence(rhs_op, op, rhs_str) )
+                },
+                Assoc::Right => {
+                    ( parenthesize_if_le_precedence(lhs_op, op, lhs_str)
+                    , parenthesize_if_lt_precedence(rhs_op, op, rhs_str) )
+                }
+            };
+            (env, format!("{lstr} {op_str} {rstr}"))
         } else {
             (env, format!("{op_str}({lhs_str}, {rhs_str})"))
         }
@@ -330,7 +341,7 @@ mod test {
     #[test]
     fn test_paren_predicate_same_precedence() {
         let s = "a + b".to_string();
-        let s = parenthesize_if_ge_precedence(Some(BinOp::Add), &BinOp::Add, s);
+        let s = parenthesize_if_le_precedence(Some(BinOp::Add), &BinOp::Add, s);
         assert_eq!(s, "(a + b)");
     }
 }

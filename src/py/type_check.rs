@@ -2,6 +2,7 @@ use super::ast::*;
 use super::constant_fold;
 use super::slices;
 use crate::py_type_error;
+use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;

@@ -1,3 +1,4 @@
+use crate::utils::ast::ExprType;
 use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::smap::*;
@@ -130,26 +131,6 @@ pub enum Expr {
 }
 
 impl Expr {
-    pub fn get_type<'a>(&'a self) -> &'a Type {
-        match self {
-            Expr::Var {ty, ..} => ty,
-            Expr::String {ty, ..} => ty,
-            Expr::Bool {ty, ..} => ty,
-            Expr::Int {ty, ..} => ty,
-            Expr::Float {ty, ..} => ty,
-            Expr::UnOp {ty, ..} => ty,
-            Expr::BinOp {ty, ..} => ty,
-            Expr::IfExpr {ty, ..} => ty,
-            Expr::Subscript {ty, ..} => ty,
-            Expr::Slice {ty, ..} => ty,
-            Expr::Tuple {ty, ..} => ty,
-            Expr::Call {ty, ..} => ty,
-            Expr::NeutralElement {tyof, ..} => tyof.get_type(),
-            Expr::Builtin {ty, ..} => ty,
-            Expr::Convert {ty, ..} => ty,
-        }
-    }
-
     pub fn discriminator(&self) -> u8 {
         match self {
             Expr::Var {..} => 0,
@@ -187,6 +168,39 @@ impl Expr {
             Expr::NeutralElement {op, tyof, ..} => Expr::NeutralElement {op, tyof, i},
             Expr::Builtin {func, args, axis, ty, ..} => Expr::Builtin {func, args, axis, ty, i},
             Expr::Convert {e, ty} => Expr::Convert {e: Box::new(e.with_info(i)), ty},
+        }
+    }
+}
+
+impl ExprType<Type> for Expr {
+    fn get_type<'a>(&'a self) -> &'a Type {
+        match self {
+            Expr::Var {ty, ..} => ty,
+            Expr::String {ty, ..} => ty,
+            Expr::Bool {ty, ..} => ty,
+            Expr::Int {ty, ..} => ty,
+            Expr::Float {ty, ..} => ty,
+            Expr::UnOp {ty, ..} => ty,
+            Expr::BinOp {ty, ..} => ty,
+            Expr::IfExpr {ty, ..} => ty,
+            Expr::Subscript {ty, ..} => ty,
+            Expr::Slice {ty, ..} => ty,
+            Expr::Tuple {ty, ..} => ty,
+            Expr::Call {ty, ..} => ty,
+            Expr::NeutralElement {tyof, ..} => tyof.get_type(),
+            Expr::Builtin {ty, ..} => ty,
+            Expr::Convert {ty, ..} => ty,
+        }
+    }
+
+    fn is_leaf_node(&self) -> bool {
+        match self {
+            Expr::Var {..} | Expr::String {..} | Expr::Bool {..} |
+            Expr::Int {..} | Expr::Float {..} => true,
+            Expr::UnOp {..} | Expr::BinOp {..} | Expr::IfExpr {..} |
+            Expr::Subscript {..} | Expr::Slice {..} | Expr::Tuple {..} |
+            Expr::Call {..} | Expr::NeutralElement {..} | Expr::Builtin {..} |
+            Expr::Convert {..} => false,
         }
     }
 }

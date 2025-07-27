@@ -28,9 +28,44 @@ impl PrettyPrint for Builtin {
     }
 }
 
-impl PrettyPrint for UnOp {
+impl PrettyPrint for Type {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
+            Type::String => format!("<string>"),
+            Type::Tensor {sz, shape} => format!("<tensor|{sz:?},{shape:?}>"),
+            Type::Tuple {elems} => format!("<({0})>", elems.into_iter().join(", ")),
+            Type::Dict {fields} => {
+                let s = fields.into_iter()
+                    .map(|(k, v)| format!("'{k}': {v}"))
+                    .join(", ");
+                format!("<{{{0}}}>", s)
+            },
+            Type::Void => format!("<void>"),
+            Type::Unknown => format!("<unknown>")
+        };
+        (env, s.to_string())
+    }
+}
+
+impl PrettyPrintUnOp<Type> for Expr {
+    fn extract_unop<'a>(&'a self) -> Option<(&'a UnOp, &'a Expr)> {
+        if let Expr::UnOp {op, arg, ..} = self {
+            Some((op, arg))
+        } else {
+            None
+        }
+    }
+
+    fn is_function(op: &UnOp) -> bool {
+        match op {
+            UnOp::Sub | UnOp::Not | UnOp::BitNeg => false,
+            UnOp::Addressof | UnOp::Exp | UnOp::Log | UnOp::Cos | UnOp::Sin |
+            UnOp::Sqrt | UnOp::Tanh | UnOp::Abs => true,
+        }
+    }
+
+    fn print_unop(op: &UnOp, _argty: &Type) -> String {
+        let s = match op {
             UnOp::Sub => "-",
             UnOp::Not => "!",
             UnOp::BitNeg => "~",
@@ -43,13 +78,38 @@ impl PrettyPrint for UnOp {
             UnOp::Abs => "abs",
             UnOp::Addressof => "addressof"
         };
-        (env, s.to_string())
+        s.to_string()
     }
 }
 
-impl PrettyPrint for BinOp {
+impl PrettyPrint for UnOp {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let s = match self {
+        (env, Expr::print_unop(self, &Type::Unknown))
+    }
+}
+
+impl PrettyPrintBinOp<Type> for Expr {
+    fn extract_binop<'a>(&'a self) -> Option<(&'a Expr, &'a BinOp, &'a Expr, &'a Type)> {
+        if let Expr::BinOp {lhs, op, rhs, ty, ..} = self {
+            Some((lhs, op, rhs, ty))
+        } else {
+            None
+        }
+    }
+
+    fn is_infix(op: &BinOp, _argty: &Type) -> bool {
+        match op {
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::FloorDiv | BinOp::Div |
+            BinOp::Rem | BinOp::Pow | BinOp::And | BinOp::Or | BinOp::BitAnd |
+            BinOp::BitOr | BinOp::BitXor | BinOp::BitShl | BinOp::BitShr |
+            BinOp::Eq | BinOp::Neq | BinOp::Leq | BinOp::Geq | BinOp::Lt |
+            BinOp::Gt => true,
+            BinOp::Max | BinOp::Min | BinOp::Atan2 => false,
+        }
+    }
+
+    fn print_binop(op: &BinOp, _argty: &Type, _ty: &Type) -> String {
+        let s = match op {
             BinOp::Add => "+",
             BinOp::Sub => "-",
             BinOp::Mul => "*",
@@ -74,26 +134,20 @@ impl PrettyPrint for BinOp {
             BinOp::Min => "min",
             BinOp::Atan2 => "atan2"
         };
-        (env, s.to_string())
+        s.to_string()
+    }
+
+    fn associativity(op: &BinOp) -> Assoc {
+        match op {
+            BinOp::Pow => Assoc::Right,
+            _ => Assoc::Left
+        }
     }
 }
 
-impl PrettyPrint for Type {
+impl PrettyPrint for BinOp {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let s = match self {
-            Type::String => format!("<string>"),
-            Type::Tensor {sz, shape} => format!("<tensor|{sz:?},{shape:?}>"),
-            Type::Tuple {elems} => format!("<({0})>", elems.into_iter().join(", ")),
-            Type::Dict {fields} => {
-                let s = fields.into_iter()
-                    .map(|(k, v)| format!("{k}: {v}"))
-                    .join(", ");
-                format!("<{{{0}}}>", s)
-            },
-            Type::Void => format!("<void>"),
-            Type::Unknown => format!("<unknown>")
-        };
-        (env, s.to_string())
+        (env, Expr::print_binop(self, &Type::Unknown, &Type::Unknown))
     }
 }
 
@@ -102,20 +156,13 @@ impl PrettyPrint for Expr {
         match self {
             Expr::Var {id, ..} => id.pprint(env),
             Expr::String {v, ..} => (env, format!("{v}")),
-            Expr::Bool {v, ..} => (env, format!("{v}")),
+            Expr::Bool {v, ..} => {
+                (env, if *v { format!("True") } else { format!("False") })
+            },
             Expr::Int {v, ..} => (env, format!("{v}")),
-            Expr::Float {v, ..} => (env, format!("{v}")),
-            Expr::UnOp {op, arg, ..} => {
-                let (env, op) = op.pprint(env);
-                let (env, arg) = arg.pprint(env);
-                (env, format!("({op} {arg})"))
-            },
-            Expr::BinOp {lhs, op, rhs, ..} => {
-                let (env, lhs) = lhs.pprint(env);
-                let (env, op) = op.pprint(env);
-                let (env, rhs) = rhs.pprint(env);
-                (env, format!("({lhs} {op} {rhs})"))
-            },
+            Expr::Float {v, ..} => (env, format!("{v:?}")),
+            Expr::UnOp {..} => self.print_parenthesized_unop(env),
+            Expr::BinOp {..} => self.print_parenthesized_binop(env),
             Expr::IfExpr {cond, thn, els, ..} => {
                 let (env, cond) = cond.pprint(env);
                 let (env, thn) = thn.pprint(env);
@@ -161,6 +208,7 @@ impl PrettyPrint for Expr {
     }
 
 }
+
 impl PrettyPrint for Stmt {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let indent = env.print_indent();
@@ -271,5 +319,167 @@ impl fmt::Display for Expr {
 impl fmt::Display for FunDef {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.pprint_default())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::py::ast_builder::*;
+
+    #[test]
+    fn print_1d_tensor_type() {
+        let ty = Type::Tensor {sz: ElemSize::I16, shape: vec![10]};
+        assert_eq!(ty.pprint_default(), "<tensor|I16,[10]>");
+    }
+
+    #[test]
+    fn print_2d_tensor_type() {
+        let ty = Type::Tensor {sz: ElemSize::U8, shape: vec![10, 20]};
+        assert_eq!(ty.pprint_default(), "<tensor|U8,[10, 20]>");
+    }
+
+    #[test]
+    fn print_dict_type() {
+        let ty = dict_ty(vec![
+            ("x", scalar(ElemSize::I32)),
+            ("y", scalar(ElemSize::F32))
+        ]);
+        assert_eq!(ty.pprint_default(), "<{'x': int32, 'y': float32}>");
+    }
+
+    fn uint(v: i128) -> Expr {
+        int(v, Some(ElemSize::I64))
+    }
+
+    fn ufloat(v: f64) -> Expr {
+        float(v, Some(ElemSize::F32))
+    }
+
+    fn uadd(l: Expr, r: Expr) -> Expr {
+        binop(l, BinOp::Add, r, scalar(ElemSize::I64))
+    }
+
+    fn umul(l: Expr, r: Expr) -> Expr {
+        binop(l, BinOp::Mul, r, scalar(ElemSize::I64))
+    }
+
+    fn upow(l: Expr, r: Expr) -> Expr {
+        binop(l, BinOp::Pow, r, scalar(ElemSize::F32))
+    }
+
+    fn umax(l: Expr, r: Expr) -> Expr {
+        binop(l, BinOp::Max, r, scalar(ElemSize::F32))
+    }
+
+    #[test]
+    fn print_sub_unop() {
+        let e = unop(UnOp::Sub, uint(1));
+        assert_eq!(e.pprint_default(), "-1");
+    }
+
+    #[test]
+    fn print_log_unop() {
+        let e = unop(UnOp::Log, ufloat(1.5));
+        assert_eq!(e.pprint_default(), "log(1.5)");
+    }
+
+    #[test]
+    fn print_addition_left_assoc_no_paren() {
+        let e = uadd(uadd(uint(1), uint(2)), uint(3));
+        assert_eq!(e.pprint_default(), "1 + 2 + 3");
+    }
+
+    #[test]
+    fn print_parenthesized_addition() {
+        let e = uadd(uint(1), uadd(uint(2), uint(3)));
+        assert_eq!(e.pprint_default(), "1 + (2 + 3)")
+    }
+
+    #[test]
+    fn print_mul_add_no_paren() {
+        let e = uadd(umul(uint(1), uint(2)), uint(3));
+        assert_eq!(e.pprint_default(), "1 * 2 + 3");
+    }
+
+    #[test]
+    fn print_mul_add_paren() {
+        let e = umul(uint(1), uadd(uint(2), uint(3)));
+        assert_eq!(e.pprint_default(), "1 * (2 + 3)");
+    }
+
+    #[test]
+    fn print_nested_mul_paren() {
+        let e = umul(umul(uint(1), uint(2)), umul(uint(3), uint(4)));
+        assert_eq!(e.pprint_default(), "1 * 2 * (3 * 4)");
+    }
+
+    #[test]
+    fn print_pow_rightassoc() {
+        let e = upow(upow(ufloat(1.0), ufloat(2.0)), ufloat(3.0));
+        assert_eq!(e.pprint_default(), "(1.0 ** 2.0) ** 3.0");
+    }
+
+    #[test]
+    fn print_max_func_call_style() {
+        let e = umax(ufloat(1.0), ufloat(2.0));
+        assert_eq!(e.pprint_default(), "max(1.0, 2.0)");
+    }
+
+    #[test]
+    fn print_nested_max_func_calls() {
+        let e = umax(umax(ufloat(1.0), ufloat(2.0)), umax(ufloat(3.0), ufloat(4.0)));
+        assert_eq!(e.pprint_default(), "max(max(1.0, 2.0), max(3.0, 4.0))");
+    }
+
+    #[test]
+    fn print_slice_assign_implicit_ends() {
+        let s = assignment(
+            subscript(var("x", scalar(ElemSize::I64)), slice(None, None)),
+            ufloat(1.0)
+        );
+        assert_eq!(s.pprint_default(), "x[:] = 1.0");
+    }
+
+    #[test]
+    fn print_slice_assign_implicit_upper() {
+        let s = assignment(
+            subscript(var("x", scalar(ElemSize::I64)), slice(Some(uint(0)), None)),
+            ufloat(1.0)
+        );
+        assert_eq!(s.pprint_default(), "x[0:] = 1.0");
+    }
+
+    #[test]
+    fn print_slice_assign_implicit_lower() {
+        let s = assignment(
+            subscript(var("x", scalar(ElemSize::I64)), slice(None, Some(uint(5)))),
+            ufloat(1.0)
+        );
+        assert_eq!(s.pprint_default(), "x[:5] = 1.0");
+    }
+
+    #[test]
+    fn print_slice_assign_explicit_bounds() {
+        let s = assignment(
+            subscript(var("x", scalar(ElemSize::I64)), slice(Some(uint(1)), Some(uint(5)))),
+            ufloat(1.0)
+        );
+        assert_eq!(s.pprint_default(), "x[1:5] = 1.0");
+    }
+
+    #[test]
+    fn print_if_with_else() {
+        let thn = vec![assignment(var("x", scalar(ElemSize::I64)), uint(1))];
+        let els = vec![assignment(var("x", scalar(ElemSize::I64)), uint(2))];
+        let s = if_stmt(bool_expr(true, Some(ElemSize::Bool)), thn, els);
+        assert_eq!(s.pprint_default(), "if True:\n  x = 1\nelse:\n  x = 2");
+    }
+
+    #[test]
+    fn print_if_without_else() {
+        let thn = vec![assignment(var("x", scalar(ElemSize::I64)), uint(1))];
+        let s = if_stmt(bool_expr(true, Some(ElemSize::Bool)), thn, vec![]);
+        assert_eq!(s.pprint_default(), "if True:\n  x = 1");
     }
 }

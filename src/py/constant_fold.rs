@@ -104,11 +104,11 @@ mod test {
         bool_expr(v, Some(ElemSize::Bool))
     }
 
-    fn int_lit(v: i64) -> Expr {
+    fn int_lit(v: i128) -> Expr {
         int(v, Some(ElemSize::I64))
     }
 
-    fn uint_lit(v: i64) -> Expr {
+    fn uint_lit(v: i128) -> Expr {
         int(v, Some(ElemSize::U32))
     }
 

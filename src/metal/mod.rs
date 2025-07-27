@@ -4,6 +4,9 @@ mod codegen;
 mod error;
 mod pprint;
 
+#[cfg(test)]
+mod ast_builder;
+
 use ast::*;
 use crate::ir::ast as ir_ast;
 use crate::gpu;

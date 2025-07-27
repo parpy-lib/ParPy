@@ -2,6 +2,8 @@ use crate::py::ast::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
 
+use std::collections::BTreeMap;
+
 pub fn tyuk() -> Type {
     Type::Unknown
 }
@@ -12,6 +14,13 @@ pub fn shape(v: Vec<i64>) -> Type {
 
 pub fn scalar(sz: ElemSize) -> Type {
     Type::Tensor {sz, shape: vec![]}
+}
+
+pub fn dict_ty(fields: Vec<(&str, Type)>) -> Type {
+    let fields = fields.into_iter()
+        .map(|(s, ty)| (s.to_string(), ty))
+        .collect::<BTreeMap<String, Type>>();
+    Type::Dict {fields}
 }
 
 pub fn id(x: &str) -> Name {
@@ -27,9 +36,9 @@ pub fn bool_expr(v: bool, o: Option<ElemSize>) -> Expr {
     Expr::Bool {v, ty, i: Info::default()}
 }
 
-pub fn int(v: i64, o: Option<ElemSize>) -> Expr {
+pub fn int(v: i128, o: Option<ElemSize>) -> Expr {
     let ty = o.map(scalar).unwrap_or(Type::Unknown);
-    Expr::Int {v: v as i128, ty, i: Info::default()}
+    Expr::Int {v, ty, i: Info::default()}
 }
 
 pub fn float(v: f64, o: Option<ElemSize>) -> Expr {
@@ -76,6 +85,10 @@ pub fn call(f: &str, args: Vec<Expr>, ty: Type) -> Expr {
 
 pub fn assignment(lhs: Expr, rhs: Expr) -> Stmt {
     Stmt::Assign {dst: lhs, expr: rhs, labels: vec![], i: Info::default()}
+}
+
+pub fn if_stmt(cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>) -> Stmt {
+    Stmt::If {cond, thn, els, i: Info::default()}
 }
 
 pub fn label(l: &str) -> Stmt {

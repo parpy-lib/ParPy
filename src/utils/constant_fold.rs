@@ -293,7 +293,7 @@ mod test {
     use crate::py::ast::*;
     use crate::py::ast_builder::*;
 
-    fn int_lit(v: i64) -> Expr {
+    fn int_lit(v: i128) -> Expr {
         int(v, Some(ElemSize::I64))
     }
 

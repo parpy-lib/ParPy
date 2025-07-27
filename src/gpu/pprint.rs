@@ -163,6 +163,10 @@ impl PrettyPrintBinOp<Type> for Expr {
         };
         s.to_string()
     }
+
+    fn associativity(_op: &BinOp) -> Assoc {
+        Assoc::Left
+    }
 }
 
 impl PrettyPrint for Expr {
