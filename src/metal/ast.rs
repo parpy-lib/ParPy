@@ -1,11 +1,11 @@
+use crate::utils::ast::ExprType;
 use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::smap::*;
 
-// Re-use nodes from the GPU IR AST.
-pub use crate::gpu::ast::ElemSize;
-pub use crate::gpu::ast::UnOp;
-pub use crate::gpu::ast::BinOp;
+pub use crate::utils::ast::ElemSize;
+pub use crate::utils::ast::UnOp;
+pub use crate::utils::ast::BinOp;
 pub use crate::gpu::ast::Dim;
 pub use crate::gpu::ast::Dim3;
 
@@ -50,21 +50,69 @@ pub enum Expr {
     Convert {e: Box<Expr>, ty: Type},
 
     // Metal-specific nodes
-    KernelLaunch {id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>, i: Info},
-    AllocDevice {id: Name, elem_ty: Type, sz: usize, i: Info},
+    KernelLaunch {
+        id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>, ty: Type, i: Info
+    },
+    AllocDevice {id: Name, elem_ty: Type, sz: usize, ty: Type, i: Info},
     Projection {e: Box<Expr>, label: String, ty: Type, i: Info},
     SimdOp {op: BinOp, arg: Box<Expr>, ty: Type, i: Info},
     ThreadIdx {dim: Dim, ty: Type, i: Info},
     BlockIdx {dim: Dim, ty: Type, i: Info},
 }
 
-impl Expr {
-    pub fn is_leaf_node(&self) -> bool {
+impl ExprType<Type> for Expr {
+    fn get_type<'a>(&'a self) -> &'a Type {
+        match self {
+            Expr::Var {ty, ..} => ty,
+            Expr::Bool {ty, ..} => ty,
+            Expr::Int {ty, ..} => ty,
+            Expr::Float {ty, ..} => ty,
+            Expr::UnOp {ty, ..} => ty,
+            Expr::BinOp {ty, ..} => ty,
+            Expr::Ternary {ty, ..} => ty,
+            Expr::ArrayAccess {ty, ..} => ty,
+            Expr::HostArrayAccess {ty, ..} => ty,
+            Expr::Call {ty, ..} => ty,
+            Expr::Convert {ty, ..} => ty,
+            Expr::KernelLaunch {ty, ..} => ty,
+            Expr::AllocDevice {ty, ..} => ty,
+            Expr::Projection {ty, ..} => ty,
+            Expr::SimdOp {ty, ..} => ty,
+            Expr::ThreadIdx {ty, ..} => ty,
+            Expr::BlockIdx {ty, ..} => ty,
+        }
+    }
+
+    fn is_leaf_node(&self) -> bool {
         match self {
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::Call {..} | Expr::ThreadIdx {..} |
             Expr::BlockIdx {..} => true,
             _ => false
+        }
+    }
+}
+
+impl InfoNode for Expr {
+    fn get_info(&self) -> Info {
+        match self {
+            Expr::Var {i, ..} => i.clone(),
+            Expr::Bool {i, ..} => i.clone(),
+            Expr::Int {i, ..} => i.clone(),
+            Expr::Float {i, ..} => i.clone(),
+            Expr::UnOp {i, ..} => i.clone(),
+            Expr::BinOp {i, ..} => i.clone(),
+            Expr::Ternary {i, ..} => i.clone(),
+            Expr::ArrayAccess {i, ..} => i.clone(),
+            Expr::HostArrayAccess {i, ..} => i.clone(),
+            Expr::Call {i, ..} => i.clone(),
+            Expr::Convert {e, ..} => e.get_info(),
+            Expr::KernelLaunch {i, ..} => i.clone(),
+            Expr::AllocDevice {i, ..} => i.clone(),
+            Expr::Projection {i, ..} => i.clone(),
+            Expr::SimdOp {i, ..} => i.clone(),
+            Expr::ThreadIdx {i, ..} => i.clone(),
+            Expr::BlockIdx {i, ..} => i.clone(),
         }
     }
 }
@@ -115,9 +163,9 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
             },
-            Expr::KernelLaunch {id, blocks, threads, args, i} => {
+            Expr::KernelLaunch {id, blocks, threads, args, ty, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Expr::KernelLaunch {id, blocks, threads, args, i}))
+                Ok((acc, Expr::KernelLaunch {id, blocks, threads, args, ty, i}))
             },
             Expr::Projection {e, label, ty, i} => {
                 let (acc, e) = f(acc?, *e)?;

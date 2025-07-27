@@ -4,6 +4,7 @@
 // in a kernel launch and deallocate them at the end of the host call.
 
 use crate::gpu::ast::*;
+use crate::utils::ast::ExprType;
 use crate::utils::info::Info;
 use crate::utils::name::Name;
 use crate::utils::smap::SMapAccum;

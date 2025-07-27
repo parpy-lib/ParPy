@@ -1,6 +1,11 @@
+use crate::utils::ast::ExprType;
 use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::smap::*;
+
+pub use crate::utils::ast::ElemSize;
+pub use crate::utils::ast::UnOp;
+pub use crate::utils::ast::BinOp;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MemSpace {
@@ -15,11 +20,6 @@ pub enum MemSpace {
 pub enum Dim {
     X, Y, Z
 }
-
-// Reuse definitions from the IR AST.
-pub use crate::ir::ast::ElemSize;
-pub use crate::ir::ast::UnOp;
-pub use crate::ir::ast::BinOp;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -66,8 +66,8 @@ pub enum Expr {
     BlockIdx {dim: Dim, ty: Type, i: Info},
 }
 
-impl Expr {
-    pub fn get_type<'a>(&'a self) -> &'a Type {
+impl ExprType<Type> for Expr {
+    fn get_type<'a>(&'a self) -> &'a Type {
         match self {
             Expr::Var {ty, ..} => ty,
             Expr::Bool {ty, ..} => ty,
@@ -86,7 +86,7 @@ impl Expr {
         }
     }
 
-    pub fn is_leaf_node(&self) -> bool {
+    fn is_leaf_node(&self) -> bool {
         match self {
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::Call {..} | Expr::Struct {..} |

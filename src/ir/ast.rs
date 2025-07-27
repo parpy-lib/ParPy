@@ -4,10 +4,9 @@ use crate::utils::smap::{SFold, SMapAccum};
 
 pub use crate::par::LoopPar;
 
-// Reuse the definition of element sizes from the Python AST.
-pub use crate::py::ast::ElemSize;
-pub use crate::py::ast::UnOp;
-pub use crate::py::ast::BinOp;
+pub use crate::utils::ast::ElemSize;
+pub use crate::utils::ast::UnOp;
+pub use crate::utils::ast::BinOp;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -15,24 +14,6 @@ pub enum Type {
     Pointer {ty: Box<Type>, count: usize},
     Struct {id: Name},
     Void,
-}
-
-impl BinOp {
-    pub fn precedence(&self) -> usize {
-        match self {
-            BinOp::Or => 2,
-            BinOp::And => 3,
-            BinOp::BitOr => 4,
-            BinOp::BitXor => 5,
-            BinOp::BitAnd => 6,
-            BinOp::Eq | BinOp::Neq => 7,
-            BinOp::Leq | BinOp::Geq | BinOp::Lt | BinOp::Gt => 8,
-            BinOp::BitShl | BinOp::BitShr => 10,
-            BinOp::Add | BinOp::Sub => 11,
-            BinOp::Mul | BinOp::FloorDiv | BinOp::Div | BinOp::Rem => 12,
-            BinOp::Pow | BinOp::Max | BinOp::Min | BinOp::Atan2 => 20
-        }
-    }
 }
 
 #[derive(Clone, Debug)]

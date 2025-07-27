@@ -9,65 +9,11 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
 
+pub use crate::utils::ast::ElemSize;
+pub use crate::utils::ast::UnOp;
+pub use crate::utils::ast::BinOp;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
-pub enum ElemSize {
-    #[default] Bool, I8, I16, I32, I64, U8, U16, U32, U64, F16, F32, F64
-}
-
-impl ElemSize {
-    pub fn is_boolean(&self) -> bool {
-        match self {
-            ElemSize::Bool => true,
-            _ => false
-        }
-    }
-
-    pub fn is_signed_integer(&self) -> bool {
-        match self {
-            ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 => true,
-            _ => false
-        }
-    }
-
-    pub fn is_unsigned_integer(&self) -> bool {
-        match self {
-            ElemSize::U8 | ElemSize::U16 | ElemSize::U32 | ElemSize::U64 => true,
-            _ => false
-        }
-    }
-
-    pub fn is_integer(&self) -> bool {
-        self.is_signed_integer() || self.is_unsigned_integer()
-    }
-
-    pub fn is_floating_point(&self) -> bool {
-        match self {
-            ElemSize::F16 | ElemSize::F32 | ElemSize::F64 => true,
-            _ => false
-        }
-    }
-}
-
-impl fmt::Display for ElemSize {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ElemSize::Bool => write!(f, "bool"),
-            ElemSize::I8 => write!(f, "int8"),
-            ElemSize::I16 => write!(f, "int16"),
-            ElemSize::I32 => write!(f, "int32"),
-            ElemSize::I64 => write!(f, "int64"),
-            ElemSize::U8 => write!(f, "uint8"),
-            ElemSize::U16 => write!(f, "uint16"),
-            ElemSize::U32 => write!(f, "uint32"),
-            ElemSize::U64 => write!(f, "uint64"),
-            ElemSize::F16 => write!(f, "float16"),
-            ElemSize::F32 => write!(f, "float32"),
-            ElemSize::F64 => write!(f, "float64"),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, EnumIter)]
 pub enum Type {
     String,
     Tensor {sz: ElemSize, shape: Vec<i64>},
@@ -92,47 +38,7 @@ impl Type {
             panic!("Parir internal error: expected dictionary type, found {self}")
         }
     }
-
-    pub fn discriminator(&self) -> u8 {
-        match self {
-            Type::String => 0,
-            Type::Tensor {..} => 1,
-            Type::Tuple {..} => 2,
-            Type::Dict {..} => 3,
-            Type::Void => 4,
-            Type::Unknown => 5,
-        }
-    }
 }
-
-impl Ord for Type {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
-            (Type::String, Type::String) => Ordering::Equal,
-            (Type::Tensor {sz: lsz, shape: lsh}, Type::Tensor {sz: rsz, shape: rsh}) =>
-                lsz.cmp(rsz).then(lsh.cmp(rsh)),
-            (Type::Tuple {elems: lelems}, Type::Tuple {elems: relems}) =>
-                lelems.cmp(relems),
-            (Type::Dict {fields: lfields}, Type::Dict {fields: rfields}) =>
-                lfields.iter()
-                    .zip(rfields.iter())
-                    .fold(Ordering::Equal, |acc, ((lk, lv), (rk, rv))| {
-                        acc.then(lk.cmp(rk)).then(lv.cmp(rv))
-                    }),
-            (Type::Void, Type::Void) => Ordering::Equal,
-            (Type::Unknown, Type::Unknown) => Ordering::Equal,
-            (lhs, rhs) => lhs.discriminator().cmp(&rhs.discriminator())
-        }
-    }
-}
-
-impl PartialOrd for Type {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Eq for Type {}
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -202,19 +108,6 @@ pub enum Builtin {
     #[default] Exp, Inf, Log, Max, Min, Abs, Cos, Sin, Sqrt, Tanh, Atan2,
     Sum, Prod,
     Convert {sz: ElemSize}, Label, GpuContext
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub enum UnOp {
-    #[default] Sub, Not, BitNeg, Addressof, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub enum BinOp {
-    #[default] Add, Sub, Mul, FloorDiv, Div, Rem, Pow, And, Or,
-    BitAnd, BitOr, BitXor, BitShl, BitShr,
-    Eq, Neq, Leq, Geq, Lt, Gt,
-    Max, Min, Atan2
 }
 
 #[derive(Clone, Debug, EnumIter)]
@@ -698,15 +591,6 @@ mod test {
     fn scalar_elem_size_multi_dim_tensor() {
         let ty = Type::Tensor {sz: ElemSize::I64, shape: vec![10,20]};
         assert_eq!(ty.get_scalar_elem_size(), None);
-    }
-
-    #[test]
-    fn compare_type_discriminators() {
-        for (i, ty1) in Type::iter().enumerate() {
-            for (j, ty2) in Type::iter().enumerate() {
-                assert_eq!(ty1.discriminator().cmp(&ty2.discriminator()), i.cmp(&j));
-            }
-        }
     }
 
     #[test]

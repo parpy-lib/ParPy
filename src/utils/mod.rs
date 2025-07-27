@@ -1,3 +1,4 @@
+pub mod ast;
 pub mod constant_fold;
 pub mod debug;
 pub mod err;

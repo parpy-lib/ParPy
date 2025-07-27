@@ -4,6 +4,7 @@ use super::par::{GpuMap, GpuMapping};
 use crate::prickle_compile_error;
 use crate::option;
 use crate::ir::ast as ir_ast;
+use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;

@@ -2,6 +2,7 @@ use super::ast::*;
 use crate::prickle_internal_error;
 use crate::prickle_type_error;
 use crate::gpu::ast as gpu_ast;
+use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
@@ -204,16 +205,18 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
                 .map(|e| from_gpu_ir_expr(env, e))
                 .collect::<CompileResult<Vec<Expr>>>()?;
             let gpu_ast::LaunchArgs {blocks, threads} = grid;
+            let ty = Type::Scalar {sz: ElemSize::I32};
             Ok(Stmt::Definition {
-                ty: Type::Scalar {sz: ElemSize::I32}, id: Name::sym_str("err"),
-                expr: Expr::KernelLaunch {id, blocks, threads, args, i}
+                ty: ty.clone(), id: Name::sym_str("err"),
+                expr: Expr::KernelLaunch {id, blocks, threads, args, ty, i}
             })
         },
         gpu_ast::Stmt::AllocDevice {elem_ty, id, sz, i} => {
             let elem_ty = from_gpu_ir_type(env, elem_ty, &i)?;
+            let ty = Type::Scalar {sz: ElemSize::I32};
             Ok(Stmt::Definition {
-                ty: Type::Scalar {sz: ElemSize::I32}, id: Name::sym_str("err"),
-                expr: Expr::AllocDevice {id, elem_ty, sz, i}
+                ty: ty.clone(), id: Name::sym_str("err"),
+                expr: Expr::AllocDevice {id, elem_ty, sz, ty, i}
             })
         },
         gpu_ast::Stmt::AllocShared {elem_ty, id, sz, i} => {

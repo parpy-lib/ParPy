@@ -137,7 +137,7 @@ fn parenthesize_if_predicate(
     p: impl Fn(Ordering) -> bool
 ) -> String {
     match inner_op_opt {
-        Some(inner_op) if p(inner_op.precedence().cmp(&outer_op.precedence())) => {
+        Some(inner_op) if p(BinOp::precedence(&inner_op, outer_op)) => {
             format!("({s})")
         },
         _ => s

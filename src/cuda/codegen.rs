@@ -3,6 +3,7 @@ use crate::option;
 use crate::prickle_internal_error;
 use crate::prickle_type_error;
 use crate::gpu::ast as gpu_ast;
+use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::Info;
 use crate::utils::name::Name;

@@ -1,5 +1,6 @@
 use crate::prickle_compile_error;
 use crate::gpu::ast::*;
+use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::Info;
 use crate::utils::name::Name;

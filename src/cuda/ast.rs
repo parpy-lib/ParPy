@@ -1,11 +1,11 @@
+use crate::utils::ast::ExprType;
 use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::smap::*;
 
-// Re-use nodes from the GPU IR AST.
-pub use crate::gpu::ast::ElemSize;
-pub use crate::gpu::ast::UnOp;
-pub use crate::gpu::ast::BinOp;
+pub use crate::utils::ast::ElemSize;
+pub use crate::utils::ast::UnOp;
+pub use crate::utils::ast::BinOp;
 pub use crate::gpu::ast::Dim;
 pub use crate::gpu::ast::Dim3;
 pub use crate::gpu::ast::SyncScope;
@@ -83,8 +83,8 @@ pub enum Expr {
     GraphExecLaunch {id: Name, ty: Type, i: Info},
 }
 
-impl Expr {
-    pub fn get_type<'a>(&'a self) -> &'a Type {
+impl ExprType<Type> for Expr {
+    fn get_type<'a>(&'a self) -> &'a Type {
         match self {
             Expr::Var {ty, ..} => ty,
             Expr::Bool {ty, ..} => ty,
@@ -117,7 +117,7 @@ impl Expr {
         }
     }
 
-    pub fn is_leaf_node(&self) -> bool {
+    fn is_leaf_node(&self) -> bool {
         match self {
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::Call {..} |
