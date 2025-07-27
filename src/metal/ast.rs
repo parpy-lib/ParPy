@@ -36,6 +36,11 @@ impl Type {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum SimdOp {
+    Sum, Prod, Max, Min
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Var {id: Name, ty: Type, i: Info},
     Bool {v: bool, ty: Type, i: Info},
@@ -55,7 +60,7 @@ pub enum Expr {
     },
     AllocDevice {id: Name, elem_ty: Type, sz: usize, ty: Type, i: Info},
     Projection {e: Box<Expr>, label: String, ty: Type, i: Info},
-    SimdOp {op: BinOp, arg: Box<Expr>, ty: Type, i: Info},
+    SimdOp {op: SimdOp, arg: Box<Expr>, ty: Type, i: Info},
     ThreadIdx {dim: Dim, ty: Type, i: Info},
     BlockIdx {dim: Dim, ty: Type, i: Info},
 }

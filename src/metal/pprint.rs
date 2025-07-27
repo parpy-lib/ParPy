@@ -124,6 +124,16 @@ impl PrettyPrintBinOp<Type> for Expr {
     }
 }
 
+fn print_simd_op(op: &SimdOp) -> String {
+    let s = match op {
+        SimdOp::Sum => "simd_sum",
+        SimdOp::Prod => "simd_product",
+        SimdOp::Max => "simd_max",
+        SimdOp::Min => "simd_min",
+    };
+    format!("metal::{s}")
+}
+
 impl PrettyPrint for Expr {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
@@ -188,19 +198,9 @@ impl PrettyPrint for Expr {
                 let (env, e) = e.pprint(env);
                 (env, format!("{e}.{label}"))
             },
-            Expr::SimdOp {op, arg, ty, i} => {
+            Expr::SimdOp {op, arg, ..} => {
                 let (env, arg) = arg.pprint(env);
-                let fun_str = match op {
-                    BinOp::Add => "metal::simd_sum",
-                    BinOp::Mul => "metal::simd_product",
-                    BinOp::Max => "metal::simd_max",
-                    BinOp::Min => "metal::simd_min",
-                    _ => {
-                        let op = Expr::print_binop(op, &ty, &ty);
-                        let msg = format!("Reduction on unsupported binary operation {op}");
-                        panic!("{}", i.error_msg(msg))
-                    }
-                };
+                let fun_str = print_simd_op(op);
                 (env, format!("{fun_str}({arg})"))
             },
             // These nodes should have been replaced by named references, to avoid the risk of
@@ -499,7 +499,7 @@ mod test {
         assert_eq!(float(f64::INFINITY, ElemSize::F64).pprint_default(), "HUGE_VAL");
     }
 
-    fn simd_op(op: BinOp) -> Expr {
+    fn simd_op(op: SimdOp) -> Expr {
         Expr::SimdOp {
             op,
             arg: Box::new(var("x", scalar(ElemSize::F32))),
@@ -510,28 +510,22 @@ mod test {
 
     #[test]
     fn print_simd_op_add() {
-        assert_eq!(simd_op(BinOp::Add).pprint_default(), "metal::simd_sum(x)");
+        assert_eq!(simd_op(SimdOp::Sum).pprint_default(), "metal::simd_sum(x)");
     }
 
     #[test]
     fn print_simd_op_mul() {
-        assert_eq!(simd_op(BinOp::Mul).pprint_default(), "metal::simd_product(x)");
+        assert_eq!(simd_op(SimdOp::Prod).pprint_default(), "metal::simd_product(x)");
     }
 
     #[test]
     fn print_simd_op_max() {
-        assert_eq!(simd_op(BinOp::Max).pprint_default(), "metal::simd_max(x)");
+        assert_eq!(simd_op(SimdOp::Max).pprint_default(), "metal::simd_max(x)");
     }
 
     #[test]
     fn print_simd_op_min() {
-        assert_eq!(simd_op(BinOp::Min).pprint_default(), "metal::simd_min(x)");
-    }
-
-    #[test]
-    #[should_panic]
-    fn print_simd_op_sub() {
-        simd_op(BinOp::Sub).pprint_default();
+        assert_eq!(simd_op(SimdOp::Min).pprint_default(), "metal::simd_min(x)");
     }
 
     #[test]

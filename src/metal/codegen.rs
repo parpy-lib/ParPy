@@ -1,4 +1,5 @@
 use super::ast::*;
+use crate::prickle_compile_error;
 use crate::prickle_internal_error;
 use crate::prickle_type_error;
 use crate::gpu::ast as gpu_ast;
@@ -131,6 +132,19 @@ fn from_gpu_ir_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
     }
 }
 
+fn from_gpu_ir_reduce_op(op: &BinOp, i: &Info) -> CompileResult<SimdOp> {
+    match op {
+        BinOp::Add => Ok(SimdOp::Sum),
+        BinOp::Mul => Ok(SimdOp::Prod),
+        BinOp::Max => Ok(SimdOp::Max),
+        BinOp::Min => Ok(SimdOp::Min),
+        _ => {
+            let op = Expr::print_binop(op, &Type::Void, &Type::Void);
+            prickle_compile_error!(i, "Reduction on unsupported binary operation {op}")
+        }
+    }
+}
+
 fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
     match s {
         gpu_ast::Stmt::Definition {ty, id, expr, i} => {
@@ -183,6 +197,7 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
         },
         gpu_ast::Stmt::WarpReduce {value, op, res_ty, i, ..} => {
             let value = from_gpu_ir_expr(env, value)?;
+            let op = from_gpu_ir_reduce_op(&op, &i)?;
             let ty = from_gpu_ir_type(env, res_ty, &i)?;
             Ok(Stmt::Assign {
                 dst: value.clone(),
