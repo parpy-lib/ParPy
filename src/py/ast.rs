@@ -36,7 +36,7 @@ impl Type {
         if let Type::Dict {fields} = self {
             fields.clone()
         } else {
-            panic!("Parir internal error: expected dictionary type, found {self}")
+            panic!("Internal error: expected dictionary type, found {self}")
         }
     }
 }

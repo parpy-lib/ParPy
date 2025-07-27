@@ -34,7 +34,7 @@ fn python_to_ir<'py>(
     let def = py::inline_function_calls(def, &ir_asts)?;
 
     // Wrap the intermediate AST in a capsule that we return to Python.
-    let name = CString::new("Parir untyped Python function AST")?;
+    let name = CString::new("Prickle untyped Python function AST")?;
     Ok(PyCapsule::new::<py::ast::FunDef>(py, def, Some(name))?)
 }
 

@@ -14,9 +14,9 @@ enum ErrorKind {
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ErrorKind::Compile => write!(f, "Parir compilation error"),
-            ErrorKind::Name => write!(f, "Parir name error"),
-            ErrorKind::Type => write!(f, "Parir type error"),
+            ErrorKind::Compile => write!(f, "Prickle compile error"),
+            ErrorKind::Name => write!(f, "Prickle name error"),
+            ErrorKind::Type => write!(f, "Prickle type error"),
         }
     }
 }
@@ -41,7 +41,7 @@ impl CompileError {
     }
 
     pub fn internal_err(msg: String) -> Self {
-        let msg = format!("Internal compiler error: {msg}");
+        let msg = format!("Internal error: {msg}");
         CompileError {msg, kind: ErrorKind::Compile}
     }
 }

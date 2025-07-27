@@ -554,7 +554,7 @@ fn convert_stmt<'py, 'a>(
                 let msg = concat!(
                     "Unexpected shape of the AST definition.\n",
                     "This issue may arise because the AST format used by the ",
-                    "'ast' module of Python is different from what the Parir ",
+                    "'ast' module of Python is different from what the Prickle ",
                     "compiler expects. Try using Python version 3.10."
                 );
                 py_runtime_error!(i, "{}", msg)
