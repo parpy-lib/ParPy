@@ -1,5 +1,4 @@
 pub mod ast;
-mod ast_builder;
 mod clusters;
 mod codegen;
 mod error;
@@ -7,6 +6,9 @@ mod graphs;
 mod memory;
 mod pprint;
 mod reduce;
+
+#[cfg(test)]
+mod ast_builder;
 
 use ast::*;
 use crate::ir::ast as ir_ast;
