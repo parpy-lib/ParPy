@@ -27,7 +27,7 @@ fn validate_return_type(ty: &Type) -> CompileResult<()> {
 
 fn contains_struct_type(ty: &Type) -> bool {
     match ty {
-        Type::Void | Type::Boolean | Type::Scalar {..} => false,
+        Type::Void | Type::Scalar {..} => false,
         Type::Pointer {ty, ..} => contains_struct_type(ty),
         Type::Struct {..} => true,
     }

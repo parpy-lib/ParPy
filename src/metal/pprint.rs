@@ -27,7 +27,6 @@ impl PrettyPrint for Type {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
             Type::Void => (env, "void".to_string()),
-            Type::Boolean => (env, "bool".to_string()),
             Type::Scalar {sz} => sz.pprint(env),
             Type::Pointer {ty, mem} => {
                 let (env, ty) = ty.pprint(env);

@@ -49,7 +49,7 @@ impl CFExpr<Type> for Expr {
 
 impl CFType for Type {
     fn is_bool(&self) -> bool {
-        *self == Type::Boolean
+        *self == Type::Scalar {sz: ElemSize::Bool}
     }
 
     fn is_int(&self) -> bool {

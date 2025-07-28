@@ -13,7 +13,6 @@ use crate::utils::smap::*;
 fn from_gpu_ir_type(ty: gpu_ast::Type) -> Type {
     match ty {
         gpu_ast::Type::Void => Type::Void,
-        gpu_ast::Type::Boolean => Type::Boolean,
         gpu_ast::Type::Scalar {sz} => Type::Scalar {sz},
         gpu_ast::Type::Pointer {ty, ..} => {
             Type::Pointer {ty: Box::new(from_gpu_ir_type(*ty))}
@@ -277,7 +276,8 @@ fn type_contains_16_bit_floats(acc: bool, ty: &gpu_ast::Type) -> bool {
     match ty {
         gpu_ast::Type::Scalar {sz: ElemSize::F16} => true,
         gpu_ast::Type::Pointer {ty, ..} => type_contains_16_bit_floats(acc, ty),
-        gpu_ast::Type::Void | gpu_ast::Type::Boolean | gpu_ast::Type::Scalar {..} |
+        gpu_ast::Type::Void |
+        gpu_ast::Type::Scalar {..} |
         gpu_ast::Type::Struct {..} => acc,
     }
 }

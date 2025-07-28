@@ -44,7 +44,6 @@ fn from_gpu_ir_mem(mem: gpu_ast::MemSpace) -> MemSpace {
 fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileResult<Type> {
     match ty {
         gpu_ast::Type::Void => Ok(Type::Void),
-        gpu_ast::Type::Boolean => Ok(Type::Boolean),
         gpu_ast::Type::Scalar {sz} => {
             match sz {
                 ElemSize::F64 if env.on_device => {

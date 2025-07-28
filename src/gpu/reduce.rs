@@ -227,7 +227,7 @@ fn generate_shared_memory_zero_initialized(env: &ReduceEnv, acc: &mut Vec<Stmt>)
         lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: int_ty.clone(), i: i.clone()}),
         op: BinOp::Lt,
         rhs: Box::new(Expr::Int {v: 32, ty: int_ty.clone(), i: i.clone()}),
-        ty: Type::Boolean,
+        ty: Type::Scalar {sz: ElemSize::Bool},
         i: i.clone()
     };
     acc.push(Stmt::If {
@@ -267,7 +267,7 @@ fn generate_shared_memory_exchange(
         lhs: Box::new(warp_op(BinOp::Rem)),
         op: BinOp::Eq,
         rhs: Box::new(Expr::Int {v: 0, ty: int_ty.clone(), i: i.clone()}),
-        ty: Type::Boolean,
+        ty: Type::Scalar {sz: ElemSize::Bool},
         i: i.clone()
     };
     acc.push(Stmt::If {

@@ -38,7 +38,7 @@ fn generate_warp_reduction(
         lhs: Box::new(iter_var.clone()),
         op: BinOp::Gt,
         rhs: Box::new(int_lit(0)),
-        ty: Type::Boolean,
+        ty: Type::Scalar {sz: ElemSize::Bool},
         i: i.clone()
     };
     let incr_expr = Expr::BinOp {

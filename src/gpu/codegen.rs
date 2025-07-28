@@ -119,7 +119,7 @@ fn determine_loop_bounds(
         lhs: Box::new(var_e.clone()),
         op: cond_op,
         rhs: Box::new(from_ir_expr(hi)?),
-        ty: Type::Boolean,
+        ty: Type::Scalar {sz: ElemSize::Bool},
         i: i.clone()
     };
     let step = Expr::Int {

@@ -120,7 +120,8 @@ fn transform_thread_independent_memory_writes_stmt(
                         rhs: Box::new(Expr::Int {
                             v: 0, ty: i64_ty.clone(), i: ii.clone()
                         }),
-                        ty: Type::Boolean, i: ii.clone()
+                        ty: Type::Scalar {sz: ElemSize::Bool},
+                        i: ii.clone()
                     },
                     thn: vec![stmt],
                     els: vec![],
@@ -262,7 +263,8 @@ mod test {
                 lhs: Box::new(Expr::ThreadIdx {dim: Dim::X, ty: i64_ty(), i: i()}),
                 op: BinOp::Eq,
                 rhs: Box::new(int(0)),
-                ty: Type::Boolean, i: i()
+                ty: Type::Scalar {sz: ElemSize::Bool},
+                i: i()
             },
             thn: vec![stmt],
             els: vec![],
