@@ -226,3 +226,106 @@ impl fmt::Display for Ast {
         write!(f, "{}", self.pprint_default())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::ir::ast_builder::*;
+    use crate::utils::info::Info;
+
+    #[test]
+    fn print_scalar_type() {
+        assert_eq!(scalar(ElemSize::F32).pprint_default(), "float");
+    }
+
+    #[test]
+    fn print_tensor_vector_type() {
+        assert_eq!(shape(vec![10]).pprint_default(), "tensor<int64_t;10>");
+    }
+
+    #[test]
+    fn print_pointer_type() {
+        let ptrty = Type::Pointer {ty: Box::new(scalar(ElemSize::F16)), count: 20};
+        assert_eq!(ptrty.pprint_default(), "ptr<half;20>");
+    }
+
+    #[test]
+    fn print_struct_type() {
+        let sty = Type::Struct {id: id("x")};
+        assert_eq!(sty.pprint_default(), "struct x");
+    }
+
+    #[test]
+    fn print_void_type() {
+        assert_eq!(Type::Void.pprint_default(), "void");
+    }
+
+    #[test]
+    fn print_if_expr() {
+        let ifexpr = Expr::IfExpr {
+            cond: Box::new(bool_expr(true)),
+            thn: Box::new(int(1, None)),
+            els: Box::new(int(0, None)),
+            ty: scalar(ElemSize::I64),
+            i: Info::default()
+        };
+        assert_eq!(ifexpr.pprint_default(), "(1 if true else 0)");
+    }
+
+    #[test]
+    fn print_assign_stmt() {
+        let ty = scalar(ElemSize::I64);
+        let s = assign(var("x", ty.clone()), int(1, None));
+        assert_eq!(s.pprint_default(), "x = 1;");
+    }
+
+    #[test]
+    fn print_assign_indent_stmt() {
+        let ty = scalar(ElemSize::I64);
+        let s = assign(var("x", ty.clone()), int(1, None));
+        let env = PrettyPrintEnv::new().incr_indent();
+        let (env, s) = s.pprint(env);
+        assert_eq!(s, format!("{}x = 1;", env.print_indent()));
+    }
+
+    #[test]
+    fn print_block_local_sync_point_stmt() {
+        let sp = Stmt::SyncPoint {kind: SyncPointKind::BlockLocal, i: Info::default()};
+        assert_eq!(sp.pprint_default(), "sync(block_local);");
+    }
+
+    #[test]
+    fn print_inter_block_sync_point_stmt() {
+        let sp = Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i: Info::default()};
+        assert_eq!(sp.pprint_default(), "sync(inter_block);");
+    }
+
+    #[test]
+    fn print_struct_def() {
+        let fields = vec![
+            Field {id: "x".to_string(), ty: scalar(ElemSize::F64), i: Info::default()},
+            Field {id: "y".to_string(), ty: scalar(ElemSize::F32), i: Info::default()},
+        ];
+        let def = StructDef {id: id("point"), fields, i: Info::default()};
+        let indent = PrettyPrintEnv::new().incr_indent().print_indent();
+        let s = format!("struct point {{\n{0}double x;\n{0}float y;\n}};", indent);
+        assert_eq!(def.pprint_default(), s);
+    }
+
+    #[test]
+    fn print_fun_def() {
+        let params = vec![
+            Param {id: id("x"), ty: scalar(ElemSize::F64), i: Info::default()},
+            Param {id: id("y"), ty: scalar(ElemSize::F32), i: Info::default()},
+        ];
+        let body = vec![
+            assign(var("z", scalar(ElemSize::F64)), var("x", scalar(ElemSize::F64))),
+        ];
+        let def = FunDef {
+            id: id("f"), params, body, res_ty: Type::Void, i: Info::default()
+        };
+        let indent = PrettyPrintEnv::new().incr_indent().print_indent();
+        let s = format!("void f(double x, float y) {{\n{}z = x;\n}}", indent);
+        assert_eq!(def.pprint_default(), s);
+    }
+}

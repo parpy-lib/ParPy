@@ -77,6 +77,32 @@ pub fn propagate_configuration(ast: Ast) -> CompileResult<Ast> {
 mod test {
     use super::*;
     use crate::ir::ast_builder::*;
+    use crate::ir::test::*;
+    use crate::utils::info::Info;
+
+    fn i() -> Info {
+        Info::default()
+    }
+
+    #[test]
+    fn merge_tpb_default_default() {
+        assert_eq!(merge_tpb(par::DEFAULT_TPB, par::DEFAULT_TPB, &i()), Ok(par::DEFAULT_TPB));
+    }
+
+    #[test]
+    fn merge_tpb_default_non_default() {
+        assert_eq!(merge_tpb(par::DEFAULT_TPB, 128, &i()), Ok(128));
+    }
+
+    #[test]
+    fn merge_tpb_non_default_default() {
+        assert_eq!(merge_tpb(128, par::DEFAULT_TPB, &i()), Ok(128));
+    }
+
+    #[test]
+    fn merge_tbp_inconsistent() {
+        assert_error_matches(merge_tpb(128, 256, &i()), r"inconsistent threads per block");
+    }
 
     #[test]
     fn test_no_propagation_for_sequential_loops() {

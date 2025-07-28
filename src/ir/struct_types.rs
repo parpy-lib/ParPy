@@ -97,7 +97,7 @@ pub fn find_dict_types(ast: &Ast) -> DictTypes {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ir::ast_builder::id;
+    use crate::py::ast_builder::*;
     use crate::utils::info::Info;
 
     #[test]
@@ -138,5 +138,18 @@ mod test {
         assert_eq!(dt.name_hints, expected_hints);
         let expected_types = vec![dict_ty].into_iter().collect::<BTreeSet<Type>>();
         assert_eq!(dt.types, expected_types);
+    }
+
+    #[test]
+    fn find_dict_type_stmt() {
+        let dty = dict_ty(vec![("z", scalar(ElemSize::F32))]);
+        let s = assignment(
+            var("x", scalar(ElemSize::F32)),
+            subscript(var("y", dty.clone()), string("z"), scalar(ElemSize::F32))
+        );
+        let dt = find_dict_types_stmt(DictTypes::default(), &s);
+        assert_eq!(dt.name_hints, BTreeMap::new());
+        let types = vec![dty].into_iter().collect::<BTreeSet<Type>>();
+        assert_eq!(dt.types, types);
     }
 }
