@@ -157,8 +157,8 @@ fn extract_neutral_element(
     match reduce::neutral_element(op, sz, i) {
         Some(ne) => Ok(ne),
         None => prickle_compile_error!(i, "Reduction operation {0} has unknown \
-                                         neutral element.",
-                                         op.pprint_default())
+                                           neutral element.",
+                                           op.pprint_default())
     }
 }
 
@@ -438,8 +438,8 @@ fn split_inter_block_parallel_reductions_stmt(
                 Ok(Stmt::If {cond: true_expr, thn, els: vec![], i: i.clone()})
             } else {
                 prickle_compile_error!(i, "Multi-block reductions must use a \
-                                         multiple of {0} threads.",
-                                         par.tpb)
+                                           multiple of {0} threads.",
+                                           par.tpb)
             }
         },
         _ => s.smap_result(|s| split_inter_block_parallel_reductions_stmt(opts, s))
@@ -1172,7 +1172,153 @@ pub fn restructure_inter_block_synchronization(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::gpu::test::*;
     use crate::ir::ast_builder::*;
+    use crate::option::*;
+
+    fn i() -> Info {
+        Info::default()
+    }
+
+    #[test]
+    fn cuda_cluster_size_correct_opts() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Cuda;
+        opts.use_cuda_thread_block_clusters = true;
+        opts.max_thread_blocks_per_cluster = 16;
+        assert_eq!(determine_cuda_cluster_size(&opts), Some(16));
+    }
+
+    #[test]
+    fn cuda_cluster_size_invalid_opts() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Metal;
+        assert!(determine_cuda_cluster_size(&opts).is_none());
+    }
+
+    #[test]
+    fn classify_block_local() {
+        let opts = CompileOptions::default();
+        let p = LoopPar::default().threads(128).unwrap();
+        assert_eq!(classify_parallelism(&opts, &p), SyncPointKind::BlockLocal);
+    }
+
+    #[test]
+    fn classify_block_cluster() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Cuda;
+        opts.use_cuda_thread_block_clusters = true;
+        opts.max_thread_blocks_per_cluster = 8;
+        let p = LoopPar::default()
+            .tpb(256).unwrap()
+            .threads(1024).unwrap();
+        assert_eq!(classify_parallelism(&opts, &p), SyncPointKind::BlockCluster);
+    }
+
+    #[test]
+    fn classify_inter_block_fails_to_fit_cluster() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Cuda;
+        opts.use_cuda_thread_block_clusters = true;
+        opts.max_thread_blocks_per_cluster = 8;
+        let p = LoopPar::default()
+            .tpb(256).unwrap()
+            .threads(4096).unwrap();
+        assert_eq!(classify_parallelism(&opts, &p), SyncPointKind::InterBlock);
+    }
+
+    #[test]
+    fn classify_inter_block() {
+        let opts = CompileOptions::default();
+        let p = LoopPar::default()
+            .tpb(256).unwrap()
+            .threads(1024).unwrap();
+        assert_eq!(classify_parallelism(&opts, &p), SyncPointKind::InterBlock);
+    }
+
+    #[test]
+    fn bool_and_non_short_circuiting() {
+        assert_eq!(non_short_circuiting_op(BinOp::And), BinOp::BitAnd);
+    }
+
+    #[test]
+    fn bool_or_non_short_circuiting() {
+        assert_eq!(non_short_circuiting_op(BinOp::Or), BinOp::BitOr);
+    }
+
+    #[test]
+    fn extract_bin_op_invalid_form() {
+        let e = unop(UnOp::Sub, int(1, None));
+        assert_error_matches(extract_bin_op(e), r"RHS of reduction.*should be.*binary operation");
+    }
+
+    #[test]
+    fn extract_bin_op_non_scalar_result() {
+        let e = binop(int(1, None), BinOp::Add, int(2, None), Some(Type::Void));
+        assert_error_matches(extract_bin_op(e), r"Expected.*a scalar value");
+    }
+
+    #[test]
+    fn unwrap_convert_expr() {
+        let e = Expr::Convert {e: Box::new(int(1, None)), ty: scalar(ElemSize::U16)};
+        assert_eq!(unwrap_convert(&e), int(1, None));
+    }
+
+    #[test]
+    fn extract_reduction_operands_invalid_body_size() {
+        let s = vec![
+            assign(var("x", scalar(ElemSize::I32)), int(1, None)),
+            assign(var("y", scalar(ElemSize::F32)), float(1.0, None)),
+        ];
+        assert_error_matches(
+            extract_reduction_operands(s, &i()),
+            "must contain a single statement"
+        );
+    }
+
+    #[test]
+    fn extract_reduction_operands_invalid_statement() {
+        let s = vec![
+            definition(scalar(ElemSize::I32), id("x"), int(1, None))
+        ];
+        assert_error_matches(
+            extract_reduction_operands(s, &i()),
+            "must be an assignment"
+        );
+    }
+
+    #[test]
+    fn extract_reduction_operands_invalid_lhs() {
+        let lhs = int(1, None);
+        let rhs = binop(var("x", scalar(ElemSize::I32)), BinOp::Add, int(1, None), None);
+        let s = vec![assign(lhs, rhs)];
+        assert_error_matches(
+            extract_reduction_operands(s, &i()),
+            "Left-hand side of reduction"
+        );
+    }
+
+    #[test]
+    fn extract_reduction_operands_invalid_destination() {
+        let lhs = var("x", scalar(ElemSize::I32));
+        let rhs = binop(var("y", scalar(ElemSize::I32)), BinOp::Add, int(1, None), None);
+        assert_error_matches(
+            extract_reduction_operands(vec![assign(lhs, rhs)], &i()),
+            "Left-hand side of binary operation.*not equal to the assignment target"
+        );
+    }
+
+    #[test]
+    fn extract_reduction_operands_ok() {
+        let lhs = var("x", scalar(ElemSize::I32));
+        let rhs = binop(lhs.clone(), BinOp::Add, int(1, None), None);
+        let s = vec![assign(lhs.clone(), rhs.clone())];
+        let (dst, op, rhs_bop, sz, _) = extract_reduction_operands(s, &i()).unwrap();
+        assert_eq!(dst, lhs);
+        assert_eq!(op, BinOp::Add);
+        assert_eq!(rhs_bop, int(1, None));
+        assert_eq!(sz, ElemSize::I32);
+    }
 
     fn for_(id: &str, n: i64, body: Vec<Stmt>) -> Stmt {
         let var = Name::new(id.to_string());

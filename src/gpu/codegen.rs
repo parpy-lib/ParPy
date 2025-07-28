@@ -232,8 +232,8 @@ fn subtract_from_grid(grid: LaunchArgs, m: &GpuMap) -> LaunchArgs {
             grid.with_blocks_dim(dim, blocks)
         },
         GpuMap::ThreadBlock {nthreads, nblocks, dim, ..} => {
-            let threads = grid.threads.get_dim(&dim) / nblocks;
-            let blocks = grid.blocks.get_dim(&dim) / nthreads;
+            let threads = grid.threads.get_dim(&dim) / nthreads;
+            let blocks = grid.blocks.get_dim(&dim) / nblocks;
             grid.with_blocks_dim(dim, blocks)
                 .with_threads_dim(dim, threads)
         }
@@ -601,4 +601,458 @@ pub fn from_general_ir(
         .collect::<CompileResult<Vec<Top>>>()?);
     tops.append(&mut from_ir_fun_def_helper(&env, main_def, true)?);
     Ok(tops)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::gpu::ast_builder::*;
+    use crate::gpu::test::*;
+    use crate::ir::ast_builder as ir;
+    use crate::option::CompileOptions;
+    use crate::par;
+    use crate::utils::pprint::PrettyPrint;
+
+    fn i() -> Info {
+        Info::default()
+    }
+
+    #[test]
+    fn from_scalar_type() {
+        assert_eq!(from_ir_type(ir::scalar(ElemSize::F32)), scalar(ElemSize::F32));
+    }
+
+    #[test]
+    fn from_tensor_vec_type() {
+        let ty = ir_ast::Type::Tensor {sz: ElemSize::I64, shape: vec![10]};
+        assert_eq!(from_ir_type(ty), pointer(scalar(ElemSize::I64), MemSpace::Device));
+    }
+
+    #[test]
+    fn from_int_expr() {
+        assert_eq!(
+            from_ir_expr(ir::int(1, Some(ElemSize::I64))).unwrap(),
+            int(1, Some(ElemSize::I64))
+        );
+    }
+
+    #[test]
+    fn gen_kernel_name() {
+        let fun_id = id("f");
+        let loop_var = id("x");
+        let kernel_id = generate_kernel_name(&fun_id, &loop_var);
+        assert_eq!(kernel_id.get_str(), "f_x");
+        assert!(kernel_id.has_sym());
+    }
+
+    #[test]
+    fn no_remainder_unique_dim() {
+        let idx = int(1, None);
+        assert_eq!(remainder_if_shared_dimension(idx.clone(), 10, 10, 1), idx);
+    }
+
+    #[test]
+    fn remainder_with_shared_dim() {
+        let idx = int(1, None);
+        let expected = binop(
+            binop(
+                idx.clone(),
+                BinOp::Div,
+                int(1, None),
+                scalar(ElemSize::I64)
+            ),
+            BinOp::Rem,
+            int(5, None),
+            scalar(ElemSize::I64)
+        );
+        assert_eq!(remainder_if_shared_dimension(idx, 10, 5, 1), expected);
+    }
+
+    #[test]
+    fn subtract_from_grid_threads() {
+        let grid = LaunchArgs::default().with_threads_dim(&Dim::X, 1024);
+        let m = GpuMap::Thread {n: 32, mult: 1, dim: Dim::X};
+        let expected = LaunchArgs::default().with_threads_dim(&Dim::X, 32);
+        assert_eq!(subtract_from_grid(grid, &m), expected);
+    }
+
+    #[test]
+    fn subtract_from_grid_thread_block() {
+        let grid = LaunchArgs::default()
+            .with_blocks_dim(&Dim::X, 8)
+            .with_threads_dim(&Dim::X, 128);
+        let m = GpuMap::ThreadBlock {n: 500, nthreads: 128, nblocks: 4, dim: Dim::X};
+        let expected = LaunchArgs::default().with_blocks_dim(&Dim::X, 2);
+        assert_eq!(subtract_from_grid(grid, &m), expected);
+    }
+
+    #[test]
+    fn subtract_from_grid_block() {
+        let grid = LaunchArgs::default().with_blocks_dim(&Dim::X, 32);
+        let m = GpuMap::Block {n: 8, mult: 4, dim: Dim::X};
+        let expected = LaunchArgs::default().with_blocks_dim(&Dim::X, 4);
+        assert_eq!(subtract_from_grid(grid, &m), expected);
+    }
+
+    #[test]
+    fn generate_block_local_sync_scope() {
+        let s = generate_sync_scope(ir_ast::SyncPointKind::BlockLocal, &i());
+        assert_eq!(s, Ok(SyncScope::Block));
+    }
+
+    #[test]
+    fn generate_block_cluster_sync_scope() {
+        let s = generate_sync_scope(ir_ast::SyncPointKind::BlockCluster, &i());
+        assert_eq!(s, Ok(SyncScope::Cluster));
+    }
+
+    #[test]
+    fn generate_inter_block_sync_scope() {
+        let s = generate_sync_scope(ir_ast::SyncPointKind::InterBlock, &i());
+        assert_error_matches(s, "inter-block synchronization point remaining");
+    }
+
+    fn gen_kernel_stmt(nb: i64, nt: i64, n: i64, s: ir_ast::Stmt) -> CompileResult<Stmt> {
+        let grid = LaunchArgs::default()
+            .with_blocks_dim(&Dim::X, nb)
+            .with_threads_dim(&Dim::X, nt);
+        let m = if nb > 1 {
+            vec![GpuMap::ThreadBlock {n, nthreads: nt, nblocks: nb, dim: Dim::X}]
+        } else {
+            vec![GpuMap::Thread {n: nt, mult: 1, dim: Dim::X}]
+        };
+        generate_kernel_stmt(grid, &m, vec![], s).map(|mut v| v.pop().unwrap())
+    }
+
+    fn _gen_for(par: par::LoopPar) -> ir_ast::Stmt {
+        ir_ast::Stmt::For {
+            var: id("x"),
+            lo: ir::int(0, None),
+            hi: ir::int(10, None),
+            step: 1,
+            par,
+            body: vec![],
+            i: Info::default()
+        }
+    }
+
+    fn assert_equal_statements(l: Stmt, r: Stmt) {
+        assert_eq!(
+            l, r, "\nExpected:\n{0}\nActual:\n{1}",
+            r.pprint_default(), l.pprint_default()
+        );
+    }
+
+    #[test]
+    fn generate_seq_for_kernel_stmt() {
+        let s = _gen_for(par::LoopPar::default());
+        let ty = scalar(ElemSize::I64);
+        let incr = binop(
+            var("x", ty.clone()),
+            BinOp::Add,
+            binop(
+                int(1, None),
+                BinOp::Mul,
+                int(1, None),
+                ty.clone()
+            ),
+            ty.clone()
+        );
+        let expected = Stmt::For {
+            var_ty: ty.clone(),
+            var: id("x"),
+            init: int(0, None),
+            cond: binop(var("x", ty.clone()), BinOp::Lt, int(10, None), bool_ty()),
+            incr, body: vec![], i: Info::default()
+        };
+        let s = gen_kernel_stmt(1, 1, 1, s).unwrap();
+        assert_equal_statements(s, expected);
+    }
+
+    #[test]
+    fn generate_par_for_kernel_stmt() {
+        let s = _gen_for(par::LoopPar::default().threads(128).unwrap());
+        let ty = scalar(ElemSize::I64);
+        let init = binop(
+            int(0, None),
+            BinOp::Add,
+            binop(int(1, None), BinOp::Mul, thread_idx(Dim::X), ty.clone()),
+            ty.clone()
+        );
+        let incr = binop(
+            var("x", ty.clone()),
+            BinOp::Add,
+            binop(
+                int(1, None),
+                BinOp::Mul,
+                int(128, None),
+                ty.clone()
+            ),
+            ty.clone()
+        );
+        let expected = Stmt::For {
+            var_ty: ty.clone(),
+            var: id("x"),
+            cond: binop(var("x", ty.clone()), BinOp::Lt, int(10, None), bool_ty()),
+            init, incr, body: vec![], i: Info::default()
+        };
+        assert_equal_statements(gen_kernel_stmt(1, 128, 128, s).unwrap(), expected);
+    }
+
+    #[test]
+    fn generate_multi_block_reduction_kernel_stmt() {
+        let s = _gen_for(par::LoopPar::default().reduce().threads(2000).unwrap());
+        let ty = scalar(ElemSize::I64);
+        let idx = binop(
+            binop(block_idx(Dim::X), BinOp::Mul, int(1024, None), ty.clone()),
+            BinOp::Add,
+            thread_idx(Dim::X),
+            ty.clone()
+        );
+        let init = binop(int(0, None), BinOp::Add, idx.clone(), ty.clone());
+        let cond = binop(
+            binop(var("x", ty.clone()), BinOp::Lt, int(10, None), ty.clone()),
+            BinOp::And,
+            binop(idx.clone(), BinOp::Lt, int(2000, None), ty.clone()),
+            ty.clone()
+        );
+        let incr = binop(
+            var("x", ty.clone()),
+            BinOp::Add,
+            binop(
+                int(1, None),
+                BinOp::Mul,
+                int(2000, None),
+                ty.clone()
+            ),
+            ty.clone()
+        );
+        let expected = Stmt::ParallelReduction {
+            var_ty: scalar(ElemSize::I64),
+            var: id("x"),
+            init, cond, incr,
+            body: vec![],
+            nthreads: 2000,
+            tpb: 1024,
+            i: Info::default()
+        };
+        assert_equal_statements(gen_kernel_stmt(2, 1024, 2000, s).unwrap(), expected);
+    }
+
+    fn cluster_mapping_h(m: GpuMap, use_clusters: bool) -> Option<i64> {
+        let mut opts = CompileOptions::default();
+        opts.use_cuda_thread_block_clusters = use_clusters;
+        let env = CodegenEnv {
+            gpu_mapping: BTreeMap::new(),
+            struct_fields: BTreeMap::new(),
+            opts: &opts
+        };
+        get_cluster_mapping(&env, &m)
+    }
+
+    #[test]
+    fn enabled_cluster_mapping() {
+        let m = GpuMap::ThreadBlock {n: 1024, nthreads: 1024, nblocks: 1, dim: Dim::X};
+        assert_eq!(cluster_mapping_h(m, true), Some(1));
+    }
+
+    #[test]
+    fn enabled_cluster_mapping_threads() {
+        let m = GpuMap::Thread {n: 1024, mult: 1, dim: Dim::X};
+        assert_eq!(cluster_mapping_h(m, true), None);
+    }
+
+    #[test]
+    fn disabled_cluster_mapping() {
+        let m = GpuMap::ThreadBlock {n: 1024, nthreads: 1024, nblocks: 1, dim: Dim::X};
+        assert_eq!(cluster_mapping_h(m, false), None);
+    }
+
+    fn default_codegen_env<'a>(opts: &'a CompileOptions) -> CodegenEnv<'a> {
+        CodegenEnv {
+            gpu_mapping: BTreeMap::new(),
+            struct_fields: BTreeMap::new(),
+            opts
+        }
+    }
+
+    #[test]
+    fn from_host_stmt_sync_point() {
+        let opts = CompileOptions::default();
+        let env = default_codegen_env(&opts);
+        let s = ir_ast::Stmt::SyncPoint {kind: ir_ast::SyncPointKind::BlockLocal, i: i()};
+        assert_error_matches(
+            from_ir_stmt(&env, &id("x"), vec![], vec![], s),
+            r"synchronization point outside parallel code"
+        );
+    }
+
+    #[test]
+    fn from_host_seq_for_stmt() {
+        let opts = CompileOptions::default();
+        let env = default_codegen_env(&opts);
+        let s = _gen_for(par::LoopPar::default());
+        let (mut body, kernels) = from_ir_stmt(&env, &id("f"), vec![], vec![], s).unwrap();
+        assert_eq!(kernels.len(), 0);
+
+        let ty = scalar(ElemSize::I64);
+        let expected = Stmt::For {
+            var_ty: ty.clone(),
+            var: id("x"),
+            init: int(0, Some(ElemSize::I64)),
+            cond: binop(var("x", ty.clone()), BinOp::Lt, int(10, None), scalar(ElemSize::Bool)),
+            incr: binop(
+                var("x", ty.clone()),
+                BinOp::Add,
+                binop(int(1, None), BinOp::Mul, int(1, None), ty.clone()),
+                ty
+            ),
+            body: vec![],
+            i: Info::default()
+        };
+        assert_eq!(body.pop().unwrap(), expected);
+        assert!(body.is_empty());
+    }
+
+    #[test]
+    fn from_host_par_for_stmt() {
+        let opts = CompileOptions::default();
+        let mut env = default_codegen_env(&opts);
+        let m = GpuMapping::new(par::DEFAULT_TPB).add_parallelism(10);
+        env.gpu_mapping.insert(id("x"), m.clone());
+        let s = _gen_for(par::LoopPar::default());
+        let (body, kernels) = from_ir_stmt(&env, &id("f"), vec![], vec![], s).unwrap();
+        assert_eq!(kernels.len(), 1);
+
+        if let [Stmt::KernelLaunch {id, args, grid, ..}] = &body[..] {
+            assert_eq!(id.get_str(), "f_x");
+            assert!(id.has_sym());
+            assert_eq!(args.len(), 0);
+            assert_eq!(grid.clone(), m.grid);
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn from_alloc_stmt() {
+        let s = ir_ast::Stmt::Alloc {
+            id: id("x"),
+            elem_ty: ir::scalar(ElemSize::F32),
+            sz: 10,
+            i: Info::default()
+        };
+        let opts = CompileOptions::default();
+        let env = default_codegen_env(&opts);
+        let (mut body, kernels) = from_ir_stmt(&env, &id("f"), vec![], vec![], s).unwrap();
+        assert!(kernels.is_empty());
+
+        let snd = body.pop().unwrap();
+        let fst = body.pop().unwrap();
+        let ty = Type::Pointer {
+            ty: Box::new(scalar(ElemSize::F32)),
+            mem: MemSpace::Device
+        };
+        let fst_expected = Stmt::Definition {
+            ty: ty.clone(),
+            id: id("x"),
+            expr: Expr::Int {v: 0, ty: ty.clone(), i: i()},
+            i: i()
+        };
+        assert_eq!(fst, fst_expected);
+        let snd_expected = Stmt::AllocDevice {
+            id: id("x"),
+            elem_ty: scalar(ElemSize::F32),
+            sz: 10,
+            i: i()
+        };
+        assert_eq!(snd, snd_expected);
+    }
+
+    #[test]
+    fn unwrap_empty_params() {
+        let opts = CompileOptions::default();
+        let env = default_codegen_env(&opts);
+        let (init_stmts, params) = unwrap_params(&env, vec![]).unwrap();
+        assert!(init_stmts.is_empty());
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn unwrap_known_struct_params() {
+        let opts = CompileOptions::default();
+        let mut env = default_codegen_env(&opts);
+        let fields = vec![
+            Field {id: "a".to_string(), ty: scalar(ElemSize::F64), i: i()},
+            Field {id: "b".to_string(), ty: scalar(ElemSize::I32), i: i()},
+        ];
+        env.struct_fields = vec![(id("s"), fields)].into_iter()
+            .collect::<BTreeMap<Name, Vec<Field>>>();
+        let params = vec![
+            Param {id: id("x"), ty: Type::Struct {id: id("s")}, i: i()},
+            Param {id: id("y"), ty: scalar(ElemSize::F32), i: i()},
+        ];
+        let (init_stmts, params) = unwrap_params(&env, params).unwrap();
+
+        if let [Stmt::Definition {ty, id: id_def, expr, ..}] = &init_stmts[..] {
+            assert!(matches!(ty, Type::Struct {..}));
+            assert_eq!(id_def.clone(), id("x"));
+            assert!(matches!(expr, Expr::Struct {..}));
+        } else {
+            assert!(false)
+        };
+
+        let param_tys = params.into_iter()
+            .map(|Param {ty, ..}| ty)
+            .collect::<Vec<Type>>();
+        let expected_types = vec![
+            scalar(ElemSize::F64), scalar(ElemSize::I32), scalar(ElemSize::F32)
+        ];
+        assert_eq!(param_tys, expected_types);
+    }
+
+    #[test]
+    fn unwrap_unknown_struct_param() {
+        let opts = CompileOptions::default();
+        let env = default_codegen_env(&opts);
+        let params = vec![
+            Param {id: id("x"), ty: Type::Struct {id: id("s")}, i: i()}
+        ];
+        assert_error_matches(unwrap_params(&env, params), r"unknown struct type");
+    }
+
+    #[test]
+    fn from_ir_called_fun() {
+        let opts = CompileOptions::default();
+        let env = default_codegen_env(&opts);
+        let fun = ir_ast::FunDef {
+            id: id("f"), params: vec![], body: vec![], res_ty: ir_ast::Type::Void, i: i()
+        };
+        let mut tops = from_ir_fun_def_helper(&env, fun, false).unwrap();
+        assert_eq!(tops.len(), 1);
+        let expected = Top::FunDef {
+            ret_ty: Type::Void, id: id("f"), params: vec![], body: vec![],
+            target: Target::Device
+        };
+        assert_eq!(tops.pop().unwrap(), expected);
+    }
+
+    #[test]
+    fn from_ir_main_fun() {
+        let opts = CompileOptions::default();
+        let env = default_codegen_env(&opts);
+        let fun = ir_ast::FunDef {
+            id: id("f"), params: vec![], body: vec![], res_ty: ir_ast::Type::Void, i: i()
+        };
+        let mut tops = from_ir_fun_def_helper(&env, fun, true).unwrap();
+        assert_eq!(tops.len(), 1);
+        let expected = Top::FunDef {
+            ret_ty: Type::Scalar {sz: ElemSize::I32},
+            id: id("f"),
+            params: vec![],
+            body: vec![Stmt::Return {value: int(0, Some(ElemSize::I32)), i: i()}],
+            target: Target::Host
+        };
+        assert_eq!(tops.pop().unwrap(), expected);
+    }
 }

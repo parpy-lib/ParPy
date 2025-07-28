@@ -481,80 +481,65 @@ impl PrettyPrint for Ast {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::gpu::ast_builder::*;
     use crate::utils::info::Info;
     use crate::utils::name::Name;
     use crate::utils::pprint;
-
-    fn var(s: &str) -> Expr {
-        Expr::Var {id: Name::new(s.to_string()), ty: Type::Boolean, i: Info::default()}
-    }
-
-    fn int(v: i64) -> Expr {
-        Expr::Int {v: v as i128, ty: Type::Scalar {sz: ElemSize::I64}, i: Info::default()}
-    }
-
-    fn bop(lhs: Expr, op: BinOp, rhs: Expr, ty: Option<Type>) -> Expr {
-        let ty = ty.unwrap_or(Type::Boolean);
-        Expr::BinOp {
-            lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i: Info::default()
-        }
-    }
-
-    fn unop(op: UnOp, arg: Expr, ty: Type) -> Expr {
-        Expr::UnOp {op, arg: Box::new(arg), ty, i: Info::default()}
-    }
-
-    fn add(lhs: Expr, rhs: Expr) -> Expr {
-        bop(lhs, BinOp::Add, rhs, None)
-    }
-
-    fn mul(lhs: Expr, rhs: Expr) -> Expr {
-        bop(lhs, BinOp::Mul, rhs, None)
-    }
-
-    fn rem(lhs: Expr, rhs: Expr) -> Expr {
-        bop(lhs, BinOp::Rem, rhs, None)
-    }
-
-    fn scalar_ty(sz: ElemSize) -> Type {
-        Type::Scalar {sz}
-    }
-
-    fn int64_ty() -> Type {
-        scalar_ty(ElemSize::I64)
-    }
 
     fn i() -> Info {
         Info::default()
     }
 
+    fn add(lhs: Expr, rhs: Expr) -> Expr {
+        let ty = lhs.get_type().clone();
+        binop(lhs, BinOp::Add, rhs, ty)
+    }
+
+    fn mul(lhs: Expr, rhs: Expr) -> Expr {
+        let ty = lhs.get_type().clone();
+        binop(lhs, BinOp::Mul, rhs, ty)
+    }
+
+    fn rem(lhs: Expr, rhs: Expr) -> Expr {
+        let ty = lhs.get_type().clone();
+        binop(lhs, BinOp::Rem, rhs, ty)
+    }
+
+    fn int64_ty() -> Type {
+        scalar(ElemSize::I64)
+    }
+
+    fn uvar(s: &str) -> Expr {
+        var(s, int64_ty())
+    }
+
     #[test]
     fn pprint_precedence_same_level_with_paren() {
-        let s = add(var("x"), add(var("y"), var("z"))).pprint_default();
+        let s = add(uvar("x"), add(uvar("y"), uvar("z"))).pprint_default();
         assert_eq!(&s, "x + (y + z)");
     }
 
     #[test]
     fn pprint_precedence_same_level_omit_paren() {
-        let s = add(add(var("x"), var("y")), var("z")).pprint_default();
+        let s = add(add(uvar("x"), uvar("y")), uvar("z")).pprint_default();
         assert_eq!(&s, "x + y + z");
     }
 
     #[test]
     fn pprint_precedence_print_paren() {
-        let s = mul(add(var("x"), var("y")), add(var("y"), var("z"))).pprint_default();
+        let s = mul(add(uvar("x"), uvar("y")), add(uvar("y"), uvar("z"))).pprint_default();
         assert_eq!(&s, "(x + y) * (y + z)");
     }
 
     #[test]
     fn pprint_precedence_rhs_paren() {
-        let s = add(var("x"), add(mul(var("y"), var("y")), var("z"))).pprint_default();
+        let s = add(uvar("x"), add(mul(uvar("y"), uvar("y")), uvar("z"))).pprint_default();
         assert_eq!(&s, "x + (y * y + z)");
     }
 
     #[test]
     fn pprint_precedence_same_level_paren() {
-        let s = mul(var("x"), rem(var("y"), var("z"))).pprint_default();
+        let s = mul(uvar("x"), rem(uvar("y"), uvar("z"))).pprint_default();
         assert_eq!(&s, "x * (y % z)");
     }
 
@@ -586,30 +571,30 @@ mod test {
     }
 
     fn max(lhs: Expr, rhs: Expr, ty: Type) -> Expr {
-        bop(lhs, BinOp::Max, rhs, Some(ty))
+        binop(lhs, BinOp::Max, rhs, ty)
     }
 
     #[test]
     fn pprint_exp_f32() {
-        let s = exp(var("x"), scalar_ty(ElemSize::F32)).pprint_default();
+        let s = exp(uvar("x"), scalar(ElemSize::F32)).pprint_default();
         assert_eq!(&s, "exp(x)");
     }
 
     #[test]
     fn pprint_log_f64() {
-        let s = log(var("x"), scalar_ty(ElemSize::F64)).pprint_default();
+        let s = log(uvar("x"), scalar(ElemSize::F64)).pprint_default();
         assert_eq!(&s, "log(x)");
     }
 
     #[test]
     fn pprint_max_f32() {
-        let s = max(var("x"), var("y"), scalar_ty(ElemSize::F32)).pprint_default();
+        let s = max(uvar("x"), uvar("y"), scalar(ElemSize::F32)).pprint_default();
         assert_eq!(&s, "max(x, y)");
     }
 
     #[test]
     fn pprint_max_i64() {
-        let s = max(var("x"), var("y"), scalar_ty(ElemSize::I64)).pprint_default();
+        let s = max(uvar("x"), uvar("y"), scalar(ElemSize::I64)).pprint_default();
         assert_eq!(&s, "max(x, y)");
     }
 
@@ -619,19 +604,19 @@ mod test {
 
     #[test]
     fn pprint_var_conversion() {
-        let s = convert(var("x"), scalar_ty(ElemSize::F32));
+        let s = convert(uvar("x"), scalar(ElemSize::F32));
         assert_eq!(&s.pprint_default(), "(float)x");
     }
 
     #[test]
     fn pprint_literal_conversion() {
-        let s = convert(int(5), scalar_ty(ElemSize::I16));
+        let s = convert(int(5, None), scalar(ElemSize::I16));
         assert_eq!(&s.pprint_default(), "(int16_t)5");
     }
 
     #[test]
     fn pprint_add_conversion() {
-        let s = convert(add(var("x"), var("y")), scalar_ty(ElemSize::I16));
+        let s = convert(add(uvar("x"), uvar("y")), scalar(ElemSize::I16));
         assert_eq!(&s.pprint_default(), "(int16_t)(x + y)");
     }
 
@@ -655,15 +640,14 @@ mod test {
 
     #[test]
     fn pprint_for_loop() {
-        let id = Name::new("i".to_string());
-        let i_var = Expr::Var {id: id.clone(), ty: scalar_ty(ElemSize::I64), i: i()};
+        let i_var = Expr::Var {id: id("i"), ty: scalar(ElemSize::I64), i: i()};
         let for_loop = Stmt::For {
-            var_ty: scalar_ty(ElemSize::I64),
-            var: id,
-            init: int(0),
-            cond: bop(i_var.clone(), BinOp::Lt, int(10), None),
-            incr: bop(i_var.clone(), BinOp::Add, int(1), None),
-            body: vec![Stmt::Assign {dst: var("x"), expr: var("y"), i: i()}],
+            var_ty: scalar(ElemSize::I64),
+            var: id("i"),
+            init: int(0, None),
+            cond: binop(i_var.clone(), BinOp::Lt, int(10, None), scalar(ElemSize::Bool)),
+            incr: binop(i_var.clone(), BinOp::Add, int(1, None), scalar(ElemSize::I64)),
+            body: vec![Stmt::Assign {dst: uvar("x"), expr: uvar("y"), i: i()}],
             i: i()
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
@@ -677,14 +661,14 @@ mod test {
     fn pprint_if_cond() {
         let cond = Stmt::If {
             cond: Expr::BinOp {
-                lhs: Box::new(var("x")),
+                lhs: Box::new(uvar("x")),
                 op: BinOp::Eq,
-                rhs: Box::new(var("y")),
-                ty: Type::Boolean,
+                rhs: Box::new(uvar("y")),
+                ty: Type::Scalar {sz: ElemSize::Bool},
                 i: i()
             },
-            thn: vec![Stmt::Assign {dst: var("x"), expr: var("y"), i: i()}],
-            els: vec![Stmt::Assign {dst: var("y"), expr: var("x"), i: i()}],
+            thn: vec![Stmt::Assign {dst: uvar("x"), expr: uvar("y"), i: i()}],
+            els: vec![Stmt::Assign {dst: uvar("y"), expr: uvar("x"), i: i()}],
             i: i()
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
@@ -698,13 +682,13 @@ mod test {
     fn pprint_if_cond_empty_else() {
         let cond = Stmt::If {
             cond: Expr::BinOp {
-                lhs: Box::new(var("x")),
+                lhs: Box::new(uvar("x")),
                 op: BinOp::Eq,
-                rhs: Box::new(var("y")),
-                ty: Type::Boolean,
+                rhs: Box::new(uvar("y")),
+                ty: Type::Scalar {sz: ElemSize::Bool},
                 i: i()
             },
-            thn: vec![Stmt::Assign {dst: var("x"), expr: var("y"), i: i()}],
+            thn: vec![Stmt::Assign {dst: uvar("x"), expr: uvar("y"), i: i()}],
             els: vec![],
             i: i()
         };
@@ -716,12 +700,12 @@ mod test {
     #[test]
     fn pprint_if_cond_elseif() {
         let cond = Stmt::If {
-            cond: var("x"),
-            thn: vec![Stmt::Assign {dst: var("y"), expr: var("z"), i: i()}],
+            cond: uvar("x"),
+            thn: vec![Stmt::Assign {dst: uvar("y"), expr: uvar("z"), i: i()}],
             els: vec![Stmt::If {
-                    cond: var("y"),
-                    thn: vec![Stmt::Assign {dst: var("x"), expr: var("z"), i: i()}],
-                    els: vec![Stmt::Assign {dst: var("z"), expr: var("x"), i: i()}],
+                    cond: uvar("y"),
+                    thn: vec![Stmt::Assign {dst: uvar("x"), expr: uvar("z"), i: i()}],
+                    els: vec![Stmt::Assign {dst: uvar("z"), expr: uvar("x"), i: i()}],
                     i: i()
             }],
             i: i()
@@ -737,8 +721,8 @@ mod test {
     #[test]
     fn pprint_while() {
         let wh = Stmt::While {
-            cond: var("x"),
-            body: vec![Stmt::Assign {dst: var("y"), expr: var("z"), i: i()}],
+            cond: uvar("x"),
+            body: vec![Stmt::Assign {dst: uvar("y"), expr: uvar("z"), i: i()}],
             i: i()
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
@@ -748,7 +732,7 @@ mod test {
 
     #[test]
     fn pprint_warp_reduce() {
-        let value = var("x");
+        let value = uvar("x");
         let op = BinOp::Add;
         let reduce = Stmt::WarpReduce {
             value: value.clone(),
@@ -768,7 +752,7 @@ mod test {
         let id = "kernel";
         let kernel = Stmt::KernelLaunch {
             id: Name::new(id.to_string()),
-            args: vec![var("x"), var("y")],
+            args: vec![uvar("x"), uvar("y")],
             grid: LaunchArgs::default(),
             i: i()
         };
@@ -783,7 +767,7 @@ mod test {
             attrs: vec![KernelAttribute::LaunchBounds {threads: 1024}],
             id: Name::new("f".to_string()),
             params: vec![],
-            body: vec![Stmt::Assign {dst: var("x"), expr: var("y"), i: i()}]
+            body: vec![Stmt::Assign {dst: uvar("x"), expr: uvar("y"), i: i()}]
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
         let expected = format!("threads(1024)\nvoid f() {{\n{0}x = y;\n}}", indent);
@@ -796,7 +780,7 @@ mod test {
             ret_ty: Type::Void,
             id: Name::new("f".to_string()),
             params: vec![],
-            body: vec![Stmt::Assign {dst: var("x"), expr: var("y"), i: i()}],
+            body: vec![Stmt::Assign {dst: uvar("x"), expr: uvar("y"), i: i()}],
             target: Target::Host
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);
@@ -810,7 +794,7 @@ mod test {
             ret_ty: Type::Void,
             id: Name::new("f".to_string()),
             params: vec![],
-            body: vec![Stmt::Assign {dst: var("x"), expr: var("y"), i: i()}],
+            body: vec![Stmt::Assign {dst: uvar("x"), expr: uvar("y"), i: i()}],
             target: Target::Device
         };
         let indent = " ".repeat(pprint::DEFAULT_INDENT);

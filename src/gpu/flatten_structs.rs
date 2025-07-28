@@ -9,27 +9,24 @@ use crate::utils::smap::SMapAccum;
 
 use std::collections::BTreeMap;
 
-type StructEnv = BTreeMap::<Name, BTreeMap<String, Param>>;
-type HostStructEnv = BTreeMap::<Name, Vec<(String, Expr)>>;
-
-fn validate_return_type(ty: &Type) -> CompileResult<()> {
-    match ty {
-        Type::Void | Type::Boolean | Type::Scalar {..} => Ok(()),
-        Type::Pointer {ty, ..} => validate_return_type(&ty),
-        Type::Struct {id} => {
-            let i = Info::default();
-            let id = id.pprint_default();
-            prickle_compile_error!(i, "Found struct return type in function {id}, \
-                                     which is not supported")
-        },
-    }
-}
+type StructEnv = BTreeMap<Name, BTreeMap<String, Param>>;
+type HostStructEnv = BTreeMap<Name, Vec<(String, Expr)>>;
 
 fn contains_struct_type(ty: &Type) -> bool {
     match ty {
         Type::Void | Type::Scalar {..} => false,
         Type::Pointer {ty, ..} => contains_struct_type(ty),
         Type::Struct {..} => true,
+    }
+}
+
+fn validate_return_type(id: &Name, ty: &Type) -> CompileResult<()> {
+    if contains_struct_type(&ty) {
+        let i = Info::default();
+        prickle_compile_error!(i, "Found struct return type in function {id}, \
+                                   which is not supported")
+    } else {
+        Ok(())
     }
 }
 
@@ -45,7 +42,7 @@ fn find_struct_fields<'a>(
             }
         },
         _ => {
-            prickle_compile_error!(i, "Found struct field access on non-variable value")
+            prickle_compile_error!(i, "Found struct field access on non-struct value")
         }
     }
 }
@@ -140,7 +137,7 @@ fn expand_kernel_param(env: &StructEnv, p: Param) -> CompileResult<Vec<Param>> {
         Type::Pointer {ty, ..} if contains_struct_type(ty) => {
             let pid = p.id.pprint_default();
             prickle_compile_error!(p.i, "Parameter {pid} contains pointer to a \
-                                       struct type, which is not supported")
+                                         struct type, which is not supported")
         },
         _ => Ok(vec![p])
     }
@@ -168,7 +165,7 @@ fn flatten_structs_top(
             Ok((env, Some(Top::KernelFunDef {attrs, id, params, body})))
         },
         Top::FunDef {ret_ty, id, params, body, target} => {
-            validate_return_type(&ret_ty)?;
+            validate_return_type(&id, &ret_ty)?;
             // NOTE: Currently, we only support simple scalar types as arguments to user-defined
             // functions (these will have a device target). Therefore, we do not need to flatten
             // structs within their bodies.
@@ -204,4 +201,185 @@ pub fn flatten_structs(ast: Ast) -> CompileResult<Ast> {
             Ok((env, tops))
         })?;
     Ok(ast)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::gpu::ast_builder::*;
+    use crate::gpu::test::*;
+
+    #[test]
+    fn void_contains_no_struct_type() {
+        assert!(!contains_struct_type(&Type::Void));
+    }
+
+    #[test]
+    fn scalar_pointer_contains_no_struct_type() {
+        let ty = Type::Pointer {
+            ty: Box::new(scalar(ElemSize::I32)),
+            mem: MemSpace::Device
+        };
+        assert!(!contains_struct_type(&ty));
+    }
+
+    #[test]
+    fn struct_type_contains_struct_type() {
+        let ty = Type::Struct {id: id("x")};
+        assert!(contains_struct_type(&ty));
+    }
+
+    #[test]
+    fn struct_pointer_contains_struct_type() {
+        let ty = Type::Pointer {
+            ty: Box::new(Type::Struct {id: id("x")}),
+            mem: MemSpace::Device
+        };
+        assert!(contains_struct_type(&ty));
+    }
+
+    #[test]
+    fn struct_pointer_invalid_return_type() {
+        let ty = Type::Pointer {
+            ty: Box::new(Type::Struct {id: id("x")}),
+            mem: MemSpace::Device
+        };
+        assert_error_matches(
+            validate_return_type(&id("f"), &ty),
+            r"struct return type in function f.*not supported"
+        );
+    }
+
+    fn i() -> Info {
+        Info::default()
+    }
+
+    fn mk_map<K: Ord, V>(v: Vec<(K, V)>) -> BTreeMap<K, V> {
+        v.into_iter().collect::<_>()
+    }
+
+    #[test]
+    fn lookup_struct_fields_invalid_type() {
+        let env = mk_map(vec![]);
+        let ty = scalar(ElemSize::I64);
+        assert_error_matches(find_struct_fields(&env, &ty, i()), r"non-struct value");
+    }
+
+    #[test]
+    fn lookup_struct_fields_unknown_struct() {
+        let env = mk_map(vec![]);
+        let ty = Type::Struct {id: id("s")};
+        assert_error_matches(
+            find_struct_fields(&env, &ty, i()),
+            r"Could not find struct type.*with name s"
+        );
+    }
+
+    #[test]
+    fn lookup_struct_fields() {
+        let p = Param {id: id("y"), ty: scalar(ElemSize::I32), i: i()};
+        let m = mk_map(vec![("x".to_string(), p)]);
+        let env = mk_map(vec![(id("s"), m.clone())]);
+        let ty = Type::Struct {id: id("s")};
+        assert_eq!(find_struct_fields(&env, &ty, i()).unwrap(), &m);
+    }
+
+    #[test]
+    fn flatten_struct_field_access() {
+        let p = Param {id: id("y"), ty: scalar(ElemSize::F32), i: i()};
+        let env = mk_map(vec![(id("s"), mk_map(vec![("y".to_string(), p)]))]);
+        let ty = Type::Struct {id: id("s")};
+        let e = Expr::StructFieldAccess {
+            target: Box::new(var("x", ty.clone())),
+            label: "y".to_string(),
+            ty: scalar(ElemSize::F32),
+            i: i()
+        };
+        let expected = var("y", scalar(ElemSize::F32));
+        assert_eq!(flatten_structs_kernel_expr(&env, e).unwrap(), expected);
+    }
+
+    #[test]
+    fn expand_non_variable_kernel_argument() {
+        let env = mk_map(vec![]);
+        let arg = int(0, None);
+        assert_eq!(expand_kernel_launch_argument(&env, arg.clone()), vec![arg]);
+    }
+
+    #[test]
+    fn expand_unknown_variable_kernel_argument() {
+        let env = mk_map(vec![]);
+        let arg = var("x", scalar(ElemSize::I32));
+        assert_eq!(expand_kernel_launch_argument(&env, arg.clone()), vec![arg]);
+    }
+
+    #[test]
+    fn expand_known_variable_kernel_argument() {
+        let fields = vec![
+            ("a".to_string(), int(1, None)),
+            ("b".to_string(), float(1.5, None)),
+        ];
+        let field_values = fields.clone().into_iter()
+            .map(|(_, v)| v)
+            .collect::<Vec<Expr>>();
+        let env = mk_map(vec![(id("x"), fields)]);
+        let arg = var("x", scalar(ElemSize::I32));
+        assert_eq!(expand_kernel_launch_argument(&env, arg), field_values);
+    }
+
+    #[test]
+    fn flatten_struct_definition_stmt() {
+        let ty = Type::Struct {id: id("s")};
+        let s = Stmt::Definition {
+            ty: ty.clone(),
+            id: id("x"),
+            expr: Expr::Struct {id: id("s"), fields: vec![], ty, i: i()},
+            i: i()
+        };
+        let (env, o) = flatten_structs_host_stmt(mk_map(vec![]), s);
+        assert!(env.contains_key(&id("x")));
+        assert!(o.is_none());
+    }
+
+    #[test]
+    fn expand_scalar_kernel_param() {
+        let env = mk_map(vec![]);
+        let p = Param {id: id("x"), ty: scalar(ElemSize::U16), i: i()};
+        assert_eq!(expand_kernel_param(&env, p.clone()).unwrap(), vec![p]);
+    }
+
+    #[test]
+    fn expand_kernel_param_pointer_to_struct() {
+        let env = mk_map(vec![]);
+        let ty = Type::Pointer {ty: Box::new(Type::Struct {id: id("s")}), mem: MemSpace::Device};
+        let p = Param {id: id("x"), ty, i: i()};
+        assert_error_matches(
+            expand_kernel_param(&env, p),
+            r"pointer to a struct type.*not supported"
+        );
+    }
+
+    #[test]
+    fn expand_kernel_param_undefined_struct() {
+        let env = mk_map(vec![]);
+        let p = Param {id: id("x"), ty: Type::Struct {id: id("s")}, i: i()};
+        assert_error_matches(
+            expand_kernel_param(&env, p),
+            r"refers to undefined struct type"
+        );
+    }
+
+    #[test]
+    fn expand_kernel_param_known_struct() {
+        let fields = mk_map(vec![
+            ("a".to_string(), Param {id: id("aa"), ty: scalar(ElemSize::I32), i: i()}),
+            ("b".to_string(), Param {id: id("bb"), ty: scalar(ElemSize::F32), i: i()}),
+        ]);
+        let field_params = fields.clone().into_iter()
+            .map(|(_, v)| v)
+            .collect::<Vec<Param>>();
+        let env = mk_map(vec![(id("s"), fields)]);
+        let p = Param {id: id("x"), ty: Type::Struct {id: id("s")}, i: i()};
+        assert_eq!(expand_kernel_param(&env, p), Ok(field_params));
+    }
 }

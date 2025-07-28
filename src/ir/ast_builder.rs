@@ -62,6 +62,10 @@ pub fn assign(lhs: Expr, rhs: Expr) -> Stmt {
     Stmt::Assign {dst: lhs, expr: rhs, i: Info::default()}
 }
 
+pub fn definition(ty: Type, id: Name, expr: Expr) -> Stmt {
+    Stmt::Definition {ty, id, expr, i: Info::default()}
+}
+
 pub fn loop_par(n: i64) -> LoopPar {
     LoopPar::default().threads(n).unwrap()
 }

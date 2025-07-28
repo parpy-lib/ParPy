@@ -36,7 +36,7 @@ fn classify_reduction(
         if nblocks > opts.max_thread_blocks_per_cluster {
             let msg = format!(
                 "Found multi-block reduction over {0} blocks, but the maximum \
-                 number of thread blocks per clusters are set to {1}.\n\
+                 number of thread blocks per cluster is set to {1}.\n\
                  To increase the limit, set the 'max_thread_blocks_per_cluster' field \
                  of the compilation options to a larger value.",
                 nblocks, opts.max_thread_blocks_per_cluster
@@ -478,4 +478,69 @@ pub fn expand_parallel_reductions(
     ast: Ast
 ) -> CompileResult<Ast> {
     ast.smap_result(|t| expand_parallel_reductions_top(opts, t))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::gpu::test::*;
+    use crate::option::*;
+
+    fn i() -> Info {
+        Info::default()
+    }
+
+    #[test]
+    fn classify_inter_block_reduction_non_cuda_backend() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Metal;
+        assert_error_matches(
+            classify_reduction(&opts, 2048, 1024, &i()),
+            r"inter-block reduction.*non-CUDA backend"
+        );
+    }
+
+    #[test]
+    fn classify_inter_block_reduction_clusters_disabled() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Cuda;
+        opts.use_cuda_thread_block_clusters = false;
+        assert_error_matches(
+            classify_reduction(&opts, 2048, 1024, &i()),
+            r"thread block clusters.*not enabled"
+        );
+    }
+
+    #[test]
+    fn classify_inter_block_reduction_insufficient_cluster_count() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Cuda;
+        opts.use_cuda_thread_block_clusters = true;
+        opts.max_thread_blocks_per_cluster = 8;
+        assert_error_matches(
+            classify_reduction(&opts, 2048, 128, &i()),
+            r"maximum number of thread blocks per cluster is set to 8"
+        );
+    }
+
+    #[test]
+    fn classify_cluster_reduction() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Cuda;
+        opts.use_cuda_thread_block_clusters = true;
+        opts.max_thread_blocks_per_cluster = 16;
+        assert_eq!(classify_reduction(&opts, 2048, 128, &i()), Ok(ReductionScope::Cluster));
+    }
+
+    #[test]
+    fn classify_block_reduction() {
+        let opts = CompileOptions::default();
+        assert_eq!(classify_reduction(&opts, 1024, 1024, &i()), Ok(ReductionScope::Block));
+    }
+
+    #[test]
+    fn classify_warp_reduction() {
+        let opts = CompileOptions::default();
+        assert_eq!(classify_reduction(&opts, 32, 32, &i()), Ok(ReductionScope::Warp));
+    }
 }
