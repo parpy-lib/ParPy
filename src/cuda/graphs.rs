@@ -41,7 +41,9 @@ fn generate_pre_kernel_body_statements(env: &GraphEnv, acc: &mut Vec<Stmt>) {
 
 fn generate_post_kernel_body_statements(env: &GraphEnv, acc: &mut Vec<Stmt>) {
     let inst_var = Expr::Var {
-        id: env.inst_id.clone(), ty: Type::Boolean, i: Info::default()
+        id: env.inst_id.clone(),
+        ty: Type::Scalar {sz: ElemSize::Bool},
+        i: Info::default()
     };
 
     // End capture of the CUDA API calls after the original function body, and store the recorded
@@ -78,7 +80,11 @@ fn generate_post_kernel_body_statements(env: &GraphEnv, acc: &mut Vec<Stmt>) {
         },
         Stmt::Assign {
             dst: inst_var.clone(),
-            expr: Expr::Bool {v: true, ty: Type::Boolean, i: Info::default()}
+            expr: Expr::Bool {
+                v: true,
+                ty: Type::Scalar {sz: ElemSize::Bool},
+                i: Info::default()
+            }
         }
     ];
     
@@ -88,7 +94,8 @@ fn generate_post_kernel_body_statements(env: &GraphEnv, acc: &mut Vec<Stmt>) {
         lhs: Box::new(Expr::Var {id: err_id.clone(), ty: Type::Error, i: Info::default()}),
         op: BinOp::Neq,
         rhs: Box::new(Expr::Error {e: Error::Success, ty: Type::Error, i: Info::default()}),
-        ty: Type::Boolean, i: Info::default()
+        ty: Type::Scalar {sz: ElemSize::Bool},
+        i: Info::default()
     };
     let inst_els = vec![
         Stmt::Definition {
@@ -126,7 +133,8 @@ fn generate_post_kernel_body_statements(env: &GraphEnv, acc: &mut Vec<Stmt>) {
     let graph_not_instantiated = Expr::UnOp {
         op: UnOp::Not,
         arg: Box::new(inst_var),
-        ty: Type::Boolean, i: Info::default()
+        ty: Type::Scalar {sz: ElemSize::Bool},
+        i: Info::default()
     };
     acc.push(Stmt::If {
         cond: graph_not_instantiated, thn: inst_thn, els: inst_els
@@ -198,11 +206,12 @@ fn use_cuda_graphs_kernel_body(mut body: Vec<Stmt>) -> (Vec<Top>, Vec<Stmt>) {
     // Generate global variables representing the executable graph and a variable keeping track of
     // whether the executable graph has been instantiated. These are used in the updated function
     // body.
+    let bool_ty = Type::Scalar {sz: ElemSize::Bool};
     let added_top_var_defs = vec![
         Top::VarDef {ty: Type::GraphExec, id: env.exec_graph_id.clone(), init: None},
         Top::VarDef {
-            ty: Type::Boolean, id: env.inst_id.clone(),
-            init: Some(Expr::Bool {v: false, ty: Type::Boolean, i: Info::default()})
+            ty: bool_ty.clone(), id: env.inst_id.clone(),
+            init: Some(Expr::Bool {v: false, ty: bool_ty, i: Info::default()})
         },
     ];
 

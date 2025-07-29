@@ -8,7 +8,6 @@ impl PrettyPrint for Type {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
             Type::Void => (env, "void".to_string()),
-            Type::Boolean => (env, "bool".to_string()),
             Type::Scalar {sz} => sz.pprint(env),
             Type::Pointer {ty} => {
                 let (env, ty) = ty.pprint(env);
@@ -572,7 +571,7 @@ mod test {
     use crate::utils::pprint;
 
     fn uvar(id: &str) -> Expr {
-        var(id, Type::Boolean)
+        var(id, Type::Scalar {sz: ElemSize::Bool})
     }
 
     #[test]
@@ -663,7 +662,7 @@ mod test {
     #[test]
     #[should_panic]
     fn pprint_exp_invalid_type_fails() {
-        exp(uvar("x"), Type::Boolean).pprint_default();
+        exp(uvar("x"), scalar(ElemSize::Bool)).pprint_default();
     }
 
     #[test]
@@ -757,7 +756,7 @@ mod test {
                 lhs: Box::new(uvar("x")),
                 op: BinOp::Eq,
                 rhs: Box::new(uvar("y")),
-                ty: Type::Boolean,
+                ty: Type::Scalar {sz: ElemSize::Bool},
                 i: Info::default()
             },
             thn: vec![Stmt::Assign {dst: uvar("x"), expr: uvar("y")}],
@@ -777,7 +776,7 @@ mod test {
                 lhs: Box::new(uvar("x")),
                 op: BinOp::Eq,
                 rhs: Box::new(uvar("y")),
-                ty: Type::Boolean,
+                ty: Type::Scalar {sz: ElemSize::Bool},
                 i: Info::default()
             },
             thn: vec![Stmt::Assign {dst: uvar("x"), expr: uvar("y")},],

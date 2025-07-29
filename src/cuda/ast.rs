@@ -13,7 +13,6 @@ pub use crate::gpu::ast::SyncScope;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Void,
-    Boolean,
     Scalar {sz: ElemSize},
     Pointer {ty: Box<Type>},
     Struct {id: Name},
