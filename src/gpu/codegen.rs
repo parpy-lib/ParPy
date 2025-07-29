@@ -607,7 +607,7 @@ pub fn from_general_ir(
 mod test {
     use super::*;
     use crate::gpu::ast_builder::*;
-    use crate::gpu::test::*;
+    use crate::test::*;
     use crate::ir::ast_builder as ir;
     use crate::option::CompileOptions;
     use crate::par;

@@ -437,7 +437,7 @@ mod test {
     use super::*;
     use crate::ir::ast_builder::*;
     use crate::ir::constant_fold;
-    use crate::ir::test::*;
+    use crate::test::*;
     use crate::py::ast_builder as py;
 
     use std::collections::BTreeMap;

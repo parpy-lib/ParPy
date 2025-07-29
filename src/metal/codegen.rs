@@ -48,7 +48,7 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
             match sz {
                 ElemSize::F64 if env.on_device => {
                     prickle_type_error!(i, "Metal does not support double-precision \
-                                          floating-point numbers.")
+                                            floating-point numbers.")
                 },
                 _ => Ok(Type::Scalar {sz})
             }
@@ -57,7 +57,7 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
             let ty = match from_gpu_ir_type(env, *ty, i) {
                 Ok(Type::Pointer {..}) => {
                     prickle_type_error!(i, "Found nested pointer in generated code, \
-                                          which is not supported in Metal.")
+                                            which is not supported in Metal.")
                 },
                 Ok(ty) => Ok(Box::new(ty)),
                 Err(e) => Err(e)
@@ -446,4 +446,215 @@ pub fn from_gpu_ir(ast: gpu_ast::Ast) -> CompileResult<Ast> {
     tops.append(&mut fun_defs);
     tops.append(&mut acc.host);
     Ok(Ast {tops})
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::gpu::ast_builder as gpu;
+    use crate::metal::ast_builder::*;
+    use crate::test::*;
+
+    fn mk_env(target: gpu_ast::Target) -> CodegenEnv {
+        CodegenEnv::new(&target)
+    }
+
+    fn mk_device_env() -> CodegenEnv {
+        mk_env(gpu_ast::Target::Device)
+    }
+
+    fn mk_host_env() -> CodegenEnv {
+        mk_env(gpu_ast::Target::Host)
+    }
+
+    #[test]
+    fn from_f64_host() {
+        let env = mk_host_env();
+        let r = from_gpu_ir_type(&env, gpu::scalar(ElemSize::F64), &i());
+        assert_eq!(r.unwrap(), scalar(ElemSize::F64));
+    }
+
+    #[test]
+    fn from_f64_device() {
+        let env = mk_device_env();
+        let r = from_gpu_ir_type(&env, gpu::scalar(ElemSize::F64), &i());
+        assert_error_matches(r, "Metal.*double-precision float.*");
+    }
+
+    #[test]
+    fn from_nested_pointer() {
+        let inner_ty = gpu::pointer(gpu::scalar(ElemSize::F32), gpu_ast::MemSpace::Device);
+        let ty = gpu::pointer(inner_ty, gpu_ast::MemSpace::Device);
+        let env = mk_device_env();
+        let r = from_gpu_ir_type(&env, ty, &i());
+        assert_error_matches(r, "nested pointer");
+    }
+
+    #[test]
+    fn from_1d_pointer_host() {
+        let ty = gpu::pointer(gpu::scalar(ElemSize::F32), gpu_ast::MemSpace::Device);
+        let env = mk_host_env();
+        assert_eq!(from_gpu_ir_type(&env, ty, &i()).unwrap(), Type::Buffer);
+    }
+
+    #[test]
+    fn from_1d_pointer_device() {
+        let ty = gpu::pointer(gpu::scalar(ElemSize::F32), gpu_ast::MemSpace::Device);
+        let env = mk_device_env();
+        let expected = pointer(scalar(ElemSize::F32), MemSpace::Device);
+        assert_eq!(from_gpu_ir_type(&env, ty, &i()).unwrap(), expected);
+    }
+
+    #[test]
+    fn from_struct_type() {
+        let ty = gpu_ast::Type::Struct {id: id("x")};
+        let env = mk_device_env();
+        assert_error_matches(from_gpu_ir_type(&env, ty, &i()), "struct type");
+    }
+
+    #[test]
+    fn from_host_array_access_expr() {
+        let e = gpu::array_access(
+            gpu::var("x", gpu::pointer(gpu::scalar(ElemSize::F32), gpu_ast::MemSpace::Device)),
+            gpu::int(0, Some(ElemSize::I32)),
+            gpu::scalar(ElemSize::F32)
+        );
+        let env = mk_host_env();
+        let expected = Expr::HostArrayAccess {
+            target: Box::new(var("x", Type::Buffer)),
+            idx: Box::new(int(0, ElemSize::I32)),
+            ty: scalar(ElemSize::F32),
+            i: i()
+        };
+        assert_eq!(from_gpu_ir_expr(&env, e), Ok(expected));
+    }
+
+    #[test]
+    fn from_device_array_access_expr() {
+        let e = gpu::array_access(
+            gpu::var("x", gpu::pointer(gpu::scalar(ElemSize::F32), gpu_ast::MemSpace::Device)),
+            gpu::int(0, Some(ElemSize::I32)),
+            gpu::scalar(ElemSize::F32)
+        );
+        let env = mk_device_env();
+        let expected = Expr::ArrayAccess {
+            target: Box::new(var("x", pointer(scalar(ElemSize::F32), MemSpace::Device))),
+            idx: Box::new(int(0, ElemSize::I32)),
+            ty: scalar(ElemSize::F32),
+            i: i()
+        };
+        assert_eq!(from_gpu_ir_expr(&env, e), Ok(expected));
+    }
+
+    #[test]
+    fn from_synchronize_block_stmt() {
+        let env = mk_device_env();
+        let s = gpu_ast::Stmt::Synchronize {scope: gpu_ast::SyncScope::Block, i: i()};
+        let expected = Stmt::ThreadgroupBarrier;
+        assert_eq!(from_gpu_ir_stmt(&env, s), Ok(expected));
+    }
+
+    #[test]
+    fn from_synchronize_cluster_stmt() {
+        let env = mk_device_env();
+        let s = gpu_ast::Stmt::Synchronize {scope: gpu_ast::SyncScope::Cluster, i: i()};
+        assert_error_matches(from_gpu_ir_stmt(&env, s), r"cluster-level sync.*");
+    }
+
+    #[test]
+    fn from_cluster_reduction_stmt() {
+        let env = mk_device_env();
+        let s = gpu_ast::Stmt::ClusterReduce {
+            block_idx: gpu::int(0, None), shared_var: gpu::int(0, None),
+            temp_var: gpu::int(0, None), blocks_per_cluster: 1, op: BinOp::Add,
+            int_ty: gpu::scalar(ElemSize::I64), res_ty: gpu::scalar(ElemSize::F32), i: i()
+        };
+        assert_error_matches(from_gpu_ir_stmt(&env, s), r"Cluster reductions.*not supported");
+    }
+
+    #[test]
+    fn from_scalar_indexed_buffer_param() {
+        let env = mk_host_env();
+        let ty = gpu::pointer(gpu::scalar(ElemSize::I32), gpu_ast::MemSpace::Device);
+        let p = gpu_ast::Param {id: id("x"), ty, i: i()};
+        let expected = Param {
+            id: id("x"), ty: Type::Buffer,
+            attr: Some(ParamAttribute::Buffer {idx: 1})
+        };
+        assert_eq!(from_gpu_ir_param(&env, p, Some(1)), Ok(expected));
+    }
+
+    #[test]
+    fn from_scalar_non_indexed_host_param() {
+        let env = mk_host_env();
+        let p = gpu_ast::Param {id: id("x"), ty: gpu::scalar(ElemSize::I32), i: i()};
+        let expected = Param {
+            id: id("x"), ty: scalar(ElemSize::I32), attr: None
+        };
+        assert_eq!(from_gpu_ir_param(&env, p, None), Ok(expected));
+    }
+
+    #[test]
+    fn from_launch_bounds_attr() {
+        let a = gpu_ast::KernelAttribute::LaunchBounds {threads: 10};
+        assert_eq!(from_gpu_ir_attr(a), Ok(FunAttribute::LaunchBounds {threads: 10}));
+    }
+
+    #[test]
+    fn from_cluster_dims_attr() {
+        let a = gpu_ast::KernelAttribute::ClusterDims {dims: Dim3::default()};
+        assert_error_matches(from_gpu_ir_attr(a), "unsupported cluster.*attribute");
+    }
+
+    #[test]
+    fn add_grid_index_args_kernel() {
+        let t = Top::FunDef {
+            attrs: vec![FunAttribute::LaunchBounds {threads: 512}],
+            is_kernel: true,
+            ret_ty: Type::Void,
+            id: id("f"),
+            params: vec![],
+            body: vec![
+                Stmt::Definition {
+                    ty: scalar(ElemSize::I32),
+                    id: id("a"),
+                    expr: Expr::ThreadIdx {dim: Dim::X, ty: scalar(ElemSize::I32), i: i()},
+                },
+                Stmt::Definition {
+                    ty: scalar(ElemSize::I32),
+                    id: id("b"),
+                    expr: Expr::BlockIdx {dim: Dim::Y, ty: scalar(ElemSize::I32), i: i()},
+                },
+            ]
+        };
+        let t = add_grid_index_arguments_to_kernels_top(t);
+        if let Top::FunDef {mut params, mut body, ..} = t {
+            assert_eq!(params.len(), 2);
+            let snd = params.pop().unwrap();
+            let fst = params.pop().unwrap();
+            assert!(matches!(fst, Param {
+                ty: Type::Uint3, attr: Some(ParamAttribute::ThreadIndex), ..
+            }));
+            assert!(matches!(snd, Param {
+                ty: Type::Uint3, attr: Some(ParamAttribute::BlockIndex), ..
+            }));
+            assert_eq!(body.len(), 2);
+            let snd = body.pop().unwrap();
+            let fst = body.pop().unwrap();
+            if let Stmt::Definition {id, expr: Expr::Projection {label, ..}, ..} = fst {
+                assert_eq!(id.get_str(), "a");
+                assert_eq!(label, "x");
+            } else {
+                assert!(false);
+            }
+            if let Stmt::Definition {id, expr: Expr::Projection {label, ..}, ..} = snd {
+                assert_eq!(id.get_str(), "b");
+                assert_eq!(label, "y");
+            } else {
+                assert!(false);
+            }
+        } else {
+            assert!(false);
+        }
+    }
 }

@@ -1109,7 +1109,7 @@ pub fn restructure_inter_block_synchronization(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::gpu::test::*;
+    use crate::test::*;
     use crate::ir::ast_builder::*;
     use crate::option::*;
 

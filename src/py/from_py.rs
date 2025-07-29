@@ -623,7 +623,7 @@ pub fn to_untyped_ir<'py>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::py::test::*;
+    use crate::test::*;
     use crate::py::ast_builder::*;
 
     use pyo3::types::*;
@@ -873,7 +873,7 @@ mod test {
     #[test]
     fn convert_expr_bytes_literal() {
         let e = convert_expr_wrap("b'123'");
-        assert_error_matches(e, r"Unsupported literal value b'123'");
+        assert_py_error_matches(e, r"Unsupported literal value b'123'");
     }
 
     #[test]
@@ -1005,7 +1005,7 @@ mod test {
     #[test]
     fn convert_expr_binop_equality_sequence() {
         let e = convert_expr_wrap("a == b == c");
-        assert_error_matches(e, r"Sequences of comparisons are not supported");
+        assert_py_error_matches(e, r"Sequences of comparisons are not supported");
     }
 
     #[test]
@@ -1203,7 +1203,7 @@ mod test {
     #[test]
     fn convert_expr_slice_with_step_size() {
         let e = convert_expr_wrap("a[1:10:2]");
-        assert_error_matches(e, r"Slices with a step size.*not supported");
+        assert_py_error_matches(e, r"Slices with a step size.*not supported");
     }
 
     #[test]
@@ -1280,13 +1280,13 @@ mod test {
     #[test]
     fn convert_expr_sum_invalid_axis_form() {
         let e = convert_expr_wrap("prickle.sum(x[:], axis='x')");
-        assert_error_matches(e, r"Expected integer literal value.*");
+        assert_py_error_matches(e, r"Expected integer literal value.*");
     }
 
     #[test]
     fn convert_expr_call_to_undefined() {
         let e = convert_expr_wrap("f(2, 3)");
-        assert_error_matches(e, r"Call to unknown function.*");
+        assert_py_error_matches(e, r"Call to unknown function.*");
     }
 
     #[test]
@@ -1325,13 +1325,13 @@ mod test {
     #[test]
     fn convert_expr_call_keyword_args() {
         let e = convert_expr_wrap_helper("f(2, y=3)", vec!["f".to_string()]);
-        assert_error_matches(e, r"Unsupported keyword argument in call.*y");
+        assert_py_error_matches(e, r"Unsupported keyword argument in call.*y");
     }
 
     #[test]
     fn convert_expr_call_axis_keyword_arg() {
         let e = convert_expr_wrap_helper("f(2, axis=3)", vec!["f".to_string()]);
-        assert_error_matches(e, r"Unsupported keyword argument in call.*axis");
+        assert_py_error_matches(e, r"Unsupported keyword argument in call.*axis");
     }
 
     fn convert_stmt_wrap(s: &str) -> PyResult<Stmt> {
@@ -1352,13 +1352,13 @@ mod test {
     #[test]
     fn convert_stmt_label_invalid_arg() {
         let e = convert_stmt_wrap("prickle.label(4)");
-        assert_error_matches(e, r"First argument.*should be a string literal");
+        assert_py_error_matches(e, r"First argument.*should be a string literal");
     }
 
     #[test]
     fn convert_stmt_label_multi_args() {
         let e = convert_stmt_wrap("prickle.label('a', 'b')");
-        assert_error_matches(e, r"Label statement expects one argument");
+        assert_py_error_matches(e, r"Label statement expects one argument");
     }
 
     #[test]
@@ -1383,13 +1383,13 @@ mod test {
     #[test]
     fn convert_stmt_assign_multi_target() {
         let e = convert_stmt_wrap("a = b = 2");
-        assert_error_matches(e, r"Cannot have more than one target of assignment");
+        assert_py_error_matches(e, r"Cannot have more than one target of assignment");
     }
 
     #[test]
     fn convert_stmt_assign_tuple_target() {
         let e = convert_stmt_wrap("a, b = 2, 3");
-        assert_error_matches(e, r"Unsupported form of assignment");
+        assert_py_error_matches(e, r"Unsupported form of assignment");
     }
 
     #[test]
@@ -1500,19 +1500,19 @@ mod test {
     #[test]
     fn convert_stmt_for_in_loop_fail() {
         let e = convert_stmt_wrap("for x in s:\n  x = x + 1");
-        assert_error_matches(e, r".*must iterate using the range builtin");
+        assert_py_error_matches(e, r".*must iterate using the range builtin");
     }
 
     #[test]
     fn convert_stmt_for_invalid_range_call() {
         let e = convert_stmt_wrap("for x in range(1, 2, 3, 4):\n  a = 1");
-        assert_error_matches(e, r"Invalid number of arguments passed to range");
+        assert_py_error_matches(e, r"Invalid number of arguments passed to range");
     }
 
     #[test]
     fn convert_stmt_for_with_else_clause() {
         let e = convert_stmt_wrap("for x in range(1, 2):\n  a = 1\nelse:\n  a = 2");
-        assert_error_matches(e, r"else-clause.*not supported.*");
+        assert_py_error_matches(e, r"else-clause.*not supported.*");
     }
 
     #[test]
@@ -1576,7 +1576,7 @@ mod test {
     #[test]
     fn convert_while_else_stmt() {
         let e = convert_stmt_wrap("while True:\n  y = 1\nelse:\n  y = 2");
-        assert_error_matches(e, r".*else-clause.*");
+        assert_py_error_matches(e, r".*else-clause.*");
     }
 
     #[test]
@@ -1591,7 +1591,7 @@ mod test {
     #[test]
     fn convert_empty_return_stmt() {
         let e = convert_stmt_wrap("return");
-        assert_error_matches(e, r"Empty return statement.*");
+        assert_py_error_matches(e, r"Empty return statement.*");
     }
 
     #[test]
@@ -1615,19 +1615,19 @@ mod test {
     #[test]
     fn convert_with_as_err() {
         let e = convert_stmt_wrap("with prickle.gpu as x:\n  a = 2");
-        assert_error_matches(e, r"With statements.*'as' keyword.*");
+        assert_py_error_matches(e, r"With statements.*'as' keyword.*");
     }
 
     #[test]
     fn convert_with_unknown_context() {
         let e = convert_stmt_wrap("with ctx:\n  a = 2");
-        assert_error_matches(e, r"With statements are only supported for.*");
+        assert_py_error_matches(e, r"With statements are only supported for.*");
     }
 
     #[test]
     fn convert_with_multi_items() {
         let e = convert_stmt_wrap("with a, b:\n  c = 2");
-        assert_error_matches(e, r"With statements using multiple items.*");
+        assert_py_error_matches(e, r"With statements using multiple items.*");
     }
 
     fn convert_stmts_wrap(s: &str) -> PyResult<Vec<Stmt>> {

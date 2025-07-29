@@ -77,7 +77,7 @@ pub fn propagate_configuration(ast: Ast) -> CompileResult<Ast> {
 mod test {
     use super::*;
     use crate::ir::ast_builder::*;
-    use crate::ir::test::*;
+    use crate::test::*;
     use crate::utils::info::Info;
 
     fn i() -> Info {

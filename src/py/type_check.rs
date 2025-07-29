@@ -1116,7 +1116,7 @@ pub fn check_body_shape(ast: Ast) -> PyResult<(TypeCheckEnv, Ast)> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::py::test::*;
+    use crate::test::*;
     use crate::py::ast_builder::*;
     use crate::utils::pprint::PrettyPrint;
 
@@ -1213,7 +1213,7 @@ mod test {
             Param {id: id("y"), ty: scalar(ElemSize::F32), i: Info::default()},
             Param {id: id("z"), ty: tyuk(), i: Info::default()}
         ];
-        assert_error_matches(
+        assert_py_error_matches(
             assert_known_params(&id("f"), &params),
             r"Parameters x, z of function f have unknown type.*"
         );

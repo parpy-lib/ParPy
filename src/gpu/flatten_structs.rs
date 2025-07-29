@@ -207,7 +207,7 @@ pub fn flatten_structs(ast: Ast) -> CompileResult<Ast> {
 mod test {
     use super::*;
     use crate::gpu::ast_builder::*;
-    use crate::gpu::test::*;
+    use crate::test::*;
 
     #[test]
     fn void_contains_no_struct_type() {

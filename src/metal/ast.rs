@@ -361,6 +361,7 @@ pub enum Top {
     },
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct Ast {
     pub tops: Vec<Top>
 }

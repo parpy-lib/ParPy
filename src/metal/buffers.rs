@@ -7,10 +7,11 @@ use crate::gpu::ast::*;
 use crate::utils::ast::ExprType;
 use crate::utils::info::Info;
 use crate::utils::name::Name;
-use crate::utils::smap::SMapAccum;
+use crate::utils::smap::*;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Clone, Debug, PartialEq)]
 struct TempBuffer {
     buf_id: Name,
     src_id: Name,
@@ -99,37 +100,12 @@ fn insert_temporary_buffers_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
             acc.append(&mut stmts);
             acc
         },
-        Stmt::For {var_ty, var, init, cond, incr, body, i} => {
-            let body = transform_scalars_to_buffers_host_body(body);
-            acc.push(Stmt::For {var_ty, var, init, cond, incr, body, i});
-            acc
-        },
-        Stmt::If {cond, thn, els, i} => {
-            let thn = transform_scalars_to_buffers_host_body(thn);
-            let els = transform_scalars_to_buffers_host_body(els);
-            acc.push(Stmt::If {cond, thn, els, i});
-            acc
-        },
-        Stmt::While {cond, body, i} => {
-            let body = transform_scalars_to_buffers_host_body(body);
-            acc.push(Stmt::While {cond, body, i});
-            acc
-        },
-        Stmt::Scope {body, i} => {
-            let body = transform_scalars_to_buffers_host_body(body);
-            acc.push(Stmt::Scope {body, i});
-            acc
-        },
-        s => {
-            acc.push(s);
-            acc
-        }
+        _ => s.sflatten(acc, insert_temporary_buffers_stmt),
     }
 }
 
-fn transform_scalars_to_buffers_host_body(body: Vec<Stmt>) -> Vec<Stmt> {
-    body.into_iter()
-        .fold(vec![], insert_temporary_buffers_stmt)
+fn insert_temporary_buffers_host_body(body: Vec<Stmt>) -> Vec<Stmt> {
+    body.sflatten(vec![], insert_temporary_buffers_stmt)
 }
 
 fn convert_scalar_param_to_pointer(
@@ -182,7 +158,7 @@ fn transform_scalars_to_buffers_top(t: Top) -> Top {
             Top::KernelFunDef {attrs, id, params, body}
         },
         Top::FunDef {ret_ty, id, params, body, target: Target::Host} => {
-            let body = transform_scalars_to_buffers_host_body(body);
+            let body = insert_temporary_buffers_host_body(body);
             Top::FunDef {ret_ty, id, params, body, target: Target::Host}
         },
         Top::FunDef {target: Target::Device, ..} => t,
@@ -192,4 +168,71 @@ fn transform_scalars_to_buffers_top(t: Top) -> Top {
 
 pub fn transform_scalars_to_buffers(ast: Ast) -> Ast {
     ast.smap(transform_scalars_to_buffers_top)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::gpu::ast_builder::*;
+
+    #[test]
+    fn insert_temp_buffer_scalar_var() {
+        let env = BTreeMap::new();
+        let e = var("x", scalar(ElemSize::I32));
+        let (env, e) = insert_temporary_buffers_arg(env, e);
+        assert_eq!(env.len(), 1);
+        let TempBuffer {buf_id, ..} = env.get(&id("x")).unwrap();
+        let buf_ty = Type::Pointer {ty: Box::new(scalar(ElemSize::I32)), mem: MemSpace::Device};
+        let expected = Expr::Var {id: buf_id.clone(), ty: buf_ty, i: i()};
+        assert_eq!(e, expected);
+    }
+
+    #[test]
+    fn insert_existing_temp_buffer_var() {
+        let mut env = BTreeMap::new();
+        let buf_id = id("x").with_new_sym();
+        let buf = TempBuffer {
+            buf_id: buf_id.clone(),
+            src_id: id("x"),
+            elem_ty: scalar(ElemSize::F32),
+            i: i()
+        };
+        env.insert(id("x"), buf);
+        let e = var("x", scalar(ElemSize::F32));
+        let (env_post, e) = insert_temporary_buffers_arg(env.clone(), e);
+        assert_eq!(env, env_post);
+        let buf_ty = Type::Pointer {ty: Box::new(scalar(ElemSize::I32)), mem: MemSpace::Device};
+        let expected = Expr::Var {id: buf_id, ty: buf_ty, i: i()};
+        assert_eq!(e, expected);
+    }
+
+    #[test]
+    fn free_temp_buffer() {
+        let buf = TempBuffer {
+            buf_id: id("y"),
+            src_id: id("x"),
+            elem_ty: scalar(ElemSize::F32),
+            i: i()
+        };
+        let s = Stmt::FreeDevice {id: id("y"), i: i()};
+        assert_eq!(free_temporary_buffer(&buf), s);
+    }
+
+    #[test]
+    fn convert_scalar_param() {
+        let p = Param {id: id("x"), ty: scalar(ElemSize::F32), i: i()};
+        let (conv, p) = convert_scalar_param_to_pointer(vec![], p);
+        assert_eq!(conv, vec![id("x")]);
+        let ty = Type::Pointer {ty: Box::new(scalar(ElemSize::F32)), mem: MemSpace::Device};
+        assert_eq!(p, Param {id: id("x"), ty, i: i()});
+    }
+
+    #[test]
+    fn convert_non_scalar_param() {
+        let ty = Type::Pointer {ty: Box::new(scalar(ElemSize::F32)), mem: MemSpace::Device};
+        let p = Param {id: id("x"), ty, i: i()};
+        let (conv, p_post) = convert_scalar_param_to_pointer(vec![], p.clone());
+        assert_eq!(conv, vec![]);
+        assert_eq!(p_post, p);
+    }
 }

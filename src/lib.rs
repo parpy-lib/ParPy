@@ -117,3 +117,32 @@ fn prickle(m : &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<option::CompileOptions>()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod test {
+    use crate::utils::err::*;
+    use pyo3::{Python, PyResult};
+    use regex::Regex;
+    use std::fmt;
+
+    fn assert_error_msg_matches(err_msg: String, pat: &str) {
+        let re = Regex::new(pat).unwrap();
+        assert!(
+            re.is_match(&err_msg),
+            "Error message \"{0}\" did not match expected pattern \"{1}\"",
+            err_msg, pat
+        );
+    }
+
+    pub fn assert_py_error_matches<T: fmt::Debug>(r: PyResult<T>, pat: &str) {
+        Python::with_gil(|py| {
+            let err_msg = r.unwrap_err().value(py).to_string();
+            assert_error_msg_matches(err_msg, pat)
+        })
+    }
+
+    pub fn assert_error_matches<T: fmt::Debug>(r: CompileResult<T>, pat: &str) {
+        let err_msg = format!("{}", r.unwrap_err());
+        assert_error_msg_matches(err_msg, pat)
+    }
+}

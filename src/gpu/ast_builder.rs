@@ -2,6 +2,10 @@ use super::ast::*;
 use crate::utils::info::Info;
 use crate::utils::name::Name;
 
+pub fn i() -> Info {
+    Info::default()
+}
+
 pub fn id(s: &str) -> Name {
     Name::new(s.to_string())
 }
@@ -50,6 +54,10 @@ pub fn thread_idx(dim: Dim) -> Expr {
 
 pub fn block_idx(dim: Dim) -> Expr {
     Expr::BlockIdx {dim, ty: scalar(ElemSize::I64), i: Info::default()}
+}
+
+pub fn array_access(target: Expr, idx: Expr, ty: Type) -> Expr {
+    Expr::ArrayAccess {target: Box::new(target), idx: Box::new(idx), ty, i: Info::default()}
 }
 
 pub fn if_stmt(cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>) -> Stmt {
