@@ -145,7 +145,7 @@ fn reduction_op_neutral_element(
     match reduce::neutral_element(op, sz, &i) {
         Some(literal) => Ok(literal),
         None => {
-            let op = Expr::print_binop(op, &Type::Void, &Type::Void);
+            let op = Expr::print_binop(op, &Type::Void, &Type::Void).unwrap();
             prickle_compile_error!(i, "Parallel reductions not supported for operator {op}.")
         },
     }

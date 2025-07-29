@@ -95,7 +95,7 @@ impl PrettyPrintUnOp<Type> for Expr {
         }
     }
 
-    fn print_unop(op: &UnOp, _argty: &Type) -> String {
+    fn print_unop(op: &UnOp, _argty: &Type) -> Option<String> {
         let s = match op {
             UnOp::Sub => "-",
             UnOp::Not => "!",
@@ -109,7 +109,7 @@ impl PrettyPrintUnOp<Type> for Expr {
             UnOp::Abs => "abs",
             UnOp::Addressof => "&",
         };
-        s.to_string()
+        Some(s.to_string())
     }
 }
 
@@ -135,7 +135,7 @@ impl PrettyPrintBinOp<Type> for Expr {
         }
     }
 
-    fn print_binop(op: &BinOp, _argty: &Type, _ty: &Type) -> String {
+    fn print_binop(op: &BinOp, _argty: &Type, _ty: &Type) -> Option<String> {
         let s = match op {
             BinOp::Add => "+",
             BinOp::Sub => "-",
@@ -160,7 +160,7 @@ impl PrettyPrintBinOp<Type> for Expr {
             BinOp::Min => "min",
             BinOp::Atan2 => "atan2",
         };
-        s.to_string()
+        Some(s.to_string())
     }
 
     fn associativity(_op: &BinOp) -> Assoc {

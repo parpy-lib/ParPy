@@ -62,57 +62,57 @@ impl PrettyPrintUnOp<Type> for Expr {
         }
     }
 
-    fn print_unop(op: &UnOp, argty: &Type) -> String {
-        let s = match op {
-            UnOp::Sub => "-",
-            UnOp::Not => "!",
-            UnOp::BitNeg => "~",
-            UnOp::Addressof => "&",
+    fn print_unop(op: &UnOp, argty: &Type) -> Option<String> {
+        let o = match op {
+            UnOp::Sub => Some("-"),
+            UnOp::Not => Some("!"),
+            UnOp::BitNeg => Some("~"),
+            UnOp::Addressof => Some("&"),
             UnOp::Exp => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "hexp",
-                Some(ElemSize::F32) => "__expf",
-                Some(ElemSize::F64) => "exp",
-                _ => panic!("Invalid argtype of exp")
+                Some(ElemSize::F16) => Some("hexp"),
+                Some(ElemSize::F32) => Some("__expf"),
+                Some(ElemSize::F64) => Some("exp"),
+                _ => None
             },
             UnOp::Log => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "hlog",
-                Some(ElemSize::F32) => "__logf",
-                Some(ElemSize::F64) => "log",
-                _ => panic!("Invalid argtype of log")
+                Some(ElemSize::F16) => Some("hlog"),
+                Some(ElemSize::F32) => Some("__logf"),
+                Some(ElemSize::F64) => Some("log"),
+                _ => None
             },
             UnOp::Cos => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "hcos",
-                Some(ElemSize::F32) => "__cosf",
-                Some(ElemSize::F64) => "cos",
-                _ => panic!("Invalid argtype of cos")
+                Some(ElemSize::F16) => Some("hcos"),
+                Some(ElemSize::F32) => Some("__cosf"),
+                Some(ElemSize::F64) => Some("cos"),
+                _ => None
             },
             UnOp::Sin => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "hsin",
-                Some(ElemSize::F32) => "__sinf",
-                Some(ElemSize::F64) => "sin",
-                _ => panic!("Invalid argtype of sin")
+                Some(ElemSize::F16) => Some("hsin"),
+                Some(ElemSize::F32) => Some("__sinf"),
+                Some(ElemSize::F64) => Some("sin"),
+                _ => None
             },
             UnOp::Sqrt => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "hsqrt",
-                Some(ElemSize::F32) => "sqrtf",
-                Some(ElemSize::F64) => "sqrt",
-                _ => panic!("Invalid argtype of sqrt")
+                Some(ElemSize::F16) => Some("hsqrt"),
+                Some(ElemSize::F32) => Some("sqrtf"),
+                Some(ElemSize::F64) => Some("sqrt"),
+                _ => None
             },
             UnOp::Tanh => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "htanh",
-                Some(ElemSize::F32) => "tanhf",
-                Some(ElemSize::F64) => "tanh",
-                _ => panic!("Invalid argtype of tanh")
+                Some(ElemSize::F16) => Some("htanh"),
+                Some(ElemSize::F32) => Some("tanhf"),
+                Some(ElemSize::F64) => Some("tanh"),
+                _ => None
             },
             UnOp::Abs => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "__habs",
-                Some(ElemSize::F32) => "fabsf",
-                Some(ElemSize::F64) => "fabs",
-                Some(_) => "abs",
-                None => panic!("Invalid argtype of abs")
+                Some(ElemSize::F16) => Some("__habs"),
+                Some(ElemSize::F32) => Some("fabsf"),
+                Some(ElemSize::F64) => Some("fabs"),
+                Some(_) => Some("abs"),
+                _ => None
             },
         };
-        s.to_string()
+        o.map(|s| s.to_string())
     }
 }
 
@@ -138,67 +138,67 @@ impl PrettyPrintBinOp<Type> for Expr {
         }
     }
 
-    fn print_binop(op: &BinOp, argty: &Type, ty: &Type) -> String {
-        let s = match op {
-            BinOp::Add => "+",
-            BinOp::Sub => "-",
-            BinOp::Mul => "*",
-            BinOp::FloorDiv | BinOp::Div => "/",
-            BinOp::Rem => "%",
+    fn print_binop(op: &BinOp, argty: &Type, ty: &Type) -> Option<String> {
+        let o = match op {
+            BinOp::Add => Some("+"),
+            BinOp::Sub => Some("-"),
+            BinOp::Mul => Some("*"),
+            BinOp::FloorDiv | BinOp::Div => Some("/"),
+            BinOp::Rem => Some("%"),
             BinOp::Pow => match ty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "hpow",
-                Some(ElemSize::F32) => "__powf",
-                Some(ElemSize::F64) => "pow",
-                _ => panic!("Invalid type of **")
+                Some(ElemSize::F16) => Some("hpow"),
+                Some(ElemSize::F32) => Some("__powf"),
+                Some(ElemSize::F64) => Some("pow"),
+                _ => None
             },
-            BinOp::And => "&&",
-            BinOp::Or => "||",
-            BinOp::BitAnd => "&",
-            BinOp::BitOr => "|",
-            BinOp::BitXor => "^",
-            BinOp::BitShl => "<<",
-            BinOp::BitShr => ">>",
+            BinOp::And => Some("&&"),
+            BinOp::Or => Some("||"),
+            BinOp::BitAnd => Some("&"),
+            BinOp::BitOr => Some("|"),
+            BinOp::BitXor => Some("^"),
+            BinOp::BitShl => Some("<<"),
+            BinOp::BitShr => Some(">>"),
             BinOp::Eq => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "__heq",
-                _ => "=="
+                Some(ElemSize::F16) => Some("__heq"),
+                _ => Some("==")
             },
             BinOp::Neq => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "__hne",
-                _ => "!="
+                Some(ElemSize::F16) => Some("__hne"),
+                _ => Some("!=")
             },
             BinOp::Leq => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "__hle",
-                _ => "<="
+                Some(ElemSize::F16) => Some("__hle"),
+                _ => Some("<=")
             }
             BinOp::Geq => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "__hge",
-                _ => ">="
+                Some(ElemSize::F16) => Some("__hge"),
+                _ => Some(">=")
             },
             BinOp::Lt => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "__hlt",
-                _ => "<"
+                Some(ElemSize::F16) => Some("__hlt"),
+                _ => Some("<")
             },
             BinOp::Gt => match argty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "__hgt",
-                _ => ">"
+                Some(ElemSize::F16) => Some("__hgt"),
+                _ => Some(">")
             },
             BinOp::Max => match ty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "__hmax",
-                Some(ElemSize::F32) => "fmaxf",
-                Some(ElemSize::F64) => "fmax",
-                Some(_) => "max",
-                None => panic!("Invalid type of max")
+                Some(ElemSize::F16) => Some("__hmax"),
+                Some(ElemSize::F32) => Some("fmaxf"),
+                Some(ElemSize::F64) => Some("fmax"),
+                Some(_) => Some("max"),
+                None => None,
             },
             BinOp::Min => match ty.get_scalar_elem_size() {
-                Some(ElemSize::F16) => "__hmin",
-                Some(ElemSize::F32) => "fminf",
-                Some(ElemSize::F64) => "fmin",
-                Some(_) => "min",
-                None => panic!("Invalid type of min")
+                Some(ElemSize::F16) => Some("__hmin"),
+                Some(ElemSize::F32) => Some("fminf"),
+                Some(ElemSize::F64) => Some("fmin"),
+                Some(_) => Some("min"),
+                None => None,
             },
-            BinOp::Atan2 => "atan2",
+            BinOp::Atan2 => Some("atan2"),
         };
-        s.to_string()
+        o.map(|s| s.to_string())
     }
 
     fn associativity(_op: &BinOp) -> Assoc {
@@ -464,7 +464,7 @@ impl PrettyPrint for Attribute {
 
 impl PrettyPrint for Field {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Field {id, ty, ..} = self;
+        let Field {id, ty} = self;
         let (env, ty) = ty.pprint(env);
         let indent = env.print_indent();
         (env, format!("{indent}{ty} {id};"))
@@ -473,7 +473,7 @@ impl PrettyPrint for Field {
 
 impl PrettyPrint for Param {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Param {id, ty, ..} = self;
+        let Param {id, ty} = self;
         let (env, id) = id.pprint(env);
         let restrict_str = if let Type::Pointer {..} = &ty {
             " __restrict__"
@@ -570,8 +570,54 @@ mod test {
     use crate::utils::name::Name;
     use crate::utils::pprint;
 
+    use strum::IntoEnumIterator;
+
     fn uvar(id: &str) -> Expr {
         var(id, Type::Scalar {sz: ElemSize::Bool})
+    }
+
+    #[test]
+    fn unop_print() {
+        for op in UnOp::iter() {
+            for sz in ElemSize::iter() {
+                match op {
+                    UnOp::Sub | UnOp::Not | UnOp::BitNeg | UnOp::Addressof | UnOp::Abs => {
+                        assert!(Expr::print_unop(&op, &scalar(sz)).is_some());
+                    },
+                    _ if sz.is_floating_point() => {
+                        assert!(Expr::print_unop(&op, &scalar(sz)).is_some());
+                    },
+                    _ => {
+                        assert!(Expr::print_unop(&op, &scalar(sz)).is_none());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn binop_print() {
+        for op in BinOp::iter() {
+            for sz in ElemSize::iter() {
+                let ty = scalar(sz.clone());
+                match op {
+                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::FloorDiv |
+                    BinOp::Div | BinOp::Rem | BinOp::And | BinOp::Or |
+                    BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor |
+                    BinOp::BitShl | BinOp::BitShr | BinOp::Eq | BinOp::Neq |
+                    BinOp::Leq | BinOp::Geq | BinOp::Lt | BinOp::Gt | BinOp::Max |
+                    BinOp::Min | BinOp::Atan2 => {
+                        assert!(Expr::print_binop(&op, &ty, &ty).is_some());
+                    },
+                    BinOp::Pow if sz.is_floating_point() => {
+                        assert!(Expr::print_binop(&op, &ty, &ty).is_some());
+                    },
+                    _ => {
+                        assert!(Expr::print_binop(&op, &ty, &ty).is_none());
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -648,12 +694,6 @@ mod test {
     }
 
     #[test]
-    fn pprint_exp_f32() {
-        let s = exp(var("x", scalar(ElemSize::F32)), scalar(ElemSize::F32)).pprint_default();
-        assert_eq!(&s, "__expf(x)");
-    }
-
-    #[test]
     #[should_panic]
     fn pprint_exp_int_type_fails() {
         exp(var("x", scalar(ElemSize::I32)), scalar(ElemSize::I32)).pprint_default();
@@ -727,6 +767,12 @@ mod test {
     fn pprint_synchronize_block() {
         let s = Stmt::Synchronize {scope: SyncScope::Block}.pprint_default();
         assert_eq!(&s, "__syncthreads();");
+    }
+
+    #[test]
+    fn pprint_synchronize_cluster() {
+        let s = Stmt::Synchronize {scope: SyncScope::Cluster}.pprint_default();
+        assert_eq!(&s, "this_cluster().sync();");
     }
 
     #[test]
@@ -855,6 +901,19 @@ mod test {
     fn pprint_attributes() {
         assert_eq!(Attribute::Global.pprint_default(), "__global__");
         assert_eq!(Attribute::Entry.pprint_default(), "extern \"C\"");
+    }
+
+    #[test]
+    fn print_scalar_param() {
+        let p = Param {id: id("x"), ty: scalar(ElemSize::F16)};
+        assert_eq!(p.pprint_default(), "half x");
+    }
+
+    #[test]
+    fn print_pointer_param() {
+        let ty = Type::Pointer{ty: Box::new(scalar(ElemSize::F16))};
+        let p = Param {id: id("x"), ty};
+        assert_eq!(p.pprint_default(), "half* __restrict__ x");
     }
 
     #[test]

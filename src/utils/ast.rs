@@ -62,12 +62,12 @@ impl fmt::Display for ElemSize {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum UnOp {
     #[default] Sub, Not, BitNeg, Addressof, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum BinOp {
     #[default] Add, Sub, Mul, FloorDiv, Div, Rem, Pow, And, Or,
     BitAnd, BitOr, BitXor, BitShl, BitShr,

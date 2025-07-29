@@ -138,7 +138,7 @@ fn from_gpu_ir_reduce_op(op: &BinOp, i: &Info) -> CompileResult<SimdOp> {
         BinOp::Max => Ok(SimdOp::Max),
         BinOp::Min => Ok(SimdOp::Min),
         _ => {
-            let op = Expr::print_binop(op, &Type::Void, &Type::Void);
+            let op = Expr::print_binop(op, &Type::Void, &Type::Void).unwrap();
             prickle_compile_error!(i, "Reduction on unsupported binary operation {op}")
         }
     }

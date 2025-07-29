@@ -31,7 +31,11 @@ impl PrettyPrint for Type {
             Type::Pointer {ty, mem} => {
                 let (env, ty) = ty.pprint(env);
                 let (env, mem) = mem.pprint(env);
-                (env, format!("{mem} {ty}*"))
+                if mem.is_empty() {
+                    (env, format!("{ty}*"))
+                } else {
+                    (env, format!("{mem} {ty}*"))
+                }
             },
             Type::Buffer => (env, "MTL::Buffer*".to_string()),
             Type::Function => (env, "MTL::Function*".to_string()),
@@ -58,7 +62,7 @@ impl PrettyPrintUnOp<Type> for Expr {
         }
     }
 
-    fn print_unop(op: &UnOp, _argty: &Type) -> String {
+    fn print_unop(op: &UnOp, _argty: &Type) -> Option<String> {
         let s = match op {
             UnOp::Sub => "-",
             UnOp::Not => "!",
@@ -72,7 +76,7 @@ impl PrettyPrintUnOp<Type> for Expr {
             UnOp::Tanh => "metal::tanh",
             UnOp::Abs => "metal::abs",
         };
-        s.to_string()
+        Some(s.to_string())
     }
 }
 
@@ -92,7 +96,7 @@ impl PrettyPrintBinOp<Type> for Expr {
         }
     }
 
-    fn print_binop(op: &BinOp, _argty: &Type, _ty: &Type) -> String {
+    fn print_binop(op: &BinOp, _argty: &Type, _ty: &Type) -> Option<String> {
         let s = match op {
             BinOp::Add => "+",
             BinOp::Sub => "-",
@@ -117,7 +121,7 @@ impl PrettyPrintBinOp<Type> for Expr {
             BinOp::Min => "metal::min",
             BinOp::Atan2 => "metal::atan2",
         };
-        s.to_string()
+        Some(s.to_string())
     }
 
     fn associativity(_op: &BinOp) -> Assoc {
@@ -404,6 +408,8 @@ mod test {
     use crate::metal::ast_builder::*;
     use crate::utils::info::Info;
 
+    use strum::IntoEnumIterator;
+
     #[test]
     fn print_mem_space_host() {
         assert_eq!(MemSpace::Host.pprint_default(), "");
@@ -432,6 +438,87 @@ mod test {
     #[test]
     fn memcopy_device_to_device() {
         assert_eq!(memcopy_kind(&MemSpace::Device, &MemSpace::Device), 3);
+    }
+
+    #[test]
+    fn print_host_pointer() {
+        let ty = Type::Pointer {
+            ty: Box::new(scalar(ElemSize::F32)),
+            mem: MemSpace::Host
+        };
+        assert_eq!(ty.pprint_default(), "float*");
+    }
+
+    #[test]
+    fn print_device_pointer() {
+        let ty = Type::Pointer {
+            ty: Box::new(scalar(ElemSize::F32)),
+            mem: MemSpace::Device,
+        };
+        assert_eq!(ty.pprint_default(), "device float*");
+    }
+
+    #[test]
+    fn extract_unop_some() {
+        let e = unop(UnOp::Sub, int(1, ElemSize::I64));
+        assert_eq!(e.extract_unop(), Some((&UnOp::Sub, &int(1, ElemSize::I64))));
+    }
+
+    #[test]
+    fn extract_unop_none() {
+        let e = int(1, ElemSize::I64);
+        assert_eq!(e.extract_unop(), None);
+    }
+
+    #[test]
+    fn sub_is_not_function() {
+        assert!(!Expr::is_function(&UnOp::Sub));
+    }
+
+    #[test]
+    fn exp_is_function() {
+        assert!(Expr::is_function(&UnOp::Exp));
+    }
+
+    #[test]
+    fn extract_binop_some() {
+        let lhs = int(0, ElemSize::I64);
+        let rhs = int(1, ElemSize::I64);
+        let ty = scalar(ElemSize::I64);
+        let e = binop(lhs.clone(), BinOp::Add, rhs.clone(), ty.clone());
+        assert_eq!(e.extract_binop(), Some((&lhs, &BinOp::Add, &rhs, &ty)));
+    }
+
+    #[test]
+    fn extract_binop_none() {
+        let e = int(1, ElemSize::I64);
+        assert_eq!(e.extract_binop(), None);
+    }
+
+    #[test]
+    fn add_is_infix() {
+        assert!(Expr::is_infix(&BinOp::Add, &scalar(ElemSize::I64)));
+    }
+
+    #[test]
+    fn pow_is_not_infix() {
+        assert!(!Expr::is_infix(&BinOp::Pow, &scalar(ElemSize::I64)));
+    }
+
+    #[test]
+    fn print_all_unary_operators() {
+        let ty = scalar(ElemSize::F32);
+        for op in UnOp::iter() {
+            assert!(Expr::print_unop(&op, &ty).is_some());
+        }
+    }
+
+    #[test]
+    fn print_all_binary_operators() {
+        let ty = scalar(ElemSize::F32);
+        for op in BinOp::iter() {
+            assert!(Expr::print_binop(&op, &ty, &ty).is_some());
+        }
     }
 
     #[test]
@@ -491,5 +578,74 @@ mod test {
     fn print_block_index_fails() {
         let e = Expr::BlockIdx {dim: Dim::X, ty: Type::Uint3, i: Info::default()};
         e.pprint_default();
+    }
+
+    #[test]
+    fn print_scalar_param() {
+        let p = Param {id: id("x"), ty: scalar(ElemSize::F16), attr: None};
+        assert_eq!(p.pprint_default(), "half x");
+    }
+
+    #[test]
+    fn print_buffer_param() {
+        let p = Param {id: id("x"), ty: Type::Buffer, attr: Some(ParamAttribute::Buffer {idx: 0})};
+        assert_eq!(p.pprint_default(), "MTL::Buffer* x [[buffer(0)]]");
+    }
+
+    #[test]
+    fn print_thread_idx_param() {
+        let p = Param {id: id("x"), ty: Type::Uint3, attr: Some(ParamAttribute::ThreadIndex)};
+        assert_eq!(p.pprint_default(), "uint3 x [[thread_position_in_threadgroup]]");
+    }
+
+    #[test]
+    fn print_block_idx_param() {
+        let p = Param {id: id("x"), ty: Type::Uint3, attr: Some(ParamAttribute::BlockIndex)};
+        assert_eq!(p.pprint_default(), "uint3 x [[threadgroup_position_in_grid]]");
+    }
+
+    #[test]
+    fn print_array_access() {
+        let ty = Type::Pointer {
+            ty: Box::new(scalar(ElemSize::F32)),
+            mem: MemSpace::Device
+        };
+        let e = Expr::ArrayAccess {
+            target: Box::new(var("x", ty)),
+            idx: Box::new(int(1, ElemSize::I64)),
+            ty: scalar(ElemSize::F32),
+            i: Info::default(),
+        };
+        assert_eq!(e.pprint_default(), "x[1]");
+    }
+
+    #[test]
+    fn print_host_array_access() {
+        let ty = Type::Pointer {
+            ty: Box::new(scalar(ElemSize::F32)),
+            mem: MemSpace::Device
+        };
+        let e = Expr::HostArrayAccess {
+            target: Box::new(var("x", ty)),
+            idx: Box::new(int(1, ElemSize::I64)),
+            ty: scalar(ElemSize::F32),
+            i: Info::default(),
+        };
+        assert_eq!(e.pprint_default(), "((float*)x->contents())[1]");
+    }
+
+    #[test]
+    fn print_var_def_empty_init() {
+        let t = Top::VarDef {ty: scalar(ElemSize::F32), id: id("x"), init: None};
+        assert_eq!(t.pprint_default(), "float x;");
+    }
+
+    #[test]
+    fn print_var_def_some_init() {
+        let t = Top::VarDef {
+            ty: scalar(ElemSize::F32), id: id("x"),
+            init: Some(float(2.5, ElemSize::F32)),
+        };
+        assert_eq!(t.pprint_default(), "float x = 2.5;");
     }
 }

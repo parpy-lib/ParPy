@@ -163,11 +163,11 @@ pub fn parenthesize_if_le_precedence(
 pub trait PrettyPrintUnOp<T>: PrettyPrint + ExprType<T> + Sized {
     fn extract_unop<'a>(&'a self) -> Option<(&'a UnOp, &'a Self)>;
     fn is_function(op: &UnOp) -> bool;
-    fn print_unop(op: &UnOp, argty: &T) -> String;
+    fn print_unop(op: &UnOp, argty: &T) -> Option<String>;
 
     fn print_parenthesized_unop(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let (op, arg) = self.extract_unop().unwrap();
-        let op_str = Self::print_unop(op, arg.get_type());
+        let op_str = Self::print_unop(op, arg.get_type()).unwrap();
         let (env, arg_str) = arg.pprint(env);
         if Self::is_function(op) {
             (env, format!("{op_str}({arg_str})"))
@@ -182,7 +182,7 @@ pub enum Assoc { Left, Right }
 pub trait PrettyPrintBinOp<T>: PrettyPrint + ExprType<T> + Sized {
     fn extract_binop<'a>(&'a self) -> Option<(&'a Self, &'a BinOp, &'a Self, &'a T)>;
     fn is_infix(op: &BinOp, argty: &T) -> bool;
-    fn print_binop(op: &BinOp, argty: &T, ty: &T) -> String;
+    fn print_binop(op: &BinOp, argty: &T, ty: &T) -> Option<String>;
     fn associativity(op: &BinOp) -> Assoc;
 
     fn try_get_binop<'a>(&'a self) -> Option<BinOp> {
@@ -197,7 +197,7 @@ pub trait PrettyPrintBinOp<T>: PrettyPrint + ExprType<T> + Sized {
         let (lhs, op, rhs, ty) = self.extract_binop().unwrap();
         let argty = lhs.get_type();
         let (env, lhs_str) = lhs.pprint(env);
-        let op_str = Self::print_binop(op, argty, ty);
+        let op_str = Self::print_binop(op, argty, ty).unwrap();
         let (env, rhs_str) = rhs.pprint(env);
         if Self::is_infix(op, argty) {
             let lhs_op = lhs.try_get_binop();
@@ -343,5 +343,21 @@ mod test {
         let s = "a + b".to_string();
         let s = parenthesize_if_le_precedence(Some(BinOp::Add), &BinOp::Add, s);
         assert_eq!(s, "(a + b)");
+    }
+
+    #[test]
+    fn print_distinct_names() {
+        let (env, s1) = Name::sym_str("x").pprint(PrettyPrintEnv::new());
+        let (_, s2) = Name::sym_str("x").pprint(env);
+        assert!(s1 != s2);
+    }
+
+    #[test]
+    fn print_distinct_names_ignore_symbols() {
+        let mut env = PrettyPrintEnv::new();
+        env.ignore_symbols = true;
+        let (env, s1) = Name::sym_str("x").pprint(env);
+        let (_, s2) = Name::sym_str("x").pprint(env);
+        assert_eq!(s1, s2);
     }
 }
