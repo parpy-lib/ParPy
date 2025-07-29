@@ -8,16 +8,15 @@ use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::pprint::*;
 use crate::utils::reduce;
-use crate::utils::smap::{SFold, SMapAccum};
+use crate::utils::smap::*;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 fn insert_synchronization_points_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
     match s {
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-        Stmt::SyncPoint {..} | Stmt::Alloc {..} | Stmt::Free {..} => {
-            acc.push(s);
-        },
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
+        Stmt::If {..} | Stmt::While {..} | Stmt::Return {..} | Stmt::Alloc {..} |
+        Stmt::Free {..} => s.sflatten(acc, insert_synchronization_points_stmt),
         Stmt::For {var, lo, hi, step, body, par, i} => {
             let is_par = par.is_parallel();
             let body = insert_synchronization_points(body);
@@ -25,25 +24,13 @@ fn insert_synchronization_points_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> 
             if is_par {
                 acc.push(Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i});
             }
-        },
-        Stmt::While {cond, body, i} => {
-            let body = insert_synchronization_points(body);
-            acc.push(Stmt::While {cond, body, i});
-        },
-        Stmt::If {cond, thn, els, i} => {
-            let thn = insert_synchronization_points(thn);
-            let els = insert_synchronization_points(els);
-            acc.push(Stmt::If {cond, thn, els, i});
+            acc
         },
     }
-    acc
 }
 
 fn insert_synchronization_points(stmts: Vec<Stmt>) -> Vec<Stmt> {
-    stmts.into_iter()
-        .fold(vec![], |acc, s| {
-            insert_synchronization_points_stmt(acc, s)
-        })
+    stmts.sflatten(vec![], insert_synchronization_points_stmt)
 }
 
 fn determine_cuda_cluster_size(opts: &option::CompileOptions) -> Option<i64> {
@@ -75,9 +62,12 @@ fn classify_synchronization_points_par_stmt(
     s: Stmt
 ) -> Vec<Stmt> {
     match s {
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-        Stmt::Alloc {..} | Stmt::Free {..} => {
-            acc.push(s);
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::If {..} |
+        Stmt::While {..} | Stmt::Return {..} | Stmt::Alloc {..} |
+        Stmt::Free {..} => {
+            s.sflatten(acc, |acc, s| {
+                classify_synchronization_points_par_stmt(node, opts, acc, s)
+            })
         },
         Stmt::SyncPoint {i, ..} => {
             let prev_stmt_sync_kind = match acc.last() {
@@ -93,23 +83,15 @@ fn classify_synchronization_points_par_stmt(
                 Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i}
             };
             acc.push(s);
+            acc
         },
         Stmt::For {var, lo, hi, step, body, par, i} => {
             let node = node.children.get(&var).unwrap_or(node);
             let body = classify_synchronization_points_par_stmts(node, opts, body);
             acc.push(Stmt::For {var, lo, hi, step, body, par, i});
+            acc
         },
-        Stmt::While {cond, body, i} => {
-            let body = classify_synchronization_points_par_stmts(node, opts, body);
-            acc.push(Stmt::While {cond, body, i});
-        },
-        Stmt::If {cond, thn, els, i} => {
-            let thn = classify_synchronization_points_par_stmts(node, opts, thn);
-            let els = classify_synchronization_points_par_stmts(node, opts, els);
-            acc.push(Stmt::If {cond, thn, els, i});
-        }
-    };
-    acc
+    }
 }
 
 fn classify_synchronization_points_par_stmts(
@@ -117,8 +99,9 @@ fn classify_synchronization_points_par_stmts(
     opts: &option::CompileOptions,
     stmts: Vec<Stmt>
 ) -> Vec<Stmt> {
-    stmts.into_iter()
-        .fold(vec![], |acc, s| classify_synchronization_points_par_stmt(par, opts, acc, s))
+    stmts.sflatten(vec![], |acc, s| {
+        classify_synchronization_points_par_stmt(par, opts, acc, s)
+    })
 }
 
 fn classify_synchronization_points_stmt(
@@ -393,8 +376,9 @@ pub fn extract_reduction_operands(
 
 fn split_inter_block_parallel_reductions_stmt(
     opts: &option::CompileOptions,
+    mut acc: Vec<Stmt>,
     s: Stmt
-) -> CompileResult<Stmt> {
+) -> CompileResult<Vec<Stmt>> {
     let is_parallel_inter_block_reduction = |par: &LoopPar| {
         match classify_parallelism(opts, par) {
             SyncPointKind::InterBlock if par.nthreads > 0 && par.reduction => true,
@@ -422,63 +406,35 @@ fn split_inter_block_parallel_reductions_stmt(
                     var, lo, hi, step, nblocks as i128, par.tpb,
                     id.clone(), temp_access.clone(), op.clone(), rhs, &i
                 );
-                let l2 = outer_multi_block_reduce_loop(
+                acc.push(outer_multi_block_reduce_loop(
                     l1, temp_id, ne, id.clone(), nblocks, par.tpb, &i
-                );
-                let l3 = single_block_reduce_loop(
+                ));
+                acc.push(Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i: i.clone()});
+                acc.push(single_block_reduce_loop(
                     id, nblocks, lhs, op, temp_access, &i
-                );
-                let thn = vec![
-                    l2,
-                    Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i: i.clone()},
-                    l3
-                ];
-                let bool_ty = Type::Tensor {sz: ElemSize::Bool, shape: vec![]};
-                let true_expr = Expr::Bool {v: true, ty: bool_ty, i: i.clone()};
-                Ok(Stmt::If {cond: true_expr, thn, els: vec![], i: i.clone()})
+                ));
+                Ok(acc)
             } else {
                 prickle_compile_error!(i, "Multi-block reductions must use a \
                                            multiple of {0} threads.",
                                            par.tpb)
             }
         },
-        _ => s.smap_result(|s| split_inter_block_parallel_reductions_stmt(opts, s))
-    }
-}
-
-fn flatten_true_conds(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
-    match s {
-        Stmt::For {var, lo, hi, step, body, par, i} => {
-            let body = body.into_iter().fold(vec![], flatten_true_conds);
-            acc.push(Stmt::For {var, lo, hi, step, body, par, i});
-        },
-        Stmt::While {cond, body, i} => {
-            let body = body.into_iter().fold(vec![], flatten_true_conds);
-            acc.push(Stmt::While {cond, body, i})
-        },
-        Stmt::If {cond: Expr::Bool {v: true, ..}, thn, ..} => {
-            let mut thn = thn.into_iter().fold(vec![], flatten_true_conds);
-            acc.append(&mut thn);
-        },
-        Stmt::If {cond, thn, els, i} => {
-            let thn = thn.into_iter().fold(vec![], flatten_true_conds);
-            let els = els.into_iter().fold(vec![], flatten_true_conds);
-            acc.push(Stmt::If {cond, thn, els, i});
-        },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-        Stmt::SyncPoint {..} | Stmt::Alloc {..} | Stmt::Free {..} => {
-            acc.push(s)
+        _ => {
+            s.sflatten_result(acc, |acc, s| {
+                split_inter_block_parallel_reductions_stmt(opts, acc, s)
+            })
         }
-    };
-    acc
+    }
 }
 
 fn split_inter_block_parallel_reductions(
     opts: &option::CompileOptions,
     body: Vec<Stmt>
 ) -> CompileResult<Vec<Stmt>> {
-    let body = body.smap_result(|s| split_inter_block_parallel_reductions_stmt(opts, s))?;
-    Ok(body.into_iter().fold(vec![], flatten_true_conds))
+    body.sflatten_result(vec![], |acc, s| {
+        split_inter_block_parallel_reductions_stmt(opts, acc, s)
+    })
 }
 
 fn is_inter_block_sync_point(s: &Stmt) -> bool {
@@ -681,7 +637,7 @@ fn split_inter_block_synchronization_kernel(
 ) -> Vec<Stmt> {
     match s {
         Stmt::For {var, lo, hi, step, body, par, i} => {
-            let body = split_inter_block_synchronization_kernel_stmts(body);
+            let body = body.sflatten(vec![], split_inter_block_synchronization_kernel);
             let mut bodies = body.split_inclusive(is_inter_block_sync_point)
                 .map(|chunk| {
                     Stmt::For {
@@ -690,50 +646,31 @@ fn split_inter_block_synchronization_kernel(
                 })
                 .collect::<Vec<Stmt>>();
             acc.append(&mut bodies);
+            acc
         },
-        Stmt::While {cond, body, i} => {
-            let body = split_inter_block_synchronization_kernel_stmts(body);
-            acc.push(Stmt::While {cond, body, i});
-        },
-        Stmt::If {cond, thn, els, i} => {
-            let thn = split_inter_block_synchronization_kernel_stmts(thn);
-            let els = split_inter_block_synchronization_kernel_stmts(els);
-            acc.push(Stmt::If {cond, thn, els, i});
-        },
-        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
-        Stmt::SyncPoint {..} | Stmt::Alloc {..} | Stmt::Free {..} => {
-            acc.push(s);
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::While {..} |
+        Stmt::If {..} | Stmt::Return {..} | Stmt::SyncPoint {..} | Stmt::Alloc {..} |
+        Stmt::Free {..} => {
+            s.sflatten(acc, split_inter_block_synchronization_kernel)
         }
-    };
-    acc
+    }
 }
 
-fn split_inter_block_synchronization_kernel_stmts(stmts: Vec<Stmt>) -> Vec<Stmt> {
-    stmts.clone()
-        .into_iter()
-        .fold(vec![], split_inter_block_synchronization_kernel)
-}
-
-fn split_inter_block_synchronization_stmt(s: Stmt) -> Stmt {
+fn split_inter_block_synchronization_stmt(acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
     match s {
         Stmt::For {ref par, ..} if par.is_parallel() => {
-            let stmts = split_inter_block_synchronization_kernel(vec![], s.clone());
-            let i = s.get_info();
-            let true_expr = Expr::Bool {v: true, ty: Type::Tensor {sz: ElemSize::Bool, shape: vec![]}, i: i.clone()};
-            Stmt::If {cond: true_expr, thn: stmts, els: vec![], i}
+            split_inter_block_synchronization_kernel(acc, s.clone())
         },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
         Stmt::For {..} | Stmt::While {..} | Stmt::If {..} | Stmt::Return {..} |
         Stmt::Alloc {..} | Stmt::Free {..} => {
-            s.smap(split_inter_block_synchronization_stmt)
+            s.sflatten(acc, split_inter_block_synchronization_stmt)
         }
     }
 }
 
 fn split_inter_block_synchronizations(body: Vec<Stmt>) -> Vec<Stmt> {
-    body.into_iter()
-        .map(split_inter_block_synchronization_stmt)
-        .fold(vec![], flatten_true_conds)
+    body.sflatten(vec![], split_inter_block_synchronization_stmt)
 }
 
 #[derive(Clone, Debug)]

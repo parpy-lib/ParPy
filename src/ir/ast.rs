@@ -1,6 +1,6 @@
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::utils::smap::{SFold, SMapAccum};
+use crate::utils::smap::*;
 
 pub use crate::par::LoopPar;
 
@@ -303,6 +303,35 @@ impl SFold<Stmt> for Stmt {
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
             Stmt::SyncPoint {..} | Stmt::Alloc {..} | Stmt::Free {..} => acc
         }
+    }
+}
+
+impl SFlatten<Stmt> for Stmt {
+    fn sflatten_result<E>(
+        self,
+        mut acc: Vec<Stmt>,
+        f: impl Fn(Vec<Stmt>, Stmt) -> Result<Vec<Stmt>, E>
+    ) -> Result<Vec<Stmt>, E> {
+        match self {
+            Stmt::For {var, lo, hi, step, body, par, i} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::For {var, lo, hi, step, body, par, i});
+            },
+            Stmt::If {cond, thn, els, i} => {
+                let thn = thn.sflatten_result(vec![], &f)?;
+                let els = els.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::If {cond, thn, els, i});
+            },
+            Stmt::While {cond, body, i} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::While {cond, body, i});
+            },
+            Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
+            Stmt::Return {..} | Stmt::Alloc {..} | Stmt::Free {..} => {
+                acc.push(self);
+            },
+        };
+        Ok(acc)
     }
 }
 

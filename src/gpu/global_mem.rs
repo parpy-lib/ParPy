@@ -14,7 +14,7 @@ use crate::prickle_compile_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use crate::utils::smap::SFold;
+use crate::utils::smap::*;
 
 use std::collections::BTreeSet;
 
@@ -95,8 +95,7 @@ fn find_thread_index_dependent_variables_top(
 }
 
 fn find_thread_index_dependent_variables(ast: &Ast) -> CompileResult<BTreeSet<Name>> {
-    ast.iter()
-        .fold(Ok(BTreeSet::new()), find_thread_index_dependent_variables_top)
+    ast.sfold(Ok(BTreeSet::new()), find_thread_index_dependent_variables_top)
 }
 
 fn transform_thread_independent_memory_writes_stmt(
@@ -128,38 +127,28 @@ fn transform_thread_independent_memory_writes_stmt(
                     i: i.clone()
                 });
                 acc.push(Stmt::Synchronize {scope: SyncScope::Block, i});
-            }
+            };
+            acc
         },
-        Stmt::For {var_ty, var, init, cond, incr, body, i} => {
-            let body = transform_thread_independent_memory_writes_stmts(body, &vars);
-            acc.push(Stmt::For {var_ty, var, init, cond, incr, body, i});
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::For {..} | Stmt::If {..} |
+        Stmt::While {..} | Stmt::Return {..} | Stmt::Scope {..} |
+        Stmt::ParallelReduction {..} | Stmt::Synchronize {..} | Stmt::WarpReduce {..} |
+        Stmt::ClusterReduce {..} | Stmt::KernelLaunch {..} | Stmt::AllocDevice {..} |
+        Stmt::AllocShared {..} | Stmt::FreeDevice {..} | Stmt::CopyMemory {..} => {
+            stmt.sflatten(acc, |acc, s| {
+                transform_thread_independent_memory_writes_stmt(acc, s, &vars)
+            })
         },
-        Stmt::If {cond, thn, els, i} => {
-            let thn = transform_thread_independent_memory_writes_stmts(thn, &vars);
-            let els = transform_thread_independent_memory_writes_stmts(els, &vars);
-            acc.push(Stmt::If {cond, thn, els, i});
-        },
-        Stmt::While {cond, body, i} => {
-            let body = transform_thread_independent_memory_writes_stmts(body, &vars);
-            acc.push(Stmt::While {cond, body, i});
-        },
-        Stmt::Scope {body, i} => {
-            let body = transform_thread_independent_memory_writes_stmts(body, &vars);
-            acc.push(Stmt::Scope {body, i});
-        },
-        _ => acc.push(stmt),
-    };
-    acc
+    }
 }
 
 fn transform_thread_independent_memory_writes_stmts(
     stmts: Vec<Stmt>,
     vars: &BTreeSet<Name>
 ) -> Vec<Stmt> {
-    stmts.into_iter()
-        .fold(vec![], |acc, s| {
-            transform_thread_independent_memory_writes_stmt(acc, s, &vars)
-        })
+    stmts.sflatten(vec![], |acc, s| {
+        transform_thread_independent_memory_writes_stmt(acc, s, &vars)
+    })
 }
 
 fn transform_thread_independent_memory_writes_top(
