@@ -8,7 +8,6 @@ from operator import mul
 from functools import reduce
 import os
 from .prickle import CompileBackend, DataType
-import prickle.state
 
 DEFAULT_METAL_COMMAND_QUEUE_SIZE = 64
 PARIR_NATIVE_PATH = pathlib.Path(__file__).parent / "native"

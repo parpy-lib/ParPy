@@ -1,5 +1,4 @@
 from .prickle import CompileBackend, CompileOptions
-import prickle.state
 import os
 import shutil
 import torch

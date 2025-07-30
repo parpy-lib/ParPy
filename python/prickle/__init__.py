@@ -4,7 +4,6 @@ from . import backend, buffer, compile, key, validate
 from .buffer import sync
 from .compile import clear_cache
 from .operators import *
-from .state import *
 
 ir_asts = {}
 fun_cache = {}

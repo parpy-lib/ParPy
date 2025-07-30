@@ -16,7 +16,7 @@ compiler_backends = prickle.backend.backends
 # If the Metal backend is available according to PyTorch and the Metal-cpp
 # header is missing, we report that the Metal backend is currently disabled and
 # what they have to do to enable it.
-if torch.backends.mps.is_available() and prickle.metal_cpp_header_path is None:
+if torch.backends.mps.is_available() and os.getenv("METAL_CPP_HEADER_PATH") is None:
     msg = "Metal is available on this machine, but the Metal-cpp library " +\
           "could not be found. Please download the Metal-cpp headers and run:\n" +\
           "  export METAL_CPP_HEADER_PATH=/path/to/metal-cpp\n" +\
