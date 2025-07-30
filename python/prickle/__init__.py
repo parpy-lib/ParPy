@@ -1,10 +1,10 @@
-from . import backend, buffer, compile, key, prickle, validate
+from . import prickle
+from .prickle import par, seq, CompileBackend, CompileOptions
+from . import backend, buffer, compile, key, validate
 from .buffer import sync
 from .compile import clear_cache
 from .operators import *
 from .state import *
-from .prickle import par, seq
-from .prickle import CompileBackend, CompileOptions
 
 ir_asts = {}
 fun_cache = {}

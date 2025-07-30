@@ -1,3 +1,4 @@
+import builtins
 import ctypes
 import pathlib
 import shutil
@@ -6,7 +7,7 @@ import numpy as np
 from operator import mul
 from functools import reduce
 import os
-from .prickle import CompileBackend
+from .prickle import CompileBackend, DataType
 import prickle.state
 
 DEFAULT_METAL_COMMAND_QUEUE_SIZE = 64
@@ -34,7 +35,7 @@ def try_load_metal_base_lib():
         # We only need to build the library if the file does not exist or if
         # the source file was modified after the library was last built.
         if not libpath.exists() or os.path.getmtime(libpath) < os.path.getmtime(src_path):
-            metal_cpp_path = prickle.state.get_metal_cpp_header_path()
+            metal_cpp_path = os.getenv("METAL_CPP_HEADER_PATH")
             if metal_cpp_path is None:
                 raise RuntimeError("The path to the Metal C++ library must be provided " +
                                    "via the 'METAL_CPP_HEADER_PATH' variable before " +
@@ -60,107 +61,9 @@ def try_load_metal_base_lib():
         lib.prickle_init(DEFAULT_METAL_COMMAND_QUEUE_SIZE)
         metal_lib = lib
 
-ty_bool = 0
-int8 = 1
-int16 = 2
-int32 = 3
-int64 = 4
-uint8 = 5
-uint16 = 6
-uint32 = 7
-uint64 = 8
-float16 = 9
-float32 = 10
-float64 = 11
-typemap = {
-    ty_bool: "b1",
-    int8: "i1",
-    int16: "i2",
-    int32: "i4",
-    int64: "i8",
-    uint8: "u1",
-    uint16: "u2",
-    uint32: "u4",
-    uint64: "u8",
-    float16: "f2",
-    float32: "f4",
-    float64: "f8",
-}
-np_typemap = {
-    ty_bool: bool,
-    int8: np.int8,
-    int16: np.int16,
-    int32: np.int32,
-    int64: np.int64,
-    uint8: np.uint8,
-    uint16: np.uint16,
-    uint32: np.uint32,
-    uint64: np.uint64,
-    float16: np.float16,
-    float32: np.float32,
-    float64: np.float64,
-}
-ctypemap = {
-    ty_bool: ctypes.c_bool,
-    int8: ctypes.c_int8,
-    int16: ctypes.c_int16,
-    int32: ctypes.c_int32,
-    int64: ctypes.c_int64,
-    uint8: ctypes.c_uint8,
-    uint16: ctypes.c_uint16,
-    uint32: ctypes.c_uint32,
-    uint64: ctypes.c_uint64,
-    float16: ctypes.c_int16,
-    float32: ctypes.c_float,
-    float64: ctypes.c_double,
-}
-
-def select_type(tystr):
-    for k, v in typemap.items():
-        if v == tystr:
-            return k
-    raise RuntimeError(f"Found unsupported type of type string {tystr}")
-
-def lookup_type(ty, m):
-    if ty in m:
-        return m[ty]
-    else:
-        raise RuntimeError(f"Found unknown type {ty}")
-
-def print_type(ty):
-    return lookup_type(ty, typemap)
-
-class BufferDtype:
-    def __init__(self, typestr):
-        [bo, ty, itemsz] = typestr
-        self.bo = bo
-        self.ty = select_type(ty + itemsz)
-        self.itemsz = int(itemsz)
-
-    def __str__(self):
-        return f"{self.bo}{print_type(self.ty)}"
-
-    def to_typestr(self):
-        return self.bo + print_type(self.ty)
-
-    def size(self):
-        return self.itemsz
-
-    def to_numpy(self):
-        return lookup_type(self.ty, np_typemap)
-
-    def to_ctype(self):
-        return lookup_type(self.ty, ctypemap)
-
-    def is_integer(self):
-        return self.ty in [int8, int16, int32, int64]
-
-    def is_float(self):
-        return self.ty in [float16, float32, float64]
-
 def check_array_interface(intf):
     shape = intf["shape"]
-    dtype = BufferDtype(intf["typestr"])
+    dtype = DataType(intf["typestr"])
 
     # We require the data pointer to be provided as part of the interface.
     if "data" in intf:
@@ -180,7 +83,7 @@ def to_array_interface(ptr, dtype, shape):
     return {
         'data': (ptr, False),
         'strides': None,
-        'typestr': dtype.to_typestr(),
+        'typestr': str(dtype),
         'shape': shape,
         'version': 3
     }

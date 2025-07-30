@@ -2,6 +2,7 @@ use super::ast::*;
 use super::constant_fold;
 use super::slices;
 use crate::py_type_error;
+use crate::buffer::DataType;
 use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -123,38 +124,6 @@ fn assert_known_params(id: &Name, params: &Vec<Param>) -> PyResult<()> {
     }
 }
 
-fn compile_elem_size<'py>(dtype: Bound<'py, PyAny>) -> PyResult<ElemSize> {
-    let prickle = dtype.py().import("prickle.buffer")?;
-    let ty = dtype.getattr("ty")?;
-    if ty.eq(prickle.getattr("ty_bool")?)? {
-        Ok(ElemSize::Bool)
-    } else if ty.eq(prickle.getattr("int8")?)? {
-        Ok(ElemSize::I8)
-    } else if ty.eq(prickle.getattr("int16")?)? {
-        Ok(ElemSize::I16)
-    } else if ty.eq(prickle.getattr("int32")?)? {
-        Ok(ElemSize::I32)
-    } else if ty.eq(prickle.getattr("int64")?)? {
-        Ok(ElemSize::I64)
-    } else if ty.eq(prickle.getattr("uint8")?)? {
-        Ok(ElemSize::U8)
-    } else if ty.eq(prickle.getattr("uint16")?)? {
-        Ok(ElemSize::U16)
-    } else if ty.eq(prickle.getattr("uint32")?)? {
-        Ok(ElemSize::U32)
-    } else if ty.eq(prickle.getattr("uint64")?)? {
-        Ok(ElemSize::U64)
-    } else if ty.eq(prickle.getattr("float16")?)? {
-        Ok(ElemSize::F16)
-    } else if ty.eq(prickle.getattr("float32")?)? {
-        Ok(ElemSize::F32)
-    } else if ty.eq(prickle.getattr("float64")?)? {
-        Ok(ElemSize::F64)
-    } else {
-        py_type_error!(Info::default(), "Unsupported element type: {ty}")
-    }
-}
-
 fn get_buffer_shape<'py>(
     t: &Bound<'py, PyAny>
 ) -> PyResult<Vec<i64>> {
@@ -166,8 +135,8 @@ fn convert_type<'py>(arg: &Bound<'py, PyAny>, float_size: &ElemSize) -> PyResult
     let buffer = py.import("prickle.buffer")?;
     let ty = arg.get_type();
     if ty.eq(buffer.getattr("Buffer")?)? {
-        let dtype = arg.getattr("dtype")?;
-        let sz = compile_elem_size(dtype)?;
+        let dtype = arg.getattr("dtype")?.extract::<DataType>()?;
+        let sz = dtype.sz;
         let shape = get_buffer_shape(&arg)?;
         Ok(Type::Tensor {sz, shape})
     } else if arg.is_instance(&PyInt::type_object(arg.py()))? {

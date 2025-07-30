@@ -57,13 +57,12 @@ def build_cuda_shared_library(key, source, opts):
 
 def build_metal_shared_library(key, source, opts):
     from .buffer import try_load_metal_base_lib, PARIR_METAL_BASE_LIB_PATH
-    from .state import get_metal_cpp_header_path
     libpath = get_library_path(key)
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
         try_load_metal_base_lib()
-        metal_cpp_path = get_metal_cpp_header_path()
+        metal_cpp_path = os.getenv("METAL_CPP_HEADER_PATH")
         includes = opts.includes + [metal_cpp_path, str(PARIR_NATIVE_PATH)]
         frameworks = ["-framework", "Metal", "-framework", "Foundation", "-framework", "MetalKit"]
         include_cmd = flatten([["-I", include] for include in includes])

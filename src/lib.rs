@@ -1,3 +1,4 @@
+mod buffer;
 mod cuda;
 mod gpu;
 mod ir;
@@ -105,7 +106,7 @@ fn compile_ir<'py>(
 }
 
 #[pymodule]
-fn prickle(m : &Bound<'_, PyModule>) -> PyResult<()> {
+fn prickle(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(python_to_ir, m)?)?;
     m.add_function(wrap_pyfunction!(print_ir_ast, m)?)?;
     m.add_function(wrap_pyfunction!(get_ir_function_name, m)?)?;
@@ -115,6 +116,8 @@ fn prickle(m : &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<par::LoopPar>()?;
     m.add_class::<option::CompileBackend>()?;
     m.add_class::<option::CompileOptions>()?;
+    m.add_class::<utils::ast::ElemSize>()?;
+    m.add_class::<buffer::DataType>()?;
     Ok(())
 }
 

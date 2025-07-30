@@ -1,10 +1,12 @@
 use crate::utils::info::InfoNode;
 
+use pyo3::pyclass;
 use strum_macros::EnumIter;
 use std::cmp::Ordering;
 use std::fmt;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
+#[pyclass(eq, eq_int, hash, frozen)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter)]
 pub enum ElemSize {
     #[default] Bool, I8, I16, I32, I64, U8, U16, U32, U64, F16, F32, F64
 }
