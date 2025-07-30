@@ -174,6 +174,7 @@ pub fn transform_scalars_to_buffers(ast: Ast) -> Ast {
 mod test {
     use super::*;
     use crate::gpu::ast_builder::*;
+    use crate::test::*;
 
     #[test]
     fn insert_temp_buffer_scalar_var() {

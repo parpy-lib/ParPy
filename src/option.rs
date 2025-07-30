@@ -103,10 +103,6 @@ impl CompileOptions {
         CompileOptions::default()
     }
 
-    fn is_debug_enabled(&self) -> bool {
-        self.debug_print
-    }
-
     fn __str__(&self) -> String {
         format!("{self:?}")
     }
@@ -138,4 +134,25 @@ pub fn seq() -> PyResult<CompileOptions> {
     let mut opts = CompileOptions::default();
     opts.seq = true;
     Ok(opts)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::test::*;
+
+    #[test]
+    fn set_blocks_per_cluster_power_of_two() {
+        let mut opts = CompileOptions::default();
+        assert!(opts.set_max_thread_blocks_per_cluster(16).is_ok());
+    }
+
+    #[test]
+    fn set_blocks_per_cluster_non_power_of_two() {
+        let mut opts = CompileOptions::default();
+        assert_py_error_matches(
+            opts.set_max_thread_blocks_per_cluster(12),
+            "thread blocks per cluster must be a power of two"
+        );
+    }
 }

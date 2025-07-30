@@ -94,6 +94,7 @@ pub fn add_error_handling(ast: Ast) -> Ast {
 mod test {
     use super::*;
     use crate::cuda::ast_builder::*;
+    use crate::test::*;
 
     fn mk_env(def: BTreeSet<Name>, used: BTreeSet<Name>) -> UseEnv {
         UseEnv {def, used}

@@ -184,6 +184,7 @@ pub fn eliminate_block_wide_memory_writes(ast: Ast) -> CompileResult<Ast> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test::*;
     use crate::utils::info::Info;
 
     fn for_loop(var: Name, dim: Dim, lo: i64, hi: i64, body: Vec<Stmt>, block: bool) -> Stmt {
@@ -224,10 +225,6 @@ mod test {
 
     fn thread_dependent_loop(var: Name, dim: Dim, lo: i64, hi: i64, body: Vec<Stmt>) -> Stmt {
         for_loop(var, dim, lo, hi, body, false)
-    }
-
-    fn i() -> Info {
-        Info::default()
     }
 
     fn i64_ty() -> Type {

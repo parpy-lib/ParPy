@@ -486,10 +486,6 @@ mod test {
     use crate::test::*;
     use crate::option::*;
 
-    fn i() -> Info {
-        Info::default()
-    }
-
     #[test]
     fn classify_inter_block_reduction_non_cuda_backend() {
         let mut opts = CompileOptions::default();

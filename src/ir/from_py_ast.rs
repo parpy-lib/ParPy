@@ -442,10 +442,6 @@ mod test {
 
     use std::collections::BTreeMap;
 
-    fn i() -> Info {
-        Info::default()
-    }
-
     fn ir_env() -> IREnv {
         IREnv::new(BTreeMap::new(), BTreeMap::new())
     }

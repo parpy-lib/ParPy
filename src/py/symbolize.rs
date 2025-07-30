@@ -158,6 +158,7 @@ impl Symbolize for FunDef {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test::*;
     use crate::py::ast_builder::*;
 
     fn sym_env(entries: Vec<Name>) -> SymbolizeEnv {
@@ -215,7 +216,7 @@ mod test {
 
     #[test]
     fn symbolize_unknown_var_fail() {
-        assert!(var("x", Type::Unknown).symbolize_default().is_err());
+        assert_py_error_matches(var("x", Type::Unknown).symbolize_default(), "unknown variable");
     }
 
     #[test]

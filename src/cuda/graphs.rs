@@ -262,6 +262,7 @@ mod test {
     use super::*;
     use crate::cuda::ast_builder::*;
     use crate::option::CompileOptions;
+    use crate::test::*;
 
     fn mk_env(stream_id: Name) -> GraphEnv {
         GraphEnv {

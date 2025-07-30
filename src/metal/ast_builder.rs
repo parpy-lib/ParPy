@@ -3,10 +3,6 @@ use crate::utils::ast::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
 
-pub fn i() -> Info {
-    Info::default()
-}
-
 pub fn scalar(sz: ElemSize) -> Type {
     Type::Scalar {sz}
 }

@@ -482,13 +482,10 @@ impl PrettyPrint for Ast {
 mod test {
     use super::*;
     use crate::gpu::ast_builder::*;
+    use crate::test::*;
     use crate::utils::info::Info;
     use crate::utils::name::Name;
     use crate::utils::pprint;
-
-    fn i() -> Info {
-        Info::default()
-    }
 
     fn add(lhs: Expr, rhs: Expr) -> Expr {
         let ty = lhs.get_type().clone();

@@ -121,6 +121,7 @@ fn prickle(m : &Bound<'_, PyModule>) -> PyResult<()> {
 #[cfg(test)]
 mod test {
     use crate::utils::err::*;
+    use crate::utils::info::Info;
     use pyo3::{Python, PyResult};
     use regex::Regex;
     use std::fmt;
@@ -135,6 +136,7 @@ mod test {
     }
 
     pub fn assert_py_error_matches<T: fmt::Debug>(r: PyResult<T>, pat: &str) {
+        pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let err_msg = r.unwrap_err().value(py).to_string();
             assert_error_msg_matches(err_msg, pat)
@@ -144,5 +146,9 @@ mod test {
     pub fn assert_error_matches<T: fmt::Debug>(r: CompileResult<T>, pat: &str) {
         let err_msg = format!("{}", r.unwrap_err());
         assert_error_msg_matches(err_msg, pat)
+    }
+
+    pub fn i() -> Info {
+        Info::default()
     }
 }

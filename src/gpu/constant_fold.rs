@@ -230,11 +230,8 @@ pub fn fold(ast: Ast) -> Ast {
 mod test {
     use super::*;
     use crate::gpu::ast_builder::*;
+    use crate::test::*;
     use crate::utils::ast::*;
-
-    fn i() -> Info {
-        Info::default()
-    }
 
     fn cf(e: Expr) -> Expr {
         fold_expr(e)

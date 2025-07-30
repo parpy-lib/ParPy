@@ -104,12 +104,8 @@ pub fn associate_labels(fun: FunDef) -> PyResult<FunDef> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::utils::info::Info;
+    use crate::test::*;
     use crate::utils::name::Name;
-
-    fn i() -> Info {
-        Info::default()
-    }
 
     fn int(v: i64) -> Expr {
         Expr::Int {v: v as i128, ty: Type::Unknown, i: i()}

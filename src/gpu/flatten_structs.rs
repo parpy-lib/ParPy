@@ -250,10 +250,6 @@ mod test {
         );
     }
 
-    fn i() -> Info {
-        Info::default()
-    }
-
     fn mk_map<K: Ord, V>(v: Vec<(K, V)>) -> BTreeMap<K, V> {
         v.into_iter().collect::<_>()
     }

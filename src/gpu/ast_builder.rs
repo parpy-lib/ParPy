@@ -2,10 +2,6 @@ use super::ast::*;
 use crate::utils::info::Info;
 use crate::utils::name::Name;
 
-pub fn i() -> Info {
-    Info::default()
-}
-
 pub fn id(s: &str) -> Name {
     Name::new(s.to_string())
 }

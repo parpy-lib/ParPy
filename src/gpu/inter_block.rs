@@ -1113,10 +1113,6 @@ mod test {
     use crate::ir::ast_builder::*;
     use crate::option::*;
 
-    fn i() -> Info {
-        Info::default()
-    }
-
     #[test]
     fn cuda_cluster_size_correct_opts() {
         let mut opts = CompileOptions::default();

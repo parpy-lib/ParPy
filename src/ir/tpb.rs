@@ -78,11 +78,6 @@ mod test {
     use super::*;
     use crate::ir::ast_builder::*;
     use crate::test::*;
-    use crate::utils::info::Info;
-
-    fn i() -> Info {
-        Info::default()
-    }
 
     #[test]
     fn merge_tpb_default_default() {

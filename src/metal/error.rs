@@ -32,6 +32,7 @@ pub fn add_error_handling(mut ast: Ast) -> Ast {
 mod test {
     use super::*;
     use crate::metal::ast_builder::*;
+    use crate::test::*;
 
     fn alloc_dev_expr() -> Expr {
         Expr::AllocDevice {
