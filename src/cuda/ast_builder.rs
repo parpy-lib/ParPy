@@ -2,6 +2,10 @@ use super::ast::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
 
+pub fn i() -> Info {
+    Info::default()
+}
+
 pub fn scalar(sz: ElemSize) -> Type {
     Type::Scalar {sz}
 }
@@ -52,4 +56,8 @@ pub fn rem(lhs: Expr, rhs: Expr, ty: Type) -> Expr {
 
 pub fn max(lhs: Expr, rhs: Expr, ty: Type) -> Expr {
     binop(lhs, BinOp::Max, rhs, ty)
+}
+
+pub fn defn(ty: Type, id: Name, expr: Option<Expr>) -> Stmt {
+    Stmt::Definition {ty, id, expr}
 }

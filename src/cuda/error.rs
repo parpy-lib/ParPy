@@ -5,6 +5,7 @@ use crate::utils::smap::*;
 
 use std::collections::BTreeSet;
 
+#[derive(Clone, Debug, PartialEq)]
 struct UseEnv {
     def: BTreeSet<Name>,
     used: BTreeSet<Name>
@@ -87,4 +88,99 @@ pub fn add_error_handling(ast: Ast) -> Ast {
     ast.into_iter()
         .map(add_error_handling_top)
         .collect::<Ast>()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::cuda::ast_builder::*;
+
+    fn mk_env(def: BTreeSet<Name>, used: BTreeSet<Name>) -> UseEnv {
+        UseEnv {def, used}
+    }
+
+    fn mk_set<T: Ord>(v: Vec<T>) -> BTreeSet<T> {
+        v.into_iter().collect::<BTreeSet<T>>()
+    }
+
+    fn mk_default_env() -> UseEnv {
+        mk_env(mk_set(vec![]), mk_set(vec![]))
+    }
+
+    #[test]
+    fn collect_used_non_error_variable() {
+        let env = mk_default_env();
+        let v = var("x", scalar(ElemSize::F32));
+        assert_eq!(collect_used_err_variables(env.clone(), &v), env);
+    }
+
+    #[test]
+    fn collect_used_error_variable() {
+        let env = mk_default_env();
+        let v = var("x", Type::Error);
+        let expected = mk_env(mk_set(vec![]), mk_set(vec![id("x")]));
+        assert_eq!(collect_used_err_variables(env, &v), expected);
+    }
+
+    fn gen_stmts() -> Vec<Stmt> {
+        vec![
+            defn(Type::Error, id("x"), None),
+            defn(Type::Error, id("y"), Some(var("x", Type::Error))),
+            Stmt::KernelLaunch {
+                id: id("kernel"), blocks: Dim3::default(), threads: Dim3::default(),
+                stream: Stream::Default, args: vec![]
+            }
+        ]
+    }
+
+    #[test]
+    fn collect_used_errors_stmts() {
+        let stmts = gen_stmts();
+        let res = stmts.sfold(mk_default_env(), collect_unused_errors_stmt);
+        let expected = mk_env(mk_set(vec![id("x"), id("y")]), mk_set(vec![id("x")]));
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn unused_errors_stmts() {
+        let stmts = gen_stmts();
+        assert_eq!(collect_unused_errors(&stmts), mk_set(vec![id("y")]));
+    }
+
+    #[test]
+    fn check_unused_errors_stmts() {
+        let unused = mk_set(vec![id("y")]);
+        let stmts = gen_stmts().smap(|s| check_unused_errors(&unused, s));
+        let expected = vec![
+            defn(Type::Error, id("x"), None),
+            Stmt::CheckError {e: var("x", Type::Error)},
+            Stmt::KernelLaunch {
+                id: id("kernel"), blocks: Dim3::default(), threads: Dim3::default(),
+                stream: Stream::Default, args: vec![]
+            }
+        ];
+        assert_eq!(stmts, expected);
+    }
+
+    #[test]
+    fn add_error_handling_top() {
+        let ast = vec![Top::FunDef {
+            dev_attr: Attribute::Entry, ret_ty: Type::Void, attrs: vec![],
+            id: id("f"), params: vec![], body: gen_stmts()
+        }];
+        let expected_stmts = vec![
+            defn(Type::Error, id("x"), None),
+            Stmt::CheckError {e: var("x", Type::Error)},
+            Stmt::KernelLaunch {
+                id: id("kernel"), blocks: Dim3::default(), threads: Dim3::default(),
+                stream: Stream::Default, args: vec![]
+            },
+            Stmt::CheckError {e: Expr::GetLastError {ty: Type::Error, i: i()}},
+        ];
+        let expected = vec![Top::FunDef {
+            dev_attr: Attribute::Entry, ret_ty: Type::Void, attrs: vec![],
+            id: id("f"), params: vec![], body: expected_stmts
+        }];
+        assert_eq!(add_error_handling(ast), expected);
+    }
 }

@@ -187,7 +187,7 @@ fn generate_cluster_iterative_reduction(
         i: i.clone()
     });
     loop_body.push(Stmt::Synchronize {scope: SyncScope::Cluster, i: data.i.clone()});
-    
+
     let int_lit = |v| {
         Expr::Int {v, ty: int_ty.clone(), i: i.clone()}
     };

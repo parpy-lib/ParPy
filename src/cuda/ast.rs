@@ -44,7 +44,7 @@ pub enum Error {
     Success
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expr {
     Var {id: Name, ty: Type, i: Info},
     Bool {v: bool, ty: Type, i: Info},
@@ -262,7 +262,7 @@ pub enum Stream {
     Id(Name)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Definition {ty: Type, id: Name, expr: Option<Expr>},
     Assign {dst: Expr, expr: Expr},
@@ -435,25 +435,25 @@ pub enum Attribute {
     Global, Device, Entry
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Field {
     pub ty: Type,
     pub id: String
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Param {
     pub id: Name,
     pub ty: Type
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum KernelAttribute {
     LaunchBounds {threads: i64},
     ClusterDims {dims: Dim3},
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Top {
     Include {header: String},
     Namespace {ns: String, alias: Option<String>},

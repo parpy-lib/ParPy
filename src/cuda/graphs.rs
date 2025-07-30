@@ -87,7 +87,7 @@ fn generate_post_kernel_body_statements(env: &GraphEnv, acc: &mut Vec<Stmt>) {
             }
         }
     ];
-    
+
     // Otherwise, we update the existing executable graph based on the newly captured graph.
     let err_id = Name::sym_str("err");
     let err_is_success = Expr::BinOp {
@@ -254,5 +254,59 @@ pub fn use_if_enabled(ast: Ast, opts: &option::CompileOptions) -> Ast {
         use_cuda_graphs_ast(ast)
     } else {
         ast
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::cuda::ast_builder::*;
+    use crate::option::CompileOptions;
+
+    fn mk_env(stream_id: Name) -> GraphEnv {
+        GraphEnv {
+            inst_id: id(""), exec_graph_id: id(""), graph_id: id(""),
+            stream_id, updated_id: id("")
+        }
+    }
+
+    fn mk_err_defn(init: Expr) -> Stmt {
+        Stmt::Definition {ty: Type::Error, id: id("err"), expr: Some(init)}
+    }
+
+    fn cuda_stmts_body(stream: Stream) -> Vec<Stmt> {
+        vec![
+            mk_err_defn(Expr::StreamBeginCapture {
+                stream: stream.clone(), ty: Type::Error, i: i()
+            }),
+            mk_err_defn(Expr::MallocAsync {
+                id: id("x"), elem_ty: scalar(ElemSize::F32), sz: 10,
+                stream: stream.clone(), ty: Type::Error, i: i()
+            }),
+            mk_err_defn(Expr::FreeAsync {
+                id: id("x"), stream: stream.clone(), ty: Type::Error, i: i()
+            }),
+            mk_err_defn(Expr::StreamEndCapture {
+                stream, graph: id("g"), ty: Type::Error, i: i()
+            })
+        ]
+    }
+
+    #[test]
+    fn use_custom_stream_stmts() {
+        let stmts = cuda_stmts_body(Stream::Default);
+        let env = mk_env(id("s"));
+        let expected_stmts = cuda_stmts_body(Stream::Id(id("s")));
+        assert_eq!(use_env_stream_stmts(&env, stmts), expected_stmts);
+    }
+
+    #[test]
+    fn identity_if_cuda_graphs_disabled() {
+        let ast = vec![Top::FunDef {
+            dev_attr: Attribute::Entry, ret_ty: Type::Void, attrs: vec![],
+            id: id("f"), params: vec![], body: cuda_stmts_body(Stream::Default),
+        }];
+        let opts = CompileOptions::default();
+        assert_eq!(use_if_enabled(ast.clone(), &opts), ast);
     }
 }

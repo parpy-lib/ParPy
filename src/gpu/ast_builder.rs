@@ -60,6 +60,10 @@ pub fn array_access(target: Expr, idx: Expr, ty: Type) -> Expr {
     Expr::ArrayAccess {target: Box::new(target), idx: Box::new(idx), ty, i: Info::default()}
 }
 
+pub fn assign(dst: Expr, expr: Expr) -> Stmt {
+    Stmt::Assign {dst, expr, i: Info::default()}
+}
+
 pub fn if_stmt(cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>) -> Stmt {
     Stmt::If {cond, thn, els, i: Info::default()}
 }

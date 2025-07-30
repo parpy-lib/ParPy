@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 
 const CUDA_STANDARD_MAX_BLOCKS_PER_CLUSTER: i64 = 8;
 
-fn find_cluster_dim_attribute(attrs: &Vec<KernelAttribute>) -> Option<i64> {
+fn find_cluster_dim_attribute_x(attrs: &Vec<KernelAttribute>) -> Option<i64> {
     for attr in attrs {
         if let KernelAttribute::ClusterDims {dims: Dim3 {x, ..}} = attr {
             return Some(*x);
@@ -20,7 +20,7 @@ fn find_cluster_dim_attribute(attrs: &Vec<KernelAttribute>) -> Option<i64> {
 fn collect_nonstandard_cluster_kernel_name_top(mut acc: BTreeSet<Name>, t: &Top) -> BTreeSet<Name> {
     match t {
         Top::FunDef {attrs, id, ..} => {
-            if let Some(nblocks) = find_cluster_dim_attribute(attrs) {
+            if let Some(nblocks) = find_cluster_dim_attribute_x(attrs) {
                 if nblocks > CUDA_STANDARD_MAX_BLOCKS_PER_CLUSTER {
                     acc.insert(id.clone());
                 }
@@ -61,7 +61,6 @@ fn insert_nonstandard_attribute_config_for_kernels(
 ) -> Vec<Stmt> {
     used_kernels.into_iter()
         .map(|id| {
-            // TODO: check that the 'err' is cudaSuccess
             let err_id = Name::sym_str("err");
             Stmt::Definition {
                 ty: Type::Error,
@@ -109,5 +108,75 @@ pub fn insert_attribute_for_nonstandard_blocks_per_cluster(
         add_nonstandard_cluster_attribute_to_kernels(ast, &cluster_kernel_names)
     } else {
         ast
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::cuda::ast_builder::*;
+
+    fn mk_set<T: Ord>(v: Vec<T>) -> BTreeSet<T> {
+        v.into_iter().collect::<BTreeSet<T>>()
+    }
+
+    #[test]
+    fn find_cluster_dim_empty_attrs() {
+        assert_eq!(find_cluster_dim_attribute_x(&vec![]), None);
+    }
+
+    #[test]
+    fn find_cluster_dim_no_cluster_attrs() {
+        let attrs = vec![KernelAttribute::LaunchBounds {threads: 128}];
+        assert_eq!(find_cluster_dim_attribute_x(&attrs), None);
+    }
+
+    #[test]
+    fn find_cluster_dim_cluster_attr() {
+        let attrs = vec![KernelAttribute::ClusterDims {dims: Dim3::default()}];
+        let x = Dim3::default().x;
+        assert_eq!(find_cluster_dim_attribute_x(&attrs), Some(x));
+    }
+
+    #[test]
+    fn collect_regular_cluster_kernel_def() {
+        let t = Top::FunDef {
+            dev_attr: Attribute::Device, ret_ty: Type::Void,
+            attrs: vec![KernelAttribute::ClusterDims {dims: Dim3::default()}],
+            id: id("f"), params: vec![], body: vec![]
+        };
+        let res = collect_nonstandard_cluster_kernel_name_top(mk_set(vec![]), &t);
+        assert_eq!(res, mk_set(vec![]));
+    }
+
+    #[test]
+    fn collect_nonstandard_cluster_kernel_def() {
+        let max_standard = CUDA_STANDARD_MAX_BLOCKS_PER_CLUSTER;
+        let dims = Dim3::default().with_dim(&Dim::X, 2 * max_standard);
+        let t = Top::FunDef {
+            dev_attr: Attribute::Device, ret_ty: Type::Void,
+            attrs: vec![KernelAttribute::ClusterDims {dims}],
+            id: id("f"), params: vec![], body: vec![]
+        };
+        let res = collect_nonstandard_cluster_kernel_name_top(mk_set(vec![]), &t);
+        assert_eq!(res, mk_set(vec![id("f")]));
+    }
+
+    fn mk_kernel_launch(id: Name) -> Stmt {
+        Stmt::KernelLaunch {
+            id, blocks: Dim3::default(), threads: Dim3::default(),
+            stream: Stream::Default, args: vec![]
+        }
+    }
+
+    #[test]
+    fn collect_kernel_call_ids() {
+        let stmts = vec![
+            mk_kernel_launch(id("x")),
+            mk_kernel_launch(id("y")),
+            defn(Type::Error, id("z"), None),
+        ];
+        let kernels = mk_set(vec![id("y"), id("z")]);
+        assert_eq!(collect_called_kernels_in_body(&stmts, &kernels), mk_set(vec![id("y")]));
     }
 }

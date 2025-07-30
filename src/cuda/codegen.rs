@@ -29,12 +29,12 @@ fn validate_unary_operation(
             Some(ElemSize::F32 | ElemSize::F64) => Ok(()),
             Some(ElemSize::F16) => {
                 prickle_type_error!(i, "Operation tanh not supported for \
-                                      16-bit floats.")
+                                        16-bit floats.")
             },
             Some(_) | None => {
                 let ty = ty.pprint_default();
                 prickle_type_error!(i, "Unexpected type {ty} of tanh \
-                                      builtin (expected float).")
+                                        builtin (expected float).")
             }
         },
         _ => Ok(())
@@ -49,12 +49,12 @@ fn validate_binary_operation(
             Some(ElemSize::F64) => Ok(()),
             Some(ElemSize::F16 | ElemSize::F32) => {
                 prickle_type_error!(i, "Operation atan2 is only supported \
-                                      for 64-bit floats.")
+                                        for 64-bit floats.")
             },
             Some(_) | None => {
                 let ty = ty.pprint_default();
                 prickle_type_error!(i, "Unexpected type {ty} of atan2 \
-                                      builtin (expected float).")
+                                        builtin (expected float).")
             }
         },
         _ => Ok(())
@@ -312,8 +312,7 @@ fn uses_16_bit_floats_top(acc: bool, t: &gpu_ast::Top) -> bool {
 }
 
 fn uses_16_bit_floats(ast: &gpu_ast::Ast) -> bool {
-    ast.iter()
-        .fold(false, uses_16_bit_floats_top)
+    ast.iter().fold(false, uses_16_bit_floats_top)
 }
 
 pub fn from_gpu_ir(
@@ -339,4 +338,105 @@ pub fn from_gpu_ir(
         .collect::<CompileResult<Vec<Top>>>()?;
     tops.append(&mut cu_ast);
     Ok(tops)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::cuda::ast_builder::*;
+    use crate::gpu::ast_builder as gpu;
+    use crate::option::CompileOptions;
+    use crate::test::*;
+
+    #[test]
+    fn tanh_f16_invalid() {
+        let r = validate_unary_operation(&UnOp::Tanh, &scalar(ElemSize::F16), &i());
+        assert_error_matches(r, "tanh not supported for 16-bit float.*");
+    }
+
+    #[test]
+    fn tanh_invalid_scalar_type() {
+        let r = validate_unary_operation(&UnOp::Tanh, &scalar(ElemSize::I32), &i());
+        assert_error_matches(r, "Unexpected type");
+    }
+
+    #[test]
+    fn atan2_f32_invalid() {
+        let r = validate_binary_operation(&BinOp::Atan2, &scalar(ElemSize::F32), &i());
+        assert_error_matches(r, "Operation.*only supported for 64-bit");
+    }
+
+    #[test]
+    fn scalar_type_contains_16bit_float_fails() {
+        let ty = gpu::scalar(ElemSize::I16);
+        assert!(!type_contains_16_bit_floats(false, &ty));
+    }
+
+    #[test]
+    fn acc_propagates_16_bit_floats() {
+        let ty = gpu::scalar(ElemSize::I16);
+        assert!(type_contains_16_bit_floats(true, &ty));
+    }
+
+    #[test]
+    fn pointer_to_16bit_float_detected() {
+        let ty = gpu::pointer(gpu::scalar(ElemSize::F16), gpu_ast::MemSpace::Device);
+        assert!(type_contains_16_bit_floats(false, &ty));
+    }
+
+    fn contains_header_top(s: &str, t: Top) -> bool {
+        match t {
+            Top::Include {header} if s == header => true,
+            _ => false,
+        }
+    }
+
+    fn contains_header(s: &str, tops: Vec<Top>) -> bool {
+        tops.into_iter()
+            .any(|t| contains_header_top(s, t))
+    }
+
+    fn fun_def_ast(body: Vec<gpu_ast::Stmt>) -> gpu_ast::Ast {
+        vec![
+            gpu_ast::Top::FunDef {
+                ret_ty: gpu_ast::Type::Void, id: id("f"), params: vec![],
+                body, target: gpu_ast::Target::Host
+            }
+        ]
+    }
+
+    #[test]
+    fn no_fp16_header_when_not_using_16bit_floats() {
+        let ast = fun_def_ast(vec![]);
+        let opts = CompileOptions::default();
+        assert!(!contains_header("<cuda_fp16.h>", from_gpu_ir(ast, &opts).unwrap()));
+    }
+
+    #[test]
+    fn fp16_header_when_using_16bit_floats() {
+        let ast = fun_def_ast(vec![
+            gpu::assign(
+                gpu::var("x", gpu::scalar(ElemSize::F16)),
+                gpu::float(2.718, Some(ElemSize::F16))
+            ),
+        ]);
+        let opts = CompileOptions::default();
+        assert!(contains_header("<cuda_fp16.h>", from_gpu_ir(ast, &opts).unwrap()));
+    }
+
+    #[test]
+    fn no_cooperative_groups_header_when_clusters_disabled() {
+        let ast = fun_def_ast(vec![]);
+        let mut opts = CompileOptions::default();
+        opts.use_cuda_thread_block_clusters = false;
+        assert!(!contains_header("<cooperative_groups.h>", from_gpu_ir(ast, &opts).unwrap()));
+    }
+
+    #[test]
+    fn use_cooperative_groups_header_when_using_clusters() {
+        let ast = fun_def_ast(vec![]);
+        let mut opts = CompileOptions::default();
+        opts.use_cuda_thread_block_clusters = true;
+        assert!(contains_header("<cooperative_groups.h>", from_gpu_ir(ast, &opts).unwrap()));
+    }
 }
