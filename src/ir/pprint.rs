@@ -254,8 +254,8 @@ mod test {
 
     #[test]
     fn print_pointer_type() {
-        let ptrty = Type::Pointer {ty: Box::new(scalar(ElemSize::F16)), count: 20};
-        assert_eq!(ptrty.pprint_default(), "ptr<half;20>");
+        let ptrty = Type::Pointer {ty: Box::new(scalar(ElemSize::F16))};
+        assert_eq!(ptrty.pprint_default(), "ptr<half>");
     }
 
     #[test]
