@@ -91,7 +91,7 @@ fn find_dict_types_def(
 }
 
 pub fn find_dict_types(ast: &Ast) -> DictTypes {
-    ast.sfold(DictTypes::default(), find_dict_types_def)
+    ast.defs.sfold(DictTypes::default(), find_dict_types_def)
 }
 
 #[cfg(test)]
@@ -102,16 +102,15 @@ mod test {
 
     #[test]
     fn find_dict_type_empty() {
-        let defs = vec![
-            FunDef {
-                id: id("f"),
-                params: vec![],
-                body: vec![],
-                res_ty: Type::Void,
-                i: Info::default()
-            }
-        ];
-        assert_eq!(find_dict_types(&defs), DictTypes::default())
+        let def = FunDef {
+            id: id("f"),
+            params: vec![],
+            body: vec![],
+            res_ty: Type::Void,
+            i: Info::default()
+        };
+        let ast = Ast {exts: vec![], defs: vec![def]};
+        assert_eq!(find_dict_types(&ast), DictTypes::default())
     }
 
     #[test]
@@ -122,16 +121,15 @@ mod test {
                 (x.clone(), Type::Tensor {sz: ElemSize::I32, shape: vec![]})
             ].into_iter().collect::<BTreeMap<String, Type>>()
         };
-        let defs = vec![
-            FunDef {
-                id: id("f"),
-                params: vec![Param {id: id("y"), ty: dict_ty.clone(), i: Info::default()}],
-                body: vec![],
-                res_ty: Type::Void,
-                i: Info::default()
-            }
-        ];
-        let dt = find_dict_types(&defs);
+        let def = FunDef {
+            id: id("f"),
+            params: vec![Param {id: id("y"), ty: dict_ty.clone(), i: Info::default()}],
+            body: vec![],
+            res_ty: Type::Void,
+            i: Info::default()
+        };
+        let ast = Ast {exts: vec![], defs: vec![def]};
+        let dt = find_dict_types(&ast);
         let expected_hints = vec![
             (dict_ty.clone(), "y".to_string())
         ].into_iter().collect::<BTreeMap<Type, String>>();

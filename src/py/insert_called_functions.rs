@@ -65,7 +65,7 @@ fn make_ast<'py>(
     called_funs: Vec<String>,
     def: FunDef
 ) -> Ast {
-    called_funs.into_iter()
+    let defs = called_funs.into_iter()
         .unique()
         .rev()
         .map(|id| {
@@ -73,7 +73,8 @@ fn make_ast<'py>(
             unsafe { ast_ref.reference::<FunDef>() }.clone()
         })
         .chain(vec![def].into_iter())
-        .collect::<Ast>()
+        .collect::<Vec<FunDef>>();
+    Ast {exts: vec![], defs}
 }
 
 pub fn apply<'py>(

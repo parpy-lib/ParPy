@@ -93,7 +93,8 @@ fn resolve_indices_def(fun: FunDef) -> PyResult<FunDef> {
 }
 
 pub fn resolve_indices(ast: Ast) -> PyResult<Ast> {
-    ast.smap_result(resolve_indices_def)
+    let defs = ast.defs.smap_result(resolve_indices_def)?;
+    Ok(Ast {defs, ..ast})
 }
 
 #[cfg(test)]

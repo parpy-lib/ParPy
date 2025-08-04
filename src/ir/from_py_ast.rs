@@ -410,26 +410,48 @@ fn to_ir_param(
     Ok(Param {id, ty, i})
 }
 
-pub fn to_ir_def(
+fn to_ir_params(
+    env: &IREnv,
+    params: Vec<py_ast::Param>
+) -> CompileResult<Vec<Param>> {
+    params.into_iter()
+        .map(|p| to_ir_param(env, p))
+        .collect::<CompileResult<Vec<Param>>>()
+}
+
+fn to_ir_ext(
+    env: &IREnv,
+    ext: py_ast::ExtDecl
+) -> CompileResult<ExtDecl> {
+    let py_ast::ExtDecl {id, params, res_ty, i} = ext;
+    let params = to_ir_params(env, params)?;
+    let res_ty = to_ir_type(env, &i, res_ty)?;
+    Ok(ExtDecl {id, params, res_ty, i})
+}
+
+fn to_ir_def(
     env: &IREnv,
     def: py_ast::FunDef
 ) -> CompileResult<FunDef> {
     let py_ast::FunDef {id, params, body, res_ty, i} = def;
-    let params = params.into_iter()
-        .map(|p| to_ir_param(env, p))
-        .collect::<CompileResult<Vec<Param>>>()?;
+    let params = to_ir_params(env, params)?;
     let body = to_ir_stmts(env, body)?;
     let res_ty = to_ir_type(env, &i, res_ty)?;
     Ok(FunDef {id, params, body, res_ty, i})
 }
 
-pub fn to_ir_defs(
+pub fn to_ir_ast(
     env: &IREnv,
-    ast: py_ast::Ast
-) -> CompileResult<Vec<FunDef>> {
-    ast.into_iter()
+    ast: py_ast::Ast,
+    structs: Vec<StructDef>
+) -> CompileResult<Ast> {
+    let exts = ast.exts.into_iter()
+        .map(|ext| to_ir_ext(env, ext))
+        .collect::<CompileResult<Vec<ExtDecl>>>()?;
+    let defs = ast.defs.into_iter()
         .map(|def| to_ir_def(env, def))
-        .collect::<CompileResult<Vec<FunDef>>>()
+        .collect::<CompileResult<Vec<FunDef>>>()?;
+    Ok(Ast {structs, exts, defs})
 }
 
 #[cfg(test)]

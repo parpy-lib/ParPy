@@ -567,6 +567,14 @@ pub struct Param {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ExtDecl {
+    pub id: Name,
+    pub params: Vec<Param>,
+    pub res_ty: Type,
+    pub i: Info,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunDef {
     pub id: Name,
     pub params: Vec<Param>,
@@ -575,7 +583,11 @@ pub struct FunDef {
     pub i: Info
 }
 
-pub type Ast = Vec<FunDef>;
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ast {
+    pub exts: Vec<ExtDecl>,
+    pub defs: Vec<FunDef>,
+}
 
 #[cfg(test)]
 mod test {

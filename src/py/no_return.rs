@@ -26,7 +26,7 @@ fn check_no_return_in_main_function_body(id: &Name, stmts: &Vec<Stmt>) -> PyResu
 }
 
 pub fn check_no_return_in_main_function(ast: &Ast) -> PyResult<()> {
-    let main_def = ast.last().unwrap();
+    let main_def = ast.defs.last().unwrap();
     check_no_return_in_main_function_body(&main_def.id, &main_def.body)
 }
 
@@ -45,7 +45,8 @@ mod test {
             res_ty: Type::Void,
             i: Info::default()
         };
-        assert!(check_no_return_in_main_function(&vec![def]).is_err());
+        let ast = Ast {exts: vec![], defs: vec![def]};
+        assert!(check_no_return_in_main_function(&ast).is_err());
     }
 
     #[test]
@@ -61,7 +62,8 @@ mod test {
             res_ty: Type::Void,
             i: Info::default()
         };
-        assert!(check_no_return_in_main_function(&vec![def]).is_err());
+        let ast = Ast {exts: vec![], defs: vec![def]};
+        assert!(check_no_return_in_main_function(&ast).is_err());
     }
 
     #[test]
@@ -73,6 +75,7 @@ mod test {
             res_ty: Type::Void,
             i: Info::default()
         };
-        assert!(check_no_return_in_main_function(&vec![def]).is_ok());
+        let ast = Ast {exts: vec![], defs: vec![def]};
+        assert!(check_no_return_in_main_function(&ast).is_ok());
     }
 }

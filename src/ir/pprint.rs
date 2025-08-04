@@ -187,6 +187,16 @@ impl PrettyPrint for StructDef {
     }
 }
 
+impl PrettyPrint for ExtDecl {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let ExtDecl {id, params, res_ty, ..} = self;
+        let (env, id) = id.pprint(env);
+        let (env, params) = pprint_iter(params.iter(), env, ", ");
+        let (env, res_ty) = res_ty.pprint(env);
+        (env, format!("{res_ty} {id}({params});"))
+    }
+}
+
 impl PrettyPrint for FunDef {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let FunDef {id, params, body, res_ty, ..} = self;
@@ -202,10 +212,11 @@ impl PrettyPrint for FunDef {
 
 impl PrettyPrint for Ast {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Ast {structs, defs} = self;
+        let Ast {structs, exts, defs} = self;
         let (env, structs) = pprint_iter(structs.iter(), env, "\n");
+        let (env, exts) = pprint_iter(exts.iter(), env, "\n");
         let (env, defs) = pprint_iter(defs.iter(), env, "\n");
-        (env, format!("{structs}\n{defs}"))
+        (env, format!("{structs}\n{exts}\n{defs}"))
     }
 }
 

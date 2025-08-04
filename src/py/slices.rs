@@ -549,7 +549,8 @@ fn replace_slices_with_for_loops_def(fun: FunDef) -> PyResult<FunDef> {
 }
 
 pub fn replace_slices_with_for_loops(ast: Ast) -> PyResult<Ast> {
-    ast.smap_result(replace_slices_with_for_loops_def)
+    let defs = ast.defs.smap_result(replace_slices_with_for_loops_def)?;
+    Ok(Ast {defs, ..ast})
 }
 
 #[cfg(test)]
@@ -717,8 +718,8 @@ mod test {
         }
     }
 
-    fn find_sym(def: &Vec<FunDef>) -> Name {
-        find_sym_stmt(&def[0].body[0])
+    fn find_sym(ast: &Ast) -> Name {
+        find_sym_stmt(&ast.defs[0].body[0])
     }
 
     #[test]
@@ -732,7 +733,7 @@ mod test {
             res_ty: Type::Void,
             i: Info::default()
         };
-        let s = vec![fun_def(vec![Stmt::Assign {
+        let s = fun_def(vec![Stmt::Assign {
             dst: Expr::Subscript {
                 target: Box::new(var("x", shape(vec![10]))),
                 idx: Box::new(Expr::Slice {
@@ -747,10 +748,11 @@ mod test {
             expr: int(1, None),
             labels: vec![],
             i: Info::default()
-        }])];
-        let r = replace_slices_with_for_loops(s.clone()).unwrap();
+        }]);
+        let ast = Ast {exts: vec![], defs: vec![s]};
+        let r = replace_slices_with_for_loops(ast.clone()).unwrap();
         let slice_dim_id = find_sym(&r);
-        let expected = vec![fun_def(vec![Stmt::For {
+        let expected_def = fun_def(vec![Stmt::For {
             var: slice_dim_id.clone(),
             lo: int(0, None),
             hi: int(10, None),
@@ -776,7 +778,8 @@ mod test {
             ],
             labels: vec![],
             i: Info::default()
-        }])];
+        }]);
+        let expected = Ast {exts: vec![], defs: vec![expected_def]};
         assert_eq!(r, expected);
     }
 }

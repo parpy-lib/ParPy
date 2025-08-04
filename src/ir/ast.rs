@@ -357,6 +357,14 @@ pub struct StructDef {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ExtDecl {
+    pub id: Name,
+    pub params: Vec<Param>,
+    pub res_ty: Type,
+    pub i: Info
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct FunDef {
     pub id: Name,
     pub params: Vec<Param>,
@@ -368,5 +376,6 @@ pub struct FunDef {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ast {
     pub structs: Vec<StructDef>,
+    pub exts: Vec<ExtDecl>,
     pub defs: Vec<FunDef>,
 }

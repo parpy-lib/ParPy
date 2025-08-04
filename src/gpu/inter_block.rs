@@ -1062,7 +1062,7 @@ pub fn restructure_inter_block_synchronization(
 ) -> CompileResult<Ast> {
     // NOTE: We only apply this to the main function definition, which is the last one in the list.
     // The others are assumed to contain no parallelism.
-    let Ast {mut defs, structs} = ast;
+    let Ast {mut defs, exts, structs} = ast;
     let FunDef {id, params, body, res_ty, i} = defs.pop().unwrap();
 
     // Insert a synchronization point at the end of each parallel for-loop, and determine for each
@@ -1103,7 +1103,7 @@ pub fn restructure_inter_block_synchronization(
     let body = resymbolize_duplicated_loops(body);
 
     defs.push(FunDef {id, params, body, res_ty, i});
-    Ok(Ast {defs, structs})
+    Ok(Ast {defs, exts, structs})
 }
 
 #[cfg(test)]

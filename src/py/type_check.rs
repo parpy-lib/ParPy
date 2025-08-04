@@ -1013,6 +1013,16 @@ pub fn type_check_params<'py>(
     Ok(FunDef {params, ..def})
 }
 
+fn type_check_ext(
+    mut env: TypeCheckEnv,
+    ext: ExtDecl
+) -> PyResult<(TypeCheckEnv, ExtDecl)> {
+    let (s, param_types) = extract_param_types(&ext.id, &ext.params);
+    env.arg_types.insert(s.clone(), param_types);
+    env.res_types.insert(s, ext.res_ty.clone());
+    Ok((env, ext))
+}
+
 fn type_check_def(
     mut env: TypeCheckEnv,
     def: FunDef
@@ -1036,6 +1046,14 @@ fn type_check_def(
     Ok((env, def))
 }
 
+fn extract_param_types(id: &Name, params: &Vec<Param>) -> (String, Vec<Type>) {
+    let params = params.clone()
+        .into_iter()
+        .map(|Param {ty, ..}| ty.clone())
+        .collect::<Vec<Type>>();
+    (id.get_str().clone(), params)
+}
+
 fn type_check_body_shapes(
     ast: Ast,
     shapes_only: bool,
@@ -1047,19 +1065,15 @@ fn type_check_body_shapes(
         env.float_size = sz;
     }
 
-    // Collect the argument types of all functions before running.
-    env.arg_types = ast.iter()
-        .map(|FunDef {id, params, ..}| {
-            let params = params.clone()
-                .into_iter()
-                .map(|Param {ty, ..}| ty.clone())
-                .collect::<Vec<Type>>();
-            (id.get_str().clone(), params)
-        })
+    // Collect the argument types of all defined functions before running.
+    env.arg_types = ast.defs.iter()
+        .map(|FunDef {id, params, ..}| extract_param_types(id, params))
         .collect::<BTreeMap<String, Vec<Type>>>();
 
     // Type-check the AST nodes
-    ast.smap_accum_l_result(Ok(env), type_check_def)
+    let (env, exts) = ast.exts.smap_accum_l_result(Ok(env), type_check_ext)?;
+    let (env, defs) = ast.defs.smap_accum_l_result(Ok(env), type_check_def)?;
+    Ok((env, Ast {exts, defs}))
 }
 
 pub fn type_check_body(ast: Ast, float_size: ElemSize) -> PyResult<(TypeCheckEnv, Ast)> {
@@ -1594,7 +1608,7 @@ mod test {
 
     #[test]
     fn return_value() {
-        let ast = vec![FunDef {
+        let def = FunDef {
             id: var("x"),
             params: vec![],
             body: vec![Stmt::Return {
@@ -1604,8 +1618,9 @@ mod test {
                 i: Info::default()
             }],
             res_ty: Type::Unknown,
-            i: Info::default()}
-        ];
+            i: Info::default()
+        };
+        let ast = Ast {exts: vec![], defs: vec![def]};
         assert!(type_check_body(ast, ElemSize::F64).is_ok());
     }
 
