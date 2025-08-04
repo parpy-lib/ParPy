@@ -913,9 +913,7 @@ fn collect_variable_temp_data(
                 });
             let (ty, sz) = match ty {
                 Type::Tensor {sz, ..} => {
-                    let ptr_ty = Type::Pointer {
-                        ty: Box::new(ty.clone()), count: size as usize
-                    };
+                    let ptr_ty = Type::Pointer {ty: Box::new(ty.clone())};
                     (ptr_ty, sz.clone())
                 },
                 _ => prickle_compile_error!(i, "Cannot allocate temporary data \

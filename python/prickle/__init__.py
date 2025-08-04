@@ -6,6 +6,7 @@ from .compile import clear_cache
 from .operators import *
 
 ir_asts = {}
+ext_defs = {}
 fun_cache = {}
 
 def threads(n):
@@ -15,6 +16,10 @@ def threads(n):
 def reduce():
     from .prickle import LoopPar
     return LoopPar().reduce()
+
+def get_tops():
+    ast_tops = {k.__name__: v for k, v in ir_asts.items()}
+    return {**ast_tops, **ext_defs}
 
 def convert_python_function_to_ir(fn):
     import ast as python_ast
@@ -39,8 +44,8 @@ def convert_python_function_to_ir(fn):
     # Convert the Python representation of the AST to a Python-like
     # representation in the compiler. As part of this step, we inline any
     # references to previously parsed functions.
-    ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
-    return prickle.python_to_ir(ast, filepath, fst_line-1, col_ofs, ir_ast_map)
+    top_map = get_tops()
+    return prickle.python_to_ir(ast, filepath, fst_line-1, col_ofs, top_map)
 
 def check_kwarg(kwargs, key, default_value, expected_ty):
     if key not in kwargs or kwargs[key] is None:
@@ -66,7 +71,7 @@ def check_kwargs(kwargs):
 
 def compile_function(ir_ast, args, opts):
     # Extract the name of the main function in the IR AST.
-    name = prickle.get_ir_function_name(ir_ast)
+    name = prickle.get_function_name(ir_ast)
 
     # Generate a key based on the IR AST, the function arguments, and the
     # compile options. If this key is found in the cache, we have already
@@ -78,8 +83,8 @@ def compile_function(ir_ast, args, opts):
 
     # Generate the code based on the provided IR AST, arguments and compilation
     # options.
-    ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
-    code, unsymb_code = prickle.compile_ir(ir_ast, args, opts, ir_ast_map)
+    top_map = get_tops()
+    code, unsymb_code = prickle.compile_ir(ir_ast, args, opts, top_map)
 
     # If the shared library corresponding to the generated code does not exist,
     # we run the underlying compiler to produce a shared library.
@@ -98,6 +103,15 @@ def run_callbacks(callbacks, opts):
         sync(opts.backend)
         for cb in callbacks:
             cb()
+
+def declare_external(fun_name, params, res_ty, header, backend):
+    from .prickle import make_external_declaration
+    import inspect
+    caller = inspect.getframeinfo(inspect.stack()[1][0])
+    p = caller.position
+    i = (caller.filename, p.lineno, p.col_offset, p.end_lineno, p.end_col_offset)
+    ext_decl = make_external_declaration(fun_name, params, res_ty, header, backend, i)
+    ext_decls[fun_name] = ext_decl
 
 def compile_string(fun_name, code, opts=prickle.CompileOptions()):
     opts = backend.resolve(opts, True)
@@ -123,8 +137,8 @@ def print_compiled(fun, args, opts=prickle.CompileOptions()):
     else:
         ir_ast = convert_python_function_to_ir(fun)
     _, args = validate.check_arguments(args, opts, False)
-    ir_ast_map = {k.__name__: v for k, v in ir_asts.items()}
-    code, _ = prickle.compile_ir(ir_ast, args, opts, ir_ast_map)
+    top_map = get_tops()
+    code, _ = prickle.compile_ir(ir_ast, args, opts, top_map)
     return code
 
 def jit(fun):

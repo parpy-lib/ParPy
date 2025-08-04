@@ -101,7 +101,7 @@ fn assert_known_param_type(acc: Result<(), String>, id: &Name, ty: &Type) -> Res
                 .fold(Ok(acc?), |acc, ty| assert_known_param_type(acc, id, ty))
         },
         Type::Unknown => Err(format!("{id}")),
-        Type::String | Type::Tensor {..} | Type::Void => Ok(())
+        Type::String | Type::Tensor {..} | Type::Pointer {..} | Type::Void => Ok(())
     }
 }
 

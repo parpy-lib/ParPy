@@ -11,8 +11,6 @@ mod utils;
 use crate::utils::pprint::PrettyPrint;
 
 use std::collections::BTreeMap;
-use std::ffi::CString;
-
 use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::PyCapsule;
@@ -23,56 +21,71 @@ fn python_to_ir<'py>(
     filepath: String,
     line_ofs: usize,
     col_ofs: usize,
-    ir_asts: BTreeMap<String, Bound<'py, PyCapsule>>
+    tops: BTreeMap<String, Bound<'py, PyCapsule>>
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let py = py_ast.py().clone();
 
     // Convert the provided Python AST (parsed by the 'ast' module of Python) to a similar
     // representation of the Python AST using Rust data types.
-    let def = py::parse_untyped_ast(py_ast, filepath, line_ofs, col_ofs, &ir_asts)?;
+    let def = py::parse_untyped_ast(py_ast, filepath, line_ofs, col_ofs, &tops)?;
 
     // Inline function calls referring to previously defined IR ASTs.
-    let def = py::inline_function_calls(def, &ir_asts)?;
+    let def = py::inline_function_calls(def, &tops)?;
 
     // Wrap the intermediate AST in a capsule that we return to Python.
-    let name = CString::new("Prickle untyped Python function AST")?;
-    Ok(PyCapsule::new::<py::ast::FunDef>(py, def, Some(name))?)
+    let t = py::ast::Top::FunDef {v: def};
+    Ok(PyCapsule::new::<py::ast::Top>(py, t, None)?)
 }
 
 #[pyfunction]
-fn print_ir_ast<'py>(ir_ast_cap: Bound<'py, PyCapsule>) -> String {
-    let untyped_ir_def: &py::ast::FunDef = unsafe {
-        ir_ast_cap.reference()
-    };
-    untyped_ir_def.pprint_default()
+fn make_external_declaration<'py>(
+    id: String,
+    params: Vec<(String, py::ext::ExtType)>,
+    res_ty: py::ext::ExtType,
+    header: String,
+    backend: option::CompileBackend,
+    info: (String, usize, usize, usize, usize),
+    py: Python<'py>
+) -> PyResult<Bound<'py, PyCapsule>> {
+    let t = py::ext::make_declaration(id, params, res_ty, header, backend, info);
+    Ok(PyCapsule::new::<py::ast::Top>(py, t, None)?)
 }
 
 #[pyfunction]
-fn get_ir_function_name<'py>(ir_ast_cap: Bound<'py, PyCapsule>) -> String {
-    let untyped_ir_def: &py::ast::FunDef = unsafe {
-        ir_ast_cap.reference()
+fn print_ast<'py>(cap: Bound<'py, PyCapsule>) -> String {
+    let untyped_def: &py::ast::Top = unsafe {
+        cap.reference()
     };
-    untyped_ir_def.id.get_str().clone()
+    untyped_def.pprint_default()
+}
+
+#[pyfunction]
+fn get_function_name<'py>(cap: Bound<'py, PyCapsule>) -> String {
+    let untyped_def: &py::ast::Top = unsafe {
+        cap.reference()
+    };
+    match untyped_def {
+        py::ast::Top::ExtDecl {id, ..} => id.clone(),
+        py::ast::Top::FunDef {v: py::ast::FunDef {id, ..}} => id.get_str().clone(),
+    }
 }
 
 #[pyfunction]
 fn compile_ir<'py>(
-    ir_ast_cap: Bound<'py, PyCapsule>,
+    cap: Bound<'py, PyCapsule>,
     args: Vec<Bound<'py, PyAny>>,
     opts: option::CompileOptions,
     ir_asts: BTreeMap<String, Bound<'py, PyCapsule>>
 ) -> PyResult<(String, String)> {
     // Extract a reference to the untyped AST parsed earlier.
-    let untyped_ir_def : &py::ast::FunDef = unsafe {
-        ir_ast_cap.reference()
-    };
+    let t: &py::ast::Top = unsafe { cap.reference() };
 
     let debug_env = utils::debug::DebugEnv::new(&opts);
-    debug_env.print("Untyped Python-like AST", untyped_ir_def);
+    debug_env.print("Untyped Python-like AST", t);
 
     // Specialize the Python-like AST based on the provided arguments, inferring the types of all
     // expressions and inlining scalar argument values directly into the AST.
-    let py_ast = py::specialize_ast_on_arguments(untyped_ir_def.clone(), args, &opts, ir_asts, &debug_env)?;
+    let py_ast = py::specialize_ast_on_arguments(t.clone(), args, &opts, ir_asts, &debug_env)?;
     debug_env.print("Specialized Python-like AST", &py_ast);
 
     // Converts the Python-like AST to an IR by removing or simplifying concepts from Python. For
@@ -108,8 +121,9 @@ fn compile_ir<'py>(
 #[pymodule]
 fn prickle(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(python_to_ir, m)?)?;
-    m.add_function(wrap_pyfunction!(print_ir_ast, m)?)?;
-    m.add_function(wrap_pyfunction!(get_ir_function_name, m)?)?;
+    m.add_function(wrap_pyfunction!(make_external_declaration, m)?)?;
+    m.add_function(wrap_pyfunction!(print_ast, m)?)?;
+    m.add_function(wrap_pyfunction!(get_function_name, m)?)?;
     m.add_function(wrap_pyfunction!(compile_ir, m)?)?;
     m.add_function(wrap_pyfunction!(option::par, m)?)?;
     m.add_function(wrap_pyfunction!(option::seq, m)?)?;

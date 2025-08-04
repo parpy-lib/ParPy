@@ -30,8 +30,8 @@ def print_compile_options_key(opts):
     return str(opts)
 
 def generate_fast_cache_key(ir_ast, args, opts):
-    from .prickle import print_ir_ast
-    ir_key = print_ir_ast(ir_ast)
+    from .prickle import print_ast
+    ir_key = print_ast(ir_ast)
     args_key = print_arguments_key(args)
     opts_key = print_compile_options_key(opts)
     return f"{ir_key}+{args_key}+{opts_key}"

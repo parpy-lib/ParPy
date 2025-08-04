@@ -61,16 +61,18 @@ fn inline_function_calls_stmt<'py>(
     match stmt {
         Stmt::Call {func, args, i} => {
             if let Some(ast_ref) = ir_asts.get(&func) {
-                let fun: FunDef = unsafe { ast_ref.reference::<FunDef>() }.clone();
-                let sub_map = construct_sub_map(fun.params, args, &fun.id, &fun.i)?;
-                let mut body = fun.body.smap(|s| substitute_variables_stmt(s, &sub_map));
-                acc.append(&mut body);
+                let t: Top = unsafe { ast_ref.reference::<Top>() }.clone();
+                if let Top::FunDef {v: fun} = t {
+                    let sub_map = construct_sub_map(fun.params, args, &fun.id, &fun.i)?;
+                    let mut body = fun.body.smap(|s| substitute_variables_stmt(s, &sub_map));
+                    acc.append(&mut body);
+                }
             } else {
-                let msg = format!(
-                    "Reference to unknown function {func}.\n{0}",
-                    "Perhaps you forgot to decorate the function with @prickle.jit?"
-                );
-                py_runtime_error!(i, "{}", msg)?
+                py_runtime_error!(
+                    i,
+                    "Reference to unknown function {func}.\n\
+                     Perhaps you forgot to decorate the function with @prickle.jit?"
+                )?
             }
         },
         Stmt::For {var, lo, hi, step, body, labels, i} => {
@@ -104,17 +106,17 @@ fn inline_function_calls_stmt<'py>(
 
 fn inline_function_calls_stmts<'py>(
     stmts: Vec<Stmt>,
-    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>
+    tops: &BTreeMap<String, Bound<'py, PyCapsule>>
 ) -> PyResult<Vec<Stmt>> {
     stmts.into_iter()
-        .fold(Ok(vec![]), |acc, stmt| inline_function_calls_stmt(acc?, stmt, ir_asts))
+        .fold(Ok(vec![]), |acc, stmt| inline_function_calls_stmt(acc?, stmt, tops))
 }
 
 pub fn inline_function_calls<'py>(
     fun: FunDef,
-    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>
+    tops: &BTreeMap<String, Bound<'py, PyCapsule>>
 ) -> PyResult<FunDef> {
-    let body = inline_function_calls_stmts(fun.body, ir_asts)?;
+    let body = inline_function_calls_stmts(fun.body, tops)?;
     Ok(FunDef {body, ..fun})
 }
 

@@ -48,6 +48,9 @@ fn to_ir_type(
             prickle_compile_error!(i, "Encountered standalone string type when translating to IR AST")
         },
         py_ast::Type::Tensor {sz, shape} => Ok(Type::Tensor {sz, shape}),
+        py_ast::Type::Pointer {sz} => {
+            Ok(Type::Pointer {ty: Box::new(Type::Tensor {sz, shape: vec![]})})
+        },
         py_ast::Type::Tuple {..} => {
             prickle_compile_error!(i, "Encountered standalone tuple type when translating to IR AST")
         },
@@ -435,7 +438,7 @@ fn to_ir_top(
     t: py_ast::Top
 ) -> CompileResult<Top> {
     match t {
-        py_ast::Top::ExtDecl {id, params, res_ty, header, i} => {
+        py_ast::Top::ExtDecl {id, params, res_ty, header, i, backend: _} => {
             let params = to_ir_params(env, params)?;
             let res_ty = to_ir_type(env, &i, res_ty)?;
             Ok(Top::ExtDecl {id, params, res_ty, header, i})

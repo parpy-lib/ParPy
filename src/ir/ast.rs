@@ -11,7 +11,7 @@ pub use crate::utils::ast::BinOp;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Tensor {sz: ElemSize, shape: Vec<i64>},
-    Pointer {ty: Box<Type>, count: usize},
+    Pointer {ty: Box<Type>},
     Struct {id: Name},
     Void,
 }

@@ -42,6 +42,7 @@ impl PrettyPrint for Type {
             Type::String => format!("str"),
             Type::Tensor {sz, shape} if shape.is_empty() => print_scalar(sz),
             Type::Tensor {sz, ..} => format!("np.typing.NDArray[{}]", print_scalar(sz)),
+            Type::Pointer {..} => format!("Any"),
             Type::Tuple {elems} => {
                 let (_, s) = pprint_iter(elems.iter(), env.clone(), ", ");
                 format!("tuple[{s}]")

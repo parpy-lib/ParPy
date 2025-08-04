@@ -14,7 +14,7 @@ use std::ffi::CString;
 
 struct ConvertEnv<'py, 'a> {
     ast: Bound<'py, PyModule>,
-    ir_asts: &'a BTreeMap<String, Bound<'py, PyCapsule>>,
+    tops: &'a BTreeMap<String, Bound<'py, PyCapsule>>,
     filepath: &'a str,
     line_ofs: usize,
     col_ofs: usize
@@ -362,7 +362,7 @@ fn convert_expr<'py, 'a>(
             .fold(Ok(None), |acc, kw| extract_axis_kwarg(acc, kw?, &i, env))?;
         match convert_expr(expr.getattr("func")?, env)? {
             Expr::Var {id, ..} => {
-                if env.ir_asts.contains_key(&id.to_string()) {
+                if env.tops.contains_key(&id.to_string()) {
                     if axis.is_none() {
                         Ok(Expr::Call {id: id.to_string(), args, ty, i})
                     } else {
@@ -595,11 +595,11 @@ pub fn to_untyped_ir<'py>(
     filepath: String,
     line_ofs: usize,
     col_ofs: usize,
-    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>
+    tops: &BTreeMap<String, Bound<'py, PyCapsule>>
 ) -> PyResult<FunDef> {
     let env = ConvertEnv {
         ast: ast.py().import("ast")?,
-        ir_asts,
+        tops,
         filepath: &filepath,
         line_ofs, col_ofs
     };
@@ -802,12 +802,12 @@ mod test {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let expr = parse_str_expr(py, s)?;
-            let ir_asts = ir_ast_def.into_iter()
+            let tops = ir_ast_def.into_iter()
                 .map(|id| (id, PyCapsule::new(py, 0, None).unwrap()))
                 .collect::<BTreeMap<String, Bound<_>>>();
             let env = ConvertEnv {
                 ast: py.import("ast")?,
-                ir_asts: &ir_asts,
+                tops: &tops,
                 filepath: "<test>",
                 line_ofs: 0,
                 col_ofs: 0
@@ -1340,7 +1340,7 @@ mod test {
             let stmt = parse_str_stmt(py, s)?;
             let env = ConvertEnv {
                 ast: py.import("ast")?,
-                ir_asts: &BTreeMap::new(),
+                tops: &BTreeMap::new(),
                 filepath: &String::from("<test>"),
                 line_ofs: 0,
                 col_ofs: 0
@@ -1636,7 +1636,7 @@ mod test {
             let stmt = parse_str_stmts(py, s)?;
             let env = ConvertEnv {
                 ast: py.import("ast")?,
-                ir_asts: &BTreeMap::new(),
+                tops: &BTreeMap::new(),
                 filepath: &String::from("<test>"),
                 line_ofs: 0,
                 col_ofs: 0

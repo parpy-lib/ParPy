@@ -1,10 +1,10 @@
+use crate::option::CompileBackend;
 use crate::utils::ast::ExprType;
 use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::smap::*;
 
 use strum_macros::EnumIter;
-
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -16,6 +16,7 @@ pub use crate::utils::ast::BinOp;
 pub enum Type {
     String,
     Tensor {sz: ElemSize, shape: Vec<i64>},
+    Pointer {sz: ElemSize},
     Tuple {elems: Vec<Type>},
     Dict {fields: BTreeMap<String, Type>},
     Void,
@@ -54,7 +55,8 @@ impl SMapAccum<Type> for Type {
                 let (acc, fields) = fields.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Type::Dict {fields}))
             },
-            Type::String | Type::Tensor {..} | Type::Void | Type::Unknown => {
+            Type::String | Type::Tensor {..} | Type::Pointer {..} | Type::Void |
+            Type::Unknown => {
                 Ok((acc?, self))
             }
         }
@@ -70,7 +72,8 @@ impl SFold<Type> for Type {
         match self {
             Type::Tuple {elems} => elems.sfold_result(acc, f),
             Type::Dict {fields} => fields.sfold_result(acc, f),
-            Type::String | Type::Tensor {..} | Type::Void | Type::Unknown => acc
+            Type::String | Type::Tensor {..} | Type::Pointer {..} |
+            Type::Void | Type::Unknown => acc
         }
     }
 }
@@ -548,7 +551,10 @@ pub struct FunDef {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Top {
-    ExtDecl {id: String, params: Vec<Param>, res_ty: Type, header: String, i: Info},
+    ExtDecl {
+        id: String, params: Vec<Param>, res_ty: Type, header: String,
+        backend: CompileBackend, i: Info
+    },
     FunDef {v: FunDef},
 }
 

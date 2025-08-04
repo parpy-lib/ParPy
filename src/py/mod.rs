@@ -1,5 +1,6 @@
 pub mod ast;
 mod constant_fold;
+pub mod ext;
 mod from_py;
 mod indices;
 mod inline_calls;
@@ -18,8 +19,11 @@ pub mod ast_builder;
 
 use ast::ElemSize;
 use symbolize::Symbolize;
+use crate::py_runtime_error;
 use crate::option::*;
 use crate::utils::debug;
+use crate::utils::err::CompileError;
+use crate::utils::info::Info;
 
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
@@ -33,9 +37,9 @@ pub fn parse_untyped_ast<'py>(
     filepath: String,
     line_ofs: usize,
     col_ofs: usize,
-    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>
+    tops: &BTreeMap<String, Bound<'py, PyCapsule>>,
 ) -> PyResult<ast::FunDef> {
-    let ast = from_py::to_untyped_ir(ast, filepath, line_ofs, col_ofs, ir_asts)?;
+    let ast = from_py::to_untyped_ir(ast, filepath, line_ofs, col_ofs, tops)?;
     let ast = ast.symbolize_default()?;
     labels::associate_labels(ast)
 }
@@ -49,12 +53,25 @@ fn select_float_size(backend: &CompileBackend) -> ElemSize {
 }
 
 pub fn specialize_ast_on_arguments<'py>(
-    def: ast::FunDef,
+    t: ast::Top,
     args: Vec<Bound<'py, PyAny>>,
     opts: &CompileOptions,
     ir_asts: BTreeMap<String, Bound<'py, PyCapsule>>,
     debug_env: &debug::DebugEnv
 ) -> PyResult<ast::Ast> {
+    // We expect the top to contain a function definition, but it could also be an external
+    // declaration, in which case we report an error.
+    let def = match t {
+        ast::Top::FunDef {v} => Ok(v),
+        ast::Top::ExtDecl {id, ..} => {
+            py_runtime_error!(
+                Info::default(),
+                "Expected {id} to be a function definition, but it is an \
+                 external function declaration"
+            )
+        }
+    }?;
+
     let par = &opts.parallelize;
 
     // Ensure the AST contains any degree of parallelism - otherwise, there is no point in using
