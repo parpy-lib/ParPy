@@ -1,7 +1,6 @@
 use super::ast::*;
 use crate::utils::pprint::*;
 
-use itertools::Itertools;
 use std::fmt;
 
 impl PrettyPrint for Builtin {
@@ -28,20 +27,28 @@ impl PrettyPrint for Builtin {
     }
 }
 
+fn print_scalar(sz: &ElemSize) -> String {
+    match sz {
+        ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 |
+        ElemSize::U8 | ElemSize::U16 | ElemSize::U32 | ElemSize::U64 => "int",
+        ElemSize::F16 | ElemSize::F32 | ElemSize::F64 => "float",
+        ElemSize::Bool => "bool",
+    }.to_string()
+}
+
 impl PrettyPrint for Type {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
-            Type::String => format!("<string>"),
-            Type::Tensor {sz, shape} => format!("<tensor|{sz:?},{shape:?}>"),
-            Type::Tuple {elems} => format!("<({0})>", elems.into_iter().join(", ")),
-            Type::Dict {fields} => {
-                let s = fields.into_iter()
-                    .map(|(k, v)| format!("'{k}': {v}"))
-                    .join(", ");
-                format!("<{{{0}}}>", s)
+            Type::String => format!("str"),
+            Type::Tensor {sz, shape} if shape.is_empty() => print_scalar(sz),
+            Type::Tensor {sz, ..} => format!("np.typing.NDArray[{}]", print_scalar(sz)),
+            Type::Tuple {elems} => {
+                let (_, s) = pprint_iter(elems.iter(), env.clone(), ", ");
+                format!("tuple[{s}]")
             },
-            Type::Void => format!("<void>"),
-            Type::Unknown => format!("<unknown>")
+            Type::Dict {..} => format!("dict[str, Any]"),
+            Type::Void => format!("()"),
+            Type::Unknown => format!("Any")
         };
         (env, s.to_string())
     }
@@ -201,8 +208,10 @@ impl PrettyPrint for Expr {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{func}({args})"))
             },
-            Expr::Convert {e, ..} => {
-                (env, format!("{e}"))
+            Expr::Convert {e, ty} => {
+                let (env, e) = e.pprint(env);
+                let (env, ty) = ty.pprint(env);
+                (env, format!("{ty}({e})"))
             }
         }
     }
@@ -281,26 +290,30 @@ impl PrettyPrint for Stmt {
 
 impl PrettyPrint for Param {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Param {id, ..} = self;
-        id.pprint(env)
+        let Param {id, ty, ..} = self;
+        let (env, id) = id.pprint(env);
+        let (env, ty) = ty.pprint(env);
+        (env, format!("{id}: {ty}"))
     }
 }
 
 impl PrettyPrint for FunDef {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let FunDef {id, params, body, ..} = self;
+        let FunDef {id, params, body, res_ty, ..} = self;
         let (env, id) = id.pprint(env);
         let (env, params) = pprint_iter(params.iter(), env, ", ");
         let env = env.incr_indent();
         let (env, body) = pprint_iter(body.iter(), env, "\n");
         let env = env.decr_indent();
-        (env, format!("def {id}({params}):\n{body}"))
+        let (env, res_ty) = res_ty.pprint(env);
+        (env, format!("def {id}({params}) -> {res_ty}:\n{body}"))
     }
 }
 
 impl PrettyPrint for Ast {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        pprint_iter(self.iter(), env, "\n")
+        let (env, defs) = pprint_iter(self.iter(), env, "\n");
+        (env, format!("import numpy as np\n{defs}"))
     }
 }
 
@@ -325,18 +338,44 @@ impl fmt::Display for FunDef {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test::*;
     use crate::py::ast_builder::*;
+
+    #[test]
+    fn print_scalar_int_type() {
+        assert_eq!(scalar(ElemSize::I32).pprint_default(), "int");
+    }
+
+    #[test]
+    fn print_scalar_float_type() {
+        assert_eq!(scalar(ElemSize::F16).pprint_default(), "float");
+    }
+
+    #[test]
+    fn print_scalar_bool_type() {
+        assert_eq!(scalar(ElemSize::Bool).pprint_default(), "bool");
+    }
 
     #[test]
     fn print_1d_tensor_type() {
         let ty = Type::Tensor {sz: ElemSize::I16, shape: vec![10]};
-        assert_eq!(ty.pprint_default(), "<tensor|I16,[10]>");
+        assert_eq!(ty.pprint_default(), "np.typing.NDArray[int]");
     }
 
     #[test]
     fn print_2d_tensor_type() {
         let ty = Type::Tensor {sz: ElemSize::U8, shape: vec![10, 20]};
-        assert_eq!(ty.pprint_default(), "<tensor|U8,[10, 20]>");
+        assert_eq!(ty.pprint_default(), "np.typing.NDArray[int]");
+    }
+
+    #[test]
+    fn print_tuple_type() {
+        let ty = Type::Tuple {elems: vec![
+            scalar(ElemSize::I16),
+            scalar(ElemSize::U32),
+            scalar(ElemSize::F64)
+        ]};
+        assert_eq!(ty.pprint_default(), "tuple[int, int, float]");
     }
 
     #[test]
@@ -345,7 +384,17 @@ mod test {
             ("x", scalar(ElemSize::I32)),
             ("y", scalar(ElemSize::F32))
         ]);
-        assert_eq!(ty.pprint_default(), "<{'x': int32, 'y': float32}>");
+        assert_eq!(ty.pprint_default(), "dict[str, Any]");
+    }
+
+    #[test]
+    fn print_void_type() {
+        assert_eq!(Type::Void.pprint_default(), "()");
+    }
+
+    #[test]
+    fn print_unknown_type() {
+        assert_eq!(Type::Unknown.pprint_default(), "Any");
     }
 
     fn uint(v: i128) -> Expr {
@@ -481,5 +530,36 @@ mod test {
         let thn = vec![assignment(var("x", scalar(ElemSize::I64)), uint(1))];
         let s = if_stmt(bool_expr(true, Some(ElemSize::Bool)), thn, vec![]);
         assert_eq!(s.pprint_default(), "if True:\n  x = 1");
+    }
+
+    #[test]
+    fn print_with_gpu_context() {
+        let ret = Stmt::Return {value: uint(1), i: i()};
+        let s = Stmt::WithGpuContext {body: vec![ret], i: i()};
+        assert_eq!(s.pprint_default(), "with prickle.gpu:\n  return 1")
+    }
+
+    #[test]
+    fn print_fun_def() {
+        let value = binop(
+            var("x", scalar(ElemSize::F32)),
+            BinOp::Add,
+            Expr::Convert {
+                e: Box::new(var("y", scalar(ElemSize::I32))), ty: scalar(ElemSize::F32)
+            },
+            scalar(ElemSize::F32)
+        );
+        let def = FunDef {
+            id: id("f"),
+            params: vec![
+                Param {id: id("x"), ty: scalar(ElemSize::F32), i: i()},
+                Param {id: id("y"), ty: scalar(ElemSize::I32), i: i()},
+            ],
+            body: vec![Stmt::Return {value, i: i()}],
+            res_ty: scalar(ElemSize::F32),
+            i: i()
+        };
+        let expected = "def f(x: float, y: int) -> float:\n  return x + float(y)";
+        assert_eq!(def.pprint_default(), expected);
     }
 }

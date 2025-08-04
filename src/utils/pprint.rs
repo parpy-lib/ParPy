@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 
 pub const DEFAULT_INDENT: usize = 2;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PrettyPrintEnv {
     strs: BTreeSet<String>,
     vars: BTreeMap<Name, String>,
