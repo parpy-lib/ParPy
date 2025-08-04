@@ -204,10 +204,7 @@ fn find_parallel_structure_fun_def(fun_def: &FunDef) -> ParResult {
 }
 
 pub fn find_parallel_structure(ast: &Ast) -> ParResult {
-    // NOTE: The compiler assumes only the main function definition (the last one) involves any
-    // parallelism.
-    let def = ast.defs.last().unwrap();
-    find_parallel_structure_fun_def(&def)
+    find_parallel_structure_fun_def(&ast.main)
 }
 
 #[derive(Clone, Debug, PartialEq)]

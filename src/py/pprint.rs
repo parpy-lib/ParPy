@@ -297,16 +297,6 @@ impl PrettyPrint for Param {
     }
 }
 
-impl PrettyPrint for ExtDecl {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let ExtDecl {id, params, res_ty, ..} = self;
-        let (env, id) = id.pprint(env);
-        let (env, params) = pprint_iter(params.iter(), env, ", ");
-        let (env, res_ty) = res_ty.pprint(env);
-        (env, format!("def {id}({params}) -> {res_ty}:\n  pass"))
-    }
-}
-
 impl PrettyPrint for FunDef {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let FunDef {id, params, body, res_ty, ..} = self;
@@ -320,12 +310,26 @@ impl PrettyPrint for FunDef {
     }
 }
 
+impl PrettyPrint for Top {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        match self {
+            Top::ExtDecl {id, params, res_ty, header, ..} => {
+                let (env, id) = id.pprint(env);
+                let (env, params) = pprint_iter(params.iter(), env, ", ");
+                let (env, res_ty) = res_ty.pprint(env);
+                (env, format!("def {id}({params}) -> {res_ty}:\n  \"\"\" {header} \"\"\""))
+            },
+            Top::FunDef {v} => v.pprint(env),
+        }
+    }
+}
+
 impl PrettyPrint for Ast {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Ast {exts, defs} = self;
-        let (env, exts) = pprint_iter(exts.iter(), env, "\n");
-        let (env, defs) = pprint_iter(defs.iter(), env, "\n");
-        (env, format!("import numpy as np\n{exts}\n{defs}"))
+        let Ast {tops, main} = self;
+        let (env, tops) = pprint_iter(tops.iter(), env, "\n");
+        let (env, main) = main.pprint(env);
+        (env, format!("import numpy as np\n{tops}\n{main}"))
     }
 }
 

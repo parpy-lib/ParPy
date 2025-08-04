@@ -1014,37 +1014,46 @@ pub fn type_check_params<'py>(
     Ok(FunDef {params, ..def})
 }
 
-fn type_check_ext(
-    mut env: TypeCheckEnv,
-    ext: ExtDecl
-) -> PyResult<(TypeCheckEnv, ExtDecl)> {
-    let (s, param_types) = extract_param_types(&ext.id, &ext.params);
-    env.arg_types.insert(s.clone(), param_types);
-    env.res_types.insert(s, ext.res_ty.clone());
-    Ok((env, ext))
-}
-
 fn type_check_def(
     mut env: TypeCheckEnv,
     def: FunDef
 ) -> PyResult<(TypeCheckEnv, FunDef)> {
+    let FunDef {id, params, body, i, ..} = def;
+
     // Ensure the types of all parameters are known at this point. If we find any parameter whose
     // type is unknown, the user is recommended to use explicit type annotations (not needed for
     // the "main" function).
-    assert_known_params(&def.id, &def.params)?;
+    assert_known_params(&id, &params)?;
 
     // Before we type-check the body, we reset the return type to unknown and set the function
     // parameters as our known variables.
     env.res_ty = Type::Void;
-    env.vars = def.params.iter()
+    env.vars = params.iter()
         .map(|Param {id, ty, ..}| (id.clone(), ty.clone()))
         .collect::<BTreeMap<Name, Type>>();
-    let (mut env, body) = type_check_stmts(env, def.body)?;
+    let (mut env, body) = type_check_stmts(env, body)?;
 
     let res_ty = env.res_ty.clone();
-    env.res_types.insert(def.id.get_str().clone(), res_ty.clone());
-    let def = FunDef {body, res_ty, ..def};
-    Ok((env, def))
+    env.res_types.insert(id.get_str().clone(), res_ty.clone());
+    Ok((env, FunDef {id, params, body, res_ty, i}))
+}
+
+fn type_check_top(
+    mut env: TypeCheckEnv,
+    t: Top
+) -> PyResult<(TypeCheckEnv, Top)> {
+    match t {
+        Top::ExtDecl {ref res_ty, ..} => {
+            let (s, param_types) = extract_param_types_top(&t);
+            env.arg_types.insert(s.clone(), param_types);
+            env.res_types.insert(s, res_ty.clone());
+            Ok((env, t))
+        },
+        Top::FunDef {v} => {
+            let (env, v) = type_check_def(env, v)?;
+            Ok((env, Top::FunDef {v}))
+        },
+    }
 }
 
 fn extract_param_types(id: &Name, params: &Vec<Param>) -> (String, Vec<Type>) {
@@ -1053,6 +1062,14 @@ fn extract_param_types(id: &Name, params: &Vec<Param>) -> (String, Vec<Type>) {
         .map(|Param {ty, ..}| ty.clone())
         .collect::<Vec<Type>>();
     (id.get_str().clone(), params)
+}
+
+fn extract_param_types_top(t: &Top) -> (String, Vec<Type>) {
+    match t {
+        Top::ExtDecl {id, params, ..} | Top::FunDef {v: FunDef {id, params, ..}} => {
+            extract_param_types(&id, &params)
+        },
+    }
 }
 
 fn type_check_body_shapes(
@@ -1067,14 +1084,16 @@ fn type_check_body_shapes(
     }
 
     // Collect the argument types of all defined functions before running.
-    env.arg_types = ast.defs.iter()
-        .map(|FunDef {id, params, ..}| extract_param_types(id, params))
+    env.arg_types = ast.tops.iter()
+        .map(extract_param_types_top)
         .collect::<BTreeMap<String, Vec<Type>>>();
+    let (s, tys) = extract_param_types(&ast.main.id, &ast.main.params);
+    env.arg_types.insert(s, tys);
 
     // Type-check the AST nodes
-    let (env, exts) = ast.exts.smap_accum_l_result(Ok(env), type_check_ext)?;
-    let (env, defs) = ast.defs.smap_accum_l_result(Ok(env), type_check_def)?;
-    Ok((env, Ast {exts, defs}))
+    let (env, tops) = ast.tops.smap_accum_l_result(Ok(env), type_check_top)?;
+    let (env, main) = type_check_def(env, ast.main)?;
+    Ok((env, Ast {tops, main}))
 }
 
 pub fn type_check_body(ast: Ast, float_size: ElemSize) -> PyResult<(TypeCheckEnv, Ast)> {
@@ -1609,7 +1628,7 @@ mod test {
 
     #[test]
     fn return_value() {
-        let def = FunDef {
+        let main = FunDef {
             id: var("x"),
             params: vec![],
             body: vec![Stmt::Return {
@@ -1621,7 +1640,7 @@ mod test {
             res_ty: Type::Unknown,
             i: Info::default()
         };
-        let ast = Ast {exts: vec![], defs: vec![def]};
+        let ast = Ast {tops: vec![], main};
         assert!(type_check_body(ast, ElemSize::F64).is_ok());
     }
 

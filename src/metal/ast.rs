@@ -354,6 +354,7 @@ pub enum FunAttribute {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Top {
     Include {header: String},
+    ExtDecl {ret_ty: Type, id: Name, params: Vec<Param>},
     VarDef {ty: Type, id: Name, init: Option<Expr>},
     FunDef {
         attrs: Vec<FunAttribute>, is_kernel: bool, ret_ty: Type, id: Name,

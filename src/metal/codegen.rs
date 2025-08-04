@@ -267,6 +267,20 @@ fn from_gpu_ir_param(
     Ok(Param {id, ty: from_gpu_ir_type(env, ty, &i)?, attr})
 }
 
+fn from_gpu_ir_params(
+    env: &CodegenEnv,
+    params: Vec<gpu_ast::Param>,
+    use_indices: bool
+) -> CompileResult<Vec<Param>> {
+    params.into_iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let idx = if use_indices { Some(i as i64) } else { None };
+            from_gpu_ir_param(env, p, idx)
+        })
+        .collect::<CompileResult<Vec<Param>>>()
+}
+
 fn from_gpu_ir_attr(
     attr: gpu_ast::KernelAttribute
 ) -> CompileResult<FunAttribute> {
@@ -283,15 +297,20 @@ fn from_gpu_ir_attr(
 
 fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc> {
     match top {
+        gpu_ast::Top::ExtDecl {ret_ty, id, params, header} => {
+            let env = CodegenEnv::new(&gpu_ast::Target::Device);
+            let ret_ty = from_gpu_ir_type(&env, ret_ty, &Info::default())?;
+            let params = from_gpu_ir_params(&env, params, false)?;
+            acc.metal.push(Top::Include {header});
+            acc.metal.push(Top::ExtDecl {ret_ty, id, params});
+            Ok(acc)
+        },
         gpu_ast::Top::KernelFunDef {attrs, id, params, body} => {
             let env = CodegenEnv::new(&gpu_ast::Target::Device);
             let attrs = attrs.into_iter()
                 .map(from_gpu_ir_attr)
                 .collect::<CompileResult<Vec<FunAttribute>>>()?;
-            let params = params.into_iter()
-                .enumerate()
-                .map(|(idx, p)| from_gpu_ir_param(&env, p, Some(idx as i64)))
-                .collect::<CompileResult<Vec<Param>>>()?;
+            let params = from_gpu_ir_params(&env, params, true)?;
             let body = from_gpu_ir_stmts(&env, body)?;
             acc.metal.push(Top::FunDef {
                 attrs, is_kernel: true, ret_ty: Type::Void, id, params, body
@@ -301,9 +320,7 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
         gpu_ast::Top::FunDef {ret_ty, id, params, body, target} => {
             let env = CodegenEnv::new(&target);
             let ret_ty = from_gpu_ir_type(&env, ret_ty, &Info::default())?;
-            let params = params.into_iter()
-                .map(|p| from_gpu_ir_param(&env, p, None))
-                .collect::<CompileResult<Vec<Param>>>()?;
+            let params = from_gpu_ir_params(&env, params, false)?;
             let mut body = from_gpu_ir_stmts(&env, body)?;
             if let gpu_ast::Target::Host = target {
                 let tail_ret = body.pop().unwrap();

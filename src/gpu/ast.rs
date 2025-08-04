@@ -581,6 +581,7 @@ pub enum KernelAttribute {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Top {
+    ExtDecl {ret_ty: Type, id: Name, params: Vec<Param>, header: String},
     KernelFunDef {attrs: Vec<KernelAttribute>, id: Name, params: Vec<Param>, body: Vec<Stmt>},
     FunDef {ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>, target: Target},
     StructDef {id: Name, fields: Vec<Field>},
@@ -601,7 +602,7 @@ impl SMapAccum<Stmt> for Top {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Top::FunDef {ret_ty, id, params, body, target}))
             },
-            Top::StructDef {..} => Ok((acc?, self))
+            Top::ExtDecl {..} | Top::StructDef {..} => Ok((acc?, self))
         }
     }
 }

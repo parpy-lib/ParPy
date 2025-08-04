@@ -442,6 +442,12 @@ impl PrettyPrint for KernelAttribute {
 impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
+            Top::ExtDecl {ret_ty, id, params, header} => {
+                let (env, ret_ty) = ret_ty.pprint(env);
+                let (env, id) = id.pprint(env);
+                let (env, params) = pprint_iter(params.iter(), env, ", ");
+                (env, format!("extern {ret_ty} {id}({params}); // {header}"))
+            },
             Top::KernelFunDef {attrs, id, params, body} => {
                 let (env, attrs) = pprint_iter(attrs.iter(), env, "\n");
                 let (env, id) = id.pprint(env);

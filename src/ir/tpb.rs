@@ -69,8 +69,8 @@ fn propagate_configuration_fun_def(fun: FunDef) -> CompileResult<FunDef> {
 /// Ensure all parallel for-loops within the same parallel loop nest agree on the number of threads
 /// to use per block.
 pub fn propagate_configuration(ast: Ast) -> CompileResult<Ast> {
-    let defs = ast.defs.smap_result(propagate_configuration_fun_def)?;
-    Ok(Ast {defs, ..ast})
+    let main = propagate_configuration_fun_def(ast.main)?;
+    Ok(Ast {main, ..ast})
 }
 
 #[cfg(test)]

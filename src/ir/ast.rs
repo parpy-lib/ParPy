@@ -350,21 +350,6 @@ pub struct Param {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct StructDef {
-    pub id: Name,
-    pub fields: Vec<Field>,
-    pub i: Info
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct ExtDecl {
-    pub id: Name,
-    pub params: Vec<Param>,
-    pub res_ty: Type,
-    pub i: Info
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct FunDef {
     pub id: Name,
     pub params: Vec<Param>,
@@ -374,8 +359,14 @@ pub struct FunDef {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum Top {
+    StructDef {id: Name, fields: Vec<Field>, i: Info},
+    ExtDecl {id: Name, params: Vec<Param>, res_ty: Type, header: String, i: Info},
+    FunDef {v: FunDef},
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Ast {
-    pub structs: Vec<StructDef>,
-    pub exts: Vec<ExtDecl>,
-    pub defs: Vec<FunDef>,
+    pub tops: Vec<Top>,
+    pub main: FunDef,
 }

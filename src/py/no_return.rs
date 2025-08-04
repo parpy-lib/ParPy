@@ -26,8 +26,7 @@ fn check_no_return_in_main_function_body(id: &Name, stmts: &Vec<Stmt>) -> PyResu
 }
 
 pub fn check_no_return_in_main_function(ast: &Ast) -> PyResult<()> {
-    let main_def = ast.defs.last().unwrap();
-    check_no_return_in_main_function_body(&main_def.id, &main_def.body)
+    check_no_return_in_main_function_body(&ast.main.id, &ast.main.body)
 }
 
 #[cfg(test)]
@@ -38,20 +37,20 @@ mod test {
 
     #[test]
     fn detects_trailing_return_stmt() {
-        let def = FunDef {
+        let main = FunDef {
             id: id("f"),
             params: vec![],
             body: vec![return_stmt(int(1, None))],
             res_ty: Type::Void,
             i: Info::default()
         };
-        let ast = Ast {exts: vec![], defs: vec![def]};
+        let ast = Ast {tops: vec![], main};
         assert!(check_no_return_in_main_function(&ast).is_err());
     }
 
     #[test]
     fn detects_nested_return_stmt() {
-        let def = FunDef {
+        let main = FunDef {
             id: id("f"),
             params: vec![],
             body: vec![Stmt::While {
@@ -62,20 +61,20 @@ mod test {
             res_ty: Type::Void,
             i: Info::default()
         };
-        let ast = Ast {exts: vec![], defs: vec![def]};
+        let ast = Ast {tops: vec![], main};
         assert!(check_no_return_in_main_function(&ast).is_err());
     }
 
     #[test]
     fn no_return_stmt() {
-        let def = FunDef {
+        let main = FunDef {
             id: id("f"),
             params: vec![],
             body: vec![],
             res_ty: Type::Void,
             i: Info::default()
         };
-        let ast = Ast {exts: vec![], defs: vec![def]};
+        let ast = Ast {tops: vec![], main};
         assert!(check_no_return_in_main_function(&ast).is_ok());
     }
 }

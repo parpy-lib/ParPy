@@ -217,6 +217,12 @@ fn from_gpu_ir_param(p: gpu_ast::Param) -> Param {
     Param {id, ty: from_gpu_ir_type(ty)}
 }
 
+fn from_gpu_ir_params(params: Vec<gpu_ast::Param>) -> Vec<Param> {
+    params.into_iter()
+        .map(from_gpu_ir_param)
+        .collect::<Vec<Param>>()
+}
+
 fn from_gpu_ir_field(f: gpu_ast::Field) -> Field {
     let gpu_ast::Field {id, ty, ..} = f;
     Field {id, ty: from_gpu_ir_type(ty)}
@@ -233,8 +239,18 @@ fn from_gpu_ir_attr(attr: gpu_ast::KernelAttribute) -> KernelAttribute {
     }
 }
 
-fn from_gpu_ir_top(t: gpu_ast::Top) -> CompileResult<Top> {
+fn from_gpu_ir_top(
+    acc: CompileResult<(Vec<Top>, Vec<Top>)>,
+    t: gpu_ast::Top
+) -> CompileResult<(Vec<Top>, Vec<Top>)> {
+    let (mut includes, mut tops) = acc?;
     match t {
+        gpu_ast::Top::ExtDecl {ret_ty, id, params, header} => {
+            let ret_ty = from_gpu_ir_type(ret_ty);
+            let params = from_gpu_ir_params(params);
+            includes.push(Top::Include {header});
+            tops.push(Top::ExtDecl {ret_ty, id, params});
+        },
         gpu_ast::Top::KernelFunDef {attrs, id, params, body} => {
             let attrs = attrs.into_iter()
                 .map(from_gpu_ir_attr)
@@ -243,33 +259,32 @@ fn from_gpu_ir_top(t: gpu_ast::Top) -> CompileResult<Top> {
                 .map(from_gpu_ir_param)
                 .collect::<Vec<Param>>();
             let body = from_gpu_ir_stmts(body)?;
-            Ok(Top::FunDef {
+            tops.push(Top::FunDef {
                 dev_attr: Attribute::Global, ret_ty: Type::Void,
                 attrs, id, params, body
-            })
+            });
         },
         gpu_ast::Top::FunDef {ret_ty, id, params, body, target} => {
             let ret_ty = from_gpu_ir_type(ret_ty);
-            let params = params.into_iter()
-                .map(from_gpu_ir_param)
-                .collect::<Vec<Param>>();
+            let params = from_gpu_ir_params(params);
             let body = from_gpu_ir_stmts(body)?;
             let dev_attr = match target {
                 gpu_ast::Target::Host => Attribute::Entry,
                 gpu_ast::Target::Device => Attribute::Device,
             };
-            Ok(Top::FunDef {
+            tops.push(Top::FunDef {
                 dev_attr, ret_ty, attrs: vec![],
                 id, params, body
-            })
+            });
         },
         gpu_ast::Top::StructDef {id, fields} => {
             let fields = fields.into_iter()
                 .map(from_gpu_ir_field)
                 .collect::<Vec<Field>>();
-            Ok(Top::StructDef {id, fields})
+            tops.push(Top::StructDef {id, fields});
         },
-    }
+    };
+    Ok((includes, tops))
 }
 
 fn type_contains_16_bit_floats(acc: bool, ty: &gpu_ast::Type) -> bool {
@@ -333,10 +348,10 @@ pub fn from_gpu_ir(
         tops.push(Top::Include {header: "<cooperative_groups.h>".to_string()});
         tops.push(Top::Namespace {ns: "cooperative_groups".to_string(), alias: None});
     }
-    let mut cu_ast = ast.into_iter()
-        .map(from_gpu_ir_top)
-        .collect::<CompileResult<Vec<Top>>>()?;
-    tops.append(&mut cu_ast);
+    let (mut cu_includes, mut cu_defs) = ast.into_iter()
+        .fold(Ok((vec![], vec![])), from_gpu_ir_top)?;
+    tops.append(&mut cu_includes);
+    tops.append(&mut cu_defs);
     Ok(tops)
 }
 

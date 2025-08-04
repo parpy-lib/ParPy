@@ -176,27 +176,6 @@ impl PrettyPrint for Param {
     }
 }
 
-impl PrettyPrint for StructDef {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let StructDef {id, fields, ..} = self;
-        let (env, id) = id.pprint(env);
-        let env = env.incr_indent();
-        let (env, fields) = pprint_iter(fields.iter(), env, "\n");
-        let env = env.decr_indent();
-        (env, format!("struct {id} {{\n{fields}\n}};"))
-    }
-}
-
-impl PrettyPrint for ExtDecl {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let ExtDecl {id, params, res_ty, ..} = self;
-        let (env, id) = id.pprint(env);
-        let (env, params) = pprint_iter(params.iter(), env, ", ");
-        let (env, res_ty) = res_ty.pprint(env);
-        (env, format!("{res_ty} {id}({params});"))
-    }
-}
-
 impl PrettyPrint for FunDef {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let FunDef {id, params, body, res_ty, ..} = self;
@@ -210,13 +189,33 @@ impl PrettyPrint for FunDef {
     }
 }
 
+impl PrettyPrint for Top {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        match self {
+            Top::StructDef {id, fields, ..} => {
+                let (env, id) = id.pprint(env);
+                let env = env.incr_indent();
+                let (env, fields) = pprint_iter(fields.iter(), env, "\n");
+                let env = env.decr_indent();
+                (env, format!("struct {id} {{\n{fields}\n}};"))
+            },
+            Top::ExtDecl {id, params, res_ty, header, ..} => {
+                let (env, id) = id.pprint(env);
+                let (env, params) = pprint_iter(params.iter(), env, ", ");
+                let (env, res_ty) = res_ty.pprint(env);
+                (env, format!("{res_ty} {id}({params}); [{header}]"))
+            },
+            Top::FunDef {v} => v.pprint(env),
+        }
+    }
+}
+
 impl PrettyPrint for Ast {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Ast {structs, exts, defs} = self;
-        let (env, structs) = pprint_iter(structs.iter(), env, "\n");
-        let (env, exts) = pprint_iter(exts.iter(), env, "\n");
-        let (env, defs) = pprint_iter(defs.iter(), env, "\n");
-        (env, format!("{structs}\n{exts}\n{defs}"))
+        let Ast {tops, main} = self;
+        let (env, tops) = pprint_iter(tops.iter(), env, "\n");
+        let (env, main) = main.pprint(env);
+        (env, format!("{tops}\n{main}"))
     }
 }
 
@@ -317,7 +316,7 @@ mod test {
             Field {id: "x".to_string(), ty: scalar(ElemSize::F64), i: Info::default()},
             Field {id: "y".to_string(), ty: scalar(ElemSize::F32), i: Info::default()},
         ];
-        let def = StructDef {id: id("point"), fields, i: Info::default()};
+        let def = Top::StructDef {id: id("point"), fields, i: Info::default()};
         let indent = PrettyPrintEnv::new().incr_indent().print_indent();
         let s = format!("struct point {{\n{0}double x;\n{0}float y;\n}};", indent);
         assert_eq!(def.pprint_default(), s);

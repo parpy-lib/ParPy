@@ -101,14 +101,22 @@ fn fold_stmt(s: Stmt) -> Stmt {
     s.smap(fold_stmt).smap(fold_expr)
 }
 
-fn fold_fun(fun: FunDef) -> FunDef {
-    let body = fun.body.smap(fold_stmt);
-    FunDef {body, ..fun}
+fn fold_def(def: FunDef) -> FunDef {
+    let body = def.body.smap(fold_stmt);
+    FunDef {body, ..def}
+}
+
+fn fold_top(t: Top) -> Top {
+    match t {
+        Top::FunDef {v} => Top::FunDef {v: fold_def(v)},
+        Top::StructDef {..} | Top::ExtDecl {..} => t,
+    }
 }
 
 pub fn fold(ast: Ast) -> Ast {
-    let defs = ast.defs.smap(fold_fun);
-    Ast {defs, ..ast}
+    let tops = ast.tops.smap(fold_top);
+    let main = fold_def(ast.main);
+    Ast {tops, main}
 }
 
 #[cfg(test)]

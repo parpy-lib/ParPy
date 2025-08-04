@@ -218,7 +218,7 @@ fn fold_top(top: Top) -> Top {
             let body = fold_stmts(body);
             Top::FunDef {ret_ty, id, params, body, target}
         },
-        Top::StructDef {..} => top
+        Top::ExtDecl {..} | Top::StructDef {..} => top
     }
 }
 

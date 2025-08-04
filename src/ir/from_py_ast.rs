@@ -29,13 +29,13 @@ pub fn to_struct_def(
     env: &IREnv,
     id: Name,
     ty: py_ast::Type
-) -> CompileResult<StructDef> {
+) -> CompileResult<Top> {
     let i = Info::default();
     let mut fields = ty.get_dict_type_fields().into_iter()
         .map(|(id, ty)| Ok(Field {id, ty: to_ir_type(env, &i, ty)?, i: i.clone()}))
         .collect::<CompileResult<Vec<Field>>>()?;
     fields.sort_by(|Field {id: lid, ..}, Field {id: rid, ..}| lid.cmp(&rid));
-    Ok(StructDef {id, fields, i: Info::default()})
+    Ok(Top::StructDef {id, fields, i: Info::default()})
 }
 
 fn to_ir_type(
@@ -419,16 +419,6 @@ fn to_ir_params(
         .collect::<CompileResult<Vec<Param>>>()
 }
 
-fn to_ir_ext(
-    env: &IREnv,
-    ext: py_ast::ExtDecl
-) -> CompileResult<ExtDecl> {
-    let py_ast::ExtDecl {id, params, res_ty, i} = ext;
-    let params = to_ir_params(env, params)?;
-    let res_ty = to_ir_type(env, &i, res_ty)?;
-    Ok(ExtDecl {id, params, res_ty, i})
-}
-
 fn to_ir_def(
     env: &IREnv,
     def: py_ast::FunDef
@@ -440,18 +430,31 @@ fn to_ir_def(
     Ok(FunDef {id, params, body, res_ty, i})
 }
 
+fn to_ir_top(
+    env: &IREnv,
+    t: py_ast::Top
+) -> CompileResult<Top> {
+    match t {
+        py_ast::Top::ExtDecl {id, params, res_ty, header, i} => {
+            let params = to_ir_params(env, params)?;
+            let res_ty = to_ir_type(env, &i, res_ty)?;
+            Ok(Top::ExtDecl {id, params, res_ty, header, i})
+        },
+        py_ast::Top::FunDef {v} => Ok(Top::FunDef {v: to_ir_def(env, v)?}),
+    }
+}
+
 pub fn to_ir_ast(
     env: &IREnv,
     ast: py_ast::Ast,
-    structs: Vec<StructDef>
+    structs: Vec<Top>
 ) -> CompileResult<Ast> {
-    let exts = ast.exts.into_iter()
-        .map(|ext| to_ir_ext(env, ext))
-        .collect::<CompileResult<Vec<ExtDecl>>>()?;
-    let defs = ast.defs.into_iter()
-        .map(|def| to_ir_def(env, def))
-        .collect::<CompileResult<Vec<FunDef>>>()?;
-    Ok(Ast {structs, exts, defs})
+    let tops = structs.into_iter()
+        .map(|t| Ok(t))
+        .chain(ast.tops.into_iter().map(|t| to_ir_top(env, t)))
+        .collect::<CompileResult<Vec<Top>>>()?;
+    let main = to_ir_def(env, ast.main)?;
+    Ok(Ast {tops, main})
 }
 
 #[cfg(test)]
@@ -477,7 +480,7 @@ mod test {
         let env = ir_env();
         let id = id("x");
         let ty = py::dict_ty(vec![("y", py::scalar(ElemSize::I32))]);
-        let expected = StructDef {
+        let expected = Top::StructDef {
             id: id.clone(),
             fields: vec![Field {
                 id: "y".to_string(), ty: scalar(ElemSize::I32), i: i()

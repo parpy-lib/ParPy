@@ -63,18 +63,18 @@ fn collect_called_functions<'py>(
 fn make_ast<'py>(
     ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>,
     called_funs: Vec<String>,
-    def: FunDef
+    main: FunDef
 ) -> Ast {
-    let defs = called_funs.into_iter()
+    let tops = called_funs.into_iter()
         .unique()
         .rev()
         .map(|id| {
             let ast_ref = ir_asts.get(&id).unwrap();
-            unsafe { ast_ref.reference::<FunDef>() }.clone()
+            let def = unsafe { ast_ref.reference::<FunDef>() };
+            Top::FunDef {v: def.clone()}
         })
-        .chain(vec![def].into_iter())
-        .collect::<Vec<FunDef>>();
-    Ast {exts: vec![], defs}
+        .collect::<Vec<Top>>();
+    Ast {tops, main}
 }
 
 pub fn apply<'py>(

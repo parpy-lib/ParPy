@@ -370,6 +370,14 @@ impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
             Top::Include {header} => (env, format!("#include {header}")),
+            Top::ExtDecl {ret_ty, id, params} => {
+                let (env, ret_ty) = ret_ty.pprint(env);
+                let (env, id) = id.pprint(env);
+                let env = env.incr_indent();
+                let (env, params) = pprint_iter(params.iter(), env, "\n");
+                let env = env.decr_indent();
+                (env, format!("extern {ret_ty} {id}(\n{params}\n);"))
+            },
             Top::VarDef {ty, id, init} => {
                 let (env, ty) = ty.pprint(env);
                 let (env, id) = id.pprint(env);

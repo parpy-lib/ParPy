@@ -517,44 +517,32 @@ fn from_ir_param(p: ir_ast::Param) -> Param {
     Param {id, ty: from_ir_type(ty), i}
 }
 
-fn from_ir_fun_def_helper(
+fn from_ir_params(params: Vec<ir_ast::Param>) -> Vec<Param> {
+    params.into_iter()
+        .map(from_ir_param)
+        .collect::<Vec<Param>>()
+}
+
+fn from_ir_main_def(
     env: &CodegenEnv,
     fun: ir_ast::FunDef,
-    is_main: bool
 ) -> CompileResult<Vec<Top>> {
-    let ir_ast::FunDef {id, params, body, res_ty, ..} = fun;
+    let ir_ast::FunDef {id, params, body, ..} = fun;
     let params = params.into_iter()
         .map(from_ir_param)
         .collect::<Vec<Param>>();
     let (mut host_body, mut kernel_tops) = from_ir_stmts(env, &id, vec![], vec![], body)?;
-    let ret_ty = from_ir_type(res_ty);
-    if is_main {
-        let (mut params_init, unwrapped_params) = unwrap_params(env, params)?;
-        params_init.append(&mut host_body);
-        let ret_ty = Type::Scalar {sz: ElemSize::I32};
-        params_init.push(Stmt::Return {
-            value: Expr::Int {v: 0, ty: ret_ty.clone(), i: Info::default()},
-            i: Info::default()
-        });
-        kernel_tops.push(Top::FunDef {
-            ret_ty, id, params: unwrapped_params, body: params_init, target: Target::Host
-        });
-        Ok(kernel_tops)
-    } else {
-        assert!(kernel_tops.is_empty());
-        Ok(vec![Top::FunDef {
-            ret_ty, id, params, body: host_body, target: Target::Device
-        }])
-    }
-}
-
-fn from_ir_fun_def(
-    env: &CodegenEnv,
-    fun: ir_ast::FunDef
-) -> CompileResult<Top> {
-    let mut v = from_ir_fun_def_helper(env, fun, false)?;
-    assert!(v.len() == 1);
-    Ok(v.pop().unwrap())
+    let (mut body, unwrapped_params) = unwrap_params(env, params)?;
+    body.append(&mut host_body);
+    let ret_ty = Type::Scalar {sz: ElemSize::I32};
+    body.push(Stmt::Return {
+        value: Expr::Int {v: 0, ty: ret_ty.clone(), i: Info::default()},
+        i: Info::default()
+    });
+    kernel_tops.push(Top::FunDef {
+        ret_ty, id, params: unwrapped_params, body, target: Target::Host
+    });
+    Ok(kernel_tops)
 }
 
 fn from_ir_field(f: ir_ast::Field) -> Field {
@@ -562,44 +550,53 @@ fn from_ir_field(f: ir_ast::Field) -> Field {
     Field {id, ty: from_ir_type(ty), i}
 }
 
-fn from_ir_struct(s: ir_ast::StructDef) -> Top {
-    Top::StructDef {
-        id: s.id,
-        fields: s.fields.into_iter()
-            .map(|f| from_ir_field(f))
-            .collect::<Vec<Field>>()
-    }
-}
-
-fn struct_top_fields(t: Top) -> (Name, Vec<Field>) {
-    if let Top::StructDef {id, fields, ..} = t {
-        (id, fields)
-    } else {
-        unreachable!()
+fn from_ir_top(
+    mut env: CodegenEnv,
+    t: ir_ast::Top
+) -> CompileResult<(CodegenEnv, Top)> {
+    match t {
+        ir_ast::Top::StructDef {id, fields, ..} => {
+            let fields = fields.into_iter()
+                .map(from_ir_field)
+                .collect::<Vec<Field>>();
+            env.struct_fields.insert(id.clone(), fields.clone());
+            Ok((env, Top::StructDef {id, fields}))
+        },
+        ir_ast::Top::ExtDecl {id, params, res_ty, header, ..} => {
+            let params = from_ir_params(params);
+            let ret_ty = from_ir_type(res_ty);
+            Ok((env, Top::ExtDecl {ret_ty, id, params, header}))
+        },
+        ir_ast::Top::FunDef {v: ir_ast::FunDef {id, params, body, res_ty, i}} => {
+            let params = from_ir_params(params);
+            let ret_ty = from_ir_type(res_ty);
+            let (body, kernel_tops) = from_ir_stmts(&env, &id, vec![], vec![], body)?;
+            if kernel_tops.is_empty() {
+                Ok((env, Top::FunDef {ret_ty, id, params, body, target: Target::Device}))
+            } else {
+                prickle_compile_error!(
+                    i,
+                    "Found parallel code outside main function definition, \
+                     which is not allowed.")
+            }
+        },
     }
 }
 
 pub fn from_general_ir(
     opts: &option::CompileOptions,
-    mut ast: ir_ast::Ast,
+    ast: ir_ast::Ast,
     gpu_mapping: BTreeMap<Name, GpuMapping>
 ) -> CompileResult<Ast> {
-    let mut tops = ast.structs
-        .into_iter()
-        .map(from_ir_struct)
-        .collect::<Vec<Top>>();
-    let struct_fields = tops.clone()
-        .into_iter()
-        .map(struct_top_fields)
-        .collect::<BTreeMap<Name, Vec<Field>>>();
-    let env = CodegenEnv {gpu_mapping, struct_fields, opts};
-
-    let main_def = ast.defs.pop().unwrap();
-    tops.append(&mut ast.defs
-        .into_iter()
-        .map(|def| from_ir_fun_def(&env, def))
-        .collect::<CompileResult<Vec<Top>>>()?);
-    tops.append(&mut from_ir_fun_def_helper(&env, main_def, true)?);
+    let env = CodegenEnv {gpu_mapping, struct_fields: BTreeMap::new(), opts};
+    let (env, mut tops) = ast.tops.into_iter()
+        .fold(Ok((env, vec![])), |acc, t| {
+            let (env, mut tops) = acc?;
+            let (env, t) = from_ir_top(env, t)?;
+            tops.push(t);
+            Ok((env, tops))
+        })?;
+    tops.append(&mut from_ir_main_def(&env, ast.main)?);
     Ok(tops)
 }
 
@@ -1021,26 +1018,25 @@ mod test {
     fn from_ir_called_fun() {
         let opts = CompileOptions::default();
         let env = default_codegen_env(&opts);
-        let fun = ir_ast::FunDef {
+        let v = ir_ast::FunDef {
             id: id("f"), params: vec![], body: vec![], res_ty: ir_ast::Type::Void, i: i()
         };
-        let mut tops = from_ir_fun_def_helper(&env, fun, false).unwrap();
-        assert_eq!(tops.len(), 1);
+        let (_, top) = from_ir_top(env, ir_ast::Top::FunDef {v}).unwrap();
         let expected = Top::FunDef {
             ret_ty: Type::Void, id: id("f"), params: vec![], body: vec![],
             target: Target::Device
         };
-        assert_eq!(tops.pop().unwrap(), expected);
+        assert_eq!(top, expected);
     }
 
     #[test]
     fn from_ir_main_fun() {
         let opts = CompileOptions::default();
         let env = default_codegen_env(&opts);
-        let fun = ir_ast::FunDef {
+        let main = ir_ast::FunDef {
             id: id("f"), params: vec![], body: vec![], res_ty: ir_ast::Type::Void, i: i()
         };
-        let mut tops = from_ir_fun_def_helper(&env, fun, true).unwrap();
+        let mut tops = from_ir_main_def(&env, main).unwrap();
         assert_eq!(tops.len(), 1);
         let expected = Top::FunDef {
             ret_ty: Type::Scalar {sz: ElemSize::I32},

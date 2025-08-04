@@ -159,6 +159,7 @@ fn flatten_structs_top(
     mut env: StructEnv, t: Top
 ) -> CompileResult<(StructEnv, Option<Top>)> {
     match t {
+        Top::ExtDecl {..} => Ok((env, Some(t))),
         Top::KernelFunDef {attrs, id, params, body} => {
             let (env, params) = expand_kernel_params(env, params)?;
             let body = flatten_structs_kernel_body(&env, body)?;

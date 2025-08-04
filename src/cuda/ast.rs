@@ -457,6 +457,7 @@ pub enum KernelAttribute {
 pub enum Top {
     Include {header: String},
     Namespace {ns: String, alias: Option<String>},
+    ExtDecl {ret_ty: Type, id: Name, params: Vec<Param>},
     StructDef {id: Name, fields: Vec<Field>},
     VarDef {ty: Type, id: Name, init: Option<Expr>},
     FunDef {
@@ -476,8 +477,8 @@ impl SMapAccum<Stmt> for Top {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Top::FunDef {dev_attr, ret_ty, attrs, id, params, body}))
             },
-            Top::Include {..} | Top::Namespace {..} | Top::StructDef {..} |
-            Top::VarDef {..} => {
+            Top::Include {..} | Top::Namespace {..} | Top::ExtDecl {..} |
+            Top::StructDef {..} | Top::VarDef {..} => {
                 Ok((acc?, self))
             },
         }
