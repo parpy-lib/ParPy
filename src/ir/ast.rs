@@ -361,7 +361,7 @@ pub struct FunDef {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Top {
     StructDef {id: Name, fields: Vec<Field>, i: Info},
-    ExtDecl {id: Name, params: Vec<Param>, res_ty: Type, header: String, i: Info},
+    ExtDecl {id: String, params: Vec<Param>, res_ty: Type, header: String, i: Info},
     FunDef {v: FunDef},
 }
 

@@ -1056,19 +1056,18 @@ fn type_check_top(
     }
 }
 
-fn extract_param_types(id: &Name, params: &Vec<Param>) -> (String, Vec<Type>) {
+fn extract_param_types(id: &String, params: &Vec<Param>) -> (String, Vec<Type>) {
     let params = params.clone()
         .into_iter()
         .map(|Param {ty, ..}| ty.clone())
         .collect::<Vec<Type>>();
-    (id.get_str().clone(), params)
+    (id.clone(), params)
 }
 
 fn extract_param_types_top(t: &Top) -> (String, Vec<Type>) {
     match t {
-        Top::ExtDecl {id, params, ..} | Top::FunDef {v: FunDef {id, params, ..}} => {
-            extract_param_types(&id, &params)
-        },
+        Top::ExtDecl {id, params, ..} => extract_param_types(id, &params),
+        Top::FunDef {v: FunDef {id, params, ..}} => extract_param_types(id.get_str(), &params),
     }
 }
 
@@ -1087,7 +1086,7 @@ fn type_check_body_shapes(
     env.arg_types = ast.tops.iter()
         .map(extract_param_types_top)
         .collect::<BTreeMap<String, Vec<Type>>>();
-    let (s, tys) = extract_param_types(&ast.main.id, &ast.main.params);
+    let (s, tys) = extract_param_types(&ast.main.id.get_str(), &ast.main.params);
     env.arg_types.insert(s, tys);
 
     // Type-check the AST nodes

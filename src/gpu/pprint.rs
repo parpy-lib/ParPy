@@ -444,7 +444,6 @@ impl PrettyPrint for Top {
         match self {
             Top::ExtDecl {ret_ty, id, params, header} => {
                 let (env, ret_ty) = ret_ty.pprint(env);
-                let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 (env, format!("extern {ret_ty} {id}({params}); // {header}"))
             },

@@ -200,7 +200,6 @@ impl PrettyPrint for Top {
                 (env, format!("struct {id} {{\n{fields}\n}};"))
             },
             Top::ExtDecl {id, params, res_ty, header, ..} => {
-                let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let (env, res_ty) = res_ty.pprint(env);
                 (env, format!("{res_ty} {id}({params}); [{header}]"))

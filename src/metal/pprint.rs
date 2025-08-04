@@ -372,7 +372,6 @@ impl PrettyPrint for Top {
             Top::Include {header} => (env, format!("#include {header}")),
             Top::ExtDecl {ret_ty, id, params} => {
                 let (env, ret_ty) = ret_ty.pprint(env);
-                let (env, id) = id.pprint(env);
                 let env = env.incr_indent();
                 let (env, params) = pprint_iter(params.iter(), env, "\n");
                 let env = env.decr_indent();

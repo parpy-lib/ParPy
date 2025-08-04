@@ -457,7 +457,7 @@ pub enum KernelAttribute {
 pub enum Top {
     Include {header: String},
     Namespace {ns: String, alias: Option<String>},
-    ExtDecl {ret_ty: Type, id: Name, params: Vec<Param>},
+    ExtDecl {ret_ty: Type, id: String, params: Vec<Param>},
     StructDef {id: Name, fields: Vec<Field>},
     VarDef {ty: Type, id: Name, init: Option<Expr>},
     FunDef {

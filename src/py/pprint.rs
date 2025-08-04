@@ -314,7 +314,6 @@ impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
             Top::ExtDecl {id, params, res_ty, header, ..} => {
-                let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let (env, res_ty) = res_ty.pprint(env);
                 (env, format!("def {id}({params}) -> {res_ty}:\n  \"\"\" {header} \"\"\""))
