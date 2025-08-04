@@ -1017,34 +1017,22 @@ fn type_check_def(
     mut env: TypeCheckEnv,
     def: FunDef
 ) -> PyResult<(TypeCheckEnv, FunDef)> {
-    let params = match env.arg_types.get(def.id.get_str()) {
-        Some(arg_tys) => {
-            def.params.into_iter()
-                .zip(arg_tys.iter())
-                .map(|(Param {id, ty, i}, arg_ty)| {
-                    let ty = lub_type(&env, ty, arg_ty.clone(), &i)?;
-                    Ok(Param {id, ty, i})
-                })
-                .collect::<PyResult<Vec<Param>>>()
-        },
-        None => Ok(def.params)
-    }?;
     // Ensure the types of all parameters are known at this point. If we find any parameter whose
     // type is unknown, the user is recommended to use explicit type annotations (not needed for
     // the "main" function).
-    assert_known_params(&def.id, &params)?;
+    assert_known_params(&def.id, &def.params)?;
 
     // Before we type-check the body, we reset the return type to unknown and set the function
     // parameters as our known variables.
     env.res_ty = Type::Void;
-    env.vars = params.iter()
+    env.vars = def.params.iter()
         .map(|Param {id, ty, ..}| (id.clone(), ty.clone()))
         .collect::<BTreeMap<Name, Type>>();
     let (mut env, body) = type_check_stmts(env, def.body)?;
 
     let res_ty = env.res_ty.clone();
     env.res_types.insert(def.id.get_str().clone(), res_ty.clone());
-    let def = FunDef {params, body, res_ty, ..def};
+    let def = FunDef {body, res_ty, ..def};
     Ok((env, def))
 }
 
