@@ -193,7 +193,7 @@ fn extract_shape(e: &Expr) -> PyResult<Vec<i64>> {
             Type::Tensor {shape, ..} => Ok(shape.clone()),
             _ => {
                 py_runtime_error!(e.get_info(), "Invalid type of slice \
-                                                 operation: {0}", e.get_type())
+                                                 operation: {0:?}", e.get_type())
             }
         }
     }

@@ -4,11 +4,9 @@ use crate::utils::name::Name;
 use crate::utils::smap::*;
 
 use strum_macros::EnumIter;
-use itertools::Itertools;
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use std::fmt;
 
 pub use crate::utils::ast::ElemSize;
 pub use crate::utils::ast::UnOp;
@@ -36,34 +34,7 @@ impl Type {
         if let Type::Dict {fields} = self {
             fields.clone()
         } else {
-            panic!("Internal error: expected dictionary type, found {self}")
-        }
-    }
-}
-
-impl fmt::Display for Type {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Type::String => write!(f, "string"),
-            Type::Tensor {sz, shape} if shape.is_empty() => write!(f, "{sz}"),
-            Type::Tensor {sz, shape} => {
-                let sh = shape.iter().map(|i| i.to_string()).join(",");
-                write!(f, "tensor<{sz}>[{sh}]")
-            },
-            Type::Tuple {elems} => {
-                let elems = elems.iter()
-                    .map(|e| format!("{e}"))
-                    .join(",");
-                write!(f, "({elems})")
-            },
-            Type::Dict {fields} => {
-                let fields = fields.iter()
-                    .map(|(k, v)| format!("{k} {v}"))
-                    .join(",");
-                write!(f, "dict {{{fields}}}")
-            },
-            Type::Void => write!(f, "void"),
-            Type::Unknown => write!(f, "?"),
+            panic!("Internal error: expected dictionary type, found {self:?}")
         }
     }
 }

@@ -223,12 +223,12 @@ fn ensure_scalar_type(
                     Ok(Expr::Convert {e: Box::new(e), ty})
                 }
             } else {
-                py_type_error!(i, "Expected element of type {expected}, found \
+                py_type_error!(i, "Expected element of type {expected:?}, found \
                                    incompatible element type {sz}.")
             }
         },
         _ => py_type_error!(i, "Expected element of scalar type {expected}, \
-                                but found type {ty}.")
+                                but found type {ty:?}.")
     }
 }
 
@@ -288,7 +288,8 @@ fn coerce_type(env: &TypeCheckEnv, e: Expr, expected: &Type) -> PyResult<Expr> {
                     } else if lsz == rsz && lsh == rsh {
                         Ok(e)
                     } else {
-                        py_type_error!(i, "Cannot coerce incompatible tensor types ({actual} != {expected})")
+                        py_type_error!(i, "Cannot coerce incompatible tensor \
+                                           types ({actual:?} != {expected:?})")
                     }
                 }
             }
@@ -309,7 +310,7 @@ fn coerce_type(env: &TypeCheckEnv, e: Expr, expected: &Type) -> PyResult<Expr> {
             },
             _ => py_type_error!(
                 i,
-                "Cannot coerce expression {0} of type {1} to type {2}",
+                "Cannot coerce expression {0} of type {1:?} to type {2:?}",
                 e, actual, expected
             )
         }
@@ -339,13 +340,13 @@ fn lub_type(env: &TypeCheckEnv, l: Type, r: Type, i: &Info) -> PyResult<Type> {
                         Ok(l)
                     } else {
                         py_type_error!(i, "Cannot unify incompatible tensor \
-                                           types {l} and {r}.")
+                                           types {l:?} and {r:?}.")
                     }
                 }
             }
         },
         _ if l.eq(&r) => Ok(l),
-        _ => py_type_error!(i, "Cannot unify incompatible types {l} and {r}")
+        _ => py_type_error!(i, "Cannot unify incompatible types {l:?} and {r:?}")
     }
 }
 
@@ -401,7 +402,7 @@ fn type_check_builtin(
                 let ty = Type::Tensor {sz, shape};
                 Ok(Expr::Builtin {func, args, axis, ty, i})
             } else {
-                py_type_error!(i, "Unexpected argument of type {arg_ty} passed \
+                py_type_error!(i, "Unexpected argument of type {arg_ty:?} passed \
                                    to tensor reduction builtin")
             }
         },
@@ -412,7 +413,7 @@ fn type_check_builtin(
             if env.is_float_scalar(&ty) {
                 Ok(Expr::Builtin {func, args, axis, ty, i})
             } else {
-                py_type_error!(i, "Unexpected type {ty} of unary builtin (expected float)")
+                py_type_error!(i, "Unexpected type {ty:?} of unary builtin (expected float)")
             }
         },
         Builtin::Tanh if args.len() == 1 => {
@@ -427,7 +428,7 @@ fn type_check_builtin(
                 if env.is_float_scalar(&ty) {
                     Ok(Expr::Builtin {func, args, axis, ty, i})
                 } else {
-                    py_type_error!(i, "Unexpected type {ty} of tanh builtin (expected float)")
+                    py_type_error!(i, "Unexpected type {ty:?} of tanh builtin (expected float)")
                 }
             }
         },
@@ -442,7 +443,7 @@ fn type_check_builtin(
                 let arg = args.remove(0);
                 Ok(arg)
             } else {
-                py_type_error!(i, "Unexpected type {ty} of abs builtin")
+                py_type_error!(i, "Unexpected type {ty:?} of abs builtin")
             }
         },
         // Unary cast operation on scalar values
@@ -457,7 +458,7 @@ fn type_check_builtin(
                     ty: Type::Tensor {sz: sz.clone(), shape: vec![]}
                 })
             } else {
-                py_type_error!(i, "Expected scalar type in type conversion, found {ty}")
+                py_type_error!(i, "Expected scalar type in type conversion, found {ty:?}")
             }
         },
         // Binary operations on scalar values
@@ -486,7 +487,7 @@ fn type_check_builtin(
                         }
                     },
                     _ => {
-                        py_type_error!(i, "Unexpected type {ty} of builtin")
+                        py_type_error!(i, "Unexpected type {ty:?} of builtin")
                     }
                 }
             }
@@ -508,21 +509,21 @@ fn type_check_unop(
             if env.is_int_scalar(&ty) || env.is_float_scalar(&ty) {
                 Ok(ty.clone())
             } else {
-                py_type_error!(i, "Invalid type {ty} of unary minus")
+                py_type_error!(i, "Invalid type {ty:?} of unary minus")
             }
         },
         UnOp::Not => {
             if env.is_bool_scalar(&ty) {
                 Ok(ty.clone())
             } else {
-                py_type_error!(i, "Invalid type {ty} of boolean negation")
+                py_type_error!(i, "Invalid type {ty:?} of boolean negation")
             }
         }
         UnOp::BitNeg => {
             if env.is_int_scalar(&ty) {
                 Ok(ty.clone())
             } else {
-                py_type_error!(i, "Invalid type {ty} of bitwise negation")
+                py_type_error!(i, "Invalid type {ty:?} of bitwise negation")
             }
         },
         UnOp::Exp | UnOp::Log | UnOp::Cos | UnOp::Sin | UnOp::Sqrt |
@@ -560,7 +561,7 @@ fn type_check_binop(
                 if env.is_int_scalar(&ty) || env.is_float_scalar(&ty) {
                     Ok(ty)
                 } else {
-                    py_type_error!(i, "Invalid type {ty} of arithmetic operation")
+                    py_type_error!(i, "Invalid type {ty:?} of arithmetic operation")
                 }
             },
             // Arithmetic operations only supported for integers
@@ -568,14 +569,14 @@ fn type_check_binop(
                 if env.is_int_scalar(&ty) {
                     Ok(ty)
                 } else {
-                    py_type_error!(i, "Invalid type {ty} of integer arithmetic operation")
+                    py_type_error!(i, "Invalid type {ty:?} of integer arithmetic operation")
                 }
             },
             // Arithmetic operations only supported for floating-point numbers
             BinOp::Pow => {
                 match ty.get_scalar_elem_size() {
                     Some(ElemSize::F32 | ElemSize::F64) => Ok(ty),
-                    _ => py_type_error!(i, "Invalid type {ty} of floating-point \
+                    _ => py_type_error!(i, "Invalid type {ty:?} of floating-point \
                                             arithmetic operation")
                 }
             },
@@ -584,7 +585,7 @@ fn type_check_binop(
                 if env.is_bool_scalar(&ty) {
                     Ok(ty)
                 } else {
-                    py_type_error!(i, "Invalid type {ty} of boolean operation")
+                    py_type_error!(i, "Invalid type {ty:?} of boolean operation")
                 }
             },
             // Bitwise operations
@@ -592,7 +593,7 @@ fn type_check_binop(
                 if env.is_int_scalar(&ty) {
                     Ok(ty)
                 } else {
-                    py_type_error!(i, "Invalid type {ty} of bitwise operation")
+                    py_type_error!(i, "Invalid type {ty:?} of bitwise operation")
                 }
             },
             // Boolean comparison operations, allowing comparison between elementary types
@@ -600,7 +601,7 @@ fn type_check_binop(
                 if env.is_scalar(&ty) {
                     Ok(Type::Tensor {sz: ElemSize::Bool, shape: vec![]})
                 } else {
-                    py_type_error!(i, "Invalid type {ty} of boolean comparison operation")
+                    py_type_error!(i, "Invalid type {ty:?} of boolean comparison operation")
                 }
             },
             // Comparison operations on arithmetic types
@@ -608,7 +609,7 @@ fn type_check_binop(
                 if env.is_int_scalar(&ty) || env.is_float_scalar(&ty) {
                     Ok(ty)
                 } else {
-                    py_type_error!(i, "Invalid type {ty} of comparison operation")
+                    py_type_error!(i, "Invalid type {ty:?} of comparison operation")
                 }
             }
             BinOp::Atan2 => {
@@ -741,7 +742,7 @@ fn type_check_indexing(
                 .collect::<Vec<Type>>();
             Ok(Type::Tuple {elems: expected_types})
         },
-        ty => py_type_error!(i, "Unsupported index of type {ty} in subscript operation")
+        ty => py_type_error!(i, "Unsupported index of type {ty:?} in subscript operation")
     }?;
     let idx = coerce_type(&env, idx, &expected_ty)?;
     Ok((env, elem_ty, idx))
@@ -794,7 +795,7 @@ pub fn type_check_expr(
                 let els = Box::new(coerce_type(&env, els, &ty)?);
                 Ok((env, Expr::IfExpr {cond: Box::new(cond), thn, els, ty, i}))
             } else {
-                py_type_error!(i, "If expression has condition of invalid type {ty}")
+                py_type_error!(i, "If expression has condition of invalid type {ty:?}")
             }
         },
         Expr::Subscript {target, idx, i, ..} => {
@@ -806,7 +807,7 @@ pub fn type_check_expr(
                             let idx_ty = Type::String;
                             Ok((env, ty.clone(), Expr::String {v, ty: idx_ty, i}))
                         } else {
-                            py_type_error!(i, "Field {v} not present in {0}", target.get_type())
+                            py_type_error!(i, "Field {v} not present in type {0:?}", target.get_type())
                         }
                     } else {
                         py_type_error!(i, "Cannot index using a string on non-dict expression")
@@ -907,7 +908,7 @@ fn validate_condition_type(cond: Expr, i: &Info) -> PyResult<Expr> {
     let ty = cond.get_type();
     match ty {
         Type::Tensor {..} => Ok(cond),
-        _ => py_type_error!(i, "Unsupported type {ty} of conditional expression")
+        _ => py_type_error!(i, "Unsupported type {ty:?} of conditional expression")
     }
 }
 
