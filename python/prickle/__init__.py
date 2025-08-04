@@ -1,6 +1,5 @@
-from . import prickle
 from .prickle import par, seq, CompileBackend, CompileOptions
-from . import backend, buffer, compile, key, validate
+from . import backend, buffer
 from .buffer import sync
 from .compile import clear_cache
 from .operators import *
@@ -70,6 +69,9 @@ def check_kwargs(kwargs):
     return opts
 
 def compile_function(ir_ast, args, opts):
+    from .compile import build_shared_library, get_wrapper, is_cached
+    from .key import generate_fast_cache_key, generate_function_key
+
     # Extract the name of the main function in the IR AST.
     name = prickle.get_function_name(ir_ast)
 
@@ -77,7 +79,7 @@ def compile_function(ir_ast, args, opts):
     # compile options. If this key is found in the cache, we have already
     # compiled the function in this way before, so we return the cached wrapper
     # function.
-    fast_cache_key = key.generate_fast_cache_key(ir_ast, args, opts)
+    fast_cache_key = generate_fast_cache_key(ir_ast, args, opts)
     if fast_cache_key in fun_cache:
         return fun_cache[fast_cache_key]
 
@@ -88,13 +90,13 @@ def compile_function(ir_ast, args, opts):
 
     # If the shared library corresponding to the generated code does not exist,
     # we run the underlying compiler to produce a shared library.
-    cache_key = key.generate_function_key(unsymb_code, opts)
-    if not compile.is_cached(cache_key):
-        compile.build_shared_library(cache_key, code, opts)
+    cache_key = generate_function_key(unsymb_code, opts)
+    if not is_cached(cache_key):
+        build_shared_library(cache_key, code, opts)
 
     # Return a wrapper function which ensures the arguments are correctly
     # passed to the exposed shared library function.
-    wrap_fn = compile.get_wrapper(name, cache_key, opts)
+    wrap_fn = get_wrapper(name, cache_key, opts)
     fun_cache[fast_cache_key] = wrap_fn
     return wrap_fn
 
@@ -114,12 +116,15 @@ def declare_external(fun_name, params, res_ty, header, backend):
     ext_decls[fun_name] = ext_decl
 
 def compile_string(fun_name, code, opts=prickle.CompileOptions()):
+    from .compile import build_shared_library, get_wrapper
+    from .key import generate_function_key
+    from .validate import check_arguments
     opts = backend.resolve(opts, True)
-    cache_key = "string_" + key.generate_function_key(code, opts)
-    compile.build_shared_library(cache_key, code, opts)
-    fn = compile.get_wrapper(fun_name, cache_key, opts)
+    cache_key = "string_" + generate_function_key(code, opts)
+    build_shared_library(cache_key, code, opts)
+    fn = get_wrapper(fun_name, cache_key, opts)
     def inner(*args):
-        callbacks, args = validate.check_arguments(args, opts, True)
+        callbacks, args = check_arguments(args, opts, True)
         fn(*args)
         run_callbacks(callbacks, opts)
     inner.__name__ = fun_name
@@ -131,12 +136,13 @@ def print_compiled(fun, args, opts=prickle.CompileOptions()):
     arguments and parallelization arguments. Returns the resulting CUDA C++
     code.
     """
+    from .validate import check_arguments
     opts = backend.resolve(opts, False)
     if fun in ir_asts:
         ir_ast = ir_asts[fun]
     else:
         ir_ast = convert_python_function_to_ir(fun)
-    _, args = validate.check_arguments(args, opts, False)
+    _, args = check_arguments(args, opts, False)
     top_map = get_tops()
     code, _ = prickle.compile_ir(ir_ast, args, opts, top_map)
     return code
@@ -148,11 +154,12 @@ def jit(fun):
     time the function is used, the IR AST is JIT compiled based on the types of
     the provided arguments.
     """
+    from .validate import check_arguments
     ir_ast = convert_python_function_to_ir(fun)
 
     def inner(*args, **kwargs):
         opts = backend.resolve(check_kwargs(kwargs), True)
-        callbacks, args = validate.check_arguments(args, opts, True)
+        callbacks, args = check_arguments(args, opts, True)
         # If the user explicitly requests sequential execution by setting the 'seq'
         # keyword argument to True, we call the original Python function.
         if opts.seq:
