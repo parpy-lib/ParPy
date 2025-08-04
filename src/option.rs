@@ -33,6 +33,11 @@ pub struct CompileOptions {
     #[pyo3(get, set)]
     pub verbose_backend_resolution: bool,
 
+    // Enable to have the compiler report the time spent in various passes and print the AST after
+    // each major transformation pass.
+    #[pyo3(get, set)]
+    pub debug_print: bool,
+
     ///////////////////
     // CODEGEN FLAGS //
     ///////////////////
@@ -54,11 +59,6 @@ pub struct CompileOptions {
 
     #[pyo3(get, set)]
     pub use_cuda_graphs: bool,
-
-    // Enable to have the compiler report the time spent in various passes and print the AST after
-    // each major transformation pass.
-    #[pyo3(get, set)]
-    pub debug_print: bool,
 
     /////////////////
     // BUILD FLAGS //

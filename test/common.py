@@ -48,10 +48,14 @@ def seq_opts(backend):
     opts = prickle.CompileOptions()
     opts.backend = backend
     opts.seq = True
+    opts.verbose_backend_resolution = True
+    opts.debug_print = True
     return opts
 
 def par_opts(backend, p):
     opts = prickle.CompileOptions()
     opts.backend = backend
     opts.parallelize = p
+    opts.verbose_backend_resolution = True
+    opts.debug_print = True
     return opts
