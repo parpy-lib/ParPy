@@ -211,3 +211,90 @@ def test_invalid_backend_call(backend):
             f(x, opts=par_opts(backend, {}))
         assert e_info.match(r"Call to unknown function zero.*")
     run_if_backend_is_enabled(backend, helper)
+
+def clamp_helper(ext_id):
+    import prickle.types as types
+    params = [("x", types.F32), ("lo", types.F32), ("hi", types.F32)]
+    res_ty = types.F32
+    backend = prickle.CompileBackend.Cuda
+    prickle.declare_external(
+        "clamp", ext_id, params, res_ty, "<test_utils.h>", backend
+    )
+    # Clear the function cache to ensure we do not refer to a 'clamp_many'
+    # defined in a preceding test.
+    prickle.fun_cache = {}
+
+    @prickle.jit
+    def clamp_many(out, x):
+        prickle.label('N')
+        out[:] = clamp(x[:], 0.0, 10.0)
+    x = torch.randn(10, dtype=torch.float32)
+    out = torch.zeros_like(x)
+    opts = par_opts(backend, {'N': prickle.threads(10)})
+    opts.includes += ["test/code"]
+    clamp_many(out, x, opts=opts)
+    assert all(out >= 0.0) and all(out <= 10.0)
+
+def test_call_user_defined_external_cuda():
+    def helper():
+        clamp_helper("clamp")
+    run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
+
+def test_call_non_existent_external_cuda():
+    def helper():
+        with pytest.raises(RuntimeError, match="Compilation of generated CUDA code failed"):
+            clamp_helper("clamp_non_existent")
+    run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
+
+def test_call_invalid_decl_external_cuda():
+    def helper():
+        with pytest.raises(RuntimeError, match="Compilation of generated CUDA code failed"):
+            clamp_helper("clamp_non_device")
+    run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
+
+def test_call_external_array_op_cuda():
+    backend = prickle.CompileBackend.Cuda
+    def helper():
+        import prickle.types as types
+        params = [("x", types.pointer(types.F64)), ("n", types.I64)]
+        res_ty = types.F64
+        prickle.declare_external(
+            "sum_row", "sum_row_ext", params, res_ty, "<test_utils.h>", backend
+        )
+
+        @prickle.jit
+        def sum_ext_seq(x, y, N, M):
+            prickle.label('N')
+            for i in range(N):
+                y[i] = sum_row(x[i], M)
+        x = torch.randn(10, 20, dtype=torch.float64)
+        y = torch.zeros(10, dtype=torch.float64)
+        opts = par_opts(backend, {'N': prickle.threads(10)})
+        opts.includes += ['test/code']
+        sum_ext_seq(x, y, 10, 20, opts=opts)
+        assert torch.allclose(y, torch.sum(x, dim=1))
+    run_if_backend_is_enabled(backend, helper)
+
+def test_call_external_inconsistent_shapes_cuda():
+    backend = prickle.CompileBackend.Cuda
+    def helper():
+        import prickle.types as types
+        params = [("x", types.pointer(types.F64)), ("n", types.I64)]
+        res_ty = types.F64
+        prickle.declare_external(
+            "sum_row", "sum_row_ext", params, res_ty, "<test_utils.h>", backend
+        )
+
+        with pytest.raises(TypeError, match="incompatible types"):
+            @prickle.jit
+            def sum_ext_seq(out, x, y):
+                with prickle.gpu:
+                    out[0] = sum_row(x, 10) + sum_row(y, 20)
+            x = torch.randn(10, dtype=torch.float64)
+            y = torch.randn(20, dtype=torch.float64)
+            out = torch.zeros(1, dtype=torch.float64)
+            opts = par_opts(backend, {})
+            opts.includes += ['test/code']
+            sum_ext_seq(out, x, y, opts=opts)
+            assert torch.allclose(out, torch.sum(x) + torch.sum(y))
+    run_if_backend_is_enabled(backend, helper)

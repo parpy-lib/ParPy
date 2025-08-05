@@ -17,6 +17,10 @@ pub fn scalar(sz: ElemSize) -> Type {
     Type::Tensor {sz, shape: vec![]}
 }
 
+pub fn pointer(sz: ElemSize) -> Type {
+    Type::Pointer {sz}
+}
+
 pub fn dict_ty(fields: Vec<(&str, Type)>) -> Type {
     let fields = fields.into_iter()
         .map(|(s, ty)| (s.to_string(), ty))

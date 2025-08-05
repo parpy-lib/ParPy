@@ -80,14 +80,16 @@ def test_empty_return():
     assert e_info.match(r"Empty return statements are not supported")
 
 def test_return_in_main_function():
-    if not (any([prickle.backend.is_enabled(b) for b in compiler_backends])):
-        pass
+    enabled_backends = [b for b in compiler_backends if prickle.backend.is_enabled(b)]
+    if len(enabled_backends) == 0:
+        pytest.skip("No available backends to use for compilation")
     else:
         @prickle.jit
         def f_return(x):
             with prickle.gpu:
                 y = prickle.sum(x[:])
                 return y
+        backend = enabled_backends[0]
         with pytest.raises(RuntimeError) as e_info:
-            f_return(np.ndarray(10))
+            f_return(np.ndarray(10), opts=par_opts(backend, {}))
         assert e_info.match(r"The called function f_return cannot return a value")

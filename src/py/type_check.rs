@@ -345,6 +345,13 @@ fn lub_type(env: &TypeCheckEnv, l: Type, r: Type, i: &Info) -> PyResult<Type> {
                 }
             }
         },
+        (Type::Tensor {sz: lsz, shape}, Type::Pointer {sz: rsz}) |
+        (Type::Pointer {sz: lsz}, Type::Tensor {sz: rsz, shape})
+        if !shape.is_empty() && lsz == rsz => {
+            // Pointer types are like (non-scalar) tensor types but with an unknown shape.
+            // Therefore, pointer types can be unified with tensors of any shape.
+            Ok(Type::Tensor {sz: lsz.clone(), shape: shape.clone()})
+        },
         _ if l.eq(&r) => Ok(l),
         _ => py_type_error!(i, "Cannot unify incompatible types {l:?} and {r:?}")
     }
@@ -1375,6 +1382,18 @@ mod test {
             Type::Tensor {shape, ..} => assert_eq!(shape, vec![5, 10]),
             _ => panic!("Unexpected result type")
         }
+    }
+
+    #[test]
+    fn lub_type_scalar_and_pointer() {
+        test_lub_type_fail(scalar(ElemSize::F32), pointer(ElemSize::F32));
+    }
+
+    #[test]
+    fn lub_type_tensor_and_pointer() {
+        let ty1 = Type::Tensor {sz: ElemSize::F32, shape: vec![10]};
+        let ty2 = pointer(ElemSize::F32);
+        test_lub_type_ok(ty1.clone(), ty2, ty1);
     }
 
     fn var(s: &str) -> Name {
