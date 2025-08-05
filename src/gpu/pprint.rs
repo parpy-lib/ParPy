@@ -445,7 +445,12 @@ impl PrettyPrint for Top {
             Top::ExtDecl {ret_ty, id, params, header} => {
                 let (env, ret_ty) = ret_ty.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
-                (env, format!("extern {ret_ty} {id}({params}); // {header}"))
+                let header_str = if let Some(h) = header {
+                    format!(" // {h}")
+                } else {
+                    format!("")
+                };
+                (env, format!("extern {ret_ty} {id}({params});{header_str}"))
             },
             Top::KernelFunDef {attrs, id, params, body} => {
                 let (env, attrs) = pprint_iter(attrs.iter(), env, "\n");

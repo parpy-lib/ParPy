@@ -248,7 +248,9 @@ fn from_gpu_ir_top(
         gpu_ast::Top::ExtDecl {ret_ty, id, params, header} => {
             let ret_ty = from_gpu_ir_type(ret_ty);
             let params = from_gpu_ir_params(params);
-            includes.push(Top::Include {header});
+            if let Some(h) = header {
+                includes.push(Top::Include {header: h});
+            };
             tops.push(Top::ExtDecl {ret_ty, id, params});
         },
         gpu_ast::Top::KernelFunDef {attrs, id, params, body} => {

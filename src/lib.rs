@@ -42,7 +42,7 @@ fn make_external_declaration<'py>(
     id: String,
     params: Vec<(String, py::ext::ExtType)>,
     res_ty: py::ext::ExtType,
-    header: String,
+    header: Option<String>,
     backend: option::CompileBackend,
     info: (String, usize, usize, usize, usize),
     py: Python<'py>

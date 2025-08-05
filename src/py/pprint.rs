@@ -315,9 +315,14 @@ impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
             Top::ExtDecl {id, params, res_ty, header, ..} => {
+                let env = env.incr_indent();
+                let indent = env.print_indent();
+                let env = env.decr_indent();
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let (env, res_ty) = res_ty.pprint(env);
-                (env, format!("def {id}({params}) -> {res_ty}:\n  \"\"\" {header} \"\"\""))
+                let header_str = header.clone().unwrap_or("".to_string());
+                (env, format!("def {id}({params}) -> {res_ty}:\n{indent}\
+                               \"\"\" {header_str} \"\"\""))
             },
             Top::FunDef {v} => v.pprint(env),
         }

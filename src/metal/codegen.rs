@@ -301,7 +301,9 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
             let env = CodegenEnv::new(&gpu_ast::Target::Device);
             let ret_ty = from_gpu_ir_type(&env, ret_ty, &Info::default())?;
             let params = from_gpu_ir_params(&env, params, false)?;
-            acc.metal.push(Top::Include {header});
+            if let Some(h) = header {
+                acc.metal.push(Top::Include {header: h});
+            };
             acc.metal.push(Top::ExtDecl {ret_ty, id, params});
             Ok(acc)
         },
