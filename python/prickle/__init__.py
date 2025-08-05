@@ -121,8 +121,11 @@ def declare_external(py_name, ext_name, params, res_ty, header, backend):
     from .prickle import make_external_declaration
     import inspect
     caller = inspect.getframeinfo(inspect.stack()[1][0])
-    p = caller.positions
-    i = (caller.filename, p.lineno, p.col_offset, p.end_lineno, p.end_col_offset)
+    if hasattr(caller, "positions"):
+        p = caller.positions
+        i = (caller.filename, p.lineno, p.col_offset, p.end_lineno, p.end_col_offset)
+    else:
+        i = None
     ext_decl = make_external_declaration(py_name, ext_name, params, res_ty, header, i)
     if not backend in ext_decls:
         ext_decls[backend] = {}

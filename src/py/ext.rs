@@ -29,10 +29,13 @@ pub fn make_declaration(
     params: Vec<(String, ExtType)>,
     res_ty: ExtType,
     header: Option<String>,
-    info: (String, usize, usize, usize, usize)
+    info: Option<(String, usize, usize, usize, usize)>
 ) -> Top {
-    let (f, l1, c1, l2, c2) = info;
-    let i = Info::new(&f, FilePos::new(l1, c1), FilePos::new(l2, c2));
+    let i = if let Some((f, l1, c1, l2, c2)) = info {
+        Info::new(&f, FilePos::new(l1, c1), FilePos::new(l2, c2))
+    } else {
+        Info::default()
+    };
     let params = params.into_iter()
         .map(|(id, ty)| to_param(id, ty, &i))
         .collect::<Vec<Param>>();
@@ -73,7 +76,7 @@ mod test {
         let res_ty = ExtType::Scalar(ElemSize::I32);
         let info = ("file.cpp".to_string(), 1, 1, 1, 10);
         let decl = make_declaration(
-            id.clone(), ext_id.clone(), params, res_ty, None, info
+            id.clone(), ext_id.clone(), params, res_ty, None, Some(info)
         );
         if let Top::ExtDecl {id, ext_id, params, res_ty, header, i} = decl {
             assert_eq!(id.get_str(), "popcount");

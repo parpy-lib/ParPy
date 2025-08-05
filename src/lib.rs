@@ -44,7 +44,7 @@ fn make_external_declaration<'py>(
     params: Vec<(String, py::ext::ExtType)>,
     res_ty: py::ext::ExtType,
     header: Option<String>,
-    info: (String, usize, usize, usize, usize),
+    info: Option<(String, usize, usize, usize, usize)>,
     py: Python<'py>
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let t = py::ext::make_declaration(id, ext_id, params, res_ty, header, info);
