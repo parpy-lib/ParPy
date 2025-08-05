@@ -1,11 +1,12 @@
 from .prickle import par, seq, CompileBackend, CompileOptions
-from . import backend, buffer
+from . import backend, buffer, types
 from .buffer import sync
 from .compile import clear_cache
 from .operators import *
 
 ir_asts = {}
-ext_defs = {}
+ext_decls = {}
+_ext_tops = {}
 fun_cache = {}
 
 def threads(n):
@@ -16,9 +17,16 @@ def reduce():
     from .prickle import LoopPar
     return LoopPar().reduce()
 
-def get_tops():
+def get_tops(backend):
     ast_tops = {k.__name__: v for k, v in ir_asts.items()}
-    return {**ast_tops, **ext_defs}
+    if backend is not None:
+        if backend in ext_decls:
+            ext_tops = ext_decls[backend]
+        else:
+            ext_tops = {}
+    else:
+        ext_tops = _ext_tops
+    return {**ast_tops, **ext_tops}
 
 def convert_python_function_to_ir(fn):
     import ast as python_ast
@@ -43,7 +51,7 @@ def convert_python_function_to_ir(fn):
     # Convert the Python representation of the AST to a Python-like
     # representation in the compiler. As part of this step, we inline any
     # references to previously parsed functions.
-    top_map = get_tops()
+    top_map = get_tops(None)
     return prickle.python_to_ir(ast, filepath, fst_line-1, col_ofs, top_map)
 
 def check_kwarg(kwargs, key, default_value, expected_ty):
@@ -85,7 +93,7 @@ def compile_function(ir_ast, args, opts):
 
     # Generate the code based on the provided IR AST, arguments and compilation
     # options.
-    top_map = get_tops()
+    top_map = get_tops(opts.backend)
     code, unsymb_code = prickle.compile_ir(ir_ast, args, opts, top_map)
 
     # If the shared library corresponding to the generated code does not exist,
@@ -106,14 +114,20 @@ def run_callbacks(callbacks, opts):
         for cb in callbacks:
             cb()
 
-def declare_external(fun_name, params, res_ty, header, backend):
+def declare_external(py_name, ext_name, params, res_ty, header, backend):
+    """
+    Declares external functions accessible from JIT-compiled functions.
+    """
     from .prickle import make_external_declaration
     import inspect
     caller = inspect.getframeinfo(inspect.stack()[1][0])
-    p = caller.position
+    p = caller.positions
     i = (caller.filename, p.lineno, p.col_offset, p.end_lineno, p.end_col_offset)
-    ext_decl = make_external_declaration(fun_name, params, res_ty, header, backend, i)
-    ext_decls[fun_name] = ext_decl
+    ext_decl = make_external_declaration(py_name, ext_name, params, res_ty, header, i)
+    if not backend in ext_decls:
+        ext_decls[backend] = {}
+    ext_decls[backend][py_name] = ext_decl
+    _ext_tops[py_name] = ext_decl
 
 def compile_string(fun_name, code, opts=prickle.CompileOptions()):
     from .compile import build_shared_library, get_wrapper
@@ -143,7 +157,7 @@ def print_compiled(fun, args, opts=prickle.CompileOptions()):
     else:
         ir_ast = convert_python_function_to_ir(fun)
     _, args = check_arguments(args, opts, False)
-    top_map = get_tops()
+    top_map = get_tops(opts.backend)
     code, _ = prickle.compile_ir(ir_ast, args, opts, top_map)
     return code
 

@@ -1066,7 +1066,7 @@ fn extract_param_types(id: &String, params: &Vec<Param>) -> (String, Vec<Type>) 
 
 fn extract_param_types_top(t: &Top) -> (String, Vec<Type>) {
     match t {
-        Top::ExtDecl {id, params, ..} => extract_param_types(id, &params),
+        Top::ExtDecl {id, params, ..} |
         Top::FunDef {v: FunDef {id, params, ..}} => extract_param_types(id.get_str(), &params),
     }
 }

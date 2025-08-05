@@ -1,4 +1,3 @@
-use crate::option::CompileBackend;
 use crate::utils::ast::ExprType;
 use crate::utils::info::*;
 use crate::utils::name::Name;
@@ -552,8 +551,8 @@ pub struct FunDef {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Top {
     ExtDecl {
-        id: String, params: Vec<Param>, res_ty: Type, header: Option<String>,
-        backend: CompileBackend, i: Info
+        id: Name, ext_id: String, params: Vec<Param>, res_ty: Type,
+        header: Option<String>, i: Info
     },
     FunDef {v: FunDef},
 }

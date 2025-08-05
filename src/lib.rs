@@ -40,14 +40,14 @@ fn python_to_ir<'py>(
 #[pyfunction]
 fn make_external_declaration<'py>(
     id: String,
+    ext_id: String,
     params: Vec<(String, py::ext::ExtType)>,
     res_ty: py::ext::ExtType,
     header: Option<String>,
-    backend: option::CompileBackend,
     info: (String, usize, usize, usize, usize),
     py: Python<'py>
 ) -> PyResult<Bound<'py, PyCapsule>> {
-    let t = py::ext::make_declaration(id, params, res_ty, header, backend, info);
+    let t = py::ext::make_declaration(id, ext_id, params, res_ty, header, info);
     Ok(PyCapsule::new::<py::ast::Top>(py, t, None)?)
 }
 
@@ -65,7 +65,7 @@ fn get_function_name<'py>(cap: Bound<'py, PyCapsule>) -> String {
         cap.reference()
     };
     match untyped_def {
-        py::ast::Top::ExtDecl {id, ..} => id.clone(),
+        py::ast::Top::ExtDecl {id, ..} |
         py::ast::Top::FunDef {v: py::ast::FunDef {id, ..}} => id.get_str().clone(),
     }
 }
@@ -132,6 +132,7 @@ fn prickle(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<option::CompileOptions>()?;
     m.add_class::<utils::ast::ElemSize>()?;
     m.add_class::<buffer::DataType>()?;
+    m.add_class::<py::ext::ExtType>()?;
     Ok(())
 }
 

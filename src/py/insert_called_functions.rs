@@ -10,58 +10,61 @@ use pyo3::types::PyCapsule;
 use std::collections::BTreeMap;
 
 fn collect_called_functions_expr<'py>(
-    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>,
+    tops: &BTreeMap<String, Bound<'py, PyCapsule>>,
     acc: Vec<String>,
     e: &Expr
 ) -> PyResult<Vec<String>> {
     match e {
         Expr::Call {id, args, i, ..} => {
             let mut acc = args.sfold_result(Ok(acc), |acc, e| {
-                collect_called_functions_expr(ir_asts, acc, e)
+                collect_called_functions_expr(tops, acc, e)
             })?;
-            if let Some(ast_ref) = ir_asts.get(id) {
-                // If we have not yet considered this function, we add it to the set and
-                // recursively collect functions called from this function.
+            if let Some(ast_ref) = tops.get(id) {
+                // If this function has not been included yet, we include it. If it is a
+                // user-defined function in Prickle, we recursively consider the body of this
+                // function.
                 if !acc.contains(id) {
                     acc.push(id.clone());
-                    let def = unsafe { ast_ref.reference::<FunDef>() };
-                    acc.append(&mut collect_called_functions(ir_asts, def)?);
+                    let t = unsafe { ast_ref.reference::<Top>() };
+                    if let Top::FunDef {v} = t {
+                        acc.append(&mut collect_called_functions(tops, v)?);
+                    };
                 }
                 Ok(acc)
             } else {
                 py_runtime_error!(i, "Call to unknown function {id}")
             }
         }
-        _ => e.sfold_result(Ok(acc), |acc, e| collect_called_functions_expr(ir_asts, acc, e))
+        _ => e.sfold_result(Ok(acc), |acc, e| collect_called_functions_expr(tops, acc, e))
     }
 }
 
 fn collect_called_functions_stmt<'py>(
-    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>,
+    tops: &BTreeMap<String, Bound<'py, PyCapsule>>,
     acc: Vec<String>,
     s: &Stmt
 ) -> PyResult<Vec<String>> {
-    let acc = s.sfold_result(Ok(acc), |acc, s| collect_called_functions_stmt(ir_asts, acc, s))?;
-    s.sfold_result(Ok(acc), |acc, e| collect_called_functions_expr(ir_asts, acc, e))
+    let acc = s.sfold_result(Ok(acc), |acc, s| collect_called_functions_stmt(tops, acc, s))?;
+    s.sfold_result(Ok(acc), |acc, e| collect_called_functions_expr(tops, acc, e))
 }
 
 fn collect_called_functions_stmts<'py>(
-    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>,
+    tops: &BTreeMap<String, Bound<'py, PyCapsule>>,
     acc: Vec<String>,
     stmts: &Vec<Stmt>
 ) -> PyResult<Vec<String>> {
-    stmts.sfold_result(Ok(acc), |acc, s| collect_called_functions_stmt(ir_asts, acc, s))
+    stmts.sfold_result(Ok(acc), |acc, s| collect_called_functions_stmt(tops, acc, s))
 }
 
 fn collect_called_functions<'py>(
-    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>,
+    tops: &BTreeMap<String, Bound<'py, PyCapsule>>,
     def: &FunDef
 ) -> PyResult<Vec<String>> {
-    collect_called_functions_stmts(ir_asts, vec![], &def.body)
+    collect_called_functions_stmts(tops, vec![], &def.body)
 }
 
 fn make_ast<'py>(
-    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>,
+    tops: &BTreeMap<String, Bound<'py, PyCapsule>>,
     called_funs: Vec<String>,
     main: FunDef
 ) -> Ast {
@@ -69,18 +72,17 @@ fn make_ast<'py>(
         .unique()
         .rev()
         .map(|id| {
-            let ast_ref = ir_asts.get(&id).unwrap();
-            let def = unsafe { ast_ref.reference::<FunDef>() };
-            Top::FunDef {v: def.clone()}
+            let ast_ref = tops.get(&id).unwrap();
+            unsafe { ast_ref.reference::<Top>() }.clone()
         })
         .collect::<Vec<Top>>();
     Ast {tops, main}
 }
 
 pub fn apply<'py>(
-    ir_asts: BTreeMap<String, Bound<'py, PyCapsule>>,
+    tops: BTreeMap<String, Bound<'py, PyCapsule>>,
     def: FunDef
 ) -> PyResult<Ast> {
-    let called_funs = collect_called_functions(&ir_asts, &def)?;
-    Ok(make_ast(&ir_asts, called_funs, def))
+    let called_funs = collect_called_functions(&tops, &def)?;
+    Ok(make_ast(&tops, called_funs, def))
 }

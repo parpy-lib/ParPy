@@ -524,10 +524,12 @@ impl PrettyPrint for Top {
                     (env, format!("using namespace {ns};"))
                 }
             },
-            Top::ExtDecl {ret_ty, id, params} => {
-                let (env, ret_ty) = ret_ty.pprint(env);
-                let (env, params) = pprint_iter(params.iter(), env, ", ");
-                (env, format!("extern __device__ {ret_ty} {id}({params});"))
+            Top::ExtDecl {ret_ty: _, id, ext_id, params} => {
+                let (env, id) = id.pprint(env);
+                let param_ids = params.iter()
+                    .map(|Param {id, ..}| id.get_str())
+                    .join(", ");
+                (env, format!("#define {id}({0}) {ext_id}({0})", param_ids))
             },
             Top::StructDef {id, fields} => {
                 let (env, id) = id.pprint(env);

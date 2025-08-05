@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 
-#[pyclass(eq, eq_int)]
-#[derive(Clone, Debug, PartialEq)]
+#[pyclass(eq, eq_int, hash, frozen)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub enum CompileBackend {
     Auto, Cuda, Metal
 }

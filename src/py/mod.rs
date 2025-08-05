@@ -56,7 +56,7 @@ pub fn specialize_ast_on_arguments<'py>(
     t: ast::Top,
     args: Vec<Bound<'py, PyAny>>,
     opts: &CompileOptions,
-    ir_asts: BTreeMap<String, Bound<'py, PyCapsule>>,
+    tops: BTreeMap<String, Bound<'py, PyCapsule>>,
     debug_env: &debug::DebugEnv
 ) -> PyResult<ast::Ast> {
     // We expect the top to contain a function definition, but it could also be an external
@@ -90,7 +90,7 @@ pub fn specialize_ast_on_arguments<'py>(
     let def = inline_const::inline_scalar_values(def, &args)?;
     debug_env.print("Python-like AST after inlining", &def);
 
-    let ast = insert_called_functions::apply(ir_asts, def)?;
+    let ast = insert_called_functions::apply(tops, def)?;
 
     // As the types of slice operations involve tensors, we check that the shapes of all operations
     // are valid, ignoring the element types inside tensors. Next, we resolve indices based on the

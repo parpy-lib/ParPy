@@ -442,7 +442,8 @@ impl PrettyPrint for KernelAttribute {
 impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
-            Top::ExtDecl {ret_ty, id, params, header} => {
+            Top::ExtDecl {ret_ty, id, ext_id, params, header} => {
+                let (env, id) = id.pprint(env);
                 let (env, ret_ty) = ret_ty.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let header_str = if let Some(h) = header {
@@ -450,7 +451,7 @@ impl PrettyPrint for Top {
                 } else {
                     format!("")
                 };
-                (env, format!("extern {ret_ty} {id}({params});{header_str}"))
+                (env, format!("extern {ret_ty} {id}({params}) = {ext_id};{header_str}"))
             },
             Top::KernelFunDef {attrs, id, params, body} => {
                 let (env, attrs) = pprint_iter(attrs.iter(), env, "\n");

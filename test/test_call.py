@@ -144,3 +144,70 @@ def test_recursive_call_fails():
                     x[i] = 0.0
                     reset(x, i-1)
     assert e_info.match(r".*unknown function reset.*")
+
+def test_external_declaration():
+    import prickle.types as types
+    params = [("x", types.F32), ("y", types.F32)]
+    res_ty = types.F32
+    pre_len = len(prickle.ext_decls)
+    prickle.declare_external("pow", "powf", params, res_ty, None, prickle.CompileBackend.Cuda)
+    assert len(prickle.ext_decls) > pre_len
+
+def call_external_helper(backend, fn):
+    x = torch.tensor(2.0, dtype=torch.float32)
+    y = torch.zeros(1, dtype=torch.float32)
+    fn(x, y, opts=par_opts(backend, {}))
+    assert torch.allclose(y, torch.sqrt(x))
+
+def call_external_helper_cuda():
+    @prickle.jit
+    def ext_sqrt(x, y):
+        with prickle.gpu:
+            y[0] = sqrt_ext(x)
+    call_external_helper(prickle.CompileBackend.Cuda, ext_sqrt)
+
+def call_external_helper_metal():
+    @prickle.jit
+    def ext_sqrt(x, y):
+        with prickle.gpu:
+            y[0] = sqrt_ext(x)
+    call_external_helper(prickle.CompileBackend.Metal, ext_sqrt)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_call_external(backend):
+    import prickle.types as types
+    def helper():
+        params = [("x", types.F32)]
+        res_ty = types.F32
+        if backend == prickle.CompileBackend.Cuda:
+            prickle.declare_external("sqrt_ext", "sqrtf", params, res_ty, None, backend)
+            call_external_helper_cuda()
+        elif backend == prickle.CompileBackend.Metal:
+            prickle.declare_external("sqrt_ext", "metal::sqrt", params, res_ty, "<metal_math>", backend)
+            call_external_helper_metal()
+        else:
+            raise RuntimeError(f"Unsupported backend {backend}")
+    run_if_backend_is_enabled(backend, helper)
+
+def select_distinct_element(x, l):
+    for y in l:
+        if x != y:
+            return y
+    raise RuntimeError(f"Could not find a distinct element from {x} in list {l}")
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_invalid_backend_call(backend):
+    import prickle.types as types
+    def helper():
+        other_backend = select_distinct_element(backend, compiler_backends)
+        res_ty = types.I32
+        prickle.declare_external("zero", "_zero", [], res_ty, None, other_backend)
+        with pytest.raises(RuntimeError) as e_info:
+            @prickle.jit
+            def f(x):
+                with prickle.gpu:
+                    x[:] = zero()
+            x = torch.zeros(10, dtype=torch.int32)
+            f(x, opts=par_opts(backend, {}))
+        assert e_info.match(r"Call to unknown function zero.*")
+    run_if_backend_is_enabled(backend, helper)

@@ -245,13 +245,13 @@ fn from_gpu_ir_top(
 ) -> CompileResult<(Vec<Top>, Vec<Top>)> {
     let (mut includes, mut tops) = acc?;
     match t {
-        gpu_ast::Top::ExtDecl {ret_ty, id, params, header} => {
+        gpu_ast::Top::ExtDecl {ret_ty, id, ext_id, params, header} => {
             let ret_ty = from_gpu_ir_type(ret_ty);
             let params = from_gpu_ir_params(params);
             if let Some(h) = header {
                 includes.push(Top::Include {header: h});
             };
-            tops.push(Top::ExtDecl {ret_ty, id, params});
+            tops.push(Top::ExtDecl {ret_ty, id, ext_id, params});
         },
         gpu_ast::Top::KernelFunDef {attrs, id, params, body} => {
             let attrs = attrs.into_iter()

@@ -56,44 +56,45 @@ fn substitute_variables_stmt(s: Stmt, sub_map: &BTreeMap<Name, Expr>) -> Stmt {
 fn inline_function_calls_stmt<'py>(
     mut acc: Vec<Stmt>,
     stmt: Stmt,
-    ir_asts: &BTreeMap<String, Bound<'py, PyCapsule>>
+    tops: &BTreeMap<String, Bound<'py, PyCapsule>>
 ) -> PyResult<Vec<Stmt>> {
     match stmt {
         Stmt::Call {func, args, i} => {
-            if let Some(ast_ref) = ir_asts.get(&func) {
+            if let Some(ast_ref) = tops.get(&func) {
                 let t: Top = unsafe { ast_ref.reference::<Top>() }.clone();
-                if let Top::FunDef {v: fun} = t {
-                    let sub_map = construct_sub_map(fun.params, args, &fun.id, &fun.i)?;
-                    let mut body = fun.body.smap(|s| substitute_variables_stmt(s, &sub_map));
-                    acc.append(&mut body);
+                match t {
+                    Top::FunDef {v: fun} => {
+                        let sub_map = construct_sub_map(fun.params, args, &fun.id, &fun.i)?;
+                        let mut body = fun.body.smap(|s| substitute_variables_stmt(s, &sub_map));
+                        acc.append(&mut body);
+                    },
+                    Top::ExtDecl {id, ..} => {
+                        py_runtime_error!(i, "Cannot inline call to external function {id}")?
+                    },
                 }
             } else {
-                py_runtime_error!(
-                    i,
-                    "Reference to unknown function {func}.\n\
-                     Perhaps you forgot to decorate the function with @prickle.jit?"
-                )?
+                py_runtime_error!(i, "Reference to unknown function {func}.")?
             }
         },
         Stmt::For {var, lo, hi, step, body, labels, i} => {
-            let body = inline_function_calls_stmts(body, ir_asts)?;
+            let body = inline_function_calls_stmts(body, tops)?;
             acc.push(Stmt::For {var, lo, hi, step, body, labels, i});
         },
         Stmt::While {cond, body, i} => {
-            let body = inline_function_calls_stmts(body, ir_asts)?;
+            let body = inline_function_calls_stmts(body, tops)?;
             acc.push(Stmt::While {cond, body, i});
         },
         Stmt::If {cond, thn, els, i} => {
-            let thn = inline_function_calls_stmts(thn, ir_asts)?;
-            let els = inline_function_calls_stmts(els, ir_asts)?;
+            let thn = inline_function_calls_stmts(thn, tops)?;
+            let els = inline_function_calls_stmts(els, tops)?;
             acc.push(Stmt::If {cond, thn, els, i});
         },
         Stmt::WithGpuContext {body, i} => {
-            let body = inline_function_calls_stmts(body, ir_asts)?;
+            let body = inline_function_calls_stmts(body, tops)?;
             acc.push(Stmt::WithGpuContext {body, i});
         },
         Stmt::Scope {body, i} => {
-            let body = inline_function_calls_stmts(body, ir_asts)?;
+            let body = inline_function_calls_stmts(body, tops)?;
             acc.push(Stmt::Scope {body, i})
         },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |

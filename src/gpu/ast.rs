@@ -581,7 +581,7 @@ pub enum KernelAttribute {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Top {
-    ExtDecl {ret_ty: Type, id: String, params: Vec<Param>, header: Option<String>},
+    ExtDecl {ret_ty: Type, id: Name, ext_id: String, params: Vec<Param>, header: Option<String>},
     KernelFunDef {attrs: Vec<KernelAttribute>, id: Name, params: Vec<Param>, body: Vec<Stmt>},
     FunDef {ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>, target: Target},
     StructDef {id: Name, fields: Vec<Field>},

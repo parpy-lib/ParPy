@@ -297,14 +297,14 @@ fn from_gpu_ir_attr(
 
 fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc> {
     match top {
-        gpu_ast::Top::ExtDecl {ret_ty, id, params, header} => {
+        gpu_ast::Top::ExtDecl {ret_ty, id, ext_id, params, header} => {
             let env = CodegenEnv::new(&gpu_ast::Target::Device);
             let ret_ty = from_gpu_ir_type(&env, ret_ty, &Info::default())?;
             let params = from_gpu_ir_params(&env, params, false)?;
             if let Some(h) = header {
                 acc.metal.push(Top::Include {header: h});
             };
-            acc.metal.push(Top::ExtDecl {ret_ty, id, params});
+            acc.metal.push(Top::ExtDecl {ret_ty, id, ext_id, params});
             Ok(acc)
         },
         gpu_ast::Top::KernelFunDef {attrs, id, params, body} => {
