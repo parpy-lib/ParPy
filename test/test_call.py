@@ -1,19 +1,20 @@
 import prickle
+import prickle.types
 import pytest
 import torch
 
 from common import *
 
 @prickle.jit
-def prickle_add(x: prickle.float32, y: prickle.float32):
+def prickle_add(x: prickle.types.F32, y: prickle.types.F32):
     return x + y
 
 @prickle.jit
-def prickle_mul(x: prickle.float32, y: prickle.float32):
+def prickle_mul(x: prickle.types.F32, y: prickle.types.F32):
     return x * y
 
 @prickle.jit
-def prickle_add_mul(x: prickle.float32, y: prickle.float32, z: prickle.float32):
+def prickle_add_mul(x: prickle.types.F32, y: prickle.types.F32, z: prickle.types.F32):
     return prickle_mul(prickle_add(x, y), z)
 
 @prickle.jit
@@ -149,9 +150,9 @@ def test_external_declaration():
     import prickle.types as types
     params = [("x", types.F32), ("y", types.F32)]
     res_ty = types.F32
-    pre_len = len(prickle.ext_decls)
+    prickle.clear_cache()
     prickle.declare_external("pow", "powf", params, res_ty, None, prickle.CompileBackend.Cuda)
-    assert len(prickle.ext_decls) > pre_len
+    assert len(prickle._ext_decls) == 1
 
 def call_external_helper(backend, fn):
     x = torch.tensor(2.0, dtype=torch.float32)

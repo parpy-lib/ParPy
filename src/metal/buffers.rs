@@ -4,7 +4,6 @@
 // in a kernel launch and deallocate them at the end of the host call.
 
 use crate::gpu::ast::*;
-use crate::utils::ast::ExprType;
 use crate::utils::info::Info;
 use crate::utils::name::Name;
 use crate::utils::smap::*;
@@ -125,19 +124,17 @@ fn convert_scalar_param_to_pointer(
 
 fn update_use_of_converted_scalar_params_expr(conv: &BTreeSet<Name>, e: Expr) -> Expr {
     match e {
-        Expr::Var {ref id, ref i, ..} if conv.contains(&id) => {
-            let i = i.clone();
+        Expr::Var {id, ty, i} if conv.contains(&id) => {
             let ptr_ty = Type::Pointer {
-                ty: Box::new(e.get_type().clone()),
+                ty: Box::new(ty.clone()),
                 mem: MemSpace::Device
             };
             Expr::ArrayAccess {
-                target: Box::new(e),
+                target: Box::new(Expr::Var {id, ty: ptr_ty, i: i.clone()}),
                 idx: Box::new(Expr::Int {
                     v: 0, ty: Type::Scalar {sz: ElemSize::I32}, i: i.clone()
                 }),
-                ty: ptr_ty,
-                i
+                ty, i
             }
         },
         _ => e.smap(|e| update_use_of_converted_scalar_params_expr(conv, e))

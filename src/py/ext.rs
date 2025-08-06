@@ -5,14 +5,14 @@ use crate::utils::name::Name;
 
 use pyo3::pyclass;
 
-#[pyclass(frozen)]
+#[pyclass(eq, frozen)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExtType {
     Scalar(ElemSize),
     Pointer(ElemSize),
 }
 
-fn to_type(ty: ExtType) -> Type {
+pub fn to_type(ty: ExtType) -> Type {
     match ty {
         ExtType::Scalar(sz) => Type::Tensor {sz, shape: vec![]},
         ExtType::Pointer(sz) => Type::Pointer {sz},

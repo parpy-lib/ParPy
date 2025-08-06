@@ -1,50 +1,40 @@
-import ctypes
-import itertools
 import os
-import tempfile
-import torch
-import shutil
-import subprocess
 from pathlib import Path
-from .buffer import PARIR_NATIVE_PATH
-from .prickle import CompileBackend
 
 cache_path = Path(f"{os.path.expanduser('~')}/.cache/prickle")
 cache_path.mkdir(parents=True, exist_ok=True)
 
-def clear_cache():
-    shutil.rmtree(f"{cache_path}")
-    cache_path.mkdir(parents=True, exist_ok=True)
-
-def get_library_path(key):
+def _get_library_path(key):
     return cache_path / f"{key}-lib.so"
 
-def is_cached(key):
-    libpath = get_library_path(key)
+def _is_cached(key):
+    libpath = _get_library_path(key)
     return os.path.isfile(libpath)
 
-def flatten(xss):
+def _flatten(xss):
     return [x for xs in xss for x in xs]
 
-def build_cuda_shared_library(key, source, opts):
-    libpath = get_library_path(key)
+def _build_cuda_shared_library(key, source, opts):
+    from .buffer import PARIR_NATIVE_PATH
+    import subprocess
+    import tempfile
+    import torch
+    libpath = _get_library_path(key)
 
     # Get the version of the current GPU and generate specialized code for it.
-    # TODO: In the future, we should collect the versions of all GPUs on the
-    # system and compile with all of these in mind.
     major, minor = torch.cuda.get_device_capability()
     arch = f"sm_{major}{minor}"
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
         includes = opts.includes + [str(PARIR_NATIVE_PATH)]
-        include_cmd = flatten([["-I", include] for include in includes])
-        lib_cmd = flatten([["-L", lib] for lib in opts.libs])
+        include_cmd = _flatten([["-I", include] for include in includes])
+        lib_cmd = _flatten([["-L", lib] for lib in opts.libs])
         commands = [
             "-O3", "--shared", "-Xcompiler", "-fPIC", f"-arch={arch}",
             "-x", "cu", tmp.name, "-o", libpath
         ]
-        cmd = flatten([["nvcc"], opts.extra_flags, include_cmd, lib_cmd, commands])
+        cmd = _flatten([["nvcc"], opts.extra_flags, include_cmd, lib_cmd, commands])
         r = subprocess.run(cmd, capture_output=True)
         if r.returncode != 0:
             import uuid
@@ -55,23 +45,26 @@ def build_cuda_shared_library(key, source, opts):
             stderr = r.stderr.decode('ascii')
             raise RuntimeError(f"Compilation of generated CUDA code failed with exit code {r.returncode}:\nstdout:\n{stdout}\nstderr:\n{stderr}\nWrote generated code to file {temp_file}.")
 
-def build_metal_shared_library(key, source, opts):
-    from .buffer import try_load_metal_base_lib, PARIR_METAL_BASE_LIB_PATH
-    libpath = get_library_path(key)
+def _build_metal_shared_library(key, source, opts):
+    from .buffer import PARIR_NATIVE_PATH, PARIR_METAL_BASE_LIB_PATH
+    from .buffer import compile_metal_runtime_lib
+    import subprocess
+    import tempfile
+    libpath = _get_library_path(key)
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
-        try_load_metal_base_lib()
+        compile_metal_runtime_lib()
         metal_cpp_path = os.getenv("METAL_CPP_HEADER_PATH")
         includes = opts.includes + [metal_cpp_path, str(PARIR_NATIVE_PATH)]
         frameworks = ["-framework", "Metal", "-framework", "Foundation", "-framework", "MetalKit"]
-        include_cmd = flatten([["-I", include] for include in includes])
-        lib_cmd = flatten([["-L", lib] for lib in opts.libs])
+        include_cmd = _flatten([["-I", include] for include in includes])
+        lib_cmd = _flatten([["-L", lib] for lib in opts.libs])
         commands = [
             "-O3", "-shared", "-fpic", "-std=c++17", str(PARIR_METAL_BASE_LIB_PATH),
             "-x", "c++", tmp.name, "-o", str(libpath)
         ]
-        cmd = flatten([["clang++"], opts.extra_flags, frameworks, include_cmd, lib_cmd, commands])
+        cmd = _flatten([["clang++"], opts.extra_flags, frameworks, include_cmd, lib_cmd, commands])
         r = subprocess.run(cmd, capture_output=True)
         if r.returncode != 0:
             import uuid
@@ -82,15 +75,9 @@ def build_metal_shared_library(key, source, opts):
             stderr = r.stderr.decode('ascii')
             raise RuntimeError(f"Compilation of generated Metal code failed with exit code {r.returncode}:\nstdout:\n{stdout}\nstderr:\n{stderr}\nWrote generated code to file {temp_file}.")
 
-def build_shared_library(key, source, opts):
-    if opts.backend == CompileBackend.Cuda:
-        build_cuda_shared_library(key, source, opts)
-    elif opts.backend == CompileBackend.Metal:
-        build_metal_shared_library(key, source, opts)
-    else:
-        raise RuntimeError(f"Cannot build for unsupported backend {opts.backend}")
-
-def torch_to_ctype(dtype):
+def _torch_to_ctype(dtype):
+    import ctypes
+    import torch
     mapping = {
         torch.int8: ctypes.c_int8,
         torch.int16: ctypes.c_int16,
@@ -105,10 +92,39 @@ def torch_to_ctype(dtype):
     else:
         raise RuntimeError(f"Unsupported Torch dtype: {dtype}")
 
-def get_wrapper(name, key, opts):
-    from .buffer import Buffer
+def clear_cache():
+    """
+    Clears the cache of compiled shared library files.
+    """
+    import shutil
+    shutil.rmtree(f"{cache_path}")
+    cache_path.mkdir(parents=True, exist_ok=True)
 
-    libpath = get_library_path(key)
+def build_shared_library(key, source, opts):
+    """
+    Builds a shared library from the given source code for the backend
+    specified in the given options. The key is used to identify the source, and
+    is assumed to be unique.
+    """
+    from .prickle import CompileBackend
+    if not _is_cached(key):
+        if opts.backend == CompileBackend.Cuda:
+            _build_cuda_shared_library(key, source, opts)
+        elif opts.backend == CompileBackend.Metal:
+            _build_metal_shared_library(key, source, opts)
+        else:
+            raise RuntimeError(f"Cannot build for unsupported backend {opts.backend}")
+
+def get_wrapper(name, key, opts):
+    """
+    Given a key identifying a compiled shared library, this function produces a
+    wrapper with which users can call the specified low-level function while
+    providing arguments via Python.
+    """
+    from .buffer import Buffer
+    import ctypes
+
+    libpath = _get_library_path(key)
     lib = ctypes.cdll.LoadLibrary(libpath)
 
     # Expand arguments such that each value stored in a dictionary is passed as a

@@ -1,34 +1,25 @@
 from .prickle import par, seq, CompileBackend, CompileOptions
 from . import backend, buffer, types
 from .buffer import sync
-from .compile import clear_cache
 from .operators import *
 
-ir_asts = {}
-ext_decls = {}
+_ir_asts = {}
+_ext_decls = {}
 _ext_tops = {}
-fun_cache = {}
+_fun_cache = {}
 
-def threads(n):
-    from .prickle import LoopPar
-    return LoopPar().threads(n)
-
-def reduce():
-    from .prickle import LoopPar
-    return LoopPar().reduce()
-
-def get_tops(backend):
-    ast_tops = {k.__name__: v for k, v in ir_asts.items()}
+def _get_tops(backend):
+    ast_tops = {k.__name__: v for k, v in _ir_asts.items()}
     if backend is not None:
-        if backend in ext_decls:
-            ext_tops = ext_decls[backend]
+        if backend in _ext_decls:
+            ext_tops = _ext_decls[backend]
         else:
             ext_tops = {}
     else:
         ext_tops = _ext_tops
     return {**ast_tops, **ext_tops}
 
-def convert_python_function_to_ir(fn):
+def _convert_python_function_to_ir(fn):
     import ast as python_ast
     import builtins
     import inspect
@@ -51,10 +42,10 @@ def convert_python_function_to_ir(fn):
     # Convert the Python representation of the AST to a Python-like
     # representation in the compiler. As part of this step, we inline any
     # references to previously parsed functions.
-    top_map = get_tops(None)
+    top_map = _get_tops(None)
     return prickle.python_to_ir(ast, filepath, fst_line-1, col_ofs, top_map)
 
-def check_kwarg(kwargs, key, default_value, expected_ty):
+def _check_kwarg(kwargs, key, default_value, expected_ty):
     if key not in kwargs or kwargs[key] is None:
         return default_value
     elif isinstance(kwargs[key], expected_ty):
@@ -64,9 +55,9 @@ def check_kwarg(kwargs, key, default_value, expected_ty):
     else:
         raise RuntimeError(f"The keyword argument {key} should be of type {ty}")
 
-def check_kwargs(kwargs):
+def _check_kwargs(kwargs):
     default_opts = prickle.CompileOptions()
-    opts = check_kwarg(kwargs, "opts", default_opts, type(default_opts))
+    opts = _check_kwarg(kwargs, "opts", default_opts, type(default_opts))
 
     # If the compiler is given any other keyword arguments than those specified
     # above, it reports an error specifying which keyword arguments were not
@@ -76,8 +67,8 @@ def check_kwargs(kwargs):
 
     return opts
 
-def compile_function(ir_ast, args, opts):
-    from .compile import build_shared_library, get_wrapper, is_cached
+def _compile_function(ir_ast, args, opts):
+    from .compile import build_shared_library, get_wrapper
     from .key import generate_fast_cache_key, generate_function_key
 
     # Extract the name of the main function in the IR AST.
@@ -88,31 +79,54 @@ def compile_function(ir_ast, args, opts):
     # compiled the function in this way before, so we return the cached wrapper
     # function.
     fast_cache_key = generate_fast_cache_key(ir_ast, args, opts)
-    if fast_cache_key in fun_cache:
-        return fun_cache[fast_cache_key]
+    if fast_cache_key in _fun_cache:
+        return _fun_cache[fast_cache_key]
 
     # Generate the code based on the provided IR AST, arguments and compilation
     # options.
-    top_map = get_tops(opts.backend)
+    top_map = _get_tops(opts.backend)
     code, unsymb_code = prickle.compile_ir(ir_ast, args, opts, top_map)
 
     # If the shared library corresponding to the generated code does not exist,
     # we run the underlying compiler to produce a shared library.
     cache_key = generate_function_key(unsymb_code, opts)
-    if not is_cached(cache_key):
-        build_shared_library(cache_key, code, opts)
+    build_shared_library(cache_key, code, opts)
 
     # Return a wrapper function which ensures the arguments are correctly
     # passed to the exposed shared library function.
     wrap_fn = get_wrapper(name, cache_key, opts)
-    fun_cache[fast_cache_key] = wrap_fn
+    _fun_cache[fast_cache_key] = wrap_fn
     return wrap_fn
 
-def run_callbacks(callbacks, opts):
+def _run_callbacks(callbacks, opts):
     if len(callbacks) > 0:
         sync(opts.backend)
         for cb in callbacks:
             cb()
+
+def threads(n):
+    """
+    Produces a LoopPar object (used in parallel specifications) representing a
+    parallel operation over `n` threads.
+    """
+    from .prickle import LoopPar
+    return LoopPar().threads(n)
+
+def reduce():
+    """
+    Produces a LoopPar object (used in parallel specifications) representing a
+    parallelizable reduction.
+    """
+    from .prickle import LoopPar
+    return LoopPar().reduce()
+
+def clear_cache():
+    """
+    Clears the cached shared library files as well as the local function cache.
+    """
+    from .compile import clear_cache
+    clear_cache()
+    _fun_cache = {}
 
 def declare_external(py_name, ext_name, params, res_ty, header, backend):
     """
@@ -127,23 +141,27 @@ def declare_external(py_name, ext_name, params, res_ty, header, backend):
     else:
         i = None
     ext_decl = make_external_declaration(py_name, ext_name, params, res_ty, header, i)
-    if not backend in ext_decls:
-        ext_decls[backend] = {}
-    ext_decls[backend][py_name] = ext_decl
+    if not backend in _ext_decls:
+        _ext_decls[backend] = {}
+    _ext_decls[backend][py_name] = ext_decl
     _ext_tops[py_name] = ext_decl
 
 def compile_string(fun_name, code, opts=prickle.CompileOptions()):
+    """
+    Compiles the code provided as a string and returns a wrapper to the
+    entry point function with the specified name.
+    """
     from .compile import build_shared_library, get_wrapper
     from .key import generate_function_key
     from .validate import check_arguments
-    opts = backend.resolve(opts, True)
+    opts = backend.resolve_backend(opts, True)
     cache_key = "string_" + generate_function_key(code, opts)
     build_shared_library(cache_key, code, opts)
     fn = get_wrapper(fun_name, cache_key, opts)
     def inner(*args):
         callbacks, args = check_arguments(args, opts, True)
         fn(*args)
-        run_callbacks(callbacks, opts)
+        _run_callbacks(callbacks, opts)
     inner.__name__ = fun_name
     return inner
 
@@ -154,13 +172,13 @@ def print_compiled(fun, args, opts=prickle.CompileOptions()):
     code.
     """
     from .validate import check_arguments
-    opts = backend.resolve(opts, False)
-    if fun in ir_asts:
-        ir_ast = ir_asts[fun]
+    opts = backend.resolve_backend(opts, False)
+    if fun in _ir_asts:
+        ir_ast = _ir_asts[fun]
     else:
-        ir_ast = convert_python_function_to_ir(fun)
+        ir_ast = _convert_python_function_to_ir(fun)
     _, args = check_arguments(args, opts, False)
-    top_map = get_tops(opts.backend)
+    top_map = _get_tops(opts.backend)
     code, _ = prickle.compile_ir(ir_ast, args, opts, top_map)
     return code
 
@@ -172,18 +190,18 @@ def jit(fun):
     the provided arguments.
     """
     from .validate import check_arguments
-    ir_ast = convert_python_function_to_ir(fun)
+    ir_ast = _convert_python_function_to_ir(fun)
 
     def inner(*args, **kwargs):
-        opts = backend.resolve(check_kwargs(kwargs), True)
+        opts = backend.resolve_backend(_check_kwargs(kwargs), True)
         callbacks, args = check_arguments(args, opts, True)
         # If the user explicitly requests sequential execution by setting the 'seq'
         # keyword argument to True, we call the original Python function.
         if opts.seq:
             fun(*args)
         else:
-            compile_function(ir_ast, args, opts)(*args)
-        run_callbacks(callbacks, opts)
-    ir_asts[inner] = ir_ast
+            _compile_function(ir_ast, args, opts)(*args)
+        _run_callbacks(callbacks, opts)
+    _ir_asts[inner] = ir_ast
     inner.__name__ = fun.__name__
     return inner

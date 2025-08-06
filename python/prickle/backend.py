@@ -8,13 +8,13 @@ backends = [
     CompileBackend.Metal,
 ]
 
-def assert_cuda_is_enabled():
+def _assert_cuda_is_enabled():
     if not torch.cuda.is_available():
         raise RuntimeError(f"Torch was not built with CUDA support")
     if not shutil.which("nvcc"):
         raise RuntimeError(f"Could not find 'nvcc' in path - it is required to build the generated CUDA C++ code")
 
-def assert_metal_is_enabled():
+def _assert_metal_is_enabled():
     if not torch.backends.mps.is_available():
         raise RuntimeError("Torch was not built with Metal support")
     if os.getenv("METAL_CPP_HEADER_PATH") is None:
@@ -25,11 +25,15 @@ def assert_metal_is_enabled():
                            "environment variable.")
 
 def is_enabled(backend, verbose=False):
+    """
+    Determines whether the specified backend is enabled or not on the current
+    device. The `verbose` flag can be set to `True` to enable detailed output.
+    """
     try:
         if backend == CompileBackend.Cuda:
-            assert_cuda_is_enabled()
+            _assert_cuda_is_enabled()
         elif backend == CompileBackend.Metal:
-            assert_metal_is_enabled()
+            _assert_metal_is_enabled()
         else:
             raise RuntimeError(f"Unsupported backend {backend}")
         return True
@@ -42,12 +46,13 @@ def is_enabled(backend, verbose=False):
 # every time we want to resolve the available backends.
 available = [b for b in backends if is_enabled(b, False)]
 
-# If the provided options specify the backend as 'Auto', this function attempts
-# to resolve it. The result depends on the number of available backends. If
-# exactly one backend is available, the options are updated to use this backend
-# and returned. Otherwise, if none or multiple backends are available, this
-# function raises an error reporting that the automatic selection failed.
-def resolve(opts, strict):
+def resolve_backend(opts, strict):
+    """
+    If the provided options specify the backend as `CompileBackend.Auto`, this
+    function attempts to resolve it by finding a uniquely supported backend. If
+    none or multiple are supported, this function fails, in which case users
+    have to explicitly specify the target backend.
+    """
     if opts.verbose_backend_resolution:
         [b for b in backends if is_enabled(b, True)]
     if opts.backend == CompileBackend.Auto:

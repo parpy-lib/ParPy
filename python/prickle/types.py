@@ -1,5 +1,6 @@
 from .prickle import ElemSize, ExtType
 
+Bool = ExtType.Scalar(ElemSize.Bool)
 I8 = ExtType.Scalar(ElemSize.I8)
 I16 = ExtType.Scalar(ElemSize.I16)
 I32 = ExtType.Scalar(ElemSize.I32)

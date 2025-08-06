@@ -1,8 +1,8 @@
+use super::ast::*;
 use crate::py_runtime_error;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
-use super::ast::*;
 
 use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
@@ -131,68 +131,69 @@ fn eval_name<'py>(s: String, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
     let globals = types::PyDict::new(py);
     globals.set_item("math", py.import("math")?)?;
     globals.set_item("prickle", py.import("prickle")?)?;
+    globals.set_item("prickle.operators", py.import("prickle.operators")?)?;
+    globals.set_item("prickle.types", py.import("prickle.types")?)?;
     py.eval(&CString::new(s)?, Some(&globals), None)
 }
 
 fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Builtin> {
     let py = expr.py();
     let ast = py.import("ast")?;
-    let prickle = py.import("prickle")?;
-    let s = ast.call_method1("unparse", types::PyTuple::new(py, vec![expr])?)?
-        .extract::<String>()?;
+    let prickle_ops = py.import("prickle.operators")?;
+    let s = ast.call_method1("unparse", (expr,))?.extract::<String>()?;
     match eval_name(s, py) {
         Ok(e) => {
-            if e.eq(prickle.getattr("exp")?)? {
+            if e.eq(prickle_ops.getattr("exp")?)? {
                 Ok(Builtin::Exp)
-            } else if e.eq(prickle.getattr("inf")?)? {
+            } else if e.eq(prickle_ops.getattr("inf")?)? {
                 Ok(Builtin::Inf)
-            } else if e.eq(prickle.getattr("log")?)? {
+            } else if e.eq(prickle_ops.getattr("log")?)? {
                 Ok(Builtin::Log)
-            } else if e.eq(prickle.getattr("min")?)? {
+            } else if e.eq(prickle_ops.getattr("min")?)? {
                 Ok(Builtin::Min)
-            } else if e.eq(prickle.getattr("max")?)? {
+            } else if e.eq(prickle_ops.getattr("max")?)? {
                 Ok(Builtin::Max)
-            } else if e.eq(prickle.getattr("abs")?)? {
+            } else if e.eq(prickle_ops.getattr("abs")?)? {
                 Ok(Builtin::Abs)
-            } else if e.eq(prickle.getattr("cos")?)? {
+            } else if e.eq(prickle_ops.getattr("cos")?)? {
                 Ok(Builtin::Cos)
-            } else if e.eq(prickle.getattr("sin")?)? {
+            } else if e.eq(prickle_ops.getattr("sin")?)? {
                 Ok(Builtin::Sin)
-            } else if e.eq(prickle.getattr("sqrt")?)? {
+            } else if e.eq(prickle_ops.getattr("sqrt")?)? {
                 Ok(Builtin::Sqrt)
-            } else if e.eq(prickle.getattr("tanh")?)? {
+            } else if e.eq(prickle_ops.getattr("tanh")?)? {
                 Ok(Builtin::Tanh)
-            } else if e.eq(prickle.getattr("atan2")?)? {
+            } else if e.eq(prickle_ops.getattr("atan2")?)? {
                 Ok(Builtin::Atan2)
-            } else if e.eq(prickle.getattr("sum")?)? {
+            } else if e.eq(prickle_ops.getattr("sum")?)? {
                 Ok(Builtin::Sum)
-            } else if e.eq(prickle.getattr("prod")?)? {
+            } else if e.eq(prickle_ops.getattr("prod")?)? {
                 Ok(Builtin::Prod)
-            } else if e.eq(prickle.getattr("float16")?)? {
+            } else if e.eq(prickle_ops.getattr("float16")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::F16})
-            } else if e.eq(prickle.getattr("float32")?)? {
+            } else if e.eq(prickle_ops.getattr("float32")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::F32})
-            } else if e.eq(prickle.getattr("float64")?)? {
+            } else if e.eq(prickle_ops.getattr("float64")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::F64})
-            } else if e.eq(prickle.getattr("int8")?)? {
+            } else if e.eq(prickle_ops.getattr("int8")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::I8})
-            } else if e.eq(prickle.getattr("int16")?)? {
+            } else if e.eq(prickle_ops.getattr("int16")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::I16})
-            } else if e.eq(prickle.getattr("int32")?)? {
+            } else if e.eq(prickle_ops.getattr("int32")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::I32})
-            } else if e.eq(prickle.getattr("int64")?)? {
+            } else if e.eq(prickle_ops.getattr("int64")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::I64})
-            } else if e.eq(prickle.getattr("uint8")?)? {
+            } else if e.eq(prickle_ops.getattr("uint8")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::U8})
-            } else if e.eq(prickle.getattr("uint16")?)? {
+            } else if e.eq(prickle_ops.getattr("uint16")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::U16})
-            } else if e.eq(prickle.getattr("uint32")?)? {
+            } else if e.eq(prickle_ops.getattr("uint32")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::U32})
-            } else if e.eq(prickle.getattr("uint64")?)? {
+            } else if e.eq(prickle_ops.getattr("uint64")?)? {
                 Ok(Builtin::Convert {sz: ElemSize::U64})
-            } else if e.eq(prickle.getattr("label")?)? {
+            } else if e.eq(prickle_ops.getattr("label")?)? {
                 Ok(Builtin::Label)
-            } else if e.eq(prickle.getattr("gpu")?)? {
+            } else if e.eq(prickle_ops.getattr("gpu")?)? {
                 Ok(Builtin::GpuContext)
             } else {
                 py_runtime_error!(i, "Unknown built-in operator {expr}")
@@ -209,14 +210,44 @@ fn lookup_builtin_expr<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr
     Ok(Expr::Builtin {func, args: vec![], axis: None, ty: Type::Unknown, i: i.clone()})
 }
 
-fn try_extract_type_annotation<'py>(id: &Name, annot: Bound<'py, PyAny>) -> PyResult<Type> {
-    match lookup_builtin(&annot, &Info::default()) {
-        Ok(Builtin::Convert {sz}) => Ok(Type::Tensor {sz, shape: vec![]}),
-        Ok(_) => {
-            let s = id.get_str();
-            py_runtime_error!(Info::default(), "Unknown type annotation of parameter {s}")
+fn try_extract_type_annotation<'py>(annot: Bound<'py, PyAny>, i: &Info) -> PyResult<Type> {
+    let py = annot.py();
+    let ast = py.import("ast")?;
+    let prickle_tys = py.import("prickle.types")?;
+    let s = ast.call_method1("unparse", (annot,))?.extract::<String>()?;
+    match eval_name(s.clone(), py) {
+        Ok(ty) => {
+            if ty.eq(prickle_tys.getattr("Bool")?)? {
+                Ok(Type::Tensor {sz: ElemSize::Bool, shape: vec![]})
+            } else if ty.eq(prickle_tys.getattr("I8")?)? {
+                Ok(Type::Tensor {sz: ElemSize::I8, shape: vec![]})
+            } else if ty.eq(prickle_tys.getattr("I16")?)? {
+                Ok(Type::Tensor {sz: ElemSize::I16, shape: vec![]})
+            } else if ty.eq(prickle_tys.getattr("I32")?)? {
+                Ok(Type::Tensor {sz: ElemSize::I32, shape: vec![]})
+            } else if ty.eq(prickle_tys.getattr("I64")?)? {
+                Ok(Type::Tensor {sz: ElemSize::I64, shape: vec![]})
+            } else if ty.eq(prickle_tys.getattr("U8")?)? {
+                Ok(Type::Tensor {sz: ElemSize::U8, shape: vec![]})
+            } else if ty.eq(prickle_tys.getattr("U16")?)? {
+                Ok(Type::Tensor {sz: ElemSize::U16, shape: vec![]})
+            } else if ty.eq(prickle_tys.getattr("U32")?)? {
+                Ok(Type::Tensor {sz: ElemSize::U32, shape: vec![]})
+            } else if ty.eq(prickle_tys.getattr("U64")?)? {
+                Ok(Type::Tensor {sz: ElemSize::U64, shape: vec![]})
+            } else if ty.eq(prickle_tys.getattr("F16")?)? {
+                Ok(Type::Tensor {sz: ElemSize::F16, shape: vec![]})
+            } else if ty.eq(prickle_tys.getattr("F32")?)? {
+                Ok(Type::Tensor {sz: ElemSize::F32, shape: vec![]})
+            } else if ty.eq(prickle_tys.getattr("F64")?)? {
+                Ok(Type::Tensor {sz: ElemSize::F64, shape: vec![]})
+            } else {
+                py_runtime_error!(i, "Unsupported type annotation: {s}")
+            }
         },
-        Err(_) => Ok(Type::Unknown)
+        Err(_) => {
+            py_runtime_error!(i, "Unsupported type annotation: {s}")
+        }
     }
 }
 
@@ -590,6 +621,31 @@ fn convert_stmts<'py, 'a>(
         .collect::<PyResult<Vec<Stmt>>>()
 }
 
+fn convert_fun_def<'py, 'a>(
+    ast: Bound<'py, PyAny>,
+    env: &'py ConvertEnv<'py, 'a>
+) -> PyResult<FunDef> {
+    let body = ast.getattr("body")?.get_item(0)?;
+    let untyped_args = body.getattr("args")?.getattr("args")?.try_iter()?
+        .map(|arg| {
+            let arg = arg?;
+            let id = Name::new(arg.getattr("arg")?.extract::<String>()?);
+            let i = extract_info(&arg, &env);
+            let annot = arg.getattr("annotation")?;
+            let ty = if annot.is_none() {
+                Ok(Type::Unknown)
+            } else {
+                try_extract_type_annotation(annot, &i)
+            }?;
+            Ok(Param {id, ty, i})
+        })
+        .collect::<PyResult<Vec<Param>>>()?;
+    let id = Name::new(body.getattr("name")?.extract::<String>()?);
+    let ir_body = convert_stmts(body.getattr("body")?, &env)?;
+    let i = merge_body_infos(&ir_body);
+    Ok(FunDef {id, params: untyped_args, body: ir_body, res_ty: Type::Unknown, i})
+}
+
 pub fn to_untyped_ir<'py>(
     ast: Bound<'py, PyAny>,
     filepath: String,
@@ -603,21 +659,7 @@ pub fn to_untyped_ir<'py>(
         filepath: &filepath,
         line_ofs, col_ofs
     };
-
-    let body = ast.getattr("body")?.get_item(0)?;
-    let untyped_args = body.getattr("args")?.getattr("args")?.try_iter()?
-        .map(|arg| {
-            let arg = arg?;
-            let id = Name::new(arg.getattr("arg")?.extract::<String>()?);
-            let i = Info::default();
-            let ty = try_extract_type_annotation(&id, arg.getattr("annotation")?)?;
-            Ok(Param {id, ty, i})
-        })
-        .collect::<PyResult<Vec<Param>>>()?;
-    let id = Name::new(body.getattr("name")?.extract::<String>()?);
-    let ir_body = convert_stmts(body.getattr("body")?, &env)?;
-    let i = merge_body_infos(&ir_body);
-    Ok(FunDef {id, params: untyped_args, body: ir_body, res_ty: Type::Unknown, i})
+    convert_fun_def(ast, &env)
 }
 
 #[cfg(test)]
@@ -627,6 +669,7 @@ mod test {
     use crate::py::ast_builder::*;
 
     use pyo3::types::*;
+    use strum::IntoEnumIterator;
 
     fn parse_str<'py>(
         py: Python<'py>,
@@ -640,15 +683,21 @@ mod test {
         if as_expr {
             py_kwargs.set_item("mode", PyString::new(py, "eval"))?;
         }
-        let ast = ast_module.call_method("parse", py_args, Some(&py_kwargs))?;
-        ast.getattr("body")
+        ast_module.call_method("parse", py_args, Some(&py_kwargs))
+    }
+
+    fn parse_str_fun_def<'py>(
+        py: Python<'py>,
+        s: &str
+    ) -> PyResult<Bound<'py, PyAny>> {
+        parse_str(py, s, false)
     }
 
     fn parse_str_stmts<'py>(
         py: Python<'py>,
         s: &str
     ) -> PyResult<Bound<'py, PyAny>> {
-        parse_str(py, s, false)
+        parse_str_fun_def(py, s)?.getattr("body")
     }
 
     fn parse_str_stmt<'py>(
@@ -662,7 +711,7 @@ mod test {
         py: Python<'py>,
         s: &str
     ) -> PyResult<Bound<'py, PyAny>> {
-        parse_str(py, s, true)
+        parse_str(py, s, true)?.getattr("body")
     }
 
     fn lookup_builtin_ok(
@@ -693,14 +742,14 @@ mod test {
 
     #[test]
     fn lookup_builtin_exp() -> PyResult<()> {
-        lookup_builtin_ok("prickle.exp", Builtin::Exp)?;
+        lookup_builtin_ok("prickle.operators.exp", Builtin::Exp)?;
         lookup_builtin_fail("torch.exp")?;
         lookup_builtin_fail("exp")
     }
 
     #[test]
     fn lookup_builtin_inf() -> PyResult<()> {
-        lookup_builtin_ok("prickle.inf", Builtin::Inf)?;
+        lookup_builtin_ok("prickle.operators.inf", Builtin::Inf)?;
         lookup_builtin_ok("float('inf')", Builtin::Inf)?;
         lookup_builtin_fail("torch.inf")?;
         lookup_builtin_fail("inf")
@@ -708,63 +757,61 @@ mod test {
 
     #[test]
     fn lookup_builtin_log() -> PyResult<()> {
-        lookup_builtin_ok("prickle.log", Builtin::Log)?;
-        lookup_builtin_fail("torch.log")?;
-        lookup_builtin_fail("log")
+        lookup_builtin_ok("prickle.operators.log", Builtin::Log)?;
+        lookup_builtin_fail("torch.log")
     }
 
     #[test]
     fn lookup_builtin_max() -> PyResult<()> {
-        lookup_builtin_ok("prickle.max", Builtin::Max)
+        lookup_builtin_ok("prickle.operators.max", Builtin::Max)
     }
 
     #[test]
     fn lookup_builtin_min() -> PyResult<()> {
-        lookup_builtin_ok("prickle.min", Builtin::Min)
+        lookup_builtin_ok("prickle.operators.min", Builtin::Min)
     }
 
     #[test]
     fn lookup_builtin_reduce_ops() -> PyResult<()> {
-        lookup_builtin_ok("prickle.sum", Builtin::Sum)?;
-        lookup_builtin_ok("prickle.prod", Builtin::Prod)
+        lookup_builtin_ok("prickle.operators.sum", Builtin::Sum)?;
+        lookup_builtin_ok("prickle.operators.prod", Builtin::Prod)
     }
 
     #[test]
     fn lookup_builtin_abs() -> PyResult<()> {
-        lookup_builtin_ok("prickle.abs", Builtin::Abs)?;
-        lookup_builtin_ok("abs", Builtin::Abs)
+        lookup_builtin_ok("prickle.operators.abs", Builtin::Abs)
     }
 
     #[test]
     fn lookup_builtin_conversion() -> PyResult<()> {
-        lookup_builtin_ok("prickle.int8", Builtin::Convert {sz: ElemSize::I8})?;
-        lookup_builtin_ok("prickle.int16", Builtin::Convert {sz: ElemSize::I16})?;
-        lookup_builtin_ok("prickle.int32", Builtin::Convert {sz: ElemSize::I32})?;
-        lookup_builtin_ok("prickle.int64", Builtin::Convert {sz: ElemSize::I64})?;
-        lookup_builtin_ok("prickle.uint8", Builtin::Convert {sz: ElemSize::U8})?;
-        lookup_builtin_ok("prickle.uint16", Builtin::Convert {sz: ElemSize::U16})?;
-        lookup_builtin_ok("prickle.uint32", Builtin::Convert {sz: ElemSize::U32})?;
-        lookup_builtin_ok("prickle.uint64", Builtin::Convert {sz: ElemSize::U64})?;
-        lookup_builtin_ok("prickle.float16", Builtin::Convert {sz: ElemSize::F16})?;
-        lookup_builtin_ok("prickle.float32", Builtin::Convert {sz: ElemSize::F32})?;
-        lookup_builtin_ok("prickle.float64", Builtin::Convert {sz: ElemSize::F64})
+        lookup_builtin_ok("prickle.operators.int8", Builtin::Convert {sz: ElemSize::I8})?;
+        lookup_builtin_ok("prickle.operators.int16", Builtin::Convert {sz: ElemSize::I16})?;
+        lookup_builtin_ok("prickle.operators.int32", Builtin::Convert {sz: ElemSize::I32})?;
+        lookup_builtin_ok("prickle.operators.int64", Builtin::Convert {sz: ElemSize::I64})?;
+        lookup_builtin_ok("prickle.operators.uint8", Builtin::Convert {sz: ElemSize::U8})?;
+        lookup_builtin_ok("prickle.operators.uint16", Builtin::Convert {sz: ElemSize::U16})?;
+        lookup_builtin_ok("prickle.operators.uint32", Builtin::Convert {sz: ElemSize::U32})?;
+        lookup_builtin_ok("prickle.operators.uint64", Builtin::Convert {sz: ElemSize::U64})?;
+        lookup_builtin_ok("prickle.operators.float16", Builtin::Convert {sz: ElemSize::F16})?;
+        lookup_builtin_ok("prickle.operators.float32", Builtin::Convert {sz: ElemSize::F32})?;
+        lookup_builtin_ok("prickle.operators.float64", Builtin::Convert {sz: ElemSize::F64})
     }
 
     #[test]
     fn lookup_builtin_sqrt() -> PyResult<()> {
-        lookup_builtin_ok("prickle.sqrt", Builtin::Sqrt)?;
+        lookup_builtin_ok("prickle.operators.sqrt", Builtin::Sqrt)?;
         lookup_builtin_fail("torch.sqrt")
     }
 
     #[test]
     fn lookup_builtin_trigonometry() -> PyResult<()> {
-        lookup_builtin_ok("prickle.cos", Builtin::Cos)?;
+        lookup_builtin_ok("prickle.operators.cos", Builtin::Cos)?;
         lookup_builtin_fail("torch.cos")?;
-        lookup_builtin_ok("prickle.sin", Builtin::Sin)?;
+        lookup_builtin_ok("prickle.operators.sin", Builtin::Sin)?;
         lookup_builtin_fail("torch.sin")?;
-        lookup_builtin_ok("prickle.tanh", Builtin::Tanh)?;
+        lookup_builtin_ok("prickle.operators.tanh", Builtin::Tanh)?;
         lookup_builtin_fail("torch.tanh")?;
-        lookup_builtin_ok("prickle.atan2", Builtin::Atan2)?;
+        lookup_builtin_ok("prickle.operators.atan2", Builtin::Atan2)?;
         lookup_builtin_fail("torch.atan2")
     }
 
@@ -1208,7 +1255,7 @@ mod test {
 
     #[test]
     fn convert_expr_label() {
-        let e = convert_expr_wrap("prickle.label('a')").unwrap();
+        let e = convert_expr_wrap("prickle.operators.label('a')").unwrap();
         assert_eq!(e, Expr::Builtin {
             func: Builtin::Label,
             args: vec![Expr::String {
@@ -1224,7 +1271,7 @@ mod test {
 
     #[test]
     fn convert_expr_sum_no_axis() {
-        let e = convert_expr_wrap("prickle.sum(x[:])").unwrap();
+        let e = convert_expr_wrap("prickle.operators.sum(x[:])").unwrap();
         assert_eq!(e, Expr::Builtin {
             func: Builtin::Sum,
             args: vec![Expr::Subscript {
@@ -1247,7 +1294,7 @@ mod test {
 
     #[test]
     fn convert_expr_sum_axis() {
-        let e = convert_expr_wrap("prickle.sum(x[:,:], axis=1)").unwrap();
+        let e = convert_expr_wrap("prickle.operators.sum(x[:,:], axis=1)").unwrap();
         assert_eq!(e, Expr::Builtin {
             func: Builtin::Sum,
             args: vec![Expr::Subscript {
@@ -1279,7 +1326,7 @@ mod test {
 
     #[test]
     fn convert_expr_sum_invalid_axis_form() {
-        let e = convert_expr_wrap("prickle.sum(x[:], axis='x')");
+        let e = convert_expr_wrap("prickle.operators.sum(x[:], axis='x')");
         assert_py_error_matches(e, r"Expected integer literal value.*");
     }
 
@@ -1649,5 +1696,42 @@ mod test {
     fn convert_for_overloaded_range() {
         let res = convert_stmts_wrap("range = 3\n for x in range(1, 2):\n  x = x + 1");
         assert!(res.is_err());
+    }
+
+    fn convert_arg_type_annot(annot: &str) -> PyResult<Type> {
+        let s = format!("def f(x: {annot}):\n  return x");
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let stmts = parse_str_fun_def(py, &s)?;
+            let env = ConvertEnv {
+                ast: py.import("ast")?,
+                tops: &BTreeMap::new(),
+                filepath: &String::from("<test>"),
+                line_ofs: 0,
+                col_ofs: 0
+            };
+            let FunDef {params, ..} = convert_fun_def(stmts, &env)?;
+            match &params[..] {
+                [Param {ty, ..}] => Ok(ty.clone()),
+                _ => panic!("Invalid form of parameters in converted function definition")
+            }
+        })
+    }
+
+    #[test]
+    fn try_extract_scalar_type_annot() -> PyResult<()> {
+        for sz in ElemSize::iter() {
+            let id = format!("prickle.types.{:?}", sz);
+            assert_eq!(convert_arg_type_annot(&id)?, scalar(sz));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn try_etract_pointer_type_annot() {
+        assert_py_error_matches(
+            convert_arg_type_annot("prickle.types.pointer(prickle.types.I8)"),
+            "Unsupported type annotation"
+        )
     }
 }
