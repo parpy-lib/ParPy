@@ -125,6 +125,7 @@ def clear_cache():
     Clears the cached shared library files as well as the local function cache.
     """
     from .compile import clear_cache
+    global _fun_cache
     clear_cache()
     _fun_cache = {}
 

@@ -223,7 +223,7 @@ def clamp_helper(ext_id):
     )
     # Clear the function cache to ensure we do not refer to a 'clamp_many'
     # defined in a preceding test.
-    prickle.fun_cache = {}
+    prickle.clear_cache()
 
     @prickle.jit
     def clamp_many(out, x):
