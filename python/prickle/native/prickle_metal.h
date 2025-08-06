@@ -7,7 +7,7 @@
 
 #define prickle_metal_check_error(e) if (e != 0) return 1;
 
-// Functions used by the Parir library when initializing, synchronizing with
+// Functions used by the Prickle library when initializing, synchronizing with
 // running GPU code, and operating on buffers.
 extern "C" void prickle_init(int64_t);
 extern "C" void prickle_sync();

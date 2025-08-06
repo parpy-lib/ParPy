@@ -129,17 +129,19 @@ def run_sddmm(framework, matrix_id, k):
     try:
         torch_d = torch_sddmm(dense_a, dense_b, sparse_c)
         # Use the cuSPARSE result as a baseline, and compare the output if using a
-        # Parir framework.
+        # Prickle framework.
         if framework == "PyTorch":
             sparse_d = None
-        elif framework == "Parir-CSR":
+        elif framework == "Prickle-CSR":
             sparse_d = prickle_sddmm_csr(dense_a, dense_b, sparse_c)
-        elif framework == "Parir-COO":
+        elif framework == "Prickle-COO":
             # Convert from CSR to COO on the CPU to reduce peak memory usage on
             # the GPU, which is typically the limiting factor.
             sparse_c_rows = csr_rows(sparse_c)
             sparse_d = prickle_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
             del sparse_c_rows
+        else:
+            raise RuntimeError(f"Unsupported framework {framework}")
         if not validate_sparse_result(torch_d, sparse_d):
             return 1
     except torch.cuda.OutOfMemoryError:
@@ -160,15 +162,17 @@ def run_sddmm(framework, matrix_id, k):
     try:
         if framework == "PyTorch":
             fn = lambda: torch_sddmm(dense_a, dense_b, sparse_c)
-        elif framework == "Parir-CSR":
+        elif framework == "Prickle-CSR":
             fn = lambda: prickle_sddmm_csr(dense_a, dense_b, sparse_c)
-        elif framework == "Parir-COO":
+        elif framework == "Prickle-COO":
             sparse_c_rows = csr_rows(sparse_c)
             fn = lambda: prickle_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
+        else:
+            raise RuntimeError(f"Unsupported framework {framework}")
         times = common.bench(matrix_id, fn, nwarmup=1)
         result = mk_framework_entry(framework, np.mean(times))
         common.append_csv(f"{common.SDDMM_NAME}-{k}.csv", [result])
-        if framework == "Parir-COO":
+        if framework == "Prickle-COO":
             del sparse_c_rows
     except torch.cuda.OutOfMemoryError:
         return 34

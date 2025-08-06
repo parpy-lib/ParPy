@@ -190,7 +190,7 @@ def forward_prickle(hmm, seqs, nthreads):
     forward_kernel(hmm, seqs, result, alpha1, alpha2, opts=prickle.par(p))
     return result
 
-class ParirTuned:
+class PrickleTuned:
     def __init__(self, hmm, seqs):
         best_time = float('inf')
         best_nthreads = 0
@@ -208,7 +208,7 @@ class ParirTuned:
         return forward_prickle(self.hmm, self.seqs, self.nthreads)
 
     def __name__(self):
-        return "ParirTuned"
+        return "PrickleTuned"
 
 @triton.jit
 def forward_triton_init(
@@ -500,7 +500,7 @@ def run_forward(framework, k, config_id):
         fn = lambda: base_fn(hmm, seqs, hmm["num_states"])
     elif config_id == 3:
         if framework == "prickle":
-            fn = ParirTuned(hmm, seqs)
+            fn = PrickleTuned(hmm, seqs)
         else:
             fn = TritonTuned(hmm, seqs)
 
