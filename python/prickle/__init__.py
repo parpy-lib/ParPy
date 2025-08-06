@@ -19,7 +19,7 @@ def _get_tops(backend):
         ext_tops = _ext_tops
     return {**ast_tops, **ext_tops}
 
-def _convert_python_function_to_ir(fn):
+def _convert_python_function_to_ir(fn, globs):
     import ast as python_ast
     import builtins
     import inspect
@@ -43,7 +43,7 @@ def _convert_python_function_to_ir(fn):
     # representation in the compiler. As part of this step, we inline any
     # references to previously parsed functions.
     top_map = _get_tops(None)
-    return prickle.python_to_ir(ast, filepath, fst_line-1, col_ofs, top_map)
+    return prickle.python_to_ir(ast, filepath, fst_line-1, col_ofs, top_map, globs)
 
 def _check_kwarg(kwargs, key, default_value, expected_ty):
     if key not in kwargs or kwargs[key] is None:
@@ -172,11 +172,13 @@ def print_compiled(fun, args, opts=prickle.CompileOptions()):
     code.
     """
     from .validate import check_arguments
+    import inspect
     opts = backend.resolve_backend(opts, False)
     if fun in _ir_asts:
         ir_ast = _ir_asts[fun]
     else:
-        ir_ast = _convert_python_function_to_ir(fun)
+        globs = inspect.currentframe().f_back.f_globals
+        ir_ast = _convert_python_function_to_ir(fun, globs)
     _, args = check_arguments(args, opts, False)
     top_map = _get_tops(opts.backend)
     code, _ = prickle.compile_ir(ir_ast, args, opts, top_map)
@@ -190,7 +192,9 @@ def jit(fun):
     the provided arguments.
     """
     from .validate import check_arguments
-    ir_ast = _convert_python_function_to_ir(fun)
+    import inspect
+    globs = inspect.currentframe().f_back.f_globals
+    ir_ast = _convert_python_function_to_ir(fun, globs)
 
     def inner(*args, **kwargs):
         opts = backend.resolve_backend(_check_kwargs(kwargs), True)

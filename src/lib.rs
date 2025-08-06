@@ -13,7 +13,7 @@ use crate::utils::pprint::PrettyPrint;
 use std::collections::BTreeMap;
 use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::PyCapsule;
+use pyo3::types::{PyCapsule, PyDict};
 
 #[pyfunction]
 fn python_to_ir<'py>(
@@ -21,13 +21,14 @@ fn python_to_ir<'py>(
     filepath: String,
     line_ofs: usize,
     col_ofs: usize,
-    tops: BTreeMap<String, Bound<'py, PyCapsule>>
+    tops: BTreeMap<String, Bound<'py, PyCapsule>>,
+    globals: Bound<'py, PyDict>
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let py = py_ast.py().clone();
 
     // Convert the provided Python AST (parsed by the 'ast' module of Python) to a similar
     // representation of the Python AST using Rust data types.
-    let def = py::parse_untyped_ast(py_ast, filepath, line_ofs, col_ofs, &tops)?;
+    let def = py::parse_untyped_ast(py_ast, filepath, line_ofs, col_ofs, &tops, globals)?;
 
     // Inline function calls referring to previously defined IR ASTs.
     let def = py::inline_function_calls(def, &tops)?;

@@ -6,21 +6,21 @@ use crate::utils::name::Name;
 
 use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
-use pyo3::types;
-use pyo3::types::PyCapsule;
+use pyo3::types::*;
 
 use std::collections::BTreeMap;
 use std::ffi::CString;
 
 struct ConvertEnv<'py, 'a> {
     ast: Bound<'py, PyModule>,
+    globals: Bound<'py, PyDict>,
     tops: &'a BTreeMap<String, Bound<'py, PyCapsule>>,
     filepath: &'a str,
     line_ofs: usize,
     col_ofs: usize
 }
 
-fn extract_node_info<'py>(node: &'py Bound<'py, PyAny>) -> PyResult<Info> {
+fn extract_node_info<'py>(node: &Bound<'py, PyAny>) -> PyResult<Info> {
     let l1 = node.getattr("lineno")?.extract::<usize>()?;
     let c1 = node.getattr("col_offset")?.extract::<usize>()?;
     let start = FilePos::new(l1, c1);
@@ -39,8 +39,8 @@ fn extract_node_info<'py>(node: &'py Bound<'py, PyAny>) -> PyResult<Info> {
 }
 
 fn extract_info<'py, 'a>(
-    node: &'py Bound<'py, PyAny>,
-    env: &'py ConvertEnv<'py, 'a>
+    node: &Bound<'py, PyAny>,
+    env: &ConvertEnv<'py, 'a>
 ) -> Info {
     if let Ok(i) = extract_node_info(node) {
         i.with_file(env.filepath)
@@ -53,8 +53,8 @@ fn extract_info<'py, 'a>(
 
 fn convert_unary_op<'py, 'a>(
     unop: Bound<'py, PyAny>,
-    env: &'py ConvertEnv<'py, 'a>,
-    i: &'a Info
+    env: &ConvertEnv<'py, 'a>,
+    i: &Info
 ) -> PyResult<UnOp> {
     if unop.is_instance(&env.ast.getattr("USub")?)? {
         Ok(UnOp::Sub)
@@ -69,8 +69,8 @@ fn convert_unary_op<'py, 'a>(
 
 fn convert_bin_op<'py, 'a>(
     binop: Bound<'py, PyAny>,
-    env: &'py ConvertEnv<'py, 'a>,
-    i: &'a Info
+    env: &ConvertEnv<'py, 'a>,
+    i: &Info
 ) -> PyResult<BinOp> {
     if binop.is_instance(&env.ast.getattr("Add")?)? {
         Ok(BinOp::Add)
@@ -115,8 +115,8 @@ fn convert_bin_op<'py, 'a>(
 
 fn convert_bool_op<'py, 'a>(
     boolop: Bound<'py, PyAny>,
-    env: &'py ConvertEnv<'py, 'a>,
-    i: &'a Info
+    env: &ConvertEnv<'py, 'a>,
+    i: &Info
 ) -> PyResult<BinOp> {
     if boolop.is_instance(&env.ast.getattr("And")?)? {
         Ok(BinOp::And)
@@ -127,21 +127,31 @@ fn convert_bool_op<'py, 'a>(
     }
 }
 
-fn eval_name<'py>(s: String, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-    let globals = types::PyDict::new(py);
-    globals.set_item("math", py.import("math")?)?;
-    globals.set_item("prickle", py.import("prickle")?)?;
-    globals.set_item("prickle.operators", py.import("prickle.operators")?)?;
-    globals.set_item("prickle.types", py.import("prickle.types")?)?;
-    py.eval(&CString::new(s)?, Some(&globals), None)
+fn eval_name<'py, 'a>(
+    s: String,
+    env: &ConvertEnv<'py, 'a>,
+    py: Python<'py>
+) -> PyResult<Bound<'py, PyAny>> {
+    py.eval(&CString::new(s)?, Some(&env.globals), None)
 }
 
-fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Builtin> {
+fn eval_node<'py, 'a>(
+    e: &Bound<'py, PyAny>,
+    env: &ConvertEnv<'py, 'a>,
+    py: Python<'py>
+) -> PyResult<Bound<'py, PyAny>> {
+    let s = env.ast.call_method1("unparse", (e,))?.extract::<String>()?;
+    eval_name(s, env, py)
+}
+
+fn lookup_builtin<'py, 'a>(
+    expr: &Bound<'py, PyAny>,
+    env: &ConvertEnv<'py, 'a>,
+    i: &Info
+) -> PyResult<Builtin> {
     let py = expr.py();
-    let ast = py.import("ast")?;
     let prickle_ops = py.import("prickle.operators")?;
-    let s = ast.call_method1("unparse", (expr,))?.extract::<String>()?;
-    match eval_name(s, py) {
+    match eval_node(expr, &env, py) {
         Ok(e) => {
             if e.eq(prickle_ops.getattr("exp")?)? {
                 Ok(Builtin::Exp)
@@ -199,55 +209,59 @@ fn lookup_builtin<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Builtin> 
                 py_runtime_error!(i, "Unknown built-in operator {expr}")
             }
         },
-        Err(_) => {
-            py_runtime_error!(i, "Failed to identify built-in operator {expr}")
+        Err(e) => {
+            py_runtime_error!(i, "Failed to identify built-in operator {expr} (reason: {e})")
         },
     }
 }
 
-fn lookup_builtin_expr<'py>(expr: &Bound<'py, PyAny>, i: &Info) -> PyResult<Expr> {
-    let func = lookup_builtin(expr, &i)?;
+fn lookup_builtin_expr<'py, 'a>(
+    expr: &Bound<'py, PyAny>,
+    env: &ConvertEnv<'py, 'a>,
+    i: &Info
+) -> PyResult<Expr> {
+    let func = lookup_builtin(expr, env, &i)?;
     Ok(Expr::Builtin {func, args: vec![], axis: None, ty: Type::Unknown, i: i.clone()})
 }
 
-fn try_extract_type_annotation<'py>(annot: Bound<'py, PyAny>, i: &Info) -> PyResult<Type> {
+fn try_extract_type_annotation<'py, 'a>(
+    annot: Bound<'py, PyAny>,
+    env: &ConvertEnv<'py, 'a>,
+    i: &Info
+) -> PyResult<Type> {
     let py = annot.py();
-    let ast = py.import("ast")?;
     let prickle_tys = py.import("prickle.types")?;
-    let s = ast.call_method1("unparse", (annot,))?.extract::<String>()?;
-    match eval_name(s.clone(), py) {
+    match eval_node(&annot, &env, py) {
         Ok(ty) => {
             if ty.eq(prickle_tys.getattr("Bool")?)? {
-                Ok(Type::Tensor {sz: ElemSize::Bool, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::Bool})
             } else if ty.eq(prickle_tys.getattr("I8")?)? {
-                Ok(Type::Tensor {sz: ElemSize::I8, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::I8})
             } else if ty.eq(prickle_tys.getattr("I16")?)? {
-                Ok(Type::Tensor {sz: ElemSize::I16, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::I16})
             } else if ty.eq(prickle_tys.getattr("I32")?)? {
-                Ok(Type::Tensor {sz: ElemSize::I32, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::I32})
             } else if ty.eq(prickle_tys.getattr("I64")?)? {
-                Ok(Type::Tensor {sz: ElemSize::I64, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::I64})
             } else if ty.eq(prickle_tys.getattr("U8")?)? {
-                Ok(Type::Tensor {sz: ElemSize::U8, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::U8})
             } else if ty.eq(prickle_tys.getattr("U16")?)? {
-                Ok(Type::Tensor {sz: ElemSize::U16, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::U16})
             } else if ty.eq(prickle_tys.getattr("U32")?)? {
-                Ok(Type::Tensor {sz: ElemSize::U32, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::U32})
             } else if ty.eq(prickle_tys.getattr("U64")?)? {
-                Ok(Type::Tensor {sz: ElemSize::U64, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::U64})
             } else if ty.eq(prickle_tys.getattr("F16")?)? {
-                Ok(Type::Tensor {sz: ElemSize::F16, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::F16})
             } else if ty.eq(prickle_tys.getattr("F32")?)? {
-                Ok(Type::Tensor {sz: ElemSize::F32, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::F32})
             } else if ty.eq(prickle_tys.getattr("F64")?)? {
-                Ok(Type::Tensor {sz: ElemSize::F64, shape: vec![]})
+                Ok(Type::Tensor {shape: vec![], sz: ElemSize::F64})
             } else {
-                py_runtime_error!(i, "Unsupported type annotation: {s}")
+                py_runtime_error!(i, "Unsupported type annotation: {}", ty)
             }
-        },
-        Err(_) => {
-            py_runtime_error!(i, "Unsupported type annotation: {s}")
         }
+        Err(_) => py_runtime_error!(i, "Unsupported type annotation: {}", annot.str()?)
     }
 }
 
@@ -269,7 +283,7 @@ fn extract_axis_kwarg<'py, 'a>(
     acc: PyResult<Option<i64>>,
     kw: Bound<'py, PyAny>,
     i: &Info,
-    env: &'py ConvertEnv<'py, 'a>
+    env: &ConvertEnv<'py, 'a>
 ) -> PyResult<Option<i64>> {
     let kw_str = kw.getattr("arg")?.extract::<String>()?;
     match acc? {
@@ -288,12 +302,12 @@ fn extract_axis_kwarg<'py, 'a>(
 }
 
 fn convert_expr<'py, 'a>(
-    expr: Bound<'py, PyAny>, env: &'py ConvertEnv<'py, 'a>
+    expr: Bound<'py, PyAny>, env: &ConvertEnv<'py, 'a>
 ) -> PyResult<Expr> {
     let i = extract_info(&expr, env);
     let ty = Type::Unknown;
     if expr.is_instance(&env.ast.getattr("Name")?)? {
-        if let Ok(e) = lookup_builtin_expr(&expr, &i) {
+        if let Ok(e) = lookup_builtin_expr(&expr, env, &i) {
             Ok(e)
         } else {
             let id = Name::new(expr.getattr("id")?.extract::<String>()?);
@@ -301,16 +315,16 @@ fn convert_expr<'py, 'a>(
         }
     } else if expr.is_instance(&env.ast.getattr("Constant")?)? {
         let val = expr.getattr("value")?;
-        if val.is_instance(&types::PyBool::type_object(val.py()))? {
+        if val.is_instance(&PyBool::type_object(val.py()))? {
             let v = val.extract::<bool>()?;
             Ok(Expr::Bool {v, ty, i})
-        } else if val.is_instance(&types::PyInt::type_object(val.py()))? {
+        } else if val.is_instance(&PyInt::type_object(val.py()))? {
             let v = val.extract::<i128>()?;
             Ok(Expr::Int {v, ty, i})
-        } else if val.is_instance(&types::PyFloat::type_object(val.py()))? {
+        } else if val.is_instance(&PyFloat::type_object(val.py()))? {
             let v = val.extract::<f64>()?;
             Ok(Expr::Float {v, ty, i})
-        } else if val.is_instance(&types::PyString::type_object(val.py()))? {
+        } else if val.is_instance(&PyString::type_object(val.py()))? {
             let v = val.extract::<String>()?;
             Ok(Expr::String {v, ty, i})
         } else {
@@ -376,7 +390,7 @@ fn convert_expr<'py, 'a>(
         };
         Ok(Expr::Slice {lo, hi, ty, i})
     } else if expr.is_instance(&env.ast.getattr("Attribute")?)? {
-        lookup_builtin_expr(&expr, &i)
+        lookup_builtin_expr(&expr, env, &i)
     } else if expr.is_instance(&env.ast.getattr("Tuple")?)? {
         let elts = expr.getattr("elts")?
             .try_iter()?
@@ -463,7 +477,7 @@ fn construct_expr_stmt(
 
 fn convert_stmt<'py, 'a>(
     stmt: Bound<'py, PyAny>,
-    env: &'py ConvertEnv<'py, 'a>
+    env: &ConvertEnv<'py, 'a>
 ) -> PyResult<Stmt> {
     let i = extract_info(&stmt, env);
     if stmt.is_instance(&env.ast.getattr("For")?)? {
@@ -484,7 +498,7 @@ fn convert_stmt<'py, 'a>(
                 let fun_id = func.getattr("id")?.extract::<String>()?;
                 let py = stmt.py();
                 let builtins = py.import("builtins")?;
-                match eval_name(fun_id, py) {
+                match eval_name(fun_id, env, py) {
                     Ok(e) if e.eq(builtins.getattr("range")?)? => Ok(iter),
                     _ => py_runtime_error!(i, "For-loop must iterate using the range builtin")
                 }
@@ -574,7 +588,7 @@ fn convert_stmt<'py, 'a>(
                 if !fst.getattr("optional_vars")?.is_none() {
                     py_runtime_error!(i, "With statements using the 'as' keyword are not supported")?
                 }
-                match lookup_builtin(&fst.getattr("context_expr")?, &i) {
+                match lookup_builtin(&fst.getattr("context_expr")?, env, &i) {
                     Ok(Builtin::GpuContext) => {
                         let body = convert_stmts(stmt.getattr("body")?, env)?;
                         Ok(Stmt::WithGpuContext {body, i})
@@ -614,7 +628,7 @@ fn merge_body_infos(body: &Vec<Stmt>) -> Info {
 
 fn convert_stmts<'py, 'a>(
     body: Bound<'py, PyAny>,
-    env: &'py ConvertEnv<'py, 'a>
+    env: &ConvertEnv<'py, 'a>
 ) -> PyResult<Vec<Stmt>> {
     body.try_iter()?
         .map(|stmt| stmt.and_then(|s| convert_stmt(s, &env)))
@@ -623,7 +637,7 @@ fn convert_stmts<'py, 'a>(
 
 fn convert_fun_def<'py, 'a>(
     ast: Bound<'py, PyAny>,
-    env: &'py ConvertEnv<'py, 'a>
+    env: &ConvertEnv<'py, 'a>
 ) -> PyResult<FunDef> {
     let body = ast.getattr("body")?.get_item(0)?;
     let untyped_args = body.getattr("args")?.getattr("args")?.try_iter()?
@@ -635,7 +649,7 @@ fn convert_fun_def<'py, 'a>(
             let ty = if annot.is_none() {
                 Ok(Type::Unknown)
             } else {
-                try_extract_type_annotation(annot, &i)
+                try_extract_type_annotation(annot, &env, &i)
             }?;
             Ok(Param {id, ty, i})
         })
@@ -651,13 +665,16 @@ pub fn to_untyped_ir<'py>(
     filepath: String,
     line_ofs: usize,
     col_ofs: usize,
-    tops: &BTreeMap<String, Bound<'py, PyCapsule>>
+    tops: &BTreeMap<String, Bound<'py, PyCapsule>>,
+    globals: Bound<'py, PyDict>
 ) -> PyResult<FunDef> {
     let env = ConvertEnv {
         ast: ast.py().import("ast")?,
+        globals,
         tops,
         filepath: &filepath,
-        line_ofs, col_ofs
+        line_ofs,
+        col_ofs,
     };
     convert_fun_def(ast, &env)
 }
@@ -668,8 +685,26 @@ mod test {
     use crate::test::*;
     use crate::py::ast_builder::*;
 
-    use pyo3::types::*;
     use strum::IntoEnumIterator;
+
+    fn make_env<'py, 'a>(
+        py: Python<'py>,
+        tops: &'a BTreeMap<String, Bound<'py, PyCapsule>>,
+        custom_globals: Option<Bound<'py, PyDict>>
+    ) -> PyResult<ConvertEnv<'py, 'a>> {
+        let globals = match custom_globals {
+            Some(g) => g,
+            None => vec![
+                ("prickle", py.import("prickle")?),
+                ("prickle.operators", py.import("prickle.operators")?),
+                ("prickle.types", py.import("prickle.types")?)
+            ].into_py_dict(py)?
+        };
+        Ok(ConvertEnv {
+            ast: py.import("ast")?, tops: &tops, globals,
+            filepath: "<test>", line_ofs: 0, col_ofs: 0
+        })
+    }
 
     fn parse_str<'py>(
         py: Python<'py>,
@@ -714,14 +749,24 @@ mod test {
         parse_str(py, s, true)?.getattr("body")
     }
 
+    fn lookup_builtin<'py>(
+        py: Python<'py>,
+        s: &str,
+        globals: Option<Bound<'py, PyDict>>
+    ) -> PyResult<Expr> {
+        let ast = parse_str_expr(py, s)?;
+        let tops = BTreeMap::new();
+        let env = make_env(py, &tops, globals)?;
+        lookup_builtin_expr(&ast, &env, &Info::default())
+    }
+
     fn lookup_builtin_ok(
         s: &str,
         expected_func: Builtin
     ) -> PyResult<()> {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
-            let ast = parse_str_expr(py, s)?;
-            let e = lookup_builtin_expr(&ast, &Info::default())?;
+            let e = lookup_builtin(py, s, None)?;
             if let Expr::Builtin {func, ..} = e {
                 assert_eq!(func, expected_func);
             } else {
@@ -734,8 +779,7 @@ mod test {
     fn lookup_builtin_fail(s: &str) -> PyResult<()> {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
-            let ast = parse_str_expr(py, s)?;
-            assert!(lookup_builtin_expr(&ast, &Info::default()).is_err());
+            assert!(lookup_builtin(py, s, None).is_err());
             Ok(())
         })
     }
@@ -845,6 +889,19 @@ mod test {
         lookup_builtin_fail("torch.all")
     }
 
+    #[test]
+    fn lookup_builtin_sum_custom_globals() -> PyResult<()> {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let globals = vec![
+                ("pops", py.import("prickle.operators")?)
+            ].into_py_dict(py)?;
+            let e = lookup_builtin(py, "pops.sum", Some(globals))?;
+            assert!(matches!(e, Expr::Builtin {func: Builtin::Sum, ..}));
+            Ok(())
+        })
+    }
+
     fn convert_expr_wrap_helper(s: &str, ir_ast_def: Vec<String>) -> PyResult<Expr> {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
@@ -852,13 +909,7 @@ mod test {
             let tops = ir_ast_def.into_iter()
                 .map(|id| (id, PyCapsule::new(py, 0, None).unwrap()))
                 .collect::<BTreeMap<String, Bound<_>>>();
-            let env = ConvertEnv {
-                ast: py.import("ast")?,
-                tops: &tops,
-                filepath: "<test>",
-                line_ofs: 0,
-                col_ofs: 0
-            };
+            let env = make_env(py, &tops, None)?;
             convert_expr(expr, &env)
         })
     }
@@ -1385,13 +1436,8 @@ mod test {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let stmt = parse_str_stmt(py, s)?;
-            let env = ConvertEnv {
-                ast: py.import("ast")?,
-                tops: &BTreeMap::new(),
-                filepath: &String::from("<test>"),
-                line_ofs: 0,
-                col_ofs: 0
-            };
+            let tops = BTreeMap::new();
+            let env = make_env(py, &tops, None)?;
             convert_stmt(stmt, &env)
         })
     }
@@ -1681,13 +1727,8 @@ mod test {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let stmt = parse_str_stmts(py, s)?;
-            let env = ConvertEnv {
-                ast: py.import("ast")?,
-                tops: &BTreeMap::new(),
-                filepath: &String::from("<test>"),
-                line_ofs: 0,
-                col_ofs: 0
-            };
+            let tops = BTreeMap::new();
+            let env = make_env(py, &tops, None)?;
             convert_stmts(stmt, &env)
         })
     }
@@ -1703,13 +1744,8 @@ mod test {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let stmts = parse_str_fun_def(py, &s)?;
-            let env = ConvertEnv {
-                ast: py.import("ast")?,
-                tops: &BTreeMap::new(),
-                filepath: &String::from("<test>"),
-                line_ofs: 0,
-                col_ofs: 0
-            };
+            let tops = BTreeMap::new();
+            let env = make_env(py, &tops, None)?;
             let FunDef {params, ..} = convert_fun_def(stmts, &env)?;
             match &params[..] {
                 [Param {ty, ..}] => Ok(ty.clone()),

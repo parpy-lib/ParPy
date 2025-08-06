@@ -26,7 +26,7 @@ use crate::utils::err::CompileError;
 use crate::utils::info::Info;
 
 use pyo3::prelude::*;
-use pyo3::types::PyCapsule;
+use pyo3::types::{PyCapsule, PyDict};
 
 use std::collections::BTreeMap;
 
@@ -38,8 +38,9 @@ pub fn parse_untyped_ast<'py>(
     line_ofs: usize,
     col_ofs: usize,
     tops: &BTreeMap<String, Bound<'py, PyCapsule>>,
+    globals: Bound<'py, PyDict>
 ) -> PyResult<ast::FunDef> {
-    let ast = from_py::to_untyped_ir(ast, filepath, line_ofs, col_ofs, tops)?;
+    let ast = from_py::to_untyped_ir(ast, filepath, line_ofs, col_ofs, tops, globals)?;
     let ast = ast.symbolize_default()?;
     labels::associate_labels(ast)
 }
