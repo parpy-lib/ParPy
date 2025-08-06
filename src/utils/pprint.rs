@@ -169,7 +169,7 @@ pub trait PrettyPrintUnOp<T>: PrettyPrint + ExprType<T> + Sized {
         let (op, arg) = self.extract_unop().unwrap();
         let op_str = Self::print_unop(op, arg.get_type()).unwrap();
         let (env, arg_str) = arg.pprint(env);
-        if Self::is_function(op) {
+        if Self::is_function(op) || !arg.is_leaf_node() {
             (env, format!("{op_str}({arg_str})"))
         } else {
             (env, format!("{op_str}{arg_str}"))
@@ -258,6 +258,8 @@ pub trait PrettyPrintCond<E: PrettyPrint>: PrettyPrint + Sized {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::py::ast::*;
+    use crate::py::ast_builder::*;
 
     #[test]
     fn test_root_indent_print() {
@@ -359,5 +361,19 @@ mod test {
         let (env, s1) = Name::sym_str("x").pprint(env);
         let (_, s2) = Name::sym_str("x").pprint(env);
         assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn print_unary_operator_on_compound_expression() {
+        let e = unop(
+            UnOp::Sub,
+            binop(
+                var("x", scalar(ElemSize::F32)),
+                BinOp::Add,
+                float(1.0, Some(ElemSize::F32)),
+                scalar(ElemSize::F32)
+            )
+        );
+        assert_eq!(e.pprint_default(), "-(x + 1.0)");
     }
 }
