@@ -44,24 +44,35 @@ fn replace_constants_expr(
 fn replace_constants_stmt(
     consts: &BTreeMap<Expr, Expr>,
     s: Stmt
-) -> Stmt {
-    s.smap(|s| replace_constants_stmt(consts, s))
-        .smap(|e| replace_constants_expr(consts, e))
+) -> PyResult<Stmt> {
+    match s {
+        Stmt::Assign {dst: dst @ Expr::Var {..}, i, ..} if consts.contains_key(&dst) => {
+            py_runtime_error!(i, "Assigning to a scalar parameter is not allowed")
+        },
+        Stmt::Assign {dst, expr, labels, i} => {
+            let expr = replace_constants_expr(consts, expr);
+            Ok(Stmt::Assign {dst, expr, labels, i})
+        },
+        _ => {
+            Ok(s.smap_result(|s| replace_constants_stmt(consts, s))?
+                .smap(|e| replace_constants_expr(consts, e)))
+        }
+    }
 }
 
 fn replace_constants_stmts(
     consts: &BTreeMap<Expr, Expr>,
     stmts: Vec<Stmt>
-) -> Vec<Stmt> {
-    stmts.smap(|s| replace_constants_stmt(consts, s))
+) -> PyResult<Vec<Stmt>> {
+    stmts.smap_result(|s| replace_constants_stmt(consts, s))
 }
 
 fn replace_constants_def(
     consts: &BTreeMap<Expr, Expr>,
     def: FunDef
-) -> FunDef {
-    let body = replace_constants_stmts(consts, def.body);
-    FunDef {body, ..def}
+) -> PyResult<FunDef> {
+    let body = replace_constants_stmts(consts, def.body)?;
+    Ok(FunDef {body, ..def})
 }
 
 fn extract_scalar_value<'py>(
@@ -72,7 +83,7 @@ fn extract_scalar_value<'py>(
     if sz == ElemSize::Bool {
         let v = arg.extract::<bool>()?;
         Ok(Expr::Bool {v, ty: Type::Tensor {sz, shape: vec![]}, i: i.clone()})
-    } else if sz.is_signed_integer() {
+    } else if sz.is_integer() {
         let v = arg.extract::<i128>()?;
         Ok(Expr::Int {v, ty: Type::Tensor {sz, shape: vec![]}, i: i.clone()})
     } else if sz.is_floating_point() {
@@ -133,12 +144,13 @@ pub fn inline_scalar_values<'py>(
             };
             add_scalar_constant(acc?, target, arg)
         })?;
-    Ok(replace_constants_def(&const_map, def))
+    replace_constants_def(&const_map, def)
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::test::*;
     use crate::utils::name::Name;
     use std::ffi::CString;
     use pyo3::types;
@@ -167,25 +179,25 @@ mod test {
     }
 
     fn int(v: i64) -> Expr {
-        Expr::Int {v: v as i128, ty: scalar_ty(ElemSize::I64), i: Info::default()}
+        Expr::Int {v: v as i128, ty: scalar_ty(ElemSize::I64), i: i()}
     }
 
     fn float(v: f64) -> Expr {
-        Expr::Float {v, ty: scalar_ty(ElemSize::F64), i: Info::default()}
+        Expr::Float {v, ty: scalar_ty(ElemSize::F64), i: i()}
     }
 
     fn bool(v: bool) -> Expr {
-        Expr::Bool {v, ty: scalar_ty(ElemSize::Bool), i: Info::default()}
+        Expr::Bool {v, ty: scalar_ty(ElemSize::Bool), i: i()}
     }
 
     fn string(s: &str) -> Expr {
-        Expr::String {v: s.to_string(), ty: Type::String, i: Info::default()}
+        Expr::String {v: s.to_string(), ty: Type::String, i: i()}
     }
 
     #[test]
     fn extract_integer_literal() {
         let target = Expr::Var {
-            id: var("x"), ty: scalar_ty(ElemSize::I64), i: Info::default()
+            id: var("x"), ty: scalar_ty(ElemSize::I64), i: i()
         };
         let env = extract_literals("3", target.clone());
         assert_eq!(env.get(&target), Some(&int(3)));
@@ -194,7 +206,7 @@ mod test {
     #[test]
     fn extract_float_literal() {
         let target = Expr::Var {
-            id: var("y"), ty: scalar_ty(ElemSize::F64), i: Info::default()
+            id: var("y"), ty: scalar_ty(ElemSize::F64), i: i()
         };
         let env = extract_literals("2.0", target.clone());
         assert_eq!(env.get(&target), Some(&float(2.0)));
@@ -207,7 +219,7 @@ mod test {
                 target: Box::new(target.clone()),
                 idx: Box::new(string(key)),
                 ty: ty.clone(),
-                i: Info::default()
+                i: i()
             })
         } else {
             None
@@ -223,7 +235,7 @@ mod test {
             .zip(types.into_iter())
             .collect::<BTreeMap<String, Type>>();
         let target = Expr::Var {
-            id: var("x"), ty: Type::Dict {fields}, i: Info::default()
+            id: var("x"), ty: Type::Dict {fields}, i: i()
         };
         let env = extract_literals("{'a': 3, 'b': False, 'c': 2.0}", target.clone());
         let a_expr = dict_lookup(&target, "a");
@@ -237,10 +249,10 @@ mod test {
     #[test]
     fn replace_dict_arg_literal() {
         let a_arg = Expr::Subscript {
-            target: Box::new(Expr::Var {id: var("x"), ty: Type::Unknown, i: Info::default()}),
+            target: Box::new(Expr::Var {id: var("x"), ty: Type::Unknown, i: i()}),
             idx: Box::new(string("a")),
             ty: Type::Unknown,
-            i: Info::default()
+            i: i()
         };
         let env = vec![
             (a_arg.clone(), int(4))
@@ -248,5 +260,21 @@ mod test {
             .collect::<BTreeMap<Expr, Expr>>();
 
         assert_eq!(replace_constants_expr(&env, a_arg.clone()), int(4));
+    }
+
+    #[test]
+    fn replace_lhs_of_assignment_fails() {
+        let lhs = Expr::Var {id: var("x"), ty: Type::Unknown, i: i()};
+        let s = Stmt::Assign {
+            dst: lhs.clone(),
+            expr: int(1),
+            labels: vec![],
+            i: i()
+        };
+        let env = vec![(lhs, int(2))].into_iter().collect::<BTreeMap<Expr, Expr>>();
+        assert_py_error_matches(
+            replace_constants_stmt(&env, s),
+            "Assigning to a scalar parameter is not allowed"
+        );
     }
 }
