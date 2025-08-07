@@ -2,7 +2,9 @@ use super::par_tree;
 use crate::option;
 use crate::par;
 use crate::prickle_compile_error;
+use crate::option::CompileOptions;
 use crate::ir::ast::*;
+use crate::utils::ast::ScalarSizes;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
@@ -158,29 +160,29 @@ fn inner_multi_block_reduce_loop(
     rhs: Expr,
     i: &Info
 ) -> Stmt {
-    let i64_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
-    let int_lit = |v| Expr::Int {v, ty: i64_ty.clone(), i: i.clone()};
-    let block = Expr::Var {id: block_idx, ty: i64_ty.clone(), i: i.clone()};
+    let int_ty = lo.get_type().clone();
+    let int_lit = |v| Expr::Int {v, ty: int_ty.clone(), i: i.clone()};
+    let block = Expr::Var {id: block_idx, ty: int_ty.clone(), i: i.clone()};
     let block_ofs = Expr::BinOp {
         lhs: Box::new(Expr::BinOp {
             lhs: Box::new(Expr::BinOp {
                 lhs: Box::new(hi.clone()),
                 op: BinOp::Sub,
                 rhs: Box::new(lo.clone()),
-                ty: i64_ty.clone(), i: i.clone()
+                ty: int_ty.clone(), i: i.clone()
             }),
             op: BinOp::Add,
             rhs: Box::new(Expr::BinOp {
                 lhs: Box::new(int_lit(nblocks)),
                 op: BinOp::Sub,
                 rhs: Box::new(int_lit(1)),
-                ty: i64_ty.clone(), i: i.clone()
+                ty: int_ty.clone(), i: i.clone()
             }),
-            ty: i64_ty.clone(), i: i.clone()
+            ty: int_ty.clone(), i: i.clone()
         }),
         op: BinOp::FloorDiv,
         rhs: Box::new(int_lit(nblocks)),
-        ty: i64_ty.clone(), i: i.clone()
+        ty: int_ty.clone(), i: i.clone()
     };
     let lo_expr = Expr::BinOp {
         lhs: Box::new(lo),
@@ -189,9 +191,9 @@ fn inner_multi_block_reduce_loop(
             lhs: Box::new(block_ofs.clone()),
             op: BinOp::Mul,
             rhs: Box::new(block.clone()),
-            ty: i64_ty.clone(), i: i.clone()
+            ty: int_ty.clone(), i: i.clone()
         }),
-        ty: i64_ty.clone(), i: i.clone()
+        ty: int_ty.clone(), i: i.clone()
     };
     let hi_expr = Expr::BinOp {
         lhs: Box::new(Expr::Convert {
@@ -199,16 +201,16 @@ fn inner_multi_block_reduce_loop(
                 lhs: Box::new(lo_expr.clone()),
                 op: BinOp::Add,
                 rhs: Box::new(block_ofs),
-                ty: i64_ty.clone(), i: i.clone()
+                ty: int_ty.clone(), i: i.clone()
             }),
-            ty: i64_ty.clone()
+            ty: int_ty.clone()
         }),
         op: BinOp::Min,
         rhs: Box::new(Expr::Convert {
             e: Box::new(hi),
-            ty: i64_ty.clone()
+            ty: int_ty.clone()
         }),
-        ty: i64_ty.clone(), i: i.clone()
+        ty: int_ty.clone(), i: i.clone()
     };
     let assign = Stmt::Assign {
         dst: lhs.clone(),
@@ -231,11 +233,11 @@ fn outer_multi_block_reduce_loop(
     temp_id: Name,
     ne: Expr,
     var: Name,
+    int_ty: Type,
     nblocks: usize,
     tpb: i64,
     i: &Info
 ) -> Stmt {
-    let i64_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
     let init_stmt = Stmt::Definition {
         ty: ne.get_type().clone(),
         id: temp_id,
@@ -244,8 +246,8 @@ fn outer_multi_block_reduce_loop(
     };
     Stmt::For {
         var,
-        lo: Expr::Int {v: 0, ty: i64_ty.clone(), i: i.clone()},
-        hi: Expr::Int {v: nblocks as i128, ty: i64_ty.clone(), i: i.clone()},
+        lo: Expr::Int {v: 0, ty: int_ty.clone(), i: i.clone()},
+        hi: Expr::Int {v: nblocks as i128, ty: int_ty.clone(), i: i.clone()},
         step: 1,
         body: vec![init_stmt, inner_loop],
         par: LoopPar {nthreads: nblocks as i64, reduction: false, tpb},
@@ -259,9 +261,9 @@ fn single_block_reduce_loop(
     lhs: Expr,
     op: BinOp,
     rhs: Expr,
+    int_ty: Type,
     i: &Info
 ) -> Stmt {
-    let i64_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
     let assign = Stmt::Assign {
         dst: lhs.clone(),
         expr: Expr::BinOp {
@@ -283,8 +285,8 @@ fn single_block_reduce_loop(
     };
     Stmt::For {
         var,
-        lo: Expr::Int {v: 0, ty: i64_ty.clone(), i: i.clone()},
-        hi: Expr::Int {v: nblocks as i128, ty: i64_ty.clone(), i: i.clone()},
+        lo: Expr::Int {v: 0, ty: int_ty.clone(), i: i.clone()},
+        hi: Expr::Int {v: nblocks as i128, ty: int_ty.clone(), i: i.clone()},
         step: 1, body: vec![assign], par, i: i.clone()
     }
 }
@@ -402,16 +404,17 @@ fn split_inter_block_parallel_reductions_stmt(
                 let temp_access = Expr::Var {
                     id: temp_id.clone(), ty: ty.clone(), i: i.clone()
                 };
+                let int_ty = lo.get_type().clone();
                 let l1 = inner_multi_block_reduce_loop(
                     var, lo, hi, step, nblocks as i128, par.tpb,
                     id.clone(), temp_access.clone(), op.clone(), rhs, &i
                 );
                 acc.push(outer_multi_block_reduce_loop(
-                    l1, temp_id, ne, id.clone(), nblocks, par.tpb, &i
+                    l1, temp_id, ne, id.clone(), int_ty.clone(), nblocks, par.tpb, &i
                 ));
                 acc.push(Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i: i.clone()});
                 acc.push(single_block_reduce_loop(
-                    id, nblocks, lhs, op, temp_access, &i
+                    id, nblocks, lhs, op, temp_access, int_ty, &i
                 ));
                 Ok(acc)
             } else {
@@ -881,12 +884,13 @@ impl TempDataEnv {
 }
 
 fn collect_variable_temp_data(
+    ss: &ScalarSizes,
     mut env: TempDataEnv,
     s: &Stmt
 ) -> CompileResult<TempDataEnv> {
     match s {
         Stmt::Definition {ty, id, i, ..} if env.temp_vars.contains(&id) => {
-            let idx_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
+            let idx_ty = Type::Tensor {sz: ss.int.clone(), shape: vec![]};
             let init_expr = Expr::Int {v: 0, ty: idx_ty.clone(), i: i.clone()};
             let (idx_expr, size) = env.par_structure.iter()
                 .rev()
@@ -936,11 +940,15 @@ fn collect_variable_temp_data(
         },
         Stmt::For {var, body, par, ..} if par.is_parallel() => {
             env.par_structure.push((var.clone(), par.nthreads));
-            let mut env = body.sfold_result(Ok(env), collect_variable_temp_data)?;
+            let mut env = body.sfold_result(Ok(env), |acc, var| {
+                collect_variable_temp_data(ss, acc, var)
+            })?;
             env.par_structure.pop();
             Ok(env)
         },
-        _ => s.sfold_result(Ok(env), collect_variable_temp_data)
+        _ => s.sfold_result(Ok(env), |acc, var| {
+            collect_variable_temp_data(ss, acc, var)
+        })
     }
 }
 
@@ -988,6 +996,7 @@ fn generate_dealloc_stmt(id: &Name) -> Stmt {
 /// Allocate temporary data for local variables that end up being defined and used in separate
 /// kernels after hoisting sequential loops.
 fn allocate_temporary_data(
+    opts: &CompileOptions,
     params: &Vec<Param>,
     body: Vec<Stmt>
 ) -> CompileResult<Vec<Stmt>> {
@@ -1020,7 +1029,10 @@ fn allocate_temporary_data(
 
     // Collect information needed to allocate, deallocate, and use the temporary data associated
     // with each of the variables identified in the previous step.
-    let env = body.sfold_result(Ok(TempDataEnv::new(temp_vars)), collect_variable_temp_data)?;
+    let ss = ScalarSizes::from_opts(opts);
+    let env = body.sfold_result(Ok(TempDataEnv::new(temp_vars)), |acc, var| {
+        collect_variable_temp_data(&ss, acc, var)
+    })?;
 
     // Update all uses of a variable, including its definition, to appropriately access the
     // temporary data allocated for it.
@@ -1093,7 +1105,7 @@ pub fn restructure_inter_block_synchronization(
     // definitions, to properly handle repeated assignments to a local variable ending up in
     // separate kernels. Second, we allocate temporary data for storing local variables, when
     // these are defined and used in separate kernels.
-    let body = allocate_temporary_data(&params, body)?;
+    let body = allocate_temporary_data(&opts, &params, body)?;
 
     // After the above transformations, we may end up with repeated use of a parallel for-loop. To
     // make sure later transformations work as expected, we need to re-symbolize loop variables.

@@ -2,7 +2,7 @@ use super::ast::*;
 use super::free_vars;
 use super::par::{GpuMap, GpuMapping};
 use crate::prickle_compile_error;
-use crate::option;
+use crate::option::CompileOptions;
 use crate::ir::ast as ir_ast;
 use crate::utils::ast::ExprType;
 use crate::utils::err::*;
@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 struct CodegenEnv<'a> {
     gpu_mapping: BTreeMap<Name, GpuMapping>,
     struct_fields: BTreeMap<Name, Vec<Field>>,
-    opts: &'a option::CompileOptions,
+    opts: &'a CompileOptions
 }
 
 fn from_ir_type(ty: ir_ast::Type) -> Type {
@@ -111,9 +111,9 @@ fn determine_loop_bounds(
     step_size: i64
 ) -> CompileResult<(Expr, Expr, Expr)> {
     let init = from_ir_expr(lo)?;
-    let ty = init.get_type().clone();
+    let int_ty = init.get_type().clone();
     let i = init.get_info();
-    let var_e = Expr::Var {id: var, ty: ty.clone(), i: i.clone()};
+    let var_e = Expr::Var {id: var, ty: int_ty.clone(), i: i.clone()};
     let cond_op = if step_size > 0 { BinOp::Lt } else { BinOp::Gt };
     let cond = Expr::BinOp {
         lhs: Box::new(var_e.clone()),
@@ -123,7 +123,7 @@ fn determine_loop_bounds(
         i: i.clone()
     };
     let step = Expr::Int {
-        v: step_size as i128, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
+        v: step_size as i128, ty: int_ty.clone(), i: i.clone()
     };
     let fn_incr = |v| Expr::BinOp {
         lhs: Box::new(var_e),
@@ -132,16 +132,16 @@ fn determine_loop_bounds(
             lhs: Box::new(step.clone()),
             op: BinOp::Mul,
             rhs: Box::new(Expr::Int {
-                v: v as i128, ty: Type::Scalar {sz: ElemSize::I64}, i: i.clone()
+                v: v as i128, ty: int_ty.clone(), i: i.clone()
             }),
-            ty: ty.clone(), i: i.clone()
+            ty: int_ty.clone(), i: i.clone()
         }),
-        ty: ty.clone(), i: i.clone()
+        ty: int_ty.clone(), i: i.clone()
     };
     match par {
         Some((grid, GpuMap::Thread {n, dim, mult})) => {
             let tot = grid.threads.get_dim(&dim);
-            let idx = Expr::ThreadIdx {dim, ty: ty.clone(), i: i.clone()};
+            let idx = Expr::ThreadIdx {dim, ty: int_ty.clone(), i: i.clone()};
             let rhs = remainder_if_shared_dimension(idx, tot, n, mult);
             let init = Expr::BinOp {
                 lhs: Box::new(init), op: BinOp::Add,
@@ -149,15 +149,15 @@ fn determine_loop_bounds(
                     lhs: Box::new(step.clone()),
                     op: BinOp::Mul,
                     rhs: Box::new(rhs),
-                    ty: ty.clone(), i: i.clone()
+                    ty: int_ty.clone(), i: i.clone()
                 }),
-                ty: ty.clone(), i: i.clone()
+                ty: int_ty.clone(), i: i.clone()
             };
             Ok((init, cond, fn_incr(n)))
         },
         Some((grid, GpuMap::Block {n, dim, mult})) => {
             let tot = grid.blocks.get_dim(&dim);
-            let idx = Expr::BlockIdx {dim, ty: ty.clone(), i: i.clone()};
+            let idx = Expr::BlockIdx {dim, ty: int_ty.clone(), i: i.clone()};
             let rhs = remainder_if_shared_dimension(idx, tot, n, mult);
             let init = Expr::BinOp {
                 lhs: Box::new(init), op: BinOp::Add,
@@ -165,9 +165,9 @@ fn determine_loop_bounds(
                     lhs: Box::new(step.clone()),
                     op: BinOp::Mul,
                     rhs: Box::new(rhs),
-                    ty: ty.clone(), i: i.clone()
+                    ty: int_ty.clone(), i: i.clone()
                 }),
-                ty: ty.clone(), i: i.clone()
+                ty: int_ty.clone(), i: i.clone()
             };
             Ok((init, cond, fn_incr(n)))
         },
@@ -176,28 +176,29 @@ fn determine_loop_bounds(
             let idx = Expr::BinOp {
                 lhs: Box::new(Expr::BinOp {
                     lhs: Box::new(Expr::BlockIdx {
-                        dim, ty: ty.clone(), i: i.clone()
+                        dim, ty: int_ty.clone(), i: i.clone()
                     }),
                     op: BinOp::Mul,
                     rhs: Box::new(Expr::Int {
-                        v: nthreads as i128, ty: ty.clone(), i: i.clone()
+                        v: nthreads as i128, ty: int_ty.clone(), i: i.clone()
                     }),
-                    ty: ty.clone(),
+                    ty: int_ty.clone(),
                     i: i.clone()
                 }),
                 op: BinOp::Add,
-                rhs: Box::new(Expr::ThreadIdx {dim, ty: ty.clone(), i: i.clone()}),
-                ty: ty.clone(),
+                rhs: Box::new(Expr::ThreadIdx {dim, ty: int_ty.clone(), i: i.clone()}),
+                ty: int_ty.clone(),
                 i: i.clone()
             };
             let rhs = remainder_if_shared_dimension(idx.clone(), tot_blocks, nblocks, 1);
             let init = Expr::BinOp {
                 lhs: Box::new(init), op: BinOp::Add, rhs: Box::new(rhs),
-                ty: ty.clone(), i: i.clone()
+                ty: int_ty.clone(), i: i.clone()
             };
             // If the total number of threads we are using is not evenly divisible by the number of
             // threads per block, we insert an additional condition to ensure only the intended
             // threads run the code inside the for-loop.
+            let bool_ty = Type::Scalar {sz: ElemSize::Bool};
             let cond = if nthreads * nblocks != n {
                 Expr::BinOp {
                     lhs: Box::new(cond),
@@ -206,11 +207,11 @@ fn determine_loop_bounds(
                         lhs: Box::new(idx.clone()),
                         op: BinOp::Lt,
                         rhs: Box::new(Expr::Int {
-                            v: n as i128, ty: ty.clone(), i: i.clone()
+                            v: n as i128, ty: int_ty.clone(), i: i.clone()
                         }),
-                        ty: ty.clone(), i: i.clone()
+                        ty: bool_ty.clone(), i: i.clone()
                     }),
-                    ty: ty.clone(), i: i.clone()
+                    ty: bool_ty.clone(), i: i.clone()
                 }
             } else {
                 cond
@@ -328,7 +329,9 @@ fn generate_kernel_stmts(
     stmts: Vec<ir_ast::Stmt>
 ) -> CompileResult<Vec<Stmt>> {
     stmts.into_iter()
-        .fold(Ok(acc), |acc, stmt| generate_kernel_stmt(grid.clone(), map, acc?, stmt))
+        .fold(Ok(acc), |acc, stmt| {
+            generate_kernel_stmt(grid.clone(), map, acc?, stmt)
+        })
 }
 
 fn get_cluster_mapping(
@@ -584,7 +587,7 @@ fn from_ir_top(
 }
 
 pub fn from_general_ir(
-    opts: &option::CompileOptions,
+    opts: &CompileOptions,
     ast: ir_ast::Ast,
     gpu_mapping: BTreeMap<Name, GpuMapping>
 ) -> CompileResult<Ast> {
@@ -605,10 +608,17 @@ mod test {
     use super::*;
     use crate::gpu::ast_builder::*;
     use crate::ir::ast_builder as ir;
-    use crate::option::CompileOptions;
     use crate::par;
     use crate::test::*;
     use crate::utils::pprint::PrettyPrint;
+
+    fn mk_env<'a>(opts: &'a CompileOptions) -> CodegenEnv<'a> {
+        CodegenEnv {
+            gpu_mapping: BTreeMap::new(),
+            struct_fields: BTreeMap::new(),
+            opts
+        }
+    }
 
     #[test]
     fn from_scalar_type() {
@@ -835,11 +845,7 @@ mod test {
     fn cluster_mapping_h(m: GpuMap, use_clusters: bool) -> Option<i64> {
         let mut opts = CompileOptions::default();
         opts.use_cuda_thread_block_clusters = use_clusters;
-        let env = CodegenEnv {
-            gpu_mapping: BTreeMap::new(),
-            struct_fields: BTreeMap::new(),
-            opts: &opts
-        };
+        let env = mk_env(&opts);
         get_cluster_mapping(&env, &m)
     }
 
@@ -861,18 +867,10 @@ mod test {
         assert_eq!(cluster_mapping_h(m, false), None);
     }
 
-    fn default_codegen_env<'a>(opts: &'a CompileOptions) -> CodegenEnv<'a> {
-        CodegenEnv {
-            gpu_mapping: BTreeMap::new(),
-            struct_fields: BTreeMap::new(),
-            opts
-        }
-    }
-
     #[test]
     fn from_host_stmt_sync_point() {
         let opts = CompileOptions::default();
-        let env = default_codegen_env(&opts);
+        let env = mk_env(&opts);
         let s = ir_ast::Stmt::SyncPoint {kind: ir_ast::SyncPointKind::BlockLocal, i: i()};
         assert_error_matches(
             from_ir_stmt(&env, &id("x"), vec![], vec![], s),
@@ -883,7 +881,7 @@ mod test {
     #[test]
     fn from_host_seq_for_stmt() {
         let opts = CompileOptions::default();
-        let env = default_codegen_env(&opts);
+        let env = mk_env(&opts);
         let s = _gen_for(par::LoopPar::default());
         let (mut body, kernels) = from_ir_stmt(&env, &id("f"), vec![], vec![], s).unwrap();
         assert_eq!(kernels.len(), 0);
@@ -910,7 +908,7 @@ mod test {
     #[test]
     fn from_host_par_for_stmt() {
         let opts = CompileOptions::default();
-        let mut env = default_codegen_env(&opts);
+        let mut env = mk_env(&opts);
         let m = GpuMapping::new(par::DEFAULT_TPB).add_parallelism(10);
         env.gpu_mapping.insert(id("x"), m.clone());
         let s = _gen_for(par::LoopPar::default());
@@ -936,7 +934,7 @@ mod test {
             i: Info::default()
         };
         let opts = CompileOptions::default();
-        let env = default_codegen_env(&opts);
+        let env = mk_env(&opts);
         let (mut body, kernels) = from_ir_stmt(&env, &id("f"), vec![], vec![], s).unwrap();
         assert!(kernels.is_empty());
 
@@ -965,7 +963,7 @@ mod test {
     #[test]
     fn unwrap_empty_params() {
         let opts = CompileOptions::default();
-        let env = default_codegen_env(&opts);
+        let env = mk_env(&opts);
         let (init_stmts, params) = unwrap_params(&env, vec![]).unwrap();
         assert!(init_stmts.is_empty());
         assert!(params.is_empty());
@@ -974,7 +972,7 @@ mod test {
     #[test]
     fn unwrap_known_struct_params() {
         let opts = CompileOptions::default();
-        let mut env = default_codegen_env(&opts);
+        let mut env = mk_env(&opts);
         let fields = vec![
             Field {id: "a".to_string(), ty: scalar(ElemSize::F64), i: i()},
             Field {id: "b".to_string(), ty: scalar(ElemSize::I32), i: i()},
@@ -1007,7 +1005,7 @@ mod test {
     #[test]
     fn unwrap_unknown_struct_param() {
         let opts = CompileOptions::default();
-        let env = default_codegen_env(&opts);
+        let env = mk_env(&opts);
         let params = vec![
             Param {id: id("x"), ty: Type::Struct {id: id("s")}, i: i()}
         ];
@@ -1017,7 +1015,7 @@ mod test {
     #[test]
     fn from_ir_called_fun() {
         let opts = CompileOptions::default();
-        let env = default_codegen_env(&opts);
+        let env = mk_env(&opts);
         let v = ir_ast::FunDef {
             id: id("f"), params: vec![], body: vec![], res_ty: ir_ast::Type::Void, i: i()
         };
@@ -1032,7 +1030,7 @@ mod test {
     #[test]
     fn from_ir_main_fun() {
         let opts = CompileOptions::default();
-        let env = default_codegen_env(&opts);
+        let env = mk_env(&opts);
         let main = ir_ast::FunDef {
             id: id("f"), params: vec![], body: vec![], res_ty: ir_ast::Type::Void, i: i()
         };

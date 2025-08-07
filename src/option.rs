@@ -1,7 +1,7 @@
 use crate::par::LoopPar;
+use crate::utils::ast::ElemSize;
 
 use std::collections::BTreeMap;
-
 use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 
@@ -57,8 +57,17 @@ pub struct CompileOptions {
     #[pyo3(get)]
     pub max_thread_blocks_per_cluster: i64,
 
+    // Enables the use of CUDA graphs in the generated CUDA code, which record the CUDA API calls
+    // on the first use to reduce the overhead of repeated kernel launches.
     #[pyo3(get, set)]
     pub use_cuda_graphs: bool,
+
+    // By default, the compiler decides the type to use for all integer and floating-point scalars.
+    // Setting the flags below overrides the decision made by the compiler.
+    #[pyo3(get)]
+    pub force_int_size: Option<ElemSize>,
+    #[pyo3(get)]
+    pub force_float_size: Option<ElemSize>,
 
     /////////////////
     // BUILD FLAGS //
@@ -88,6 +97,8 @@ impl Default for CompileOptions {
             use_cuda_thread_block_clusters: false,
             max_thread_blocks_per_cluster: 8,
             use_cuda_graphs: false,
+            force_int_size: None,
+            force_float_size: None,
             debug_print: false,
             includes: vec![],
             libs: vec![],
@@ -115,6 +126,28 @@ impl CompileOptions {
         } else {
             Err(PyRuntimeError::new_err("The number of thread blocks per \
                                          cluster must be a power of two."))
+        }
+    }
+
+    #[setter]
+    fn set_force_int_size(&mut self, sz: ElemSize) -> PyResult<()> {
+        if sz.is_integer() {
+            self.force_int_size = Some(sz);
+            Ok(())
+        } else {
+            Err(PyRuntimeError::new_err("Cannot use a non integer type for \
+                                         integer scalars."))
+        }
+    }
+
+    #[setter]
+    fn set_force_float_size(&mut self, sz: ElemSize) -> PyResult<()> {
+        if sz.is_floating_point() {
+            self.force_float_size = Some(sz);
+            Ok(())
+        } else {
+            Err(PyRuntimeError::new_err("Cannot use a non floating-point type \
+                                         for floating-point scalars."))
         }
     }
 }

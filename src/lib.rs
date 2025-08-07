@@ -94,7 +94,7 @@ fn compile_ir<'py>(
     // * Inserts top-level struct definitions for each Python dictionary.
     // * Replaces uses of tuples for indexing with an integer expression.
     // * Adds the parallelization arguments directly to the AST.
-    let ir_ast = ir::from_python(py_ast, opts.parallelize.clone(), &debug_env)?;
+    let ir_ast = ir::from_python(py_ast, &opts, &debug_env)?;
     debug_env.print("IR AST", &ir_ast);
 
     // Compile using the backend-specific approach to code generation. In the end, we pretty-print

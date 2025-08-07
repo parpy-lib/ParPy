@@ -14,14 +14,14 @@ mod reduce;
 pub mod ast_builder;
 
 use ast::*;
-use crate::option;
+use crate::option::CompileOptions;
 use crate::ir::ast as ir_ast;
 use crate::utils::debug::*;
 use crate::utils::err::*;
 
 pub fn from_general_ir(
     ast: ir_ast::Ast,
-    opts: &option::CompileOptions,
+    opts: &CompileOptions,
     debug_env: &DebugEnv
 ) -> CompileResult<Ast> {
     let ast = inter_block::restructure_inter_block_synchronization(opts, ast)?;

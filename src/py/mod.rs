@@ -17,17 +17,16 @@ mod type_check;
 #[cfg(test)]
 pub mod ast_builder;
 
-use ast::ElemSize;
 use symbolize::Symbolize;
 use crate::py_runtime_error;
 use crate::option::*;
+use crate::utils::ast::ScalarSizes;
 use crate::utils::debug;
 use crate::utils::err::CompileError;
 use crate::utils::info::Info;
 
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyDict};
-
 use std::collections::BTreeMap;
 
 pub use inline_calls::inline_function_calls;
@@ -45,12 +44,8 @@ pub fn parse_untyped_ast<'py>(
     labels::associate_labels(ast)
 }
 
-fn select_float_size(backend: &CompileBackend) -> ElemSize {
-    match backend {
-        CompileBackend::Cuda => ElemSize::F64,
-        CompileBackend::Metal => ElemSize::F32,
-        _ => ElemSize::F64
-    }
+fn select_scalar_sizes(opts: &CompileOptions) -> ScalarSizes {
+    ScalarSizes::new(&opts.force_int_size, &opts.force_float_size, &opts.backend)
 }
 
 pub fn specialize_ast_on_arguments<'py>(
@@ -86,8 +81,8 @@ pub fn specialize_ast_on_arguments<'py>(
     //
     // This particular order is important, because it allows us to reason about the exact sizes of
     // all slices and by extension the correctness of dimensions of slice operations.
-    let float_size = select_float_size(&opts.backend);
-    let def = type_check::type_check_params(def, &args, &float_size)?;
+    let scalar_sizes = select_scalar_sizes(&opts);
+    let def = type_check::type_check_params(def, &args, &scalar_sizes)?;
     let def = inline_const::inline_scalar_values(def, &args)?;
     debug_env.print("Python-like AST after inlining", &def);
 
@@ -103,13 +98,13 @@ pub fn specialize_ast_on_arguments<'py>(
     // unlike regular operations. When working with slices, the dimensions are explicitly declared,
     // making it natural to specify parallelism, while regular broadcasting would make this
     // implicit and therefore ill-suited with the parallelism approach used in this library.
-    let (_, ast) = type_check::check_body_shape(ast)?;
+    let (_, ast) = type_check::check_body_shape(ast, &scalar_sizes)?;
     debug_env.print("Python-like AST after shape checking", &ast);
     let ast = indices::resolve_indices(ast)?;
     debug_env.print("Python-like AST after resolving indices", &ast);
     let ast = slices::replace_slices_with_for_loops(ast)?;
     debug_env.print("Python-like AST after slice transformation", &ast);
-    let (_, ast) = type_check::type_check_body(ast, float_size)?;
+    let (_, ast) = type_check::type_check_body(ast, &scalar_sizes)?;
     debug_env.print("Python-like AST after type-checking", &ast);
 
     // Ensure that the main function contains return statements, as we cannot return values from

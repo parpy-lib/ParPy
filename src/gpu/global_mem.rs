@@ -11,6 +11,7 @@
 
 use super::ast::*;
 use crate::prickle_compile_error;
+use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
@@ -109,15 +110,15 @@ fn transform_thread_independent_memory_writes_stmt(
             if thread_index_dependent_expr(&vars, idx.as_ref()) {
                 acc.push(stmt);
             } else {
-                let i64_ty = Type::Scalar {sz: ElemSize::I64};
+                let int_ty = idx.get_type().clone();
                 acc.push(Stmt::If {
                     cond: Expr::BinOp {
                         lhs: Box::new(Expr::ThreadIdx {
-                            dim: Dim::X, ty: i64_ty.clone(), i: ii.clone()
+                            dim: Dim::X, ty: int_ty.clone(), i: ii.clone()
                         }),
                         op: BinOp::Eq,
                         rhs: Box::new(Expr::Int {
-                            v: 0, ty: i64_ty.clone(), i: ii.clone()
+                            v: 0, ty: int_ty.clone(), i: ii.clone()
                         }),
                         ty: Type::Scalar {sz: ElemSize::Bool},
                         i: ii.clone()

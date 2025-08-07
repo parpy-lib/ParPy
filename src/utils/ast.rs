@@ -1,3 +1,4 @@
+use crate::option::*;
 use crate::utils::info::InfoNode;
 
 use pyo3::pyclass;
@@ -64,6 +65,42 @@ impl fmt::Display for ElemSize {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScalarSizes {
+    pub int: ElemSize,
+    pub float: ElemSize
+}
+
+fn select_int_size(backend: &CompileBackend) -> ElemSize {
+    match backend {
+        CompileBackend::Metal => ElemSize::I32,
+        CompileBackend::Cuda | CompileBackend::Auto => ElemSize::I64,
+    }
+}
+
+fn select_float_size(backend: &CompileBackend) -> ElemSize {
+    match backend {
+        CompileBackend::Metal => ElemSize::F32,
+        CompileBackend::Cuda | CompileBackend::Auto => ElemSize::F64,
+    }
+}
+
+impl ScalarSizes {
+    pub fn new(
+        force_int: &Option<ElemSize>,
+        force_float: &Option<ElemSize>,
+        backend: &CompileBackend
+    ) -> ScalarSizes {
+        let int = force_int.clone().unwrap_or(select_int_size(backend));
+        let float = force_float.clone().unwrap_or(select_float_size(backend));
+        ScalarSizes {int, float}
+    }
+
+    pub fn from_opts(opts: &CompileOptions) -> ScalarSizes {
+        ScalarSizes::new(&opts.force_int_size, &opts.force_float_size, &opts.backend)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum UnOp {
     #[default] Sub, Not, BitNeg, Addressof, Exp, Log, Cos, Sin, Sqrt, Tanh, Abs
@@ -102,4 +139,47 @@ impl BinOp {
 pub trait ExprType<T>: InfoNode {
     fn get_type<'a>(&'a self) -> &'a T;
     fn is_leaf_node(&self) -> bool;
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn cuda_scalar_sizes() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Cuda;
+        let sz = ScalarSizes::from_opts(&opts);
+        assert_eq!(sz.int, ElemSize::I64);
+        assert_eq!(sz.float, ElemSize::F64);
+    }
+
+    #[test]
+    fn metal_scalar_sizes() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Metal;
+        let sz = ScalarSizes::from_opts(&opts);
+        assert_eq!(sz.int, ElemSize::I32);
+        assert_eq!(sz.float, ElemSize::F32);
+    }
+
+    #[test]
+    fn override_int_size() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Cuda;
+        opts.force_int_size = Some(ElemSize::I16);
+        let sz = ScalarSizes::from_opts(&opts);
+        assert_eq!(sz.int, ElemSize::I16);
+        assert_eq!(sz.float, ElemSize::F64);
+    }
+
+    #[test]
+    fn override_float_size() {
+        let mut opts = CompileOptions::default();
+        opts.backend = CompileBackend::Metal;
+        opts.force_float_size = Some(ElemSize::F16);
+        let sz = ScalarSizes::from_opts(&opts);
+        assert_eq!(sz.int, ElemSize::I32);
+        assert_eq!(sz.float, ElemSize::F16);
+    }
 }

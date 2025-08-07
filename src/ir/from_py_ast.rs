@@ -2,6 +2,8 @@ use super::ast::*;
 
 use crate::prickle_compile_error;
 use crate::prickle_internal_error;
+use crate::option::CompileOptions;
+use crate::utils::ast::ScalarSizes;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
@@ -14,14 +16,16 @@ use std::collections::BTreeMap;
 pub struct IREnv {
     structs: BTreeMap<py_ast::Type, Name>,
     par: BTreeMap<String, LoopPar>,
+    scalar_sizes: ScalarSizes
 }
 
 impl IREnv {
     pub fn new(
         structs: BTreeMap<py_ast::Type, Name>,
-        par: BTreeMap<String, LoopPar>
+        par: BTreeMap<String, LoopPar>,
+        opts: &CompileOptions
     ) -> Self {
-        IREnv {structs, par}
+        IREnv {structs, par, scalar_sizes: ScalarSizes::from_opts(opts)}
     }
 }
 
@@ -166,11 +170,12 @@ fn unwrap_tensor_indices(
 }
 
 fn flatten_indices(
+    env: &IREnv,
     mut shape: Vec<i64>,
     indices: Vec<Expr>,
     i: &Info
 ) -> CompileResult<Expr> {
-    let int_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
+    let int_ty = Type::Tensor {sz: env.scalar_sizes.int.clone(), shape: vec![]};
     let zero = Expr::Int {v: 0, ty: int_ty.clone(), i: i.clone()};
     let nindices = indices.len();
     let tail = shape.split_off(nindices);
@@ -256,7 +261,7 @@ fn to_ir_expr(
                 if let Type::Tensor {sz, shape} = target.get_type() {
                     let n = indices.len();
                     if n <= shape.len() {
-                        let idx = Box::new(flatten_indices(shape.clone(), indices, &i)?);
+                        let idx = Box::new(flatten_indices(&env, shape.clone(), indices, &i)?);
                         let res_shape = shape.clone()
                             .into_iter()
                             .skip(n)
@@ -373,7 +378,7 @@ fn to_ir_stmt(
             // NOTE: To ensure code within a GPU context actually runs on the GPU, we generate a
             // for-loop with a single iteration annotated to run in parallel on 1 thread.
             let var = Name::sym_str("_gpu_context");
-            let int64_ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
+            let int64_ty = Type::Tensor {sz: env.scalar_sizes.int.clone(), shape: vec![]};
             let lo = Expr::Int {v: 0, ty: int64_ty.clone(), i: i.clone()};
             let hi = Expr::Int {v: 1, ty: int64_ty.clone(), i: i.clone()};
             let body = to_ir_stmts(env, body)?;
@@ -471,7 +476,7 @@ mod test {
     use std::collections::BTreeMap;
 
     fn ir_env() -> IREnv {
-        IREnv::new(BTreeMap::new(), BTreeMap::new())
+        IREnv::new(BTreeMap::new(), BTreeMap::new(), &CompileOptions::default())
     }
 
     fn conv_ir_type(ty: py_ast::Type) -> CompileResult<Type> {
@@ -529,7 +534,7 @@ mod test {
         let mut structs = BTreeMap::new();
         let id = id("y");
         structs.insert(dty.clone(), id.clone());
-        let env = IREnv::new(structs, BTreeMap::new());
+        let env = IREnv::new(structs, BTreeMap::new(), &CompileOptions::default());
         assert_eq!(to_ir_type(&env, &i(), dty).unwrap(), Type::Struct {id});
     }
 
@@ -603,7 +608,7 @@ mod test {
     fn flatten_1d_index() {
         let shape = vec![10];
         let indices = vec![int(2, None)];
-        let e = flatten_indices(shape, indices, &i()).unwrap();
+        let e = flatten_indices(&ir_env(), shape, indices, &i()).unwrap();
         assert_eq!(e, binop(
             binop(int(2, None), BinOp::Mul, int(1, None), None),
             BinOp::Add,
@@ -616,7 +621,7 @@ mod test {
     fn flatten_2d_index() {
         let shape = vec![10, 10];
         let indices = vec![int(1, None), int(2, None)];
-        let e = flatten_indices(shape, indices, &i()).unwrap();
+        let e = flatten_indices(&ir_env(), shape, indices, &i()).unwrap();
         assert_eq!(constant_fold::fold_expr(e), int(12, None));
     }
 
@@ -624,7 +629,7 @@ mod test {
     fn flatten_3d_index() {
         let shape = vec![10, 20, 30];
         let indices = vec![int(3, None), int(2, None), int(1, None)];
-        let e = flatten_indices(shape, indices, &i()).unwrap();
+        let e = flatten_indices(&ir_env(), shape, indices, &i()).unwrap();
         assert_eq!(constant_fold::fold_expr(e), int(1861, None));
     }
 
@@ -663,7 +668,7 @@ mod test {
         let mut structs = BTreeMap::new();
         let id = id("z");
         structs.insert(dty.clone(), id.clone());
-        let env = IREnv::new(structs, BTreeMap::new());
+        let env = IREnv::new(structs, BTreeMap::new(), &CompileOptions::default());
         let subscript = py::subscript(
             py::var("x", dty), py::string("y"), py::scalar(ElemSize::I64)
         );
@@ -686,7 +691,7 @@ mod test {
         );
         let mut structs = BTreeMap::new();
         structs.insert(dty, id("?"));
-        let env = IREnv::new(structs, BTreeMap::new());
+        let env = IREnv::new(structs, BTreeMap::new(), &CompileOptions::default());
         assert_error_matches(to_ir_expr(&env, e), r"non-tensor target.*not supported");
     }
 

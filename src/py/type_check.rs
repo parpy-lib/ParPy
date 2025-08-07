@@ -3,7 +3,7 @@ use super::constant_fold;
 use super::slices;
 use crate::py_type_error;
 use crate::buffer::DataType;
-use crate::utils::ast::ExprType;
+use crate::utils::ast::{ExprType, ScalarSizes};
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
@@ -14,9 +14,7 @@ use crate::utils::smap::{SFold, SMapAccum};
 use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
 use pyo3::types::*;
-
 use std::collections::BTreeMap;
-
 use itertools::Itertools;
 
 #[derive(Clone, Debug)]
@@ -26,23 +24,21 @@ pub struct TypeCheckEnv {
     pub res_types: BTreeMap<String, Type>,
     pub res_ty: Type,
     pub shapes_only: bool,
-    pub float_size: ElemSize
+    pub scalar_sizes: ScalarSizes
 }
 
-impl Default for TypeCheckEnv {
-    fn default() -> TypeCheckEnv {
+impl TypeCheckEnv {
+    fn new(scalar_sizes: &ScalarSizes) -> TypeCheckEnv {
         TypeCheckEnv {
             vars: BTreeMap::new(),
             arg_types: BTreeMap::new(),
             res_types: BTreeMap::new(),
             res_ty: Type::Unknown,
             shapes_only: false,
-            float_size: ElemSize::F64
+            scalar_sizes: scalar_sizes.clone()
         }
     }
-}
 
-impl TypeCheckEnv {
     fn is_scalar_h(&self, ty: &Type, predicate: impl Fn(&ElemSize) -> bool) -> bool {
         match ty {
             Type::Tensor {sz, shape} => {
@@ -130,7 +126,10 @@ fn get_buffer_shape<'py>(
     t.getattr("shape")?.extract::<Vec<i64>>()
 }
 
-fn convert_type<'py>(arg: &Bound<'py, PyAny>, float_size: &ElemSize) -> PyResult<Type> {
+fn convert_type<'py>(
+    arg: &Bound<'py, PyAny>,
+    scalar_sizes: &ScalarSizes
+) -> PyResult<Type> {
     let py = arg.py();
     let buffer = py.import("prickle.buffer")?;
     let ty = arg.get_type();
@@ -140,9 +139,9 @@ fn convert_type<'py>(arg: &Bound<'py, PyAny>, float_size: &ElemSize) -> PyResult
         let shape = get_buffer_shape(&arg)?;
         Ok(Type::Tensor {sz, shape})
     } else if arg.is_instance(&PyInt::type_object(arg.py()))? {
-        Ok(Type::Tensor {sz: ElemSize::I64, shape: vec![]})
+        Ok(Type::Tensor {sz: scalar_sizes.int.clone(), shape: vec![]})
     } else if arg.is_instance(&PyFloat::type_object(arg.py()))? {
-        Ok(Type::Tensor {sz: float_size.clone(), shape: vec![]})
+        Ok(Type::Tensor {sz: scalar_sizes.float.clone(), shape: vec![]})
     } else if arg.is_instance(&PyDict::type_object(arg.py()))? {
         let fields = arg.call_method0("items")?
             .try_iter()?
@@ -150,7 +149,7 @@ fn convert_type<'py>(arg: &Bound<'py, PyAny>, float_size: &ElemSize) -> PyResult
                 let f = f?;
                 let id = f.get_item(0)?.extract::<String>()?;
                 let ty = f.get_item(1)?;
-                Ok((id, convert_type(&ty, float_size)?))
+                Ok((id, convert_type(&ty, scalar_sizes)?))
             })
             .collect::<PyResult<BTreeMap<String, Type>>>()?;
         Ok(Type::Dict {fields})
@@ -381,7 +380,7 @@ fn type_check_builtin(
     match &func {
         // Literals
         Builtin::Inf if args.is_empty() => {
-            let ty = Type::Tensor {sz: ElemSize::F64, shape: vec![]};
+            let ty = Type::Tensor {sz: env.scalar_sizes.float.clone(), shape: vec![]};
             Ok(Expr::Builtin {func, args, axis, ty, i})
         },
         // Unary tensor reductions, with an optional keyword argument
@@ -739,13 +738,14 @@ fn type_check_indexing(
     } else {
         py_type_error!(i, "Subscript operation on unsupported target {target}")
     }?;
+    let int_sz = &env.scalar_sizes.int;
     let expected_ty = match idx.get_type() {
         Type::Tensor {shape, ..} if shape.len() == 0 => {
-            Ok(Type::Tensor {sz: ElemSize::I64, shape: vec![]})
+            Ok(Type::Tensor {sz: int_sz.clone(), shape: vec![]})
         },
         Type::Tuple {elems} => {
             let expected_types = elems.iter()
-                .map(|_| Type::Tensor {sz: ElemSize::I64, shape: vec![]})
+                .map(|_| Type::Tensor {sz: int_sz.clone(), shape: vec![]})
                 .collect::<Vec<Type>>();
             Ok(Type::Tuple {elems: expected_types})
         },
@@ -772,10 +772,12 @@ pub fn type_check_expr(
             let ty = Type::Tensor {sz: ElemSize::Bool, shape: vec![]};
             Ok((env, Expr::Bool {v, ty, i}))
         },
-        Expr::Int {v, i, ..} =>
-            Ok((env, Expr::Int {v, ty: Type::Tensor {sz: ElemSize::I64, shape: vec![]}, i})),
+        Expr::Int {v, i, ..} => {
+            let ty = Type::Tensor {sz: env.scalar_sizes.int.clone(), shape: vec![]};
+            Ok((env, Expr::Int {v, ty, i}))
+        },
         Expr::Float {v, i, ..} => {
-            let ty = Type::Tensor {sz: env.float_size.clone(), shape: vec![]};
+            let ty = Type::Tensor {sz: env.scalar_sizes.float.clone(), shape: vec![]};
             Ok((env, Expr::Float {v, ty, i}))
         },
         Expr::UnOp {op, arg, i, ..} => {
@@ -837,7 +839,7 @@ pub fn type_check_expr(
             // NOTE: The type of a slice expression is pointless since it can never be used outside
             // of a subscript operation, so we consider it an integer type to be consistent with
             // regular indices.
-            let ty = Type::Tensor {sz: ElemSize::I64, shape: vec![]};
+            let ty = Type::Tensor {sz: env.scalar_sizes.int.clone(), shape: vec![]};
             Ok((env, Expr::Slice {lo, hi, ty, i}))
         },
         Expr::Tuple {elems, i, ..} => {
@@ -938,10 +940,11 @@ fn type_check_stmt(
         },
         Stmt::For {var, lo, hi, step, body, labels, i} => {
             let (env, lo) = type_check_expr(env, lo)?;
-            let lo = ensure_scalar_type(&env, lo, ElemSize::I64)?;
+            let int_sz = env.scalar_sizes.int.clone();
+            let lo = ensure_scalar_type(&env, lo, int_sz.clone())?;
             let (mut env, hi) = type_check_expr(env, hi)?;
-            let hi = ensure_scalar_type(&env, hi, ElemSize::I64)?;
-            env.vars.insert(var.clone(), Type::Tensor {sz: ElemSize::I64, shape: vec![]});
+            let hi = ensure_scalar_type(&env, hi, int_sz.clone())?;
+            env.vars.insert(var.clone(), Type::Tensor {sz: int_sz.clone(), shape: vec![]});
             let (mut env, body) = type_check_stmts(env, body)?;
             env.vars.remove(&var);
             Ok((env, Stmt::For {var, lo, hi, step, body, labels, i}))
@@ -994,13 +997,13 @@ fn add_param_types<'py>(
     id: &Name,
     params: Vec<Param>,
     args: &Vec<Bound<'py, PyAny>>,
-    float_size: &ElemSize
+    scalar_sizes: &ScalarSizes
 ) -> PyResult<Vec<Param>> {
     if args.len() == params.len() {
         args.iter()
             .zip(params.into_iter())
             .map(|(arg, Param {id, i, ..})| {
-                Ok(Param {id, ty: convert_type(&arg, float_size)?, i})
+                Ok(Param {id, ty: convert_type(&arg, scalar_sizes)?, i})
             })
             .collect::<PyResult<Vec<Param>>>()
     } else {
@@ -1015,9 +1018,9 @@ fn add_param_types<'py>(
 pub fn type_check_params<'py>(
     def: FunDef,
     args: &Vec<Bound<'py, PyAny>>,
-    float_size: &ElemSize
+    scalar_sizes: &ScalarSizes
 ) -> PyResult<FunDef> {
-    let params = add_param_types(&def.id, def.params, args, float_size)?;
+    let params = add_param_types(&def.id, def.params, args, scalar_sizes)?;
     Ok(FunDef {params, ..def})
 }
 
@@ -1080,14 +1083,11 @@ fn extract_param_types_top(t: &Top) -> (String, Vec<Type>) {
 
 fn type_check_body_shapes(
     ast: Ast,
+    scalar_sizes: &ScalarSizes,
     shapes_only: bool,
-    float_size: Option<ElemSize>
 ) -> PyResult<(TypeCheckEnv, Ast)> {
-    let mut env = TypeCheckEnv::default();
+    let mut env = TypeCheckEnv::new(scalar_sizes);
     env.shapes_only = shapes_only;
-    if let Some(sz) = float_size {
-        env.float_size = sz;
-    }
 
     // Collect the argument types of all defined functions before running.
     env.arg_types = ast.tops.iter()
@@ -1102,23 +1102,35 @@ fn type_check_body_shapes(
     Ok((env, Ast {tops, main}))
 }
 
-pub fn type_check_body(ast: Ast, float_size: ElemSize) -> PyResult<(TypeCheckEnv, Ast)> {
-    type_check_body_shapes(ast, false, Some(float_size))
+pub fn type_check_body(
+    ast: Ast,
+    scalar_sizes: &ScalarSizes
+) -> PyResult<(TypeCheckEnv, Ast)> {
+    type_check_body_shapes(ast, scalar_sizes, false)
 }
 
-pub fn check_body_shape(ast: Ast) -> PyResult<(TypeCheckEnv, Ast)> {
-    type_check_body_shapes(ast, true, None)
+pub fn check_body_shape(
+    ast: Ast,
+    scalar_sizes: &ScalarSizes
+) -> PyResult<(TypeCheckEnv, Ast)> {
+    type_check_body_shapes(ast, scalar_sizes, true)
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::test::*;
+    use crate::option::CompileOptions;
     use crate::py::ast_builder::*;
     use crate::utils::pprint::PrettyPrint;
 
     use std::ffi::CString;
     use strum::IntoEnumIterator;
+
+    fn mk_env(opts: &CompileOptions) -> TypeCheckEnv {
+        let sz = ScalarSizes::from_opts(&opts);
+        TypeCheckEnv::new(&sz)
+    }
 
     fn test_lub_elem_size_ok(lhs: &ElemSize, rhs: &ElemSize, expected: ElemSize) {
         let result = lub_elem_size(lhs, rhs, &Info::default());
@@ -1136,43 +1148,51 @@ mod test {
 
     #[test]
     fn is_bool_scalar() {
-        assert!(TypeCheckEnv::default().is_bool_scalar(&bool_type()));
+        let opts = CompileOptions::default();
+        assert!(mk_env(&opts).is_bool_scalar(&bool_type()));
     }
 
     #[test]
     fn is_signed_int_scalar() {
-        assert!(TypeCheckEnv::default().is_signed_int_scalar(&scalar(ElemSize::I16)));
+        let opts = CompileOptions::default();
+        assert!(mk_env(&opts).is_signed_int_scalar(&scalar(ElemSize::I16)));
     }
 
     #[test]
     fn is_unsigned_int_scalar() {
-        assert!(TypeCheckEnv::default().is_unsigned_int_scalar(&scalar(ElemSize::U32)));
+        let opts = CompileOptions::default();
+        assert!(mk_env(&opts).is_unsigned_int_scalar(&scalar(ElemSize::U32)));
     }
 
     #[test]
     fn is_float_scalar() {
-        assert!(TypeCheckEnv::default().is_float_scalar(&scalar(ElemSize::F16)));
+        let opts = CompileOptions::default();
+        assert!(mk_env(&opts).is_float_scalar(&scalar(ElemSize::F16)));
     }
 
     #[test]
     fn is_scalar_tensor_fails() {
-        assert!(!TypeCheckEnv::default().is_scalar(&shape(vec![10])));
+        let opts = CompileOptions::default();
+        assert!(!mk_env(&opts).is_scalar(&shape(vec![10])));
     }
 
     #[test]
     fn is_arith_tensor_scalar_fails() {
-        assert!(!TypeCheckEnv::default().is_arith_tensor(&scalar(ElemSize::Bool)));
+        let opts = CompileOptions::default();
+        assert!(!mk_env(&opts).is_arith_tensor(&scalar(ElemSize::Bool)));
     }
 
     #[test]
     fn is_arith_tensor_tensor() {
-        assert!(TypeCheckEnv::default().is_arith_tensor(&shape(vec![10])));
+        let opts = CompileOptions::default();
+        assert!(mk_env(&opts).is_arith_tensor(&shape(vec![10])));
     }
 
     #[test]
     fn is_arith_tensor_bool_tensor_fails() {
         let ty = Type::Tensor {sz: ElemSize::Bool, shape: vec![10]};
-        assert!(!TypeCheckEnv::default().is_arith_tensor(&ty));
+        let opts = CompileOptions::default();
+        assert!(!mk_env(&opts).is_arith_tensor(&ty));
     }
 
     #[test]
@@ -1216,52 +1236,92 @@ mod test {
         );
     }
 
-    fn try_convert_argument_type(s: &str, float_sz: ElemSize, expected_ty: Type) {
+    fn try_convert_argument_type(s: &str, scalar_sizes: ScalarSizes, expected_ty: Type) {
         let s = CString::new(s).unwrap();
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let arg = py.eval(&s, None, None).unwrap();
-            let ty = convert_type(&arg, &float_sz).unwrap();
+            let ty = convert_type(&arg, &scalar_sizes).unwrap();
             assert_eq!(
                 ty, expected_ty, "Expected type {0} but found {1}",
                 expected_ty.pprint_default(), ty.pprint_default());
         });
     }
 
+    fn ssz_i8_f16() -> ScalarSizes {
+        ScalarSizes {int: ElemSize::I8, float: ElemSize::F16}
+    }
+
+    fn ssz_i16_f16() -> ScalarSizes {
+        ScalarSizes {int: ElemSize::I16, float: ElemSize::F16}
+    }
+
+    fn ssz_u32_f32() -> ScalarSizes {
+        ScalarSizes {int: ElemSize::U32, float: ElemSize::F32}
+    }
+
+    fn ssz_i32_f32() -> ScalarSizes {
+        ScalarSizes {int: ElemSize::I32, float: ElemSize::F32}
+    }
+
+    fn ssz_i64_f64() -> ScalarSizes {
+        ScalarSizes {int: ElemSize::I64, float: ElemSize::F64}
+    }
+
     #[test]
-    fn convert_integer_literal_arg() {
-        try_convert_argument_type("0", ElemSize::F32, scalar(ElemSize::I64));
+    fn convert_integer_literal_arg_u32() {
+        try_convert_argument_type("0", ssz_u32_f32(), scalar(ElemSize::U32));
+    }
+
+    #[test]
+    fn convert_integer_literal_arg_i8() {
+        try_convert_argument_type("0", ssz_i8_f16(), scalar(ElemSize::I8));
+    }
+
+    #[test]
+    fn convert_integer_literal_arg_i16() {
+        try_convert_argument_type("0", ssz_i16_f16(), scalar(ElemSize::I16));
+    }
+
+    #[test]
+    fn convert_integer_literal_arg_i32() {
+        try_convert_argument_type("0", ssz_i32_f32(), scalar(ElemSize::I32));
+    }
+
+    #[test]
+    fn convert_integer_literal_arg_i64() {
+        try_convert_argument_type("0", ssz_i64_f64(), scalar(ElemSize::I64));
     }
 
     #[test]
     fn convert_float_literal_arg_f16() {
-        try_convert_argument_type("0.0", ElemSize::F16, scalar(ElemSize::F16));
+        try_convert_argument_type("0.0", ssz_i16_f16(), scalar(ElemSize::F16));
     }
 
     #[test]
     fn convert_float_literal_arg_f32() {
-        try_convert_argument_type("0.0", ElemSize::F32, scalar(ElemSize::F32));
+        try_convert_argument_type("0.0", ssz_i32_f32(), scalar(ElemSize::F32));
     }
 
     #[test]
     fn convert_float_literal_arg_f64() {
-        try_convert_argument_type("0.0", ElemSize::F64, scalar(ElemSize::F64));
+        try_convert_argument_type("0.0", ssz_i64_f64(), scalar(ElemSize::F64));
     }
 
     #[test]
     fn convert_conforming_dict_arg() {
         let fields = vec![
-            ("a".to_string(), scalar(ElemSize::I64)),
+            ("a".to_string(), scalar(ElemSize::I32)),
             ("b".to_string(), scalar(ElemSize::F32)),
         ].into_iter().collect::<BTreeMap<String, Type>>();
         let ty = Type::Dict {fields};
-        try_convert_argument_type("{'a': 2, 'b': 4.5}", ElemSize::F32, ty);
+        try_convert_argument_type("{'a': 2, 'b': 4.5}", ssz_i32_f32(), ty);
     }
 
     #[test]
     #[should_panic]
     fn convert_list_arg_fails() {
-        try_convert_argument_type("[1, 2, 3]", ElemSize::F32, shape(vec![3]));
+        try_convert_argument_type("[1, 2, 3]", ssz_i32_f32(), shape(vec![3]));
     }
 
     #[test]
@@ -1294,17 +1354,19 @@ mod test {
     }
 
     fn test_lub_type_ok(lty: Type, rty: Type, expected: Type) {
-        let env = TypeCheckEnv::default();
+        let opts = CompileOptions::default();
+        let env = mk_env(&opts);
         let r = lub_type(&env, lty, rty, &Info::default());
         assert_eq!(expected, r.unwrap());
     }
 
     fn test_lub_type_fail(lty: Type, rty: Type) {
-        let env = TypeCheckEnv::default();
+        let opts = CompileOptions::default();
+        let env = mk_env(&opts);
         let r = lub_type(&env, lty, rty, &Info::default());
         assert!(r.is_err());
     }
-    
+
     #[test]
     fn lub_type_string() {
         test_lub_type_ok(Type::String, Type::String, Type::String)
@@ -1376,7 +1438,8 @@ mod test {
     fn lub_type_shapes_only() {
         let ty1 = Type::Tensor {sz: ElemSize::I32, shape: vec![5, 10]};
         let ty2 = Type::Tensor {sz: ElemSize::F64, shape: vec![10]};
-        let mut env = TypeCheckEnv::default();
+        let opts = CompileOptions::default();
+        let mut env = mk_env(&opts);
         env.shapes_only = true;
         match lub_type(&env, ty1, ty2, &Info::default()).unwrap() {
             Type::Tensor {shape, ..} => assert_eq!(shape, vec![5, 10]),
@@ -1396,6 +1459,21 @@ mod test {
         test_lub_type_ok(ty1.clone(), ty2, ty1);
     }
 
+    #[test]
+    fn type_check_inf_literal_f16() {
+        let mut opts = CompileOptions::default();
+        opts.force_float_size = Some(ElemSize::F16);
+        let env = mk_env(&opts);
+        let expected = Expr::Builtin {
+            func: Builtin::Inf, args: vec![], axis: None,
+            ty: Type::Tensor {sz: ElemSize::F16, shape: vec![]}, i: i()
+        };
+        assert_eq!(
+            type_check_builtin(&env, Builtin::Inf, vec![], None, i()).unwrap(),
+            expected
+        );
+    }
+
     fn var(s: &str) -> Name {
         Name::new(s.to_string())
     }
@@ -1406,8 +1484,8 @@ mod test {
     }
 
     fn test_tc_unop(op: UnOp, arg: Expr) -> PyResult<Type> {
-        let env = TypeCheckEnv::default();
-        type_check_unop(&env, &op, &arg, &Info::default())
+        let opts = CompileOptions::default();
+        type_check_unop(&mk_env(&opts), &op, &arg, &Info::default())
     }
 
     #[test]
@@ -1427,8 +1505,8 @@ mod test {
     }
 
     fn test_tc_binop(lhs: Expr, op: BinOp, rhs: Expr) -> PyResult<Type> {
-        let env = TypeCheckEnv::default();
-        let (_, ty, _) = type_check_binop(&env, lhs, &op, rhs, &Info::default())?;
+        let opts = CompileOptions::default();
+        let (_, ty, _) = type_check_binop(&mk_env(&opts), lhs, &op, rhs, &Info::default())?;
         Ok(ty)
     }
 
@@ -1485,7 +1563,8 @@ mod test {
     }
 
     fn tc_expr(vars: BTreeMap<Name, Type>, e: Expr) -> PyResult<Expr> {
-        let mut env = TypeCheckEnv::default();
+        let opts = CompileOptions::default();
+        let mut env = mk_env(&opts);
         env.vars = vars;
         let (_ ,e) = type_check_expr(env, e)?;
         Ok(e)
@@ -1612,7 +1691,8 @@ mod test {
 
     #[test]
     fn type_check_return_stmt() {
-        let env = TypeCheckEnv::default();
+        let opts = CompileOptions::default();
+        let env = mk_env(&opts);
         let ret = Stmt::Return {
             value: Expr::Int {
                 v: 1, ty: Type::Unknown, i: Info::default()
@@ -1624,7 +1704,8 @@ mod test {
 
     #[test]
     fn type_check_conflicting_return() {
-        let env = TypeCheckEnv::default();
+        let opts = CompileOptions::default();
+        let env = mk_env(&opts);
         let conds = Stmt::If {
             cond: Expr::Bool {v: true, ty: Type::Unknown, i: Info::default()},
             thn: vec![Stmt::Return {
@@ -1659,7 +1740,7 @@ mod test {
             i: Info::default()
         };
         let ast = Ast {tops: vec![], main};
-        assert!(type_check_body(ast, ElemSize::F64).is_ok());
+        assert!(type_check_body(ast, &ssz_i64_f64()).is_ok());
     }
 
     fn test_slicing(
