@@ -56,7 +56,7 @@ def _check_kwarg(kwargs, key, default_value, expected_ty):
         raise RuntimeError(f"The keyword argument {key} should be of type {ty}")
 
 def _check_kwargs(kwargs):
-    default_opts = prickle.CompileOptions()
+    default_opts = CompileOptions()
     opts = _check_kwarg(kwargs, "opts", default_opts, type(default_opts))
 
     # If the compiler is given any other keyword arguments than those specified
@@ -109,16 +109,14 @@ def threads(n):
     Produces a LoopPar object (used in parallel specifications) representing a
     parallel operation over `n` threads.
     """
-    from .prickle import LoopPar
-    return LoopPar().threads(n)
+    return prickle.LoopPar().threads(n)
 
 def reduce():
     """
     Produces a LoopPar object (used in parallel specifications) representing a
     parallelizable reduction.
     """
-    from .prickle import LoopPar
-    return LoopPar().reduce()
+    return prickle.LoopPar().reduce()
 
 def clear_cache():
     """
@@ -133,7 +131,6 @@ def declare_external(py_name, ext_name, params, res_ty, header, backend):
     """
     Declares external functions accessible from JIT-compiled functions.
     """
-    from .prickle import make_external_declaration
     import inspect
     caller = inspect.getframeinfo(inspect.stack()[1][0])
     if hasattr(caller, "positions"):
@@ -141,13 +138,13 @@ def declare_external(py_name, ext_name, params, res_ty, header, backend):
         i = (caller.filename, p.lineno, p.col_offset, p.end_lineno, p.end_col_offset)
     else:
         i = None
-    ext_decl = make_external_declaration(py_name, ext_name, params, res_ty, header, i)
+    ext_decl = prickle.make_external_declaration(py_name, ext_name, params, res_ty, header, i)
     if not backend in _ext_decls:
         _ext_decls[backend] = {}
     _ext_decls[backend][py_name] = ext_decl
     _ext_tops[py_name] = ext_decl
 
-def compile_string(fun_name, code, opts=prickle.CompileOptions()):
+def compile_string(fun_name, code, opts=CompileOptions()):
     """
     Compiles the code provided as a string and returns a wrapper to the
     entry point function with the specified name.
@@ -166,7 +163,7 @@ def compile_string(fun_name, code, opts=prickle.CompileOptions()):
     inner.__name__ = fun_name
     return inner
 
-def print_compiled(fun, args, opts=prickle.CompileOptions()):
+def print_compiled(fun, args, opts=CompileOptions()):
     """
     Compile the provided Python function with respect to the given function
     arguments and parallelization arguments. Returns the resulting CUDA C++

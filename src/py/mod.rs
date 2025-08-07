@@ -44,10 +44,6 @@ pub fn parse_untyped_ast<'py>(
     labels::associate_labels(ast)
 }
 
-fn select_scalar_sizes(opts: &CompileOptions) -> ScalarSizes {
-    ScalarSizes::new(&opts.force_int_size, &opts.force_float_size, &opts.backend)
-}
-
 pub fn specialize_ast_on_arguments<'py>(
     t: ast::Top,
     args: Vec<Bound<'py, PyAny>>,
@@ -81,7 +77,7 @@ pub fn specialize_ast_on_arguments<'py>(
     //
     // This particular order is important, because it allows us to reason about the exact sizes of
     // all slices and by extension the correctness of dimensions of slice operations.
-    let scalar_sizes = select_scalar_sizes(&opts);
+    let scalar_sizes = ScalarSizes::from_opts(&opts);
     let def = type_check::type_check_params(def, &args, &scalar_sizes)?;
     let def = inline_const::inline_scalar_values(def, &args)?;
     debug_env.print("Python-like AST after inlining", &def);

@@ -1,7 +1,7 @@
 use crate::option::*;
 use crate::utils::info::InfoNode;
 
-use pyo3::pyclass;
+use pyo3::prelude::*;
 use strum_macros::EnumIter;
 use std::cmp::Ordering;
 use std::fmt;
@@ -65,9 +65,13 @@ impl fmt::Display for ElemSize {
     }
 }
 
+#[pyclass(eq, frozen)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScalarSizes {
+    #[pyo3(get)]
     pub int: ElemSize,
+
+    #[pyo3(get)]
     pub float: ElemSize
 }
 
@@ -95,7 +99,11 @@ impl ScalarSizes {
         let float = force_float.clone().unwrap_or(select_float_size(backend));
         ScalarSizes {int, float}
     }
+}
 
+#[pymethods]
+impl ScalarSizes {
+    #[new]
     pub fn from_opts(opts: &CompileOptions) -> ScalarSizes {
         ScalarSizes::new(&opts.force_int_size, &opts.force_float_size, &opts.backend)
     }

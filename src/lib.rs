@@ -132,6 +132,7 @@ fn prickle(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<option::CompileBackend>()?;
     m.add_class::<option::CompileOptions>()?;
     m.add_class::<utils::ast::ElemSize>()?;
+    m.add_class::<utils::ast::ScalarSizes>()?;
     m.add_class::<buffer::DataType>()?;
     m.add_class::<py::ext::ExtType>()?;
     Ok(())

@@ -1,7 +1,6 @@
 import numpy as np
 import prickle
 import pytest
-import re
 import subprocess
 import tempfile
 
