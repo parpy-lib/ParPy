@@ -148,10 +148,11 @@ def test_recursive_call_fails():
 
 def test_external_declaration():
     import prickle.types as types
-    params = [("x", types.F32), ("y", types.F32)]
-    res_ty = types.F32
     prickle.clear_cache()
-    prickle.declare_external("pow", "powf", params, res_ty, None, prickle.CompileBackend.Cuda)
+
+    @prickle.external("powf", prickle.CompileBackend.Cuda, prickle.Target.Device)
+    def pow(x: types.F32, y: types.F32) -> types.F32:
+        return x ** y
     assert len(prickle._ext_decls) == 1
 
 def call_external_helper(backend, fn):
@@ -178,16 +179,22 @@ def call_external_helper_metal():
 def test_call_external(backend):
     import prickle.types as types
     def helper():
-        params = [("x", types.F32)]
-        res_ty = types.F32
         if backend == prickle.CompileBackend.Cuda:
-            prickle.declare_external("sqrt_ext", "sqrtf", params, res_ty, None, backend)
-            call_external_helper_cuda()
+            ext_name = "sqrtf"
+            header = None
         elif backend == prickle.CompileBackend.Metal:
-            prickle.declare_external("sqrt_ext", "metal::sqrt", params, res_ty, "<metal_math>", backend)
-            call_external_helper_metal()
+            ext_name = "metal::sqrt"
+            header = "<metal_math>"
         else:
             raise RuntimeError(f"Unsupported backend {backend}")
+
+        @prickle.external(ext_name, backend, prickle.Target.Device, header=header)
+        def sqrt_ext(x: types.F32) -> types.F32:
+            return np.sqrt(x)
+        if backend == prickle.CompileBackend.Cuda:
+            call_external_helper_cuda()
+        elif backend == prickle.CompileBackend.Metal:
+            call_external_helper_metal()
     run_if_backend_is_enabled(backend, helper)
 
 def select_distinct_element(x, l):
@@ -202,7 +209,10 @@ def test_invalid_backend_call(backend):
     def helper():
         other_backend = select_distinct_element(backend, compiler_backends)
         res_ty = types.I32
-        prickle.declare_external("zero", "_zero", [], res_ty, None, other_backend)
+
+        @prickle.external("_zero", other_backend, prickle.Target.Device)
+        def zero() -> types.I32:
+            return 0
         with pytest.raises(RuntimeError) as e_info:
             @prickle.jit
             def f(x):
@@ -213,89 +223,18 @@ def test_invalid_backend_call(backend):
         assert e_info.match(r"Call to unknown function zero.*")
     run_if_backend_is_enabled(backend, helper)
 
-def clamp_helper(ext_id):
-    import prickle.types as types
-    params = [("x", types.F32), ("lo", types.F32), ("hi", types.F32)]
-    res_ty = types.F32
-    backend = prickle.CompileBackend.Cuda
-    prickle.declare_external(
-        "clamp", ext_id, params, res_ty, "<test_utils.h>", backend
-    )
-    # Clear the function cache to ensure we do not refer to a 'clamp_many'
-    # defined in a preceding test.
-    prickle.clear_cache()
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_invalid_parameter_type_annotation(backend):
+    with pytest.raises(RuntimeError) as e_info:
+        @prickle.external("dummy", backend, prickle.Target.Device)
+        def dummy(x: int) -> prickle.types.I32:
+            return x
+    assert e_info.match("Unsupported parameter type annotation")
 
-    @prickle.jit
-    def clamp_many(out, x):
-        prickle.label('N')
-        out[:] = clamp(x[:], 0.0, 10.0)
-    x = torch.randn(10, dtype=torch.float32)
-    out = torch.zeros_like(x)
-    opts = par_opts(backend, {'N': prickle.threads(10)})
-    opts.includes += ["test/code"]
-    clamp_many(out, x, opts=opts)
-    assert all(out >= 0.0) and all(out <= 10.0)
-
-def test_call_user_defined_external_cuda():
-    def helper():
-        clamp_helper("clamp")
-    run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
-
-def test_call_non_existent_external_cuda():
-    def helper():
-        with pytest.raises(RuntimeError, match="Compilation of generated CUDA code failed"):
-            clamp_helper("clamp_non_existent")
-    run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
-
-def test_call_invalid_decl_external_cuda():
-    def helper():
-        with pytest.raises(RuntimeError, match="Compilation of generated CUDA code failed"):
-            clamp_helper("clamp_non_device")
-    run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
-
-def test_call_external_array_op_cuda():
-    backend = prickle.CompileBackend.Cuda
-    def helper():
-        import prickle.types as types
-        params = [("x", types.pointer(types.F64)), ("n", types.I64)]
-        res_ty = types.F64
-        prickle.declare_external(
-            "sum_row", "sum_row_ext", params, res_ty, "<test_utils.h>", backend
-        )
-
-        @prickle.jit
-        def sum_ext_seq(x, y, N, M):
-            prickle.label('N')
-            for i in range(N):
-                y[i] = sum_row(x[i], M)
-        x = torch.randn(10, 20, dtype=torch.float64)
-        y = torch.zeros(10, dtype=torch.float64)
-        opts = par_opts(backend, {'N': prickle.threads(10)})
-        opts.includes += ['test/code']
-        sum_ext_seq(x, y, 10, 20, opts=opts)
-        assert torch.allclose(y, torch.sum(x, dim=1))
-    run_if_backend_is_enabled(backend, helper)
-
-def test_call_external_inconsistent_shapes_cuda():
-    backend = prickle.CompileBackend.Cuda
-    def helper():
-        import prickle.types as types
-        params = [("x", types.pointer(types.F64)), ("n", types.I64)]
-        res_ty = types.F64
-        prickle.declare_external(
-            "sum_row", "sum_row_ext", params, res_ty, "<test_utils.h>", backend
-        )
-
-        with pytest.raises(TypeError, match="incompatible types"):
-            @prickle.jit
-            def sum_ext_seq(out, x, y):
-                with prickle.gpu:
-                    out[0] = sum_row(x, 10) + sum_row(y, 20)
-            x = torch.randn(10, dtype=torch.float64)
-            y = torch.randn(20, dtype=torch.float64)
-            out = torch.zeros(1, dtype=torch.float64)
-            opts = par_opts(backend, {})
-            opts.includes += ['test/code']
-            sum_ext_seq(out, x, y, opts=opts)
-            assert torch.allclose(out, torch.sum(x) + torch.sum(y))
-    run_if_backend_is_enabled(backend, helper)
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_invalid_return_type_annotation(backend):
+    with pytest.raises(RuntimeError) as e_info:
+        @prickle.external("dummy", backend, prickle.Target.Device)
+        def dummy(x: prickle.types.I32) -> int:
+            return x
+    assert e_info.match("Unsupported return type annotation on external function")

@@ -7,6 +7,7 @@ pub use crate::par::LoopPar;
 pub use crate::utils::ast::ElemSize;
 pub use crate::utils::ast::UnOp;
 pub use crate::utils::ast::BinOp;
+pub use crate::utils::ast::Target;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -363,7 +364,7 @@ pub enum Top {
     StructDef {id: Name, fields: Vec<Field>, i: Info},
     ExtDecl {
         id: Name, ext_id: String, params: Vec<Param>, res_ty: Type,
-        header: Option<String>, i: Info
+        header: Option<String>, target: Target, par: LoopPar, i: Info
     },
     FunDef {v: FunDef},
 }

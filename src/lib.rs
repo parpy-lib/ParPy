@@ -15,20 +15,24 @@ use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyCapsule, PyDict};
 
+#[pyclass(eq, frozen)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ExtType {
+    Scalar(utils::ast::ElemSize),
+    Pointer(utils::ast::ElemSize),
+}
+
 #[pyfunction]
 fn python_to_ir<'py>(
     py_ast: Bound<'py, PyAny>,
-    filepath: String,
-    line_ofs: usize,
-    col_ofs: usize,
+    info: (String, usize, usize),
     tops: BTreeMap<String, Bound<'py, PyCapsule>>,
-    globals: Bound<'py, PyDict>
+    vars: (Bound<'py, PyDict>, Bound<'py, PyDict>),
+    py: Python<'py>
 ) -> PyResult<Bound<'py, PyCapsule>> {
-    let py = py_ast.py().clone();
-
     // Convert the provided Python AST (parsed by the 'ast' module of Python) to a similar
     // representation of the Python AST using Rust data types.
-    let def = py::parse_untyped_ast(py_ast, filepath, line_ofs, col_ofs, &tops, globals)?;
+    let def = py::parse_untyped_ast(py_ast, info, &tops, vars)?;
 
     // Inline function calls referring to previously defined IR ASTs.
     let def = py::inline_function_calls(def, &tops)?;
@@ -39,16 +43,17 @@ fn python_to_ir<'py>(
 }
 
 #[pyfunction]
-fn make_external_declaration<'py>(
-    id: String,
+fn declare_external<'py>(
+    py_ast: Bound<'py, PyAny>,
+    info: (String, usize, usize),
     ext_id: String,
-    params: Vec<(String, py::ext::ExtType)>,
-    res_ty: py::ext::ExtType,
+    target: utils::ast::Target,
     header: Option<String>,
-    info: Option<(String, usize, usize, usize, usize)>,
+    par: par::LoopPar,
+    vars: (Bound<'py, PyDict>, Bound<'py, PyDict>),
     py: Python<'py>
 ) -> PyResult<Bound<'py, PyCapsule>> {
-    let t = py::ext::make_declaration(id, ext_id, params, res_ty, header, info);
+    let t = py::convert_external(py_ast, info, ext_id, target, header, par, vars)?;
     Ok(PyCapsule::new::<py::ast::Top>(py, t, None)?)
 }
 
@@ -122,7 +127,7 @@ fn compile_ir<'py>(
 #[pymodule]
 fn prickle(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(python_to_ir, m)?)?;
-    m.add_function(wrap_pyfunction!(make_external_declaration, m)?)?;
+    m.add_function(wrap_pyfunction!(declare_external, m)?)?;
     m.add_function(wrap_pyfunction!(print_ast, m)?)?;
     m.add_function(wrap_pyfunction!(get_function_name, m)?)?;
     m.add_function(wrap_pyfunction!(compile_ir, m)?)?;
@@ -133,8 +138,9 @@ fn prickle(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<option::CompileOptions>()?;
     m.add_class::<utils::ast::ElemSize>()?;
     m.add_class::<utils::ast::ScalarSizes>()?;
+    m.add_class::<utils::ast::Target>()?;
     m.add_class::<buffer::DataType>()?;
-    m.add_class::<py::ext::ExtType>()?;
+    m.add_class::<ExtType>()?;
     Ok(())
 }
 

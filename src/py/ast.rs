@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 pub use crate::utils::ast::ElemSize;
 pub use crate::utils::ast::UnOp;
 pub use crate::utils::ast::BinOp;
+pub use crate::utils::ast::Target;
+pub use crate::par::LoopPar;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum Type {
@@ -552,7 +554,7 @@ pub struct FunDef {
 pub enum Top {
     ExtDecl {
         id: Name, ext_id: String, params: Vec<Param>, res_ty: Type,
-        header: Option<String>, i: Info
+        target: Target, header: Option<String>, par: LoopPar, i: Info
     },
     FunDef {v: FunDef},
 }

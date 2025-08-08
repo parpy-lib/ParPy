@@ -49,3 +49,37 @@ int32_t f() {
             fn()
         assert e_info.match(r"Buffer allocation failed")
     run_if_backend_is_enabled(backend, helper)
+
+def test_metal_host_external():
+    backend = prickle.CompileBackend.Metal
+    def helper():
+        import prickle.types as types
+        @prickle.external("add_metal_host", backend, prickle.Target.Host, header="<metal_utils.h>")
+        def add_metal(x: types.F32, y: types.F32) -> types.F32:
+            return x + y
+
+        @prickle.jit
+        def set_to_sum(x, a, b):
+            c = add_metal(a, b)
+            prickle.label('N')
+            x[:] = c
+        x = torch.zeros(10, dtype=torch.float32)
+        a = 1.0
+        b = 2.0
+        opts = par_opts(backend, {'N': prickle.threads(10)})
+        opts.includes += ['test/code']
+        set_to_sum(x, a, b, opts=opts)
+        assert torch.allclose(x, torch.tensor(3.0))
+    run_if_backend_is_enabled(backend, helper)
+
+def test_metal_parallel_host_external_fails():
+    backend = prickle.CompileBackend.Metal
+    with pytest.raises(RuntimeError) as e_info:
+        import prickle.types as types
+        @prickle.external(
+            "dummy", backend, prickle.Target.Host,
+            parallelize=prickle.threads(1024)
+        )
+        def dummy(x: types.I64) -> types.I64:
+            return x
+    assert e_info.match("Host externals cannot be parallel")

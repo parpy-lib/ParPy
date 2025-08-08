@@ -418,15 +418,6 @@ impl PrettyPrint for Field {
     }
 }
 
-impl PrettyPrint for Target {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        match self {
-            Target::Device => (env, format!("device")),
-            Target::Host => (env, format!("host")),
-        }
-    }
-}
-
 impl PrettyPrint for KernelAttribute {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
@@ -442,16 +433,14 @@ impl PrettyPrint for KernelAttribute {
 impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
-            Top::ExtDecl {ret_ty, id, ext_id, params, header} => {
+            Top::ExtDecl {ret_ty, id, ext_id, params, target, header} => {
                 let (env, id) = id.pprint(env);
                 let (env, ret_ty) = ret_ty.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
-                let header_str = if let Some(h) = header {
-                    format!(" // {h}")
-                } else {
-                    format!("")
-                };
-                (env, format!("extern {ret_ty} {id}({params}) = {ext_id};{header_str}"))
+                let (env, target) = target.pprint(env);
+                let header_str = header.clone().unwrap_or("".to_string());
+                (env, format!("extern {ret_ty} {id}({params}) = {ext_id}; \
+                               // {target} {header_str}"))
             },
             Top::KernelFunDef {attrs, id, params, body} => {
                 let (env, attrs) = pprint_iter(attrs.iter(), env, "\n");

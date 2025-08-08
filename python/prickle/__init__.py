@@ -1,4 +1,4 @@
-from .prickle import par, seq, CompileBackend, CompileOptions
+from .prickle import par, seq, CompileBackend, CompileOptions, Target
 from . import backend, buffer, types
 from .buffer import sync
 from .operators import *
@@ -19,13 +19,10 @@ def _get_tops(backend):
         ext_tops = _ext_tops
     return {**ast_tops, **ext_tops}
 
-def _convert_python_function_to_ir(fn, globs):
-    import ast as python_ast
-    import builtins
+def _get_source_code(fn):
     import inspect
     import itertools
     import textwrap
-    filepath = inspect.getfile(fn)
     src, fst_line = inspect.getsourcelines(fn)
 
     # The Python AST parser requires properly indented code. Therefore, we make
@@ -35,15 +32,23 @@ def _convert_python_function_to_ir(fn, globs):
     src = textwrap.dedent("".join(src))
     if inspect.getdoc(fn) is not None:
         src = inspect.cleandoc(src)
+    return src, fst_line-1, col_ofs
 
-    # Parse the Python AST
+def _convert_python_function_to_ir(fn, vars):
+    import ast as python_ast
+    import builtins
+    import inspect
+    import itertools
+    filepath = inspect.getfile(fn)
+    src, line_ofs, col_ofs = _get_source_code(fn)
     ast = python_ast.parse(src)
 
     # Convert the Python representation of the AST to a Python-like
     # representation in the compiler. As part of this step, we inline any
     # references to previously parsed functions.
     top_map = _get_tops(None)
-    return prickle.python_to_ir(ast, filepath, fst_line-1, col_ofs, top_map, globs)
+    info = (filepath, line_ofs, col_ofs)
+    return prickle.python_to_ir(ast, info, top_map, vars)
 
 def _check_kwarg(kwargs, key, default_value, expected_ty):
     if key not in kwargs or kwargs[key] is None:
@@ -54,6 +59,26 @@ def _check_kwarg(kwargs, key, default_value, expected_ty):
         return v
     else:
         raise RuntimeError(f"The keyword argument {key} should be of type {ty}")
+
+def _validate_external_type(target, backend, par):
+    from prickle import CompileBackend, Target
+    if backend == CompileBackend.Cuda:
+        if target == Target.Host:
+            raise RuntimeError(f"Host externals are not supported in the CUDA backend")
+    elif backend == CompileBackend.Metal:
+        if target == Target.Host and par.is_parallel():
+            raise RuntimeError(f"Host externals cannot be parallel")
+    else:
+        raise RuntimeError(f"Unsupported external backend: {backend}")
+
+def _declare_external(fn, ext_name, target, header, parallelize, vars):
+    import ast as python_ast
+    import inspect
+    filepath = inspect.getfile(fn)
+    src, line_ofs, col_ofs = _get_source_code(fn)
+    ast = python_ast.parse(src)
+    info = (filepath, line_ofs, col_ofs)
+    return prickle.declare_external(ast, info, ext_name, target, header, parallelize, vars)
 
 def _check_kwargs(kwargs):
     default_opts = CompileOptions()
@@ -127,30 +152,13 @@ def clear_cache():
     clear_cache()
     _fun_cache = {}
 
-def declare_external(py_name, ext_name, params, res_ty, header, backend):
-    """
-    Declares external functions accessible from JIT-compiled functions.
-    """
-    import inspect
-    caller = inspect.getframeinfo(inspect.stack()[1][0])
-    if hasattr(caller, "positions"):
-        p = caller.positions
-        i = (caller.filename, p.lineno, p.col_offset, p.end_lineno, p.end_col_offset)
-    else:
-        i = None
-    ext_decl = prickle.make_external_declaration(py_name, ext_name, params, res_ty, header, i)
-    if not backend in _ext_decls:
-        _ext_decls[backend] = {}
-    _ext_decls[backend][py_name] = ext_decl
-    _ext_tops[py_name] = ext_decl
-
 def compile_string(fun_name, code, opts=CompileOptions()):
     """
     Compiles the code provided as a string and returns a wrapper to the
     entry point function with the specified name.
     """
     from .compile import build_shared_library, get_wrapper
-    from .key import generate_function_key
+    from .key import generate_fast_cache_key, generate_function_key
     from .validate import check_arguments
     opts = backend.resolve_backend(opts, True)
     cache_key = "string_" + generate_function_key(code, opts)
@@ -176,11 +184,33 @@ def print_compiled(fun, args, opts=CompileOptions()):
         ir_ast = _ir_asts[fun]
     else:
         globs = inspect.currentframe().f_back.f_globals
-        ir_ast = _convert_python_function_to_ir(fun, globs)
+        locs = inspect.currentframe().f_back.f_locals
+        vars = (globs, locs)
+        ir_ast = _convert_python_function_to_ir(fun, vars)
     _, args = check_arguments(args, opts, False)
     top_map = _get_tops(opts.backend)
     code, _ = prickle.compile_ir(ir_ast, args, opts, top_map)
     return code
+
+def external(ext_name, backend, target, header=None, parallelize=prickle.LoopPar()):
+    import inspect
+    globs = inspect.currentframe().f_back.f_globals
+    locs = inspect.currentframe().f_back.f_locals
+    vars = (globs, locs)
+    def external_wrap(fn):
+        import functools
+
+        @functools.wraps(fn)
+        def inner(*args):
+            return fun(*args)
+        _validate_external_type(target, backend, parallelize)
+        ext_decl = _declare_external(fn, ext_name, target, header, parallelize, vars)
+        if not backend in _ext_decls:
+            _ext_decls[backend] = {}
+        _ext_decls[backend][fn.__name__] = ext_decl
+        _ext_tops[fn.__name__] = ext_decl
+        return inner
+    return external_wrap
 
 def jit(fun):
     """
@@ -190,10 +220,14 @@ def jit(fun):
     the provided arguments.
     """
     from .validate import check_arguments
+    import functools
     import inspect
     globs = inspect.currentframe().f_back.f_globals
-    ir_ast = _convert_python_function_to_ir(fun, globs)
+    locs = inspect.currentframe().f_back.f_locals
+    vars = (globs, locs)
+    ir_ast = _convert_python_function_to_ir(fun, vars)
 
+    @functools.wraps(fun)
     def inner(*args, **kwargs):
         opts = backend.resolve_backend(_check_kwargs(kwargs), True)
         callbacks, args = check_arguments(args, opts, True)
@@ -205,5 +239,4 @@ def jit(fun):
             _compile_function(ir_ast, args, opts)(*args)
         _run_callbacks(callbacks, opts)
     _ir_asts[inner] = ir_ast
-    inner.__name__ = fun.__name__
     return inner

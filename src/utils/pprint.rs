@@ -1,4 +1,4 @@
-use crate::utils::ast::{ExprType, BinOp, UnOp};
+use crate::utils::ast::{ExprType, BinOp, UnOp, Target};
 use crate::utils::name::Name;
 
 use itertools::Itertools;
@@ -109,8 +109,17 @@ pub fn pprint_iter<'a, T: PrettyPrint + 'a, I: Iterator<Item=&'a T>>(
     (env, strs.into_iter().join(separator))
 }
 
-// Reusable functionality for printing floating-point numbers, properly parenthesized expressions
-// with respect to operator precedence, and nested if-statements.
+// Below, we define utility functions for pretty-printing various constructs. These functions are
+// designed to be reusable across different AST representations.
+
+impl PrettyPrint for Target {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        match self {
+            Target::Host => (env, "host".to_string()),
+            Target::Device => (env, "device".to_string()),
+        }
+    }
+}
 
 pub fn print_float(
     env: PrettyPrintEnv,

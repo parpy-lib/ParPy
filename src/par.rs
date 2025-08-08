@@ -33,6 +33,10 @@ impl LoopPar {
         LoopPar::default()
     }
 
+    pub fn is_parallel(&self) -> bool {
+        self.nthreads > 0
+    }
+
     pub fn threads(&self, nthreads: i64) -> PyResult<Self> {
         if self.nthreads == 0 {
             Ok(LoopPar {nthreads, ..self.clone()})
@@ -66,9 +70,6 @@ fn merge_values(l: i64, r: i64, default_value: i64) -> Option<i64> {
 }
 
 impl LoopPar {
-    pub fn is_parallel(&self) -> bool {
-        self.nthreads > 0
-    }
 
     pub fn try_merge(mut self, other: Option<&LoopPar>) -> Option<LoopPar> {
         if let Some(o) = other {

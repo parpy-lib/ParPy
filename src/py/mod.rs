@@ -1,6 +1,5 @@
 pub mod ast;
 mod constant_fold;
-pub mod ext;
 mod from_py;
 mod indices;
 mod inline_calls;
@@ -29,17 +28,16 @@ use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyDict};
 use std::collections::BTreeMap;
 
+pub use from_py::convert_external;
 pub use inline_calls::inline_function_calls;
 
 pub fn parse_untyped_ast<'py>(
     ast: Bound<'py, PyAny>,
-    filepath: String,
-    line_ofs: usize,
-    col_ofs: usize,
+    info: (String, usize, usize),
     tops: &BTreeMap<String, Bound<'py, PyCapsule>>,
-    globals: Bound<'py, PyDict>
+    vars: (Bound<'py, PyDict>, Bound<'py, PyDict>)
 ) -> PyResult<ast::FunDef> {
-    let ast = from_py::to_untyped_ir(ast, filepath, line_ofs, col_ofs, tops, globals)?;
+    let ast = from_py::to_untyped_ir(ast, info, tops, vars)?;
     let ast = ast.symbolize_default()?;
     labels::associate_labels(ast)
 }

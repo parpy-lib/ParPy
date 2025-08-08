@@ -314,7 +314,7 @@ impl PrettyPrint for FunDef {
 impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
-            Top::ExtDecl {id, ext_id, params, res_ty, header, i: _} => {
+            Top::ExtDecl {id, ext_id, params, res_ty, header, target, par, i: _} => {
                 let (env, id) = id.pprint(env);
                 let env = env.incr_indent();
                 let indent = env.print_indent();
@@ -322,8 +322,11 @@ impl PrettyPrint for Top {
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let (env, res_ty) = res_ty.pprint(env);
                 let header_str = header.clone().unwrap_or("".to_string());
+                let (env, target) = target.pprint(env);
+                let (env, par) = par.pprint(env);
                 (env, format!("def {id}({params}) -> {res_ty}:\n{indent}\
-                               \"\"\" {ext_id} {header_str} \"\"\""))
+                               \"\"\" ext_id={ext_id} header={header_str} \
+                                      target={target} par={par} \"\"\""))
             },
             Top::FunDef {v} => v.pprint(env),
         }

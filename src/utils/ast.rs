@@ -144,6 +144,12 @@ impl BinOp {
     }
 }
 
+#[pyclass(eq, frozen)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Target {
+    Host, Device
+}
+
 pub trait ExprType<T>: InfoNode {
     fn get_type<'a>(&'a self) -> &'a T;
     fn is_leaf_node(&self) -> bool;

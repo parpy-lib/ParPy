@@ -443,10 +443,10 @@ fn to_ir_top(
     t: py_ast::Top
 ) -> CompileResult<Top> {
     match t {
-        py_ast::Top::ExtDecl {id, ext_id, params, res_ty, header, i} => {
+        py_ast::Top::ExtDecl {id, ext_id, params, res_ty, header, target, par, i} => {
             let params = to_ir_params(env, params)?;
             let res_ty = to_ir_type(env, &i, res_ty)?;
-            Ok(Top::ExtDecl {id, ext_id, params, res_ty, header, i})
+            Ok(Top::ExtDecl {id, ext_id, params, res_ty, header, target, par, i})
         },
         py_ast::Top::FunDef {v} => Ok(Top::FunDef {v: to_ir_def(env, v)?}),
     }

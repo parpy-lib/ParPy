@@ -14,6 +14,7 @@ use std::ffi::CString;
 struct ConvertEnv<'py, 'a> {
     ast: Bound<'py, PyModule>,
     globals: Bound<'py, PyDict>,
+    locals: Bound<'py, PyDict>,
     tops: &'a BTreeMap<String, Bound<'py, PyCapsule>>,
     filepath: &'a str,
     line_ofs: usize,
@@ -132,7 +133,7 @@ fn eval_name<'py, 'a>(
     env: &ConvertEnv<'py, 'a>,
     py: Python<'py>
 ) -> PyResult<Bound<'py, PyAny>> {
-    py.eval(&CString::new(s)?, Some(&env.globals), None)
+    py.eval(&CString::new(s)?, Some(&env.globals), Some(&env.locals))
 }
 
 fn eval_node<'py, 'a>(
@@ -231,6 +232,7 @@ fn try_extract_type_annotation<'py, 'a>(
 ) -> PyResult<Type> {
     let py = annot.py();
     let prickle_tys = py.import("prickle.types")?;
+    let as_ptr_ty = |sz: Bound<'py, PyAny>| prickle_tys.call_method1("pointer", (sz,));
     match eval_node(&annot, &env, py) {
         Ok(ty) => {
             if ty.eq(prickle_tys.getattr("Bool")?)? {
@@ -257,11 +259,35 @@ fn try_extract_type_annotation<'py, 'a>(
                 Ok(Type::Tensor {shape: vec![], sz: ElemSize::F32})
             } else if ty.eq(prickle_tys.getattr("F64")?)? {
                 Ok(Type::Tensor {shape: vec![], sz: ElemSize::F64})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("Bool")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::Bool})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("I8")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::I8})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("I16")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::I16})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("I32")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::I32})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("I64")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::I64})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("U8")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::U8})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("U16")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::U16})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("U32")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::U32})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("U64")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::U64})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("F16")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::F16})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("F32")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::F32})
+            } else if ty.eq(as_ptr_ty(prickle_tys.getattr("F64")?)?)? {
+                Ok(Type::Pointer {sz: ElemSize::F64})
             } else {
-                py_runtime_error!(i, "Unsupported type annotation: {}", ty)
+                py_runtime_error!(i, "Unsupported parameter type annotation")
             }
-        }
-        Err(_) => py_runtime_error!(i, "Unsupported type annotation: {}", annot.str()?)
+        },
+        Err(_) => py_runtime_error!(i, "Unsupported parameter type annotation")
     }
 }
 
@@ -635,48 +661,110 @@ fn convert_stmts<'py, 'a>(
         .collect::<PyResult<Vec<Stmt>>>()
 }
 
+fn convert_arg<'py, 'a>(
+    arg: Bound<'py, PyAny>,
+    env: &ConvertEnv<'py, 'a>
+) -> PyResult<Param> {
+    let id = Name::new(arg.getattr("arg")?.extract::<String>()?);
+    let i = extract_info(&arg, &env);
+    let annot = arg.getattr("annotation")?;
+    let ty = if annot.is_none() {
+        Ok(Type::Unknown)
+    } else {
+        try_extract_type_annotation(annot, &env, &i)
+    }?;
+    Ok(Param {id, ty, i})
+}
+
+fn convert_args<'py, 'a>(
+    body: &Bound<'py, PyAny>,
+    env: &ConvertEnv<'py, 'a>
+) -> PyResult<Vec<Param>> {
+    body.getattr("args")?.getattr("args")?.try_iter()?
+        .map(|arg| convert_arg(arg?, env))
+        .collect::<PyResult<Vec<Param>>>()
+}
+
 fn convert_fun_def<'py, 'a>(
     ast: Bound<'py, PyAny>,
     env: &ConvertEnv<'py, 'a>
 ) -> PyResult<FunDef> {
     let body = ast.getattr("body")?.get_item(0)?;
-    let untyped_args = body.getattr("args")?.getattr("args")?.try_iter()?
-        .map(|arg| {
-            let arg = arg?;
-            let id = Name::new(arg.getattr("arg")?.extract::<String>()?);
-            let i = extract_info(&arg, &env);
-            let annot = arg.getattr("annotation")?;
-            let ty = if annot.is_none() {
-                Ok(Type::Unknown)
-            } else {
-                try_extract_type_annotation(annot, &env, &i)
-            }?;
-            Ok(Param {id, ty, i})
-        })
-        .collect::<PyResult<Vec<Param>>>()?;
+    let params = convert_args(&body, env)?;
     let id = Name::new(body.getattr("name")?.extract::<String>()?);
     let ir_body = convert_stmts(body.getattr("body")?, &env)?;
     let i = merge_body_infos(&ir_body);
-    Ok(FunDef {id, params: untyped_args, body: ir_body, res_ty: Type::Unknown, i})
+    Ok(FunDef {id, params, body: ir_body, res_ty: Type::Unknown, i})
 }
 
 pub fn to_untyped_ir<'py>(
     ast: Bound<'py, PyAny>,
-    filepath: String,
-    line_ofs: usize,
-    col_ofs: usize,
+    info: (String, usize, usize),
     tops: &BTreeMap<String, Bound<'py, PyCapsule>>,
-    globals: Bound<'py, PyDict>
+    vars: (Bound<'py, PyDict>, Bound<'py, PyDict>)
 ) -> PyResult<FunDef> {
+    let (filepath, line_ofs, col_ofs) = info;
+    let (globals, locals) = vars;
     let env = ConvertEnv {
         ast: ast.py().import("ast")?,
         globals,
+        locals,
         tops,
         filepath: &filepath,
         line_ofs,
         col_ofs,
     };
     convert_fun_def(ast, &env)
+}
+
+fn assert_known_param_types(params: &Vec<Param>) -> PyResult<()> {
+    for Param {id: _id, ty, i} in params {
+        if let Type::Unknown = ty {
+            py_runtime_error!(i, "External declaration parameters must be \
+                                  annotated with types.")?
+        }
+    }
+    Ok(())
+}
+
+fn convert_returns<'py>(
+    ast: Bound<'py, PyAny>,
+    env: &ConvertEnv,
+    i: &Info
+) -> PyResult<Type> {
+    let returns = ast.getattr("returns")?;
+    try_extract_type_annotation(returns, env, &i)
+        .or_else(|_| py_runtime_error!(i, "Unsupported return type annotation \
+                                           on external function"))
+}
+
+pub fn convert_external<'py>(
+    ast: Bound<'py, PyAny>,
+    info: (String, usize, usize),
+    ext_id: String,
+    target: Target,
+    header: Option<String>,
+    par: LoopPar,
+    vars: (Bound<'py, PyDict>, Bound<'py, PyDict>)
+) -> PyResult<Top> {
+    let (filepath, line_ofs, col_ofs) = info;
+    let (globals, locals) = vars;
+    let env = ConvertEnv {
+        ast: ast.py().import("ast")?,
+        globals,
+        locals,
+        tops: &BTreeMap::new(),
+        filepath: &filepath,
+        line_ofs,
+        col_ofs,
+    };
+    let body = ast.getattr("body")?.get_item(0)?;
+    let i = extract_info(&body, &env);
+    let params = convert_args(&body, &env)?;
+    let id = Name::new(body.getattr("name")?.extract::<String>()?);
+    assert_known_param_types(&params)?;
+    let res_ty = convert_returns(body, &env, &i)?;
+    Ok(Top::ExtDecl {id, ext_id, params, res_ty, target, header, par, i})
 }
 
 #[cfg(test)]
@@ -700,8 +788,9 @@ mod test {
                 ("prickle.types", py.import("prickle.types")?)
             ].into_py_dict(py)?
         };
+        let locals = PyDict::new(py);
         Ok(ConvertEnv {
-            ast: py.import("ast")?, tops: &tops, globals,
+            ast: py.import("ast")?, tops: &tops, globals, locals,
             filepath: "<test>", line_ofs: 0, col_ofs: 0
         })
     }
@@ -1764,10 +1853,16 @@ mod test {
     }
 
     #[test]
-    fn try_etract_pointer_type_annot() {
+    fn try_extract_pointer_type_annot() {
+        let ty = convert_arg_type_annot("prickle.types.pointer(prickle.types.I8)").unwrap();
+        assert_eq!(ty, Type::Pointer {sz: ElemSize::I8});
+    }
+
+    #[test]
+    fn try_extract_int_type_annot() {
         assert_py_error_matches(
-            convert_arg_type_annot("prickle.types.pointer(prickle.types.I8)"),
-            "Unsupported type annotation"
+            convert_arg_type_annot("int"),
+            "Unsupported parameter type annotation"
         )
     }
 }

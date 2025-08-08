@@ -6,6 +6,7 @@ use crate::utils::smap::*;
 pub use crate::utils::ast::ElemSize;
 pub use crate::utils::ast::UnOp;
 pub use crate::utils::ast::BinOp;
+pub use crate::utils::ast::Target;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MemSpace {
@@ -569,11 +570,6 @@ pub struct Field {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Target {
-    Device, Host
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub enum KernelAttribute {
     LaunchBounds {threads: i64},
     ClusterDims {dims: Dim3},
@@ -581,7 +577,10 @@ pub enum KernelAttribute {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Top {
-    ExtDecl {ret_ty: Type, id: Name, ext_id: String, params: Vec<Param>, header: Option<String>},
+    ExtDecl {
+        ret_ty: Type, id: Name, ext_id: String, params: Vec<Param>, target: Target,
+        header: Option<String>
+    },
     KernelFunDef {attrs: Vec<KernelAttribute>, id: Name, params: Vec<Param>, body: Vec<Stmt>},
     FunDef {ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>, target: Target},
     StructDef {id: Name, fields: Vec<Field>},

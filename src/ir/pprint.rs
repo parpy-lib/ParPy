@@ -199,7 +199,7 @@ impl PrettyPrint for Top {
                 let env = env.decr_indent();
                 (env, format!("struct {id} {{\n{fields}\n}};"))
             },
-            Top::ExtDecl {id, ext_id, params, res_ty, header, i: _} => {
+            Top::ExtDecl {id, ext_id, params, res_ty, header, target, par, i: _} => {
                 let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let (env, res_ty) = res_ty.pprint(env);
@@ -208,7 +208,9 @@ impl PrettyPrint for Top {
                 } else {
                     "".to_string()
                 };
-                (env, format!("{res_ty} {id}({params}) = {ext_id};{header_str}"))
+                let (env, target) = target.pprint(env);
+                let (env, par) = par.pprint(env);
+                (env, format!("{res_ty} {id}({params}) = {ext_id};{header_str} {target} {par}"))
             },
             Top::FunDef {v} => v.pprint(env),
         }
