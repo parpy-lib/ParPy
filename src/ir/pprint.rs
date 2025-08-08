@@ -75,13 +75,6 @@ impl PrettyPrint for Expr {
     }
 }
 
-impl PrettyPrint for LoopPar {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let LoopPar {nthreads, reduction, tpb} = self;
-        (env, format!("{{nthreads = {nthreads}, reduction = {reduction}, tpb = {tpb}}}"))
-    }
-}
-
 impl PrettyPrint for SyncPointKind {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {

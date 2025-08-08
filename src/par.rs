@@ -1,3 +1,5 @@
+use crate::utils::pprint::{PrettyPrint, PrettyPrintEnv};
+
 use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 
@@ -15,6 +17,13 @@ pub struct LoopPar {
 impl Default for LoopPar {
     fn default() -> Self {
         LoopPar {nthreads: 0, reduction: false, tpb: DEFAULT_TPB}
+    }
+}
+
+impl PrettyPrint for LoopPar {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let LoopPar {nthreads, reduction, tpb} = self;
+        (env, format!("{{nthreads = {nthreads}, reduction = {reduction}, tpb = {tpb}}}"))
     }
 }
 
