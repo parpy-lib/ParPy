@@ -131,7 +131,6 @@ pub fn extract_reduction_operands(
                                        assignment.")
         }
     } else {
-        println!("{body:#?}");
         prickle_compile_error!(i, "Reduction for-loop must contain a single \
                                    statement.")
     }
