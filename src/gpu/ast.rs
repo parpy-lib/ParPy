@@ -54,7 +54,7 @@ pub enum Expr {
     IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
-    Call {id: String, args: Vec<Expr>, ty: Type, i: Info},
+    Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 
     // High-level representation of a struct literal value.

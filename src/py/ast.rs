@@ -99,7 +99,7 @@ pub enum Expr {
     Subscript {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Slice {lo: Option<Box<Expr>>, hi: Option<Box<Expr>>, ty: Type, i: Info},
     Tuple {elems: Vec<Expr>, ty: Type, i: Info},
-    Call {id: String, args: Vec<Expr>, ty: Type, i: Info},
+    Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
     NeutralElement {op: BinOp, tyof: Box<Expr>, i: Info},
     Builtin {func: Builtin, args: Vec<Expr>, axis: Option<i64>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},

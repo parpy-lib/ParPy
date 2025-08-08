@@ -52,7 +52,7 @@ pub enum Expr {
     Ternary {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     HostArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
-    Call {id: String, args: Vec<Expr>, ty: Type, i: Info},
+    Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 
     // Metal-specific nodes

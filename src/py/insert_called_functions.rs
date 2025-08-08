@@ -19,12 +19,12 @@ fn collect_called_functions_expr<'py>(
             let mut acc = args.sfold_result(Ok(acc), |acc, e| {
                 collect_called_functions_expr(tops, acc, e)
             })?;
-            if let Some(ast_ref) = tops.get(id) {
+            if let Some(ast_ref) = tops.get(id.get_str()) {
                 // If this function has not been included yet, we include it. If it is a
                 // user-defined function in Prickle, we recursively consider the body of this
                 // function.
-                if !acc.contains(id) {
-                    acc.push(id.clone());
+                if !acc.contains(id.get_str()) {
+                    acc.push(id.get_str().clone());
                     let t = unsafe { ast_ref.reference::<Top>() };
                     if let Top::FunDef {v} = t {
                         acc.append(&mut collect_called_functions(tops, v)?);

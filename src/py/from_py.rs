@@ -435,7 +435,7 @@ fn convert_expr<'py, 'a>(
             Expr::Var {id, ..} => {
                 if env.tops.contains_key(&id.to_string()) {
                     if axis.is_none() {
-                        Ok(Expr::Call {id: id.to_string(), args, ty, i})
+                        Ok(Expr::Call {id, args, ty, i})
                     } else {
                         py_runtime_error!(i, "Unsupported keyword argument in call: axis")
                     }
@@ -1480,7 +1480,7 @@ mod test {
     fn convert_expr_call_no_args() {
         let e = convert_expr_wrap_helper("f()", vec!["f".to_string()]).unwrap();
         assert_eq!(e, Expr::Call {
-            id: "f".to_string(),
+            id: Name::new("f".to_string()),
             args: vec![],
             ty: Type::Unknown,
             i: mkinfo(1, 0, 1, 3)
@@ -1491,7 +1491,7 @@ mod test {
     fn convert_expr_call_multi_args() {
         let e = convert_expr_wrap_helper("f(2, 3)", vec!["f".to_string()]).unwrap();
         assert_eq!(e, Expr::Call {
-            id: "f".to_string(),
+            id: Name::new("f".to_string()),
             args: vec![
                 Expr::Int {
                     v: 2,

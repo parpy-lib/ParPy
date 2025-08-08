@@ -177,6 +177,7 @@ impl PrettyPrint for Expr {
                 (env, format!("(({ty}*){target}->contents())[{idx}]"))
             },
             Expr::Call {id, args, ..} => {
+                let (env, id) = id.pprint(env);
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{id}({args})"))
             },

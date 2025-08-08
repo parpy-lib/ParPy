@@ -11,7 +11,7 @@ fn generate_warp_reduction(
     let iter_var = Expr::Var {id: iter_id.clone(), ty: int_ty.clone(), i: i.clone()};
     // We use the call expression node to represent the use of a CUDA-specific intrinsic.
     let rhs = Expr::Call {
-        id: "__shfl_xor_sync".to_string(),
+        id: Name::new("__shfl_xor_sync".to_string()),
         args: vec![
             Expr::Int {v: 0xFFFFFFFF, ty: int_ty.clone(), i: i.clone()},
             value.clone(),
@@ -131,7 +131,7 @@ fn generate_cluster_iterative_reduction(
         ty: smem_ty.clone(),
         id: other_smem_id,
         expr: Expr::Call {
-            id: "this_cluster().map_shared_rank".to_string(),
+            id: Name::new("this_cluster().map_shared_rank".to_string()),
             args: vec![data.shared_var.clone(), other_block_idx.clone()],
             ty: smem_ty,
             i: data.i.clone()

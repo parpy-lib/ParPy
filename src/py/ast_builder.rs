@@ -93,7 +93,7 @@ pub fn tuple(elems: Vec<Expr>) -> Expr {
 }
 
 pub fn call(f: &str, args: Vec<Expr>, ty: Type) -> Expr {
-    Expr::Call {id: f.to_string(), args, ty, i: Info::default()}
+    Expr::Call {id: Name::new(f.to_string()), args, ty, i: Info::default()}
 }
 
 pub fn assignment(lhs: Expr, rhs: Expr) -> Stmt {

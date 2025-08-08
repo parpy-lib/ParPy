@@ -855,7 +855,7 @@ pub fn type_check_expr(
             let arg_types = args.iter()
                 .map(|e| e.get_type().clone())
                 .collect::<Vec<Type>>();
-            let arg_types = match env.arg_types.get(&id) {
+            let arg_types = match env.arg_types.get(id.get_str()) {
                 Some(tys) => {
                     let lub_types = arg_types.into_iter()
                         .zip(tys.clone().into_iter())
@@ -868,8 +868,8 @@ pub fn type_check_expr(
                 },
                 None => Ok(arg_types)
             }?;
-            env.arg_types.insert(id.clone(), arg_types);
-            let ty = match env.res_types.get(&id) {
+            env.arg_types.insert(id.get_str().clone(), arg_types);
+            let ty = match env.res_types.get(id.get_str()) {
                 Some(ty) => ty.clone(),
                 None => py_type_error!(i, "Unknown return type of function {id}")?
             };
