@@ -6,7 +6,7 @@ use crate::par;
 use crate::prickle_compile_error;
 use crate::ir::ast::*;
 use crate::utils::err::*;
-use crate::utils::info::Info;
+use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::smap::SFold;
 
@@ -84,43 +84,34 @@ impl Par {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct ParEntry {
-    tpb: i64,
-    p: Vec<i64>
-}
-
-impl ParEntry {
-    pub fn new(tpb: i64, p: Vec<i64>) -> Self {
-        ParEntry {tpb, p}
-    }
-
-    fn from_par(p: Par) -> CompileResult<ParEntry> {
-        let (tpb, threads) = p.layers.into_iter()
-            .fold(Ok((par::DEFAULT_TPB, vec![])), |acc, ParLayer {threads, tpb}| {
-                let (acc_tpb, mut acc_threads) = acc?;
-                acc_threads.push(threads);
-                if acc_tpb == par::DEFAULT_TPB || acc_tpb == tpb {
-                    Ok((tpb, acc_threads))
-                } else {
-                    prickle_compile_error!(
-                        p.i,
-                        "Found inconsistent number of threads per block: \
-                         {acc_tpb} != {tpb}"
-                    )
-                }
-            })?;
-        Ok(ParEntry::new(tpb, threads))
+fn find_parallel_structure_expr(
+    acc: Option<ParLayer>,
+    e: &Expr
+) -> CompileResult<Option<ParLayer>> {
+    match e {
+        Expr::Call {par, i, ..} => {
+            let call_layer = ParLayer::new(par.nthreads, par.tpb);
+            let l = if let Some(acc_layer) = acc {
+                ParLayer::unify(acc_layer, call_layer, &i)
+            } else {
+                Ok(call_layer)
+            }?;
+            Ok(Some(l))
+        },
+        _ => e.sfold_result(Ok(acc), find_parallel_structure_expr)
     }
 }
-
-type ParResult = CompileResult<BTreeMap<Name, ParEntry>>;
 
 fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
     match stmt {
-        Stmt::Definition {i, ..} | Stmt::Assign {i, ..} | Stmt::Return {i, ..} |
-        Stmt::SyncPoint {i, ..} | Stmt::Alloc {i, ..} | Stmt::Free {i, ..} => {
-            Ok(Par::new(vec![], i.clone()))
+        Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
+        Stmt::SyncPoint {..} | Stmt::Alloc {..} | Stmt::Free {..} => {
+            let layer = stmt.sfold_result(Ok(None), find_parallel_structure_expr)?;
+            let i = stmt.get_info().clone();
+            match layer {
+                Some(l) if l.threads > 0 => Ok(Par::new(vec![l], i)),
+                _ => Ok(Par::new(vec![], i))
+            }
         },
         Stmt::If {thn, els, i, ..} => {
             let thn = find_parallel_structure_stmts_par(thn)?;
@@ -161,6 +152,38 @@ fn find_parallel_structure_stmts_par(stmts: &Vec<Stmt>) -> CompileResult<Par> {
         .map(find_parallel_structure_stmt_par)
         .fold(Ok(p), |acc, stmt_par| Par::unify(acc?, stmt_par?))
 }
+
+#[derive(Debug, PartialEq)]
+pub struct ParEntry {
+    tpb: i64,
+    p: Vec<i64>
+}
+
+impl ParEntry {
+    pub fn new(tpb: i64, p: Vec<i64>) -> Self {
+        ParEntry {tpb, p}
+    }
+
+    fn from_par(p: Par) -> CompileResult<ParEntry> {
+        let (tpb, threads) = p.layers.into_iter()
+            .fold(Ok((par::DEFAULT_TPB, vec![])), |acc, ParLayer {threads, tpb}| {
+                let (acc_tpb, mut acc_threads) = acc?;
+                acc_threads.push(threads);
+                if acc_tpb == par::DEFAULT_TPB || acc_tpb == tpb {
+                    Ok((tpb, acc_threads))
+                } else {
+                    prickle_compile_error!(
+                        p.i,
+                        "Found inconsistent number of threads per block: \
+                         {acc_tpb} != {tpb}"
+                    )
+                }
+            })?;
+        Ok(ParEntry::new(tpb, threads))
+    }
+}
+
+type ParResult = CompileResult<BTreeMap<Name, ParEntry>>;
 
 fn find_parallel_structure_stmt_seq(
     mut acc: BTreeMap<Name, ParEntry>,

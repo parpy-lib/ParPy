@@ -15,17 +15,21 @@ use std::collections::BTreeMap;
 
 pub struct IREnv {
     structs: BTreeMap<py_ast::Type, Name>,
-    par: BTreeMap<String, LoopPar>,
+    par_labels: BTreeMap<String, LoopPar>,
+    par_exts: BTreeMap<Name, LoopPar>,
     scalar_sizes: ScalarSizes
 }
 
 impl IREnv {
     pub fn new(
         structs: BTreeMap<py_ast::Type, Name>,
-        par: BTreeMap<String, LoopPar>,
+        par_labels: BTreeMap<String, LoopPar>,
         opts: &CompileOptions
     ) -> Self {
-        IREnv {structs, par, scalar_sizes: ScalarSizes::from_opts(opts)}
+        IREnv {
+            structs, par_labels, par_exts: BTreeMap::new(),
+            scalar_sizes: ScalarSizes::from_opts(opts)
+        }
     }
 }
 
@@ -206,6 +210,13 @@ fn flatten_indices(
     Ok(idx)
 }
 
+fn lookup_external_parallelism(
+    env: &IREnv,
+    id: &Name
+) -> Option<LoopPar> {
+    env.par_exts.get(id).map(|p| p.clone())
+}
+
 fn to_ir_expr(
     env: &IREnv,
     e: py_ast::Expr
@@ -305,7 +316,9 @@ fn to_ir_expr(
                 .map(|e| to_ir_expr(env, e))
                 .collect::<CompileResult<Vec<Expr>>>()?;
             let ty = to_ir_type(env, &i, ty)?;
-            Ok(Expr::Call {id, args, ty, i})
+            let par = lookup_external_parallelism(env, &id)
+                .unwrap_or(LoopPar::default());
+            Ok(Expr::Call {id, args, par, ty, i})
         },
         py_ast::Expr::NeutralElement {i, ..} => {
             prickle_internal_error!(i, "Intermediate reduction node remaining during IR translation")
@@ -368,7 +381,7 @@ fn to_ir_stmt(
             let lo = to_ir_expr(env, lo)?;
             let hi = to_ir_expr(env, hi)?;
             let body = to_ir_stmts(env, body)?;
-            let par = lookup_labels(&env.par, labels, &i)?;
+            let par = lookup_labels(&env.par_labels, labels, &i)?;
             Ok(Stmt::For {var, lo, hi, step, body, par, i})
         },
         py_ast::Stmt::If {cond, thn, els, i} => {
@@ -455,25 +468,40 @@ fn to_ir_top(
     t: py_ast::Top
 ) -> CompileResult<Top> {
     match t {
-        py_ast::Top::ExtDecl {id, ext_id, params, res_ty, header, target, par, i} => {
+        py_ast::Top::ExtDecl {id, ext_id, params, res_ty, header, target, par: _, i} => {
             let params = to_ir_params(env, params)?;
             let res_ty = to_ir_type(env, &i, res_ty)?;
-            Ok(Top::ExtDecl {id, ext_id, params, res_ty, header, target, par, i})
+            Ok(Top::ExtDecl {id, ext_id, params, res_ty, header, target, i})
         },
         py_ast::Top::FunDef {v} => Ok(Top::FunDef {v: to_ir_def(env, v)?}),
     }
 }
 
+fn collect_external_parallelism_top(
+    mut acc: BTreeMap<Name, LoopPar>,
+    t: &py_ast::Top
+) -> BTreeMap<Name, LoopPar> {
+    if let py_ast::Top::ExtDecl {id, par, ..} = t {
+        acc.insert(id.clone(), par.clone());
+    };
+    acc
+}
+
+fn collect_external_parallelism(ast: &py_ast::Ast) -> BTreeMap<Name, LoopPar> {
+    ast.tops.iter().fold(BTreeMap::new(), collect_external_parallelism_top)
+}
+
 pub fn to_ir_ast(
-    env: &IREnv,
+    mut env: IREnv,
     ast: py_ast::Ast,
     structs: Vec<Top>
 ) -> CompileResult<Ast> {
+    env.par_exts = collect_external_parallelism(&ast);
     let tops = structs.into_iter()
         .map(|t| Ok(t))
-        .chain(ast.tops.into_iter().map(|t| to_ir_top(env, t)))
+        .chain(ast.tops.into_iter().map(|t| to_ir_top(&env, t)))
         .collect::<CompileResult<Vec<Top>>>()?;
-    let main = to_ir_def(env, ast.main)?;
+    let main = to_ir_def(&env, ast.main)?;
     Ok(Ast {tops, main})
 }
 
@@ -487,8 +515,12 @@ mod test {
 
     use std::collections::BTreeMap;
 
+    fn mk_env(structs: BTreeMap<py_ast::Type, Name>) -> IREnv {
+        IREnv::new(structs, BTreeMap::new(), &CompileOptions::default())
+    }
+
     fn ir_env() -> IREnv {
-        IREnv::new(BTreeMap::new(), BTreeMap::new(), &CompileOptions::default())
+        mk_env(BTreeMap::new())
     }
 
     fn conv_ir_type(ty: py_ast::Type) -> CompileResult<Type> {
@@ -546,7 +578,7 @@ mod test {
         let mut structs = BTreeMap::new();
         let id = id("y");
         structs.insert(dty.clone(), id.clone());
-        let env = IREnv::new(structs, BTreeMap::new(), &CompileOptions::default());
+        let env = mk_env(structs);
         assert_eq!(to_ir_type(&env, &i(), dty).unwrap(), Type::Struct {id});
     }
 
@@ -680,7 +712,7 @@ mod test {
         let mut structs = BTreeMap::new();
         let id = id("z");
         structs.insert(dty.clone(), id.clone());
-        let env = IREnv::new(structs, BTreeMap::new(), &CompileOptions::default());
+        let env = mk_env(structs);
         let subscript = py::subscript(
             py::var("x", dty), py::string("y"), py::scalar(ElemSize::I64)
         );
@@ -703,7 +735,7 @@ mod test {
         );
         let mut structs = BTreeMap::new();
         structs.insert(dty, id("?"));
-        let env = IREnv::new(structs, BTreeMap::new(), &CompileOptions::default());
+        let env = mk_env(structs);
         assert_error_matches(to_ir_expr(&env, e), r"non-tensor target.*not supported");
     }
 

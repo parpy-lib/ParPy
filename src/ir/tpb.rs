@@ -15,20 +15,40 @@ fn merge_tpb(ltpb: i64, rtpb: i64, i: &Info) -> CompileResult<i64> {
         Ok(ltpb)
     } else {
         prickle_compile_error!(i, "Found inconsistent threads per block {0} and \
-                                   {1} among labels within parallel for-loop.",
+                                   {1} among labels within parallel statements.",
                                    ltpb, rtpb)
+    }
+}
+
+fn find_threads_per_block_expr(acc: i64, e: &Expr) -> CompileResult<i64> {
+    match e {
+        Expr::Call {par, i, ..} => merge_tpb(acc, par.tpb, &i),
+        _ => e.sfold_result(Ok(acc), find_threads_per_block_expr)
     }
 }
 
 fn find_threads_per_block_stmt(acc: i64, s: &Stmt) -> CompileResult<i64> {
     match s {
         Stmt::For {par, i, ..} => merge_tpb(acc, par.tpb, &i),
-        _ => s.sfold_result(Ok(acc), find_threads_per_block_stmt)
+        _ => {
+            let acc = s.sfold_result(Ok(acc), find_threads_per_block_stmt);
+            s.sfold_result(acc, find_threads_per_block_expr)
+        }
     }
 }
 
 fn find_threads_per_block(acc: i64, stmts: &Vec<Stmt>) -> CompileResult<i64> {
     stmts.sfold_result(Ok(acc), find_threads_per_block_stmt)
+}
+
+fn propagate_threads_per_block_expr(tpb: i64, e: Expr) -> Expr {
+    match e {
+        Expr::Call {id, args, mut par, ty, i} => {
+            par.tpb = tpb;
+            Expr::Call {id, args, par, ty, i}
+        },
+        _ => e.smap(|e| propagate_threads_per_block_expr(tpb, e))
+    }
 }
 
 fn propagate_threads_per_block_stmt(tpb: i64, s: Stmt) -> Stmt {
@@ -38,7 +58,10 @@ fn propagate_threads_per_block_stmt(tpb: i64, s: Stmt) -> Stmt {
             par.tpb = tpb;
             Stmt::For {var, lo, hi, step, body, par, i}
         },
-        _ => s.smap(|s| propagate_threads_per_block_stmt(tpb, s))
+        _ => {
+            let s = s.smap(|s| propagate_threads_per_block_stmt(tpb, s));
+            s.smap(|e| propagate_threads_per_block_expr(tpb, e))
+        }
     }
 }
 

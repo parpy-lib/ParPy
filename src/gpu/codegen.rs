@@ -565,7 +565,7 @@ fn from_ir_top(
             env.struct_fields.insert(id.clone(), fields.clone());
             Ok((env, Top::StructDef {id, fields}))
         },
-        ir_ast::Top::ExtDecl {id, ext_id, params, res_ty, target, header, par: _, i: _} => {
+        ir_ast::Top::ExtDecl {id, ext_id, params, res_ty, target, header, i: _} => {
             let params = from_ir_params(params);
             let ret_ty = from_ir_type(res_ty);
             Ok((env, Top::ExtDecl {ret_ty, id, ext_id, params, target, header}))

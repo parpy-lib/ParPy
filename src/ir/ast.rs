@@ -28,7 +28,7 @@ pub enum Expr {
     IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     TensorAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
-    Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
+    Call {id: Name, args: Vec<Expr>, par: LoopPar, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 }
 
@@ -135,9 +135,9 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, idx) = f(acc, *idx)?;
                 Ok((acc, Expr::TensorAccess {target: Box::new(target), idx: Box::new(idx), ty, i}))
             },
-            Expr::Call {id, args, ty, i} => {
+            Expr::Call {id, args, par, ty, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Expr::Call {id, args, ty, i}))
+                Ok((acc, Expr::Call {id, args, par, ty, i}))
             },
             Expr::Convert {e, ty} => {
                 let (acc, e) = f(acc?, *e)?;
@@ -364,7 +364,7 @@ pub enum Top {
     StructDef {id: Name, fields: Vec<Field>, i: Info},
     ExtDecl {
         id: Name, ext_id: String, params: Vec<Param>, res_ty: Type,
-        header: Option<String>, target: Target, par: LoopPar, i: Info
+        header: Option<String>, target: Target, i: Info
     },
     FunDef {v: FunDef},
 }

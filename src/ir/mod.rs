@@ -30,7 +30,7 @@ pub fn from_python(
     let structs = structs.into_iter()
         .map(|(ty, id)| from_py_ast::to_struct_def(&env, id, ty))
         .collect::<CompileResult<Vec<Top>>>()?;
-    let ast = from_py_ast::to_ir_ast(&env, ast, structs)?;
+    let ast = from_py_ast::to_ir_ast(env, ast, structs)?;
     debug_env.print("Initial IR AST", &ast);
     let ast = tpb::propagate_configuration(ast)?;
     Ok(constant_fold::fold(ast))
