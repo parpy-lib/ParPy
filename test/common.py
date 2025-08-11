@@ -38,6 +38,16 @@ def run_if_backend_is_enabled(backend, fn):
     else:
         pytest.skip(f"{backend} is not enabled")
 
+def run_if_clusters_are_enabled(backend, fn):
+    if backend == prickle.CompileBackend.Cuda:
+        major, minor = torch.cuda.get_device_capability()
+        if major < 9:
+            pytest.skip("Thread block clusters require CUDA compute capability 9.0 "
+                       f"or higher (found {major}.{minor})")
+    else:
+        pytest.skip(f"Thread block clusters are not supported in the {backend} backend")
+    run_if_backend_is_enabled(backend, fn)
+
 # In this file, we define short-hand functions for specifying the compile
 # options to be passed to the JIT compiler. The 'seq_opts' function ensures the
 # code runs sequentially in the Python interpreter, while the 'par_opts'

@@ -1,5 +1,6 @@
 import numpy as np
 import prickle
+import prickle.types as types
 import pytest
 import re
 import subprocess
@@ -8,6 +9,8 @@ import tempfile
 from common import *
 
 np.random.seed(1234)
+
+backend = prickle.CompileBackend.Cuda
 
 @prickle.jit
 def col_sum(x, y, N):
@@ -32,7 +35,7 @@ def gen_code(ty, opts):
     M = 10
     x = np.random.randn(N, M).astype(ty)
     y = np.zeros((N,)).astype(ty)
-    opts.backend = prickle.CompileBackend.Cuda
+    opts.backend = backend
     opts.parallelize = {'N': prickle.threads(N)}
     return prickle.print_compiled(col_sum, [x, y, N], opts)
 
@@ -111,10 +114,8 @@ int32_t f() {
     run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
 
 def clamp_helper(ext_id):
-    import prickle.types as types
     params = [("x", types.F32), ("lo", types.F32), ("hi", types.F32)]
     res_ty = types.F32
-    backend = prickle.CompileBackend.Cuda
 
     @prickle.external(ext_id, backend, prickle.Target.Device, header="<cuda_utils.h>")
     def clamp(x: types.F32, lo: types.F32, hi: types.F32) -> types.F32:
@@ -155,8 +156,6 @@ def test_call_invalid_decl_external_cuda():
     run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
 
 def test_call_external_array_op_cuda():
-    import prickle.types as types
-    backend = prickle.CompileBackend.Cuda
     def helper():
         @prickle.external("sum_row_ext", backend, prickle.Target.Device, header="<cuda_utils.h>")
         def sum_row(x: types.pointer(types.F64), n: types.I64) -> types.F64:
@@ -179,8 +178,6 @@ def test_call_external_array_op_cuda():
     run_if_backend_is_enabled(backend, helper)
 
 def test_call_external_inconsistent_shapes_cuda():
-    import prickle.types as types
-    backend = prickle.CompileBackend.Cuda
     def helper():
         @prickle.external("sum_row_ext", backend, prickle.Target.Device, header="<cuda_utils.h>")
         def sum_row(x: types.pointer(types.F64), n: types.I64) -> types.F64:
@@ -204,16 +201,12 @@ def test_call_external_inconsistent_shapes_cuda():
     run_if_backend_is_enabled(backend, helper)
 
 def test_host_external_cuda_fails():
-    import prickle.types as types
-    backend = prickle.CompileBackend.Cuda
     with pytest.raises(RuntimeError, match="Host externals are not supported in the CUDA backend"):
         @prickle.external("dummy", backend, prickle.Target.Host)
         def cu_id(x: types.I64) -> types.I64:
             return x
 
-def test_parallel_external_cuda():
-    import prickle.types as types
-    backend = prickle.CompileBackend.Cuda
+def test_block_parallel_external_cuda():
     def helper():
         @prickle.external(
                 "warp_sum", backend, prickle.Target.Device,

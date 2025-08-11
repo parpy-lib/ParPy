@@ -170,19 +170,10 @@ def test_multi_block_reduction(fn, backend):
         compare_reduce(fn, N, M, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
 
-def ensure_thread_block_clusters_enabled(backend):
-    if backend != prickle.CompileBackend.Cuda:
-        pytest.skip("Thread block clusters are only supported in CUDA")
-    major, minor = torch.cuda.get_device_capability()
-    if major < 9:
-        pytest.skip("Thread block clusters require compute capability 9.0 " +
-                   f"or higher (found {major}.{minor})")
-
 @pytest.mark.parametrize('fn', reduce_funs)
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_clustered_reduction(fn, backend):
     def helper():
-        ensure_thread_block_clusters_enabled(backend)
         N = 100
         M = 2048
         p = {
@@ -192,13 +183,12 @@ def test_clustered_reduction(fn, backend):
         opts = par_opts(backend, p)
         opts.use_cuda_thread_block_clusters = True
         compare_reduce(fn, N, M, opts)
-    run_if_backend_is_enabled(backend, helper)
+    run_if_clusters_are_enabled(backend, helper)
 
 @pytest.mark.parametrize('fn', reduce_funs)
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_extended_clustered_reduction(fn, backend):
     def helper():
-        ensure_thread_block_clusters_enabled(backend)
         N = 100
         M = 8192
         p = {
@@ -209,7 +199,7 @@ def test_extended_clustered_reduction(fn, backend):
         opts.use_cuda_thread_block_clusters = True
         opts.max_thread_blocks_per_cluster = 16
         compare_reduce(fn, N, M, opts)
-    run_if_backend_is_enabled(backend, helper)
+    run_if_clusters_are_enabled(backend, helper)
 
 @pytest.mark.parametrize('fn', reduce_funs)
 @pytest.mark.parametrize('backend', compiler_backends)
@@ -323,9 +313,6 @@ def test_clustered_reduction_codegen_in_cuda(fn):
 @pytest.mark.parametrize('fn', reduce_funs)
 def test_clustered_reduction_compiles_in_cuda(fn):
     def helper():
-        major, _ = torch.cuda.get_device_capability()
-        if major < 9:
-            pytest.skip("Test requires compute capability 9.0")
         N = 100
         M = 50
         x = torch.randn((N, M), dtype=torch.float32)
@@ -337,7 +324,7 @@ def test_clustered_reduction_compiles_in_cuda(fn):
         opts = par_opts(prickle.CompileBackend.Cuda, p)
         opts.use_cuda_thread_block_clusters = True
         fn(x, out, N, opts=opts)
-    run_if_backend_is_enabled(prickle.CompileBackend.Cuda, helper)
+    run_if_clusters_are_enabled(prickle.CompileBackend.Cuda, helper)
 
 # Tests using a custom step size.
 @prickle.jit
