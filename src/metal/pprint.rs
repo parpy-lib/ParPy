@@ -161,7 +161,7 @@ impl PrettyPrint for Expr {
                 let (env, els) = els.pprint(env);
                 (env, format!("({cond} ? {thn} : {els})"))
             },
-            Expr::ArrayAccess {target, idx, ty, ..} => {
+            Expr::ArrayAccess {target, idx, ..} => {
                 let (env, target) = target.pprint(env);
                 let (env, idx) = idx.pprint(env);
                 (env, format!("{target}[{idx}]"))
