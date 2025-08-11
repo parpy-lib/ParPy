@@ -131,7 +131,8 @@ fn convert_type<'py>(
     scalar_sizes: &ScalarSizes
 ) -> PyResult<Type> {
     let py = arg.py();
-    let buffer = py.import("prickle.buffer")?;
+    let prickle = py.import("prickle")?;
+    let buffer = prickle.getattr("buffer")?;
     let ty = arg.get_type();
     if ty.eq(buffer.getattr("Buffer")?)? {
         let dtype = arg.getattr("dtype")?.extract::<DataType>()?;

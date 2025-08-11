@@ -50,7 +50,7 @@ def compile_metal_runtime_lib():
     the launch of compute kernels and memory allocations. A runtime exception
     is raised if the function is called when the Metal backend is disabled.
     """
-    from .backend import is_enabled
+    from prickle.backend import is_enabled
     import ctypes
     import shutil
     import subprocess

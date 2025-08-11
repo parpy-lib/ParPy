@@ -151,7 +151,8 @@ fn lookup_builtin<'py, 'a>(
     i: &Info
 ) -> PyResult<Builtin> {
     let py = expr.py();
-    let prickle_ops = py.import("prickle.operators")?;
+    let prickle = py.import("prickle")?;
+    let prickle_ops = prickle.getattr("operators")?;
     match eval_node(expr, &env, py) {
         Ok(e) => {
             if e.eq(prickle_ops.getattr("exp")?)? {
@@ -231,7 +232,8 @@ fn try_extract_type_annotation<'py, 'a>(
     i: &Info
 ) -> PyResult<Type> {
     let py = annot.py();
-    let prickle_tys = py.import("prickle.types")?;
+    let prickle = py.import("prickle")?;
+    let prickle_tys = prickle.getattr("types")?;
     let as_ptr_ty = |sz: Bound<'py, PyAny>| prickle_tys.call_method1("pointer", (sz,));
     match eval_node(&annot, &env, py) {
         Ok(ty) => {
@@ -782,11 +784,16 @@ mod test {
     ) -> PyResult<ConvertEnv<'py, 'a>> {
         let globals = match custom_globals {
             Some(g) => g,
-            None => vec![
-                ("prickle", py.import("prickle")?),
-                ("prickle.operators", py.import("prickle.operators")?),
-                ("prickle.types", py.import("prickle.types")?)
-            ].into_py_dict(py)?
+            None => {
+                let prickle = py.import("prickle")?;
+                let ops = prickle.getattr("operators")?.downcast_into::<PyModule>()?;
+                let types = prickle.getattr("types")?.downcast_into::<PyModule>()?;
+                vec![
+                    ("prickle", prickle),
+                    ("prickle.operators", ops),
+                    ("prickle.types", types),
+                ].into_py_dict(py)?
+            }
         };
         let locals = PyDict::new(py);
         Ok(ConvertEnv {
@@ -982,8 +989,9 @@ mod test {
     fn lookup_builtin_sum_custom_globals() -> PyResult<()> {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
+            let prickle = py.import("prickle")?;
             let globals = vec![
-                ("pops", py.import("prickle.operators")?)
+                ("pops", prickle.getattr("operators")?.downcast_into::<PyModule>()?)
             ].into_py_dict(py)?;
             let e = lookup_builtin(py, "pops.sum", Some(globals))?;
             assert!(matches!(e, Expr::Builtin {func: Builtin::Sum, ..}));

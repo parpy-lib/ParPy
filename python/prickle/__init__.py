@@ -1,5 +1,9 @@
+from . import prickle
+from . import backend
+from . import buffer
+from . import types
+
 from .prickle import par, seq, CompileBackend, CompileOptions, Target
-from . import backend, buffer, types
 from .buffer import sync
 from .operators import *
 
