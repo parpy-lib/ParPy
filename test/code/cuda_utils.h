@@ -24,7 +24,7 @@ __device__ double sum_row_ext(double *p, int64_t n) {
 
 __device__ float warp_sum(float *values) {
   float v = values[threadIdx.x];
-  for (int i = 16; i > 1; i /= 2) {
+  for (int i = 16; i > 0; i /= 2) {
     v = v + __shfl_xor_sync(0xFFFFFFFF, v, i);
   }
   return v;

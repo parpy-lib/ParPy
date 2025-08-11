@@ -211,7 +211,6 @@ def test_host_external_cuda_fails():
         def cu_id(x: types.I64) -> types.I64:
             return x
 
-@pytest.mark.skip("Need to implement support for parallel externals")
 def test_parallel_external_cuda():
     import prickle.types as types
     backend = prickle.CompileBackend.Cuda
@@ -230,6 +229,7 @@ def test_parallel_external_cuda():
         x = torch.randn(10, 32, dtype=torch.float32)
         out = torch.empty(10, dtype=torch.float32)
         opts = par_opts(backend, {'N': prickle.threads(10)})
+        opts.includes += ['test/code']
         sum_rows_using_ext(out, x, 10, opts=opts)
         assert torch.allclose(out, torch.sum(x, dim=1))
     run_if_backend_is_enabled(backend, helper)
