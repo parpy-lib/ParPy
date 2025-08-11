@@ -2,10 +2,11 @@
 
 #include <cstdio>
 
-#define prickle_cuda_check_error(e) \
+#define prickle_cuda_check_error(expr) \
   do { \
-    if (e != cudaSuccess) { \
-      prickle_cuda::error_message = cudaGetErrorString(e); \
+    cudaError_t err = (expr); \
+    if (err != cudaSuccess) { \
+      prickle_cuda::error_message = cudaGetErrorString(err); \
       return 1; \
     } \
   } while (0)
