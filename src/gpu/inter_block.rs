@@ -915,10 +915,10 @@ fn collect_variable_temp_data(
                     };
                     (e, acc_size * *dim as i128)
                 });
-            let (ty, sz) = match ty {
-                Type::Tensor {sz, ..} => {
+            let (ty, res_ty) = match ty {
+                Type::Tensor {..} => {
                     let ptr_ty = Type::Pointer {ty: Box::new(ty.clone())};
-                    (ptr_ty, sz.clone())
+                    (ptr_ty, ty.clone())
                 },
                 _ => prickle_compile_error!(i, "Cannot allocate temporary data \
                                                 for non-tensor variable {id}.")?
@@ -929,7 +929,7 @@ fn collect_variable_temp_data(
                     id: new_id.clone(), ty: ty.clone(), i: i.clone()
                 }),
                 idx: Box::new(idx_expr),
-                ty: Type::Tensor {sz, shape: vec![]},
+                ty: res_ty,
                 i: i.clone()
             };
             let temp_data = TempData {

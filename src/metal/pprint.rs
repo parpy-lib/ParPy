@@ -164,11 +164,7 @@ impl PrettyPrint for Expr {
             Expr::ArrayAccess {target, idx, ty, ..} => {
                 let (env, target) = target.pprint(env);
                 let (env, idx) = idx.pprint(env);
-                if let Type::Pointer {..} = ty {
-                    (env, format!("&{target}[{idx}]"))
-                } else {
-                    (env, format!("{target}[{idx}]"))
-                }
+                (env, format!("{target}[{idx}]"))
             },
             Expr::HostArrayAccess {target, idx, ty, ..} => {
                 let (env, ty) = ty.pprint(env);

@@ -266,9 +266,21 @@ fn to_ir_expr(
                             .into_iter()
                             .skip(n)
                             .collect::<Vec<i64>>();
-                        let res_ty = Type::Tensor {sz: sz.clone(), shape: res_shape};
-                        let target = Box::new(target);
-                        Ok(Expr::TensorAccess {target, idx, ty: res_ty, i})
+                        if res_shape.is_empty() {
+                            let res_ty = Type::Tensor {sz: sz.clone(), shape: res_shape};
+                            let target = Box::new(target);
+                            Ok(Expr::TensorAccess {target, idx, ty: res_ty, i})
+                        } else {
+                            let ty = Type::Tensor {sz: sz.clone(), shape: vec![]};
+                            let res_ty = Type::Pointer {ty: Box::new(ty.clone())};
+                            Ok(Expr::UnOp {
+                                op: UnOp::Addressof,
+                                arg: Box::new(Expr::TensorAccess {
+                                    target: Box::new(target), idx, ty, i: i.clone()
+                                }),
+                                ty: res_ty, i
+                            })
+                        }
                     } else {
                         let msg = format!(
                             "Invalid dimensions. Indexing into tensor of shape \
