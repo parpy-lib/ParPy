@@ -39,7 +39,7 @@ def run_if_backend_is_enabled(backend, fn):
         pytest.skip(f"{backend} is not enabled")
 
 def run_if_clusters_are_enabled(backend, fn):
-    if backend == prickle.CompileBackend.Cuda:
+    if backend == prickle.CompileBackend.Cuda and prickle.backend.is_enabled(backend):
         major, minor = torch.cuda.get_device_capability()
         if major < 9:
             pytest.skip("Thread block clusters require CUDA compute capability 9.0 "
