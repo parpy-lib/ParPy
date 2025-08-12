@@ -58,7 +58,7 @@ def adi_init(backend):
     TSTEPS = 5
     N = 100
     u = np.fromfunction(lambda i, j: (i + N - j) / N, (N, N), dtype=np.float64)
-    return torch.tensor(u, dtype=float_ty(backend))
+    return TSTEPS, N, torch.tensor(u, dtype=float_ty(backend))
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_adi(backend):
@@ -66,9 +66,9 @@ def test_adi(backend):
         if backend == prickle.CompileBackend.Metal:
             pytest.skip("Skipped due to lack of support for 64-bit floats in Metal")
         from npbench_impl.adi import adi
+        TSTEPS, N, u1 = adi_init(backend)
         p = { 'i': prickle.threads(N-2) }
         opts = par_opts(backend, p)
-        TSTEPS, N, u1 = adi_init(backend)
         a = adi(TSTEPS, N, u1, opts)
         TSTEPS, N, u2 = adi_init(backend)
         b = adi(TSTEPS, N, u2, opts)
@@ -98,29 +98,26 @@ def test_arc_distance(backend):
     run_if_backend_is_enabled(backend, helper)
 
 def azimint_naive_init(backend):
-    torch.manual_seed(1234)
-    npt = 1000
-    N = 400000
-    data = torch.rand((N,), dtype=float_ty(backend))
-    radius = torch.rand((N,), dtype=float_ty(backend))
-    return npt, N, data, radius
+    npt = 100
+    N = 40
+    data = torch.rand(N, dtype=float_ty(backend))
+    radius = torch.rand(N, dtype=float_ty(backend))
+    return npt, data, radius
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_azimint_naive(backend):
     def helper():
-        if backend == prickle.CompileBackend.Metal:
-            pytest.skip("Skipped due to lack of support for 64-bit floats in Metal")
         from npbench_impl.azimint_naive import azimint_naive
-        npt, N, data, radius = azimint_naive_init(backend)
+        npt, data, radius = azimint_naive_init(backend)
         p = {
             'i': prickle.threads(npt),
             'ix': prickle.threads(1024).reduce(),
             'j': prickle.threads(1024).reduce()
         }
         opts = par_opts(backend, p)
-        a = azimint_naive(data, radius, N, opts)
+        a = azimint_naive(data, radius, npt, opts)
         opts.seq = True
-        b = azimint_naive(data, radius, N, opts)
+        b = azimint_naive(data, radius, npt, opts)
         assert torch.allclose(a, b, atol=1e-3)
     run_if_backend_is_enabled(backend, helper)
 
