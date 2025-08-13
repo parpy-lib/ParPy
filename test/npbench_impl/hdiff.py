@@ -45,11 +45,11 @@ def hdiff_kernel(in_field, out_field, coeff, lap_field, res1, res2, flx_field, f
 # Adapted from https://github.com/GridTools/gt4py/blob/1caca893034a18d5df1522ed251486659f846589/tests/test_integration/stencil_definitions.py#L194
 def hdiff(in_field, out_field, coeff, opts):
     I, J, K = out_field.shape
-    lap_field = torch.empty(I+2,J+2,K, dtype=in_field.dtype, device=in_field.device)
-    res1 = torch.empty(I+1,J,K, dtype=in_field.dtype, device=in_field.device)
-    res2 = torch.empty(I,J+1,K, dtype=in_field.dtype, device=in_field.device)
-    flx_field = torch.empty(I+1,J,K, dtype=in_field.dtype, device=in_field.device)
-    fly_field = torch.empty(I,J+1,K, dtype=in_field.dtype, device=in_field.device)
+    lap_field = torch.empty(I+2,J+2,K, dtype=in_field.dtype)
+    res1 = torch.empty(I+1,J,K, dtype=in_field.dtype)
+    res2 = torch.empty(I,J+1,K, dtype=in_field.dtype)
+    flx_field = torch.empty(I+1,J,K, dtype=in_field.dtype)
+    fly_field = torch.empty(I,J+1,K, dtype=in_field.dtype)
     hdiff_kernel(
         in_field, out_field, coeff, lap_field, res1, res2, flx_field, fly_field, I, J, K,
         opts=opts

@@ -16,6 +16,6 @@ def correlation(M, float_n, data, opts):
     stddev[stddev <= 0.1] = 1.0
     data -= mean
     data /= torch.sqrt(float_n) * stddev
-    corr = torch.eye(M, dtype=data.dtype, device=data.device)
+    corr = torch.eye(M, dtype=data.dtype)
     prickle_kernel(corr, data, M, opts=opts)
     return corr

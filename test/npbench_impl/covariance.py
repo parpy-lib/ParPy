@@ -15,6 +15,6 @@ def covariance_prickle(cov, data, float_n, M):
 def covariance(M, float_n, data, opts):
     mean = torch.mean(data, axis=0)
     data -= mean
-    cov = torch.zeros((M, M), dtype=data.dtype, device=data.device)
+    cov = torch.zeros((M, M), dtype=data.dtype)
     covariance_prickle(cov, data, float_n, M, opts=opts)
     return cov

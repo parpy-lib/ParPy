@@ -95,7 +95,7 @@ def cavity_flow_kernel(nx, ny, nt, nit, u, un, v, vn, b, dt, dx, dy, p, pn, rho,
 def cavity_flow(nx, ny, nt, nit, u, v, dt, dx, dy, p, rho, nu, opts):
     un = torch.empty_like(u)
     vn = torch.empty_like(v)
-    b = torch.zeros((ny, nx), device=u.device)
+    b = torch.zeros((ny, nx))
 
     for n in range(nt):
         un = u.detach().clone()

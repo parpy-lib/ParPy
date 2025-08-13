@@ -62,13 +62,8 @@ def azimint_naive(data, radius, npt, opts):
     rmax = torch.empty((1,), dtype=data.dtype)
     res = torch.zeros(npt, dtype=data.dtype)
     N, = data.shape
-    print(data)
-    print(radius)
-    print(npt)
     if data.dtype == torch.float32:
         prickle_kernel_32bit(data, radius, res, rmax, npt, N, opts=opts)
     else:
         prickle_kernel(data, radius, res, rmax, npt, N, opts=opts)
-    print(res)
-    print(data.dtype)
     return res

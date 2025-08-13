@@ -26,7 +26,7 @@ def conv2d(input, weights, opts):
     W_out = input.shape[2] - K + 1
     C_in = input.shape[3]
     C_out = weights.shape[3]
-    output = torch.empty((N, H_out, W_out, C_out), dtype=torch.float32, device=weights.device)
+    output = torch.empty((N, H_out, W_out, C_out), dtype=torch.float32)
     opts.parallelize = {'i': prickle.threads(H_out), 'j': prickle.threads(W_out)}
     conv2d_kernel(input, weights, output, H_out, W_out, N, C_in, C_out, K, opts=opts)
     return output
@@ -48,8 +48,8 @@ def maxpool2d_kernel(x, output, N_0, N_1, N_2, N_3):
 # 2x2 maxpool operator, as used in LeNet-5
 def maxpool2d(x, opts):
     output = torch.empty(
-        [x.shape[0], x.shape[1] // 2, x.shape[2] // 2, x.shape[3]],
-        dtype=x.dtype, device=x.device)
+        [x.shape[0], x.shape[1] // 2, x.shape[2] // 2, x.shape[3]], dtype=x.dtype
+    )
     N_0, N_1, N_2, N_3 = output.shape
     opts.parallelize = {'i': prickle.threads(N_1), 'j': prickle.threads(N_2)}
     maxpool2d_kernel(x, output, N_0, N_1, N_2, N_3, opts=opts)

@@ -26,7 +26,7 @@ def conv2d(input, weights, opts):
     W_out = input.shape[2] - K + 1
     C_in = input.shape[3]
     C_out = weights.shape[3]
-    output = torch.empty((N, H_out, W_out, C_out), dtype=torch.float32, device=weights.device)
+    output = torch.empty((N, H_out, W_out, C_out), dtype=torch.float32)
     conv2d_kernel(input, weights, output, H_out, W_out, N, C_in, C_out, K, opts=opts)
     return output
 
@@ -42,8 +42,7 @@ def batchnorm2d(x, eps=1e-5):
 # in the ResNet-50 CNN (inference)
 def resnet(input, conv1, conv2, conv3, opts):
     # Pad output of first convolution for second convolution
-    padded = torch.zeros((input.shape[0], input.shape[1] + 2, input.shape[2] + 2,
-                       conv1.shape[3]), device=input.device)
+    padded = torch.zeros((input.shape[0], input.shape[1] + 2, input.shape[2] + 2, conv1.shape[3]))
 
     padded[:, 1:-1, 1:-1, :] = conv2d(input, conv1, opts)
     x = batchnorm2d(padded)

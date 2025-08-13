@@ -60,7 +60,7 @@ def sselfeng(neigh_idx, dH, G, D, Sigma, opts):
     NA, NB = neigh_idx.shape
     Nkz, NE, NA, Norb, Norb = G.shape
     Nqz, Nw, NA, NB, N3D, N3D = D.shape
-    dHG = torch.zeros(Nkz, NE, NA, Norb, Norb, dtype=G.dtype, device=G.device)
+    dHG = torch.zeros(Nkz, NE, NA, Norb, Norb, dtype=G.dtype)
     dHD = torch.zeros_like(dHG)
     scattering_self_energies_kernel(
         neigh_idx, torch.view_as_real(dH), torch.view_as_real(G),

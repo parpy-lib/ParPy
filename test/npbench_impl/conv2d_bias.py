@@ -24,7 +24,7 @@ def conv2d(input, weights, opts):
     W_out = input.shape[2] - K + 1
     C_in = input.shape[3]
     C_out = weights.shape[3]
-    output = torch.empty((N, H_out, W_out, C_out), dtype=torch.float32, device=weights.device)
+    output = torch.empty((N, H_out, W_out, C_out), dtype=torch.float32)
     conv2d_kernel(input, weights, output, H_out, W_out, N, C_in, C_out, K, opts=opts)
     return output
 
