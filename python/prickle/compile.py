@@ -14,6 +14,18 @@ def _is_cached(key):
 def _flatten(xss):
     return [x for xs in xss for x in xs]
 
+def _report_compile_error(r, source, backend_name, temp_file, opts):
+    stdout = r.stdout.decode('ascii')
+    stderr = r.stderr.decode('ascii')
+    msg =\
+        f"Compilation of generated {backend_name} code failed with exit code {r.returncode}:\n"\
+        "Standard out:\n{stdout}\nStandard error:\n{stderr}"
+    if opts.write_output:
+        with open(temp_file, "w+") as f:
+            f.write(source)
+        msg += "\nWrote generated code to file {temp_file}."
+    raise RuntimeError(msg)
+
 def _build_cuda_shared_library(key, source, opts):
     from .buffer import PARIR_NATIVE_PATH
     import subprocess
@@ -39,11 +51,7 @@ def _build_cuda_shared_library(key, source, opts):
         if r.returncode != 0:
             import uuid
             temp_file = f"{uuid.uuid4().hex}.cu"
-            with open(temp_file, "w+") as f:
-                f.write(source)
-            stdout = r.stdout.decode('ascii')
-            stderr = r.stderr.decode('ascii')
-            raise RuntimeError(f"Compilation of generated CUDA code failed with exit code {r.returncode}:\nstdout:\n{stdout}\nstderr:\n{stderr}\nWrote generated code to file {temp_file}.")
+            _report_compile_error(r, source, "CUDA", temp_file, opts)
 
 def _build_metal_shared_library(key, source, opts):
     from .buffer import PARIR_NATIVE_PATH, PARIR_METAL_BASE_LIB_PATH
@@ -69,11 +77,7 @@ def _build_metal_shared_library(key, source, opts):
         if r.returncode != 0:
             import uuid
             temp_file = f"{uuid.uuid4().hex}.cpp"
-            with open(temp_file, "w+") as f:
-                f.write(source)
-            stdout = r.stdout.decode('ascii')
-            stderr = r.stderr.decode('ascii')
-            raise RuntimeError(f"Compilation of generated Metal code failed with exit code {r.returncode}:\nstdout:\n{stdout}\nstderr:\n{stderr}\nWrote generated code to file {temp_file}.")
+            _report_compile_error(r, source, "Metal", temp_file, opts)
 
 def _torch_to_ctype(dtype):
     import ctypes

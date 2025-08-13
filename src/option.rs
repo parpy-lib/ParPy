@@ -38,6 +38,11 @@ pub struct CompileOptions {
     #[pyo3(get, set)]
     pub debug_print: bool,
 
+    // Enable to have the compiler write the generated source code for the target backend to a
+    // file.
+    #[pyo3(get, set)]
+    pub write_output: bool,
+
     ///////////////////
     // CODEGEN FLAGS //
     ///////////////////
@@ -100,6 +105,7 @@ impl Default for CompileOptions {
             force_int_size: None,
             force_float_size: None,
             debug_print: false,
+            write_output: false,
             includes: vec![],
             libs: vec![],
             extra_flags: vec![],
