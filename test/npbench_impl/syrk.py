@@ -11,8 +11,11 @@ def syrk_kernel(alpha, beta, C, A, N, M):
             for k in range(M):
                 C[i,j] += alpha[0] * A[i,k] * A[j,k]
 
-def syrk(alpha, beta, C, A, opts):
+def syrk(alpha, beta, C, A, opts, compile_only=False):
     alpha = torch.tensor([alpha], dtype=A.dtype)
     beta = torch.tensor([beta], dtype=A.dtype)
     N, M = A.shape
+    if compile_only:
+        args = [alpha, beta, C, A, N, M]
+        return prickle.print_compiled(syrk_kernel, args, opts)
     syrk_kernel(alpha, beta, C, A, N, M, opts=opts)

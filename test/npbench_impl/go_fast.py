@@ -12,9 +12,12 @@ def prickle_kernel(a, tmp, out, N):
     prickle.label('j')
     out[:,:] = a[:,:] + tmp[0]
 
-def go_fast(a, opts):
+def go_fast(a, opts, compile_only=False):
     N, N = a.shape
     tmp = torch.tensor([0.0], dtype=a.dtype)
     out = torch.empty_like(a)
+    if compile_only:
+        args = [a, tmp, out, N]
+        return prickle.print_compiled(prickle_kernel, args, opts)
     prickle_kernel(a, tmp, out, N, opts=opts)
     return out

@@ -92,17 +92,22 @@ def cavity_flow_kernel(nx, ny, nt, nit, u, un, v, vn, b, dt, dx, dy, p, pn, rho,
     prickle.label('ny')
     v[:, -1] = 0.0
 
-def cavity_flow(nx, ny, nt, nit, u, v, dt, dx, dy, p, rho, nu, opts):
+def cavity_flow(nx, ny, nt, nit, u, v, dt, dx, dy, p, rho, nu, opts, compile_only=False):
     un = torch.empty_like(u)
     vn = torch.empty_like(v)
     b = torch.zeros((ny, nx))
 
+    code = None
     for n in range(nt):
         un = u.detach().clone()
         vn = v.detach().clone()
         pn = p.detach().clone()
 
-        cavity_flow_kernel(
-            nx, ny, nt, nit, u, un, v, vn, b, dt, dx, dy, p, pn, rho, nu,
-            opts=opts
-        )
+        if compile_only:
+            args = [nx, ny, nt, nit, u, un, v, vn, b, dt, dx, dy, p, pn, rho, nu]
+            return prickle.print_compiled(cavity_flow_kernel, args, opts)
+        else:
+            cavity_flow_kernel(
+                nx, ny, nt, nit, u, un, v, vn, b, dt, dx, dy, p, pn, rho, nu,
+                opts=opts
+            )

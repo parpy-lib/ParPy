@@ -43,7 +43,7 @@ def prickle_kernel(u, v, p, q, a, b, c, d, e, f, TSTEPS, N):
             for i in range(1, N-1):
                 u[i,j] = p[i,j] * u[i,j+1] + q[i,j]
 
-def adi(TSTEPS, N, u, opts):
+def adi(TSTEPS, N, u, opts, compile_only=False):
     v = torch.empty_like(u)
     p = torch.empty_like(u)
     q = torch.empty_like(u)
@@ -58,5 +58,8 @@ def adi(TSTEPS, N, u, opts):
     a = c = torch.tensor(-mul1 / 2.0, dtype=u.dtype)
     b = e = torch.tensor(1.0 + mul2, dtype=u.dtype)
     d = f = torch.tensor(-mul2 / 2.0, dtype=u.dtype)
+    if compile_only:
+        args = [u, v, p, q, a, b, c, d, e, f, TSTEPS, N]
+        return prickle.print_compiled(prickle_kernel, args, opts)
     prickle_kernel(u, v, p, q, a, b, c, d, e, f, TSTEPS, N, opts=opts)
     return u

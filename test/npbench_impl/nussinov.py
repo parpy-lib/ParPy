@@ -19,7 +19,9 @@ def prickle_kernel(table, seq, N):
                 for k in range(i+1, j):
                     table[i,j] = prickle.max(table[i,j], table[i,k] + table[k+1,j])
 
-def nussinov(N, seq, opts):
+def nussinov(N, seq, opts, compile_only=False):
     table = torch.zeros((N, N), dtype=torch.int32)
+    if compile_only:
+        return prickle.print_compiled(prickle_kernel, [table, seq, N], opts)
     prickle_kernel(table, seq, N, opts=opts)
     return table

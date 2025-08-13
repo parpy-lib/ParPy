@@ -18,9 +18,12 @@ def crc16_kernel(data, poly, N, out):
         crc = (crc << 8) | ((crc >> 8) & 0xFF)
         out[0] = crc & 0xFFFF
 
-def crc16(data, opts):
+def crc16(data, opts, compile_only=False):
     poly = 0x8408
     N, = data.shape
     out = torch.empty(1, dtype=torch.int32)
+    if compile_only:
+        args = [data, poly, N, out]
+        return prickle.print_compiled(crc16_kernel, args, opts)
     crc16_kernel(data, poly, N, out, opts=opts)
     return int(out[0])

@@ -14,5 +14,7 @@ def prickle_kernel(TSTEPS, N, A):
                     A[i, j] += A[i, j - 1]
                     A[i, j] /= 9.0
 
-def seidel_2d(TSTEPS, N, A, opts):
+def seidel_2d(TSTEPS, N, A, opts, compile_only=False):
+    if compile_only:
+        return prickle.print_compiled(prickle_kernel, [TSTEPS, N, A], opts)
     prickle_kernel(TSTEPS, N, A, opts=opts)

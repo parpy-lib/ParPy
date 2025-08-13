@@ -39,11 +39,14 @@ def kernel(theta_1, phi_1, theta_2, phi_2, distance_matrix, N):
         temp = a + b
         distance_matrix[i] = 2.0 * (prickle.atan2(prickle.sqrt(temp), prickle.sqrt(1.0 - temp)))
 
-def arc_distance(theta_1, phi_1, theta_2, phi_2, opts):
+def arc_distance(theta_1, phi_1, theta_2, phi_2, opts, compile_only=False):
     """
     Calculates the pairwise arc distance between all points in vector a and b.
     """
     N, = theta_1.shape
     distance_matrix = torch.empty_like(theta_1)
+    if compile_only:
+        args = [theta_1, phi_1, theta_2, phi_2, distance_matrix, N]
+        return prickle.print_compiled(kernel, args, opts)
     kernel(theta_1, phi_1, theta_2, phi_2, distance_matrix, N, opts=opts)
     return distance_matrix

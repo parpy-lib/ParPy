@@ -20,9 +20,12 @@ def prickle_kernel(A, R, Q, M, N):
             prickle.label('i')
             A[:,j] -= Q[:,k] * R[k,j]
 
-def gramschmidt(A, opts):
+def gramschmidt(A, opts, compile_only=False):
     Q = torch.zeros_like(A)
     R = torch.zeros((A.shape[1], A.shape[1]), dtype=A.dtype)
     M, N = A.shape
+    if compile_only:
+        args = [A, R, Q, M, N]
+        return prickle.print_compiled(prickle_kernel, args, opts)
     prickle_kernel(A, R, Q, M, N, opts=opts)
     return Q, R

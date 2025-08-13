@@ -47,7 +47,7 @@ def prickle_kernel(a, b, c, img_in, img_out, y1, y2, W, H):
     prickle.label('j')
     img_out[:, :] = c[1] * (y1[:, :] + y2[:, :])
 
-def deriche(alpha, img_in, opts):
+def deriche(alpha, img_in, opts, compile_only=False):
     y1 = torch.empty_like(img_in)
     y2 = torch.empty_like(img_in)
     img_out = torch.empty_like(img_in)
@@ -64,5 +64,8 @@ def deriche(alpha, img_in, opts):
     b[0] = 2.0**(-alpha)
     b[1] = -prickle.exp(-2.0 * alpha)
     c[0] = c[1] = 1.0
+    if compile_only:
+        args = [a, b, c, img_in, img_out, y1, y2, W, H]
+        return prickle.print_compiled(prickle_kernel, args, opts)
     prickle_kernel(a, b, c, img_in, img_out, y1, y2, W, H, opts=opts)
     return img_out

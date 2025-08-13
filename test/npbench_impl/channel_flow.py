@@ -164,7 +164,7 @@ def channel_flow_kernel(nit, u, v, dt, dx, dy, p, rho, nu, F, un, vn, pn, b):
     v[-1, :] = 0.0
 
 
-def channel_flow(nit, u, v, dt, dx, dy, p, rho, nu, F, opts):
+def channel_flow(nit, u, v, dt, dx, dy, p, rho, nu, F, opts, compile_only=False):
     udiff = 1
     stepcount = 0
 
@@ -175,6 +175,9 @@ def channel_flow(nit, u, v, dt, dx, dy, p, rho, nu, F, opts):
         pn = torch.empty_like(p)
         b = torch.zeros_like(u)
 
+        if compile_only:
+            args = [nit, u, v, dt, dx, dy, p, rho, nu, F, un, vn, pn, b]
+            return prickle.print_compiled(channel_flow_kernel, args, opts)
         channel_flow_kernel(
             nit, u, v, dt, dx, dy, p, rho, nu, F, un, vn, pn, b,
             opts=opts

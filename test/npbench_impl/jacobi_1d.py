@@ -10,5 +10,7 @@ def kernel_wrap(A, B, TSTEPS):
         prickle.label('i')
         A[1:-1] = 0.33333 * (B[:-2] + B[1:-1] + B[2:])
 
-def jacobi_1d(TSTEPS, A, B, opts):
+def jacobi_1d(TSTEPS, A, B, opts, compile_only=False):
+    if compile_only:
+        return prickle.print_compiled(kernel_wrap, [A, B, TSTEPS], opts)
     kernel_wrap(A, B, TSTEPS, opts=opts)

@@ -12,10 +12,13 @@ def spmv_helper(A_row, A_col, A_val, N, x, y):
 
 # Matrix-Vector Multiplication with the matrix given in Compressed Sparse Row
 # (CSR) format
-def spmv(A_row, A_col, A_val, x, opts):
+def spmv(A_row, A_col, A_val, x, opts, compile_only=False):
     N, = A_row.shape
     A_row = A_row.to(dtype=torch.int32)
     A_col = A_col.to(dtype=torch.int32)
     y = torch.zeros(N - 1, dtype=A_val.dtype)
+    if compile_only:
+        args = [A_row, A_col, A_val, N, x, y]
+        return prickle.print_compiled(spmv_helper, args, opts)
     spmv_helper(A_row, A_col, A_val, N, x, y, opts=opts)
     return y

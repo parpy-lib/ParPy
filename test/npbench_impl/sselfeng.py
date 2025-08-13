@@ -56,12 +56,20 @@ def scattering_self_energies_kernel(neigh_idx, dH, G, D, Sigma, dHG, dHD, Nkz,
                                         for i in range(1):
                                             x = 0.0
 
-def sselfeng(neigh_idx, dH, G, D, Sigma, opts):
+def sselfeng(neigh_idx, dH, G, D, Sigma, opts, compile_only=False):
     NA, NB = neigh_idx.shape
     Nkz, NE, NA, Norb, Norb = G.shape
     Nqz, Nw, NA, NB, N3D, N3D = D.shape
     dHG = torch.zeros(Nkz, NE, NA, Norb, Norb, dtype=G.dtype)
     dHD = torch.zeros_like(dHG)
+    if compile_only:
+        args = [
+            neigh_idx, torch.view_as_real(dH), torch.view_as_real(G),
+            torch.view_as_real(D), torch.view_as_real(Sigma),
+            torch.view_as_real(dHG), torch.view_as_real(dHD),
+            Nkz, NE, Nqz, Nw, N3D, NA, NB, Norb
+        ]
+        return prickle.print_compiled(scattering_self_energies_kernel, args, opts)
     scattering_self_energies_kernel(
         neigh_idx, torch.view_as_real(dH), torch.view_as_real(G),
         torch.view_as_real(D), torch.view_as_real(Sigma),

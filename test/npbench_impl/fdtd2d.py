@@ -19,7 +19,10 @@ def kernel_wrap(ex, ey, hz, _fict_, TMAX):
         prickle.label('j')
         hz[:-1, :-1] -= 0.7 * (ex[:-1, 1:] - ex[:-1, :-1] + ey[1:, :-1] - ey[:-1, :-1])
 
-def fdtd2d(TMAX, ex, ey, hz, _fict_, opts):
+def fdtd2d(TMAX, ex, ey, hz, _fict_, opts, compile_only=False):
     NX, NY = ex.shape
+    if compile_only:
+        args = [ex, ey, hz, _fict_, TMAX]
+        return prickle.print_compiled(kernel_wrap, args, opts)
     kernel_wrap(ex, ey, hz, _fict_, TMAX, opts=opts)
 

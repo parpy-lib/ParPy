@@ -103,7 +103,7 @@ def nbody_kernel(mass, pos, vel, N, Nt, dt, G, softening, KE, PE, dx, dy, dz, ac
         # get energy of system
         getEnergy_kernel(pos, vel, mass, G, KE[i], PE[i], dx, dy, dz, inv_r, tmp, N)
 
-def nbody(mass, pos, vel, N, Nt, dt, G, softening, opts):
+def nbody(mass, pos, vel, N, Nt, dt, G, softening, opts, compile_only=False):
     # Convert to Center-of-Mass frame
     vel -= torch.mean(mass * vel, axis=0) / torch.mean(mass)
 
@@ -121,6 +121,9 @@ def nbody(mass, pos, vel, N, Nt, dt, G, softening, opts):
     inv_r = torch.empty_like(dx)
     tmp = torch.empty_like(dx)
 
+    if compile_only:
+        args = [mass, pos, vel, N, Nt, dt, G, softening, KE, PE, dx, dy, dz, a, inv_r, tmp]
+        return prickle.print_compiled(nbody_kernel, args, opts)
     nbody_kernel(
         mass, pos, vel, N, Nt, dt, G, softening, KE, PE, dx, dy, dz, a, inv_r, tmp,
         opts=opts

@@ -11,6 +11,9 @@ def kernel_wrap(alpha, beta, C, A, B, N, M):
             for k in range(M):
                 C[i,j] += A[j,k] * alpha * B[i,k] + B[j,k] * alpha * A[i,k]
 
-def syr2k(alpha, beta, C, A, B, opts):
+def syr2k(alpha, beta, C, A, B, opts, compile_only=False):
     N, M = A.shape
+    if compile_only:
+        args = [alpha, beta, C, A, B, N, M]
+        return prickle.print_compiled(kernel_wrap, args, opts)
     kernel_wrap(alpha, beta, C, A, B, N, M, opts=opts)

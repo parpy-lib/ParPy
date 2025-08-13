@@ -19,6 +19,8 @@ def lu_prickle(A, N):
                     s += A[i,k] * A[k,j]
                 A[i,j] -= s
 
-def lu(A, opts):
+def lu(A, opts, compile_only=False):
     N, N = A.shape
+    if compile_only:
+        return prickle.print_compiled(lu_prickle, [A, N], opts)
     lu_prickle(A, N, opts=opts)

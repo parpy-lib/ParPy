@@ -19,6 +19,8 @@ def prickle_kernel(A, N):
             A[i,i] -= s
             A[i,i] = prickle.sqrt(A[i,i])
 
-def cholesky(A, opts):
+def cholesky(A, opts, compile_only=False):
     N, _ = A.shape
+    if compile_only:
+        return prickle.print_compiled(prickle_kernel, [A, N], opts)
     prickle_kernel(A, N, opts=opts)

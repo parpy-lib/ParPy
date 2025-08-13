@@ -17,7 +17,7 @@ def conv2d_kernel(inputs, weights, output, H_out, W_out, N, C_in, C_out, K):
                                 output[a,i,j,e] += inputs[a,i+b,j+c,d] * weights[b,c,d,e]
 
 # Deep learning convolutional operator (stride = 1)
-def conv2d(input, weights, opts):
+def conv2d(input, weights, opts, compile_only=False):
     K = weights.shape[0]  # Assuming square kernel
     N = input.shape[0]
     H_out = input.shape[1] - K + 1
@@ -25,9 +25,13 @@ def conv2d(input, weights, opts):
     C_in = input.shape[3]
     C_out = weights.shape[3]
     output = torch.empty((N, H_out, W_out, C_out), dtype=torch.float32)
+    if compile_only:
+        args = [input, weights, output, H_out, W_out, N, C_in, C_out, K]
+        return prickle.print_compiled(conv2d_kernel, args, opts)
     conv2d_kernel(input, weights, output, H_out, W_out, N, C_in, C_out, K, opts=opts)
     return output
 
-
-def conv2d_bias(input, weights, bias, opts):
+def conv2d_bias(input, weights, bias, opts, compile_only=False):
+    if compile_only:
+        return conv2d(input, weights, opts, compile_only)
     return conv2d(input, weights, opts) + bias

@@ -22,9 +22,12 @@ def prickle_kernel(r, y, temp, N):
                 y[i] += temp[i]
             y[k] = alpha
 
-def durbin(r, opts):
+def durbin(r, opts, compile_only=False):
     y = torch.empty_like(r)
     temp = torch.empty_like(y)
     N, = r.shape
+    if compile_only:
+        args = [r, y, temp, N]
+        return prickle.print_compiled(prickle_kernel, args, opts)
     prickle_kernel(r, y, temp, N, opts=opts)
     return y

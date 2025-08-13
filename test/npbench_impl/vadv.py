@@ -99,7 +99,7 @@ def vadv_prickle(
 
 
 # Adapted from https://github.com/GridTools/gt4py/blob/1caca893034a18d5df1522ed251486659f846589/tests/test_integration/stencil_definitions.py#L111
-def vadv(utens_stage, u_stage, wcon, u_pos, utens, dtr_stage, opts):
+def vadv(utens_stage, u_stage, wcon, u_pos, utens, dtr_stage, opts, compile_only=False):
     I, J, K = utens_stage.shape
     ccol = torch.empty((I, J, K), dtype=utens_stage.dtype)
     dcol = torch.empty((I, J, K), dtype=utens_stage.dtype)
@@ -116,6 +116,13 @@ def vadv(utens_stage, u_stage, wcon, u_pos, utens, dtr_stage, opts):
     divided = torch.empty_like(gav)
     datacol = torch.empty_like(gav)
 
+    if compile_only:
+        args = [
+            utens_stage, u_stage, wcon, u_pos, utens, dtr_stage, ccol, dcol,
+            data_col, I, J, K, BET_M, BET_P, gav, gcv, as_, cs, acol, bcol,
+            correction_term, divided, datacol,
+        ]
+        return prickle.print_compiled(vadv_prickle, args, opts)
     vadv_prickle(
         utens_stage, u_stage, wcon, u_pos, utens, dtr_stage, ccol, dcol,
         data_col, I, J, K, BET_M, BET_P, gav, gcv, as_, cs, acol, bcol,

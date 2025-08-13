@@ -11,6 +11,9 @@ def trmm_kernel(alpha, A, B, M, N):
                 B[i,j] += A[k,i] * B[k,j]
             B[i,j] = B[i,j] * alpha
 
-def trmm(alpha, A, B, opts):
+def trmm(alpha, A, B, opts, compile_only=False):
     M, N = B.shape
+    if compile_only:
+        args = [alpha, A, B, M, N]
+        return prickle.print_compiled(trmm_kernel, args, opts)
     trmm_kernel(alpha, A, B, M, N, opts=opts)

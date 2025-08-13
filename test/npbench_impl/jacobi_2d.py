@@ -15,5 +15,7 @@ def kernel_wrap(A, B, TSTEPS):
                                B[2:, 1:-1] + B[:-2, 1:-1])
 
 
-def jacobi_2d(TSTEPS, A, B, opts):
+def jacobi_2d(TSTEPS, A, B, opts, compile_only=False):
+    if compile_only:
+        return prickle.print_compiled(kernel_wrap, [A, B, TSTEPS], opts)
     kernel_wrap(A, B, TSTEPS, opts=opts)

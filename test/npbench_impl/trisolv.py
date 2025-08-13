@@ -11,6 +11,9 @@ def prickle_kernel(L, x, b, N):
             t += L[i,k] * x[k]
         x[i] = (b[i] - t) / L[i,i]
 
-def trisolv(L, x, b, opts):
+def trisolv(L, x, b, opts, compile_only=False):
     N = x.shape[0]
+    if compile_only:
+        args = [L, x, b, N]
+        return prickle.print_compiled(prickle_kernel, args, opts)
     prickle_kernel(L, x, b, N, opts=opts)

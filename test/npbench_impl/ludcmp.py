@@ -32,9 +32,11 @@ def ludcmp_kernel(A, b, x, y, N):
                 s += A[i,k] * x[k]
             x[i] = (y[i] - s) / A[i,i]
 
-def ludcmp(A, b, opts):
+def ludcmp(A, b, opts, compile_only=False):
     N, N = A.shape
     x = torch.zeros_like(b)
     y = torch.zeros_like(b)
+    if compile_only:
+        return prickle.print_compiled(ludcmp_kernel, [A, b, x, y, N], opts)
     ludcmp_kernel(A, b, x, y, N, opts=opts)
     return x, y

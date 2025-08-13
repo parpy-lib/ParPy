@@ -26,5 +26,7 @@ def prickle_kernel(A, B, TSTEPS):
                    (B[1:-1, 1:-1, 2:] - 2.0 * B[1:-1, 1:-1, 1:-1] +
                     B[1:-1, 1:-1, 0:-2]) + B[1:-1, 1:-1, 1:-1])
 
-def heat_3d(TSTEPS, A, B, opts):
+def heat_3d(TSTEPS, A, B, opts, compile_only=False):
+    if compile_only:
+        return prickle.print_compiled(prickle_kernel, [A, B, TSTEPS], opts)
     prickle_kernel(A, B, TSTEPS, opts=opts)
