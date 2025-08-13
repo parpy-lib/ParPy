@@ -9,6 +9,7 @@ mod par;
 mod par_tree;
 mod pprint;
 mod reduce;
+mod sync_elim;
 
 #[cfg(test)]
 pub mod ast_builder;
@@ -38,11 +39,16 @@ pub fn from_general_ir(
 
     // Expand intermediate parallel reductions node to proper for-loops in the GPU IR AST.
     let ast = reduce::expand_parallel_reductions(opts, ast)?;
+    debug_env.print("GPU AST after expanding reductions", &ast);
 
     // Transform memory writes where multiple threads write to the same location so that only one
     // thread writes and the threads are synchronized afterward.
     let ast = global_mem::eliminate_block_wide_memory_writes(ast)?;
+    debug_env.print("GPU AST after eliminating block-wide memory writes", &ast);
 
-    // Apply constant folding on the resulting AST before returning it.
-    Ok(constant_fold::fold(ast))
+    let ast = constant_fold::fold(ast);
+
+    // Eliminate redundant uses of synchronization. This includes repeated uses of synchronization
+    // on the same scope and trailing synchronization at the end of a kernel.
+    Ok(sync_elim::remove_redundant_synchronization(ast))
 }
