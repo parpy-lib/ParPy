@@ -22,11 +22,13 @@ def sum_rows_wrap(x, p):
     return y
 
 def print_sum_rows(args, p):
-    print(prickle.print_compiled(sum_rows, args, prickle.par(p)))
+    opts = prickle.par(p)
+    opts.backend = prickle.CompileBackend.Cuda
+    print(prickle.print_compiled(sum_rows, args, opts))
 
 def print_versions(N, M):
-    x = torch.randn((N, M), dtype=torch.float32, device='cuda')
-    y = torch.tensor((N,), dtype=torch.float32, device='cuda')
+    x = torch.randn((N, M), dtype=torch.float32)
+    y = torch.tensor((N,), dtype=torch.float32)
     args = [x, y, N]
 
     p1 = { 'outer': prickle.threads(N) }
