@@ -1113,7 +1113,6 @@ def vadv_init(backend):
     utens = torch.rand(I, J, K)
     return dtr_stage, utens_stage, u_stage, wcon, u_pos, utens
 
-@pytest.mark.skip("Fails due to a bug in the runtime - needs to be investigated")
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_vadv(backend):
     def helper():

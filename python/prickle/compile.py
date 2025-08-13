@@ -122,10 +122,15 @@ def get_wrapper(name, key, opts):
     providing arguments via Python.
     """
     from .buffer import Buffer
+    from .prickle import ScalarSizes
     import ctypes
 
     libpath = _get_library_path(key)
     lib = ctypes.cdll.LoadLibrary(libpath)
+
+    # Determine the sizes to use for scalar values (integers and floats) based
+    # on the provided options.
+    sizes = ScalarSizes(opts)
 
     # Expand arguments such that each value stored in a dictionary is passed as a
     # separate argument.
@@ -138,9 +143,9 @@ def get_wrapper(name, key, opts):
     # Return the ctypes type of an argument.
     def get_ctype(arg):
         if isinstance(arg, int):
-            return ctypes.c_int64
+            return sizes.int.to_ctype()
         elif isinstance(arg, float):
-            return ctypes.c_double
+            return sizes.float.to_ctype()
         elif isinstance(arg, Buffer):
             if len(arg.shape) == 0:
                 return arg.dtype.to_ctype()
