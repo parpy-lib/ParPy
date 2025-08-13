@@ -15,7 +15,7 @@ def min(x, y=None, axis=None):
             return np.min(x, axis=axis)
     else:
         assert axis is None
-        return builtins.min(x, y)
+        return np.minimum(x, y)
 
 def max(x, y=None, axis=None):
     if y is None:
@@ -25,7 +25,7 @@ def max(x, y=None, axis=None):
             return np.max(x, axis=axis)
     else:
         assert axis is None
-        return builtins.max(x, y)
+        return np.maximum(x, y)
 
 def sum(x, axis=None):
     if axis is None:

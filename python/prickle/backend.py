@@ -70,7 +70,7 @@ def resolve_backend(opts, strict):
                                 "by setting the 'backend' field of the 'opts' + "
                                 "argument to the desired backend.")
     elif strict and opts.backend not in available:
-        raise RuntimeError(f"Specified backend {backend} is not available. For " +
+        raise RuntimeError(f"Specified backend {opts.backend} is not available. For " +
                             "more information, enable the 'verbose_backend_resolution' " +
                             "flag in the compiler options.")
     else:
