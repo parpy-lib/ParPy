@@ -43,16 +43,16 @@ from the root of the repository. After installing Prickle, users have to downloa
 
 ### Running tests
 
-We can run quick unit tests for the internal behavior of the Rust compiler using
+To run tests, Prickle must be installed using `pip install ".[test]" (or `".[cuda,test]"` for the CUDA backend) to include testing dependencies. We run quick unit tests for the internal behavior of the native compiler using
 ```bash
 cargo test
 ```
 
-Further, we can run a more comprehensive set of integration tests
+Further, we can run a more comprehensive set of integration tests using
 ```bash
 pytest
 ```
-These tests ensure the result of our compiler behaves correctly with respect to expected output. We either compare against a known output or against existing library functions in PyTorch. These tests take around 5-10 minutes depending on the target backend.
+These tests ensure the result of our compiler behaves correctly with respect to expected output. We either compare against a known output or against existing library functions in PyTorch. These tests take about 5-15 minutes depending on the target backend.
 
 ### Minimal Example
 
