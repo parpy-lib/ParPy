@@ -43,7 +43,7 @@ from the root of the repository. After installing Prickle, users have to downloa
 
 ### Running tests
 
-To run tests, Prickle must be installed using `pip install ".[test]" (or `".[cuda,test]"` for the CUDA backend) to include testing dependencies. We run quick unit tests for the internal behavior of the native compiler using
+To run tests, Prickle must be installed using `pip install ".[test]"` (or `".[cuda,test]"` for the CUDA backend) to include testing dependencies. We run quick unit tests for the internal behavior of the native compiler using
 ```bash
 cargo test
 ```
