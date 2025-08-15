@@ -119,8 +119,8 @@ def run_test(N, M):
     result += [entry(3, N, M, t) for t in t3]
     return result
 
-# Print the code of each version for N=128 and M=1024
-print_versions(128, 1024)
+# Print the code of each version for N=128 and M=2048
+print_versions(128, 2048)
 
 # Run the benchmarks for many combinations of N and M.
 fig, axs = plt.subplots(layout="constrained")
