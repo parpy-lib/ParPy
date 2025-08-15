@@ -10,6 +10,7 @@ dependencies:
   - maturin=1.9.1
   - gcc=12.4.0
   - gxx=12.4.0
+  - coreutils
   - pip:
     - cupy-cuda12x==13.4.1
     - dace==1.0.2
