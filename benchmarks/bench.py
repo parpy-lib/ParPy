@@ -204,7 +204,7 @@ def produce_sddmm_output(csv_file, frameworks, k):
     fig.savefig(f"sddmm-{k}.pdf", bbox_inches="tight", pad_inches=0.05)
 
 def run_sddmm_benchmark(k, limit=2892):
-    frameworks = ["PyTorch", "Prickle-CSR", "Prickle-COO"]
+    frameworks = ["cuSPARSE", "Prickle-CSR", "Prickle-COO"]
     csv_file = f"{common.SDDMM_NAME}-{k}.csv"
 
     if not os.path.isfile(csv_file):

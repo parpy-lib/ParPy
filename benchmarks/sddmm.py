@@ -130,7 +130,7 @@ def run_sddmm(framework, matrix_id, k):
         torch_d = torch_sddmm(dense_a, dense_b, sparse_c)
         # Use the cuSPARSE result as a baseline, and compare the output if using a
         # Prickle framework.
-        if framework == "PyTorch":
+        if framework == "cuSPARSE":
             sparse_d = None
         elif framework == "Prickle-CSR":
             sparse_d = prickle_sddmm_csr(dense_a, dense_b, sparse_c)
@@ -160,7 +160,7 @@ def run_sddmm(framework, matrix_id, k):
 
     # Run the selected benchmark and report the results immediately
     try:
-        if framework == "PyTorch":
+        if framework == "cuSPARSE":
             fn = lambda: torch_sddmm(dense_a, dense_b, sparse_c)
         elif framework == "Prickle-CSR":
             fn = lambda: prickle_sddmm_csr(dense_a, dense_b, sparse_c)
