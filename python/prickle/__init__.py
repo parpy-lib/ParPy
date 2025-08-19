@@ -7,7 +7,7 @@ from .prickle import par, seq, CompileBackend, CompileOptions, Target
 from .buffer import sync
 from .operators import *
 
-__version__ = "0.0.7"
+__version__ = "0.1.0"
 
 _ir_asts = {}
 _ext_decls = {}
