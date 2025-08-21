@@ -19,7 +19,7 @@ def _report_compile_error(r, source, backend_name, temp_file, opts):
     stderr = r.stderr.decode('ascii')
     msg =\
         f"Compilation of generated {backend_name} code failed with exit code {r.returncode}:\n"\
-        "Standard out:\n{stdout}\nStandard error:\n{stderr}"
+        f"Standard out:\n{stdout}\nStandard error:\n{stderr}"
     if opts.write_output:
         with open(temp_file, "w+") as f:
             f.write(source)
