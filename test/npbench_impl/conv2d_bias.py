@@ -1,12 +1,12 @@
-import prickle
+import parpy
 import torch
 
 
-@prickle.jit
+@parpy.jit
 def conv2d_kernel(inputs, weights, output, H_out, W_out, N, C_in, C_out, K):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(H_out):
-        prickle.label('j')
+        parpy.label('j')
         for j in range(W_out):
             output[:,i,j,:] = 0.0
             for a in range(N):
@@ -27,7 +27,7 @@ def conv2d(input, weights, opts, compile_only=False):
     output = torch.empty((N, H_out, W_out, C_out), dtype=torch.float32)
     if compile_only:
         args = [input, weights, output, H_out, W_out, N, C_in, C_out, K]
-        return prickle.print_compiled(conv2d_kernel, args, opts)
+        return parpy.print_compiled(conv2d_kernel, args, opts)
     conv2d_kernel(input, weights, output, H_out, W_out, N, C_in, C_out, K, opts=opts)
     return output
 

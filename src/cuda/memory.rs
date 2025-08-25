@@ -1,4 +1,4 @@
-use crate::prickle_compile_error;
+use crate::parpy_compile_error;
 use crate::gpu::ast::*;
 use crate::utils::err::*;
 use crate::utils::smap::*;
@@ -6,7 +6,7 @@ use crate::utils::smap::*;
 fn validate_gpu_memory_access_expr(acc: (), e: &Expr) -> CompileResult<()> {
     match e {
         Expr::ArrayAccess {i, ..} => {
-            prickle_compile_error!(i, "Assignments are not allowed outside parallel code.")
+            parpy_compile_error!(i, "Assignments are not allowed outside parallel code.")
         },
         _ => e.sfold_result(Ok(acc), validate_gpu_memory_access_expr)
     }

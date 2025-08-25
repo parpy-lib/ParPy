@@ -131,7 +131,7 @@ def compile_trellis_shared_libs():
         exit(r.returncode)
 
 def run_forward_benchmark():
-    frameworks = ["prickle", "triton", "trellis"]
+    frameworks = ["parpy", "triton", "trellis"]
     configurations = [1, 2, 3]
     kmer = [5, 7]
     csv_file = f"{common.FORWARD_NAME}.csv"
@@ -204,7 +204,7 @@ def produce_sddmm_output(csv_file, frameworks, k):
     fig.savefig(f"sddmm-{k}.pdf", bbox_inches="tight", pad_inches=0.05)
 
 def run_sddmm_benchmark(k, limit=2892):
-    frameworks = ["cuSPARSE", "Prickle-CSR", "Prickle-COO"]
+    frameworks = ["cuSPARSE", "ParPy-CSR", "ParPy-COO"]
     csv_file = f"{common.SDDMM_NAME}-{k}.csv"
 
     if not os.path.isfile(csv_file):

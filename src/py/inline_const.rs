@@ -158,7 +158,7 @@ mod test {
     fn eval_str<'py>(py: Python<'py>, s: &str) -> PyResult<Bound<'py, PyAny>> {
         let globals = types::PyDict::new(py);
         globals.set_item("math", py.import("math")?)?;
-        globals.set_item("prickle", py.import("prickle")?)?;
+        globals.set_item("parpy", py.import("parpy")?)?;
         py.eval(&CString::new(s)?, Some(&globals), None)
     }
 

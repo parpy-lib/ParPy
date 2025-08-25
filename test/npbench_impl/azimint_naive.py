@@ -8,25 +8,25 @@
 # high performance azimuthal integration on gpu, 2014. In Proceedings of the
 # 7th European Conference on Python in Science (EuroSciPy 2014).
 
-import prickle
+import parpy
 import pytest
 import torch
 
-@prickle.jit
-def prickle_kernel_32bit(data, radius, res, rmax, npt, N):
-    prickle.label('ix')
+@parpy.jit
+def parpy_kernel_32bit(data, radius, res, rmax, npt, N):
+    parpy.label('ix')
     for i in range(N):
-        rmax[0] = prickle.max(rmax[0], radius[i])
-    prickle.label('i')
+        rmax[0] = parpy.max(rmax[0], radius[i])
+    parpy.label('i')
     for i in range(npt):
-        r1 = rmax[0] * prickle.float32(i) / prickle.float32(npt)
-        r2 = rmax[0] * prickle.float32(i+1) / prickle.float32(npt)
+        r1 = rmax[0] * parpy.float32(i) / parpy.float32(npt)
+        r2 = rmax[0] * parpy.float32(i+1) / parpy.float32(npt)
         c = 0.0
-        prickle.label('j')
+        parpy.label('j')
         for j in range(N):
             c = c + (1.0 if r1 <= radius[j] and radius[j] < r2 else 0.0)
         s = 0.0
-        prickle.label('j')
+        parpy.label('j')
         for j in range(N):
             s = s + (1.0 if r1 <= radius[j] and radius[j] < r2 else 0.0) * data[j]
         # Modified to work with smaller values
@@ -35,21 +35,21 @@ def prickle_kernel_32bit(data, radius, res, rmax, npt, N):
         else:
             res[i] = s / c
 
-@prickle.jit
-def prickle_kernel(data, radius, res, rmax, npt, N):
-    prickle.label('ix')
+@parpy.jit
+def parpy_kernel(data, radius, res, rmax, npt, N):
+    parpy.label('ix')
     for i in range(N):
-        rmax[0] = prickle.max(rmax[0], radius[i])
-    prickle.label('i')
+        rmax[0] = parpy.max(rmax[0], radius[i])
+    parpy.label('i')
     for i in range(npt):
-        r1 = rmax[0] * prickle.float64(i) / prickle.float64(npt)
-        r2 = rmax[0] * prickle.float64(i+1) / prickle.float64(npt)
+        r1 = rmax[0] * parpy.float64(i) / parpy.float64(npt)
+        r2 = rmax[0] * parpy.float64(i+1) / parpy.float64(npt)
         c = 0.0
-        prickle.label('j')
+        parpy.label('j')
         for j in range(N):
             c = c + (1.0 if r1 <= radius[j] and radius[j] < r2 else 0.0)
         s = 0.0
-        prickle.label('j')
+        parpy.label('j')
         for j in range(N):
             s = s + (1.0 if r1 <= radius[j] and radius[j] < r2 else 0.0) * data[j]
         # Modified to work with smaller values
@@ -65,10 +65,10 @@ def azimint_naive(data, radius, npt, opts, compile_only=False):
     args = [data, radius, res, rmax, npt, N]
     if data.dtype == torch.float32:
         if compile_only:
-            return prickle.print_compiled(prickle_kernel_32bit, args, opts)
-        prickle_kernel_32bit(data, radius, res, rmax, npt, N, opts=opts)
+            return parpy.print_compiled(parpy_kernel_32bit, args, opts)
+        parpy_kernel_32bit(data, radius, res, rmax, npt, N, opts=opts)
     else:
         if compile_only:
-            return prickle.print_compiled(prickle_kernel, args, opts)
-        prickle_kernel(data, radius, res, rmax, npt, N, opts=opts)
+            return parpy.print_compiled(parpy_kernel, args, opts)
+        parpy_kernel(data, radius, res, rmax, npt, N, opts=opts)
     return res

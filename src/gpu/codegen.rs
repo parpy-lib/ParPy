@@ -1,7 +1,7 @@
 use super::ast::*;
 use super::free_vars;
 use super::par::{GpuMap, GpuMapping};
-use crate::prickle_compile_error;
+use crate::parpy_compile_error;
 use crate::option::CompileOptions;
 use crate::ir::ast as ir_ast;
 use crate::utils::ast::ExprType;
@@ -246,7 +246,7 @@ fn generate_sync_scope(kind: ir_ast::SyncPointKind, i: &Info) -> CompileResult<S
         ir_ast::SyncPointKind::BlockLocal => Ok(SyncScope::Block),
         ir_ast::SyncPointKind::BlockCluster => Ok(SyncScope::Cluster),
         ir_ast::SyncPointKind::InterBlock => {
-            prickle_compile_error!(i, "Found an inter-block synchronization point \
+            parpy_compile_error!(i, "Found an inter-block synchronization point \
                                        remaining in parallel code after the \
                                        inter-block transformation. This is likely \
                                        caused by a bug in the compiler.")
@@ -311,11 +311,11 @@ fn generate_kernel_stmt(
             acc.push(Stmt::Return {value, i});
         },
         ir_ast::Stmt::Alloc {i, ..} => {
-            prickle_compile_error!(i, "Memory allocation is not supported in \
+            parpy_compile_error!(i, "Memory allocation is not supported in \
                                      parallel code.")?
         },
         ir_ast::Stmt::Free {i, ..} => {
-            prickle_compile_error!(i, "Memory deallocation is not supported in \
+            parpy_compile_error!(i, "Memory deallocation is not supported in \
                                      parallel code.")?
         },
     };
@@ -371,7 +371,7 @@ fn from_ir_stmt(
             Ok(kernels)
         },
         ir_ast::Stmt::SyncPoint {i, ..} => {
-            prickle_compile_error!(i, "Internal error: Found synchronization point \
+            parpy_compile_error!(i, "Internal error: Found synchronization point \
                                        outside parallel code")
         },
         ir_ast::Stmt::For {var, lo, hi, step, body, par, i} => {
@@ -506,7 +506,7 @@ fn unwrap_params(
                     .collect::<Vec<Param>>();
                 unwrapped_params.append(&mut struct_params);
             } else {
-                prickle_compile_error!(p.i, "Parameter refers to unknown struct type (internal compiler error)")?;
+                parpy_compile_error!(p.i, "Parameter refers to unknown struct type (internal compiler error)")?;
             }
         } else {
             unwrapped_params.push(p);
@@ -577,7 +577,7 @@ fn from_ir_top(
             if kernel_tops.is_empty() {
                 Ok((env, Top::FunDef {ret_ty, id, params, body, target: Target::Device}))
             } else {
-                prickle_compile_error!(
+                parpy_compile_error!(
                     i,
                     "Found parallel code outside main function definition, \
                      which is not allowed.")

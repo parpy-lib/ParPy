@@ -1,10 +1,10 @@
-import prickle
+import parpy
 import torch
 
 
-@prickle.jit
-def prickle_kernel(TSTEPS, N, A):
-    with prickle.gpu:
+@parpy.jit
+def parpy_kernel(TSTEPS, N, A):
+    with parpy.gpu:
         for t in range(0, TSTEPS - 1):
             for i in range(1, N - 1):
                 A[i, 1:-1] += (A[i - 1, :-2] + A[i - 1, 1:-1] + A[i - 1, 2:] +
@@ -16,5 +16,5 @@ def prickle_kernel(TSTEPS, N, A):
 
 def seidel_2d(TSTEPS, N, A, opts, compile_only=False):
     if compile_only:
-        return prickle.print_compiled(prickle_kernel, [TSTEPS, N, A], opts)
-    prickle_kernel(TSTEPS, N, A, opts=opts)
+        return parpy.print_compiled(parpy_kernel, [TSTEPS, N, A], opts)
+    parpy_kernel(TSTEPS, N, A, opts=opts)

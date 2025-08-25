@@ -1,4 +1,4 @@
-use crate::prickle_compile_error;
+use crate::parpy_compile_error;
 use crate::gpu::ast::*;
 use crate::utils::ast::ExprType;
 use crate::utils::err::*;
@@ -23,7 +23,7 @@ fn contains_struct_type(ty: &Type) -> bool {
 fn validate_return_type(id: &Name, ty: &Type) -> CompileResult<()> {
     if contains_struct_type(&ty) {
         let i = Info::default();
-        prickle_compile_error!(i, "Found struct return type in function {id}, \
+        parpy_compile_error!(i, "Found struct return type in function {id}, \
                                    which is not supported")
     } else {
         Ok(())
@@ -38,11 +38,11 @@ fn find_struct_fields<'a>(
             Some(fields) => Ok(fields),
             None => {
                 let idstr = id.pprint_default();
-                prickle_compile_error!(i, "Could not find struct type with name {0}", idstr)
+                parpy_compile_error!(i, "Could not find struct type with name {0}", idstr)
             }
         },
         _ => {
-            prickle_compile_error!(i, "Found struct field access on non-struct value")
+            parpy_compile_error!(i, "Found struct field access on non-struct value")
         }
     }
 }
@@ -54,7 +54,7 @@ fn flatten_structs_kernel_expr(env: &StructEnv, e: Expr) -> CompileResult<Expr> 
             match fields.get(&label) {
                 Some(Param {id, ..}) => Ok(Expr::Var {id: id.clone(), ty, i}),
                 None => {
-                    prickle_compile_error!(i, "Found reference to unknown struct \
+                    parpy_compile_error!(i, "Found reference to unknown struct \
                                                field {label}")
                 }
             }
@@ -130,13 +130,13 @@ fn expand_kernel_param(env: &StructEnv, p: Param) -> CompileResult<Vec<Param>> {
                 },
                 None => {
                     let pid = p.id.pprint_default();
-                    prickle_compile_error!(p.i, "Parameter {pid} refers to undefined struct type {id}")
+                    parpy_compile_error!(p.i, "Parameter {pid} refers to undefined struct type {id}")
                 }
             }
         },
         Type::Pointer {ty, ..} if contains_struct_type(ty) => {
             let pid = p.id.pprint_default();
-            prickle_compile_error!(p.i, "Parameter {pid} contains pointer to a \
+            parpy_compile_error!(p.i, "Parameter {pid} contains pointer to a \
                                          struct type, which is not supported")
         },
         _ => Ok(vec![p])

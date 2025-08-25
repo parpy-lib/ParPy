@@ -1,10 +1,10 @@
-import prickle
+import parpy
 import torch
 
-@prickle.jit
+@parpy.jit
 def crc16_kernel(data, poly, N, out):
-    with prickle.gpu:
-        crc = prickle.int32(0xFFFF)
+    with parpy.gpu:
+        crc = parpy.int32(0xFFFF)
         for j in range(N):
             b = data[j]
             cur_byte = 0xFF & b
@@ -24,6 +24,6 @@ def crc16(data, opts, compile_only=False):
     out = torch.empty(1, dtype=torch.int32)
     if compile_only:
         args = [data, poly, N, out]
-        return prickle.print_compiled(crc16_kernel, args, opts)
+        return parpy.print_compiled(crc16_kernel, args, opts)
     crc16_kernel(data, poly, N, out, opts=opts)
     return int(out[0])

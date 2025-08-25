@@ -1,42 +1,42 @@
-import prickle
+import parpy
 import torch
 
-@prickle.jit
+@parpy.jit
 def hdiff_kernel(in_field, out_field, coeff, lap_field, res1, res2, flx_field, fly_field, I, J, K):
-    prickle.label('I')
-    prickle.label('J')
-    prickle.label('K')
+    parpy.label('I')
+    parpy.label('J')
+    parpy.label('K')
     lap_field[:,:,:] = 4.0 * in_field[1:I + 3, 1:J + 3, :] - (
         in_field[2:I + 4, 1:J + 3, :] + in_field[0:I + 2, 1:J + 3, :] +
         in_field[1:I + 3, 2:J + 4, :] + in_field[1:I + 3, 0:J + 2, :])
 
-    prickle.label('I')
-    prickle.label('J')
-    prickle.label('K')
+    parpy.label('I')
+    parpy.label('J')
+    parpy.label('K')
     res1[:,:,:] = lap_field[1:, 1:J + 1, :] - lap_field[:-1, 1:J + 1, :]
 
-    prickle.label('I')
-    prickle.label('J')
-    prickle.label('K')
+    parpy.label('I')
+    parpy.label('J')
+    parpy.label('K')
     flx_field[:,:,:] = (0.0
             if res1[:,:,:] * (in_field[2:I+3,2:J+2,:] - in_field[1:I+2,2:J+2,:]) > 0.0
             else res1[:,:,:])
 
-    prickle.label('I')
-    prickle.label('J')
-    prickle.label('K')
+    parpy.label('I')
+    parpy.label('J')
+    parpy.label('K')
     res2[:,:,:] = lap_field[1:I + 1, 1:, :] - lap_field[1:I + 1, :-1, :]
 
-    prickle.label('I')
-    prickle.label('J')
-    prickle.label('K')
+    parpy.label('I')
+    parpy.label('J')
+    parpy.label('K')
     fly_field[:,:,:] = (0.0
             if res2[:,:,:] * (in_field[2:I+2,2:J+3,:] - in_field[2:I+2,1:J+2,:]) > 0.0
             else res2[:,:,:])
 
-    prickle.label('I')
-    prickle.label('J')
-    prickle.label('K')
+    parpy.label('I')
+    parpy.label('J')
+    parpy.label('K')
     out_field[:, :, :] = in_field[2:I + 2, 2:J + 2, :] - coeff[:, :, :] * (
         flx_field[1:, :, :] - flx_field[:-1, :, :] + fly_field[:, 1:, :] -
         fly_field[:, :-1, :])
@@ -52,7 +52,7 @@ def hdiff(in_field, out_field, coeff, opts, compile_only=False):
     fly_field = torch.empty(I,J+1,K, dtype=in_field.dtype)
     if compile_only:
         args = [in_field, out_field, coeff, lap_field, res1, res2, flx_field, fly_field, I, J, K]
-        return prickle.print_compiled(hdiff_kernel, args, opts)
+        return parpy.print_compiled(hdiff_kernel, args, opts)
     hdiff_kernel(
         in_field, out_field, coeff, lap_field, res1, res2, flx_field, fly_field, I, J, K,
         opts=opts

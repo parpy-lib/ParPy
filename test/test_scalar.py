@@ -1,18 +1,18 @@
-import prickle
+import parpy
 import pytest
-from prickle.prickle import ElemSize, ScalarSizes
+from parpy.parpy import ElemSize, ScalarSizes
 import re
 import torch
 
 from common import *
 
-@prickle.jit
+@parpy.jit
 def simple_fun(x):
-    with prickle.gpu:
+    with parpy.gpu:
         y = x
 
 def scalar_sizes(backend):
-    opts = prickle.CompileOptions()
+    opts = parpy.CompileOptions()
     opts.backend = backend
     return ScalarSizes(opts)
 
@@ -58,14 +58,14 @@ def assert_code_contains(code, sz):
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_int_type_default(backend):
     opts = par_opts(backend, {})
-    code = prickle.print_compiled(simple_fun, [1], opts)
+    code = parpy.print_compiled(simple_fun, [1], opts)
     expected = expected_int_type(backend)
     assert_code_contains(code, expected)
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_float_type_default(backend):
     opts = par_opts(backend, {})
-    code = prickle.print_compiled(simple_fun, [1.0], opts)
+    code = parpy.print_compiled(simple_fun, [1.0], opts)
     expected = expected_float_type(backend)
     assert_code_contains(code, expected)
 
@@ -80,7 +80,7 @@ float_types = [ElemSize.F16, ElemSize.F32, ElemSize.F64]
 def test_int_type_forced(backend, int_ty):
     opts = par_opts(backend, {})
     opts.force_int_size = int_ty
-    code = prickle.print_compiled(simple_fun, [1], opts)
+    code = parpy.print_compiled(simple_fun, [1], opts)
     assert_code_contains(code, int_ty)
 
 @pytest.mark.parametrize('backend', compiler_backends)
@@ -88,10 +88,10 @@ def test_int_type_forced(backend, int_ty):
 def test_float_type_forced(backend, float_ty):
     opts = par_opts(backend, {})
     opts.force_float_size = float_ty
-    if backend == prickle.CompileBackend.Metal and float_ty == ElemSize.F64:
+    if backend == parpy.CompileBackend.Metal and float_ty == ElemSize.F64:
         with pytest.raises(TypeError) as e_info:
-            code = prickle.print_compiled(simple_fun, [1.0], opts)
+            code = parpy.print_compiled(simple_fun, [1.0], opts)
         assert e_info.match(r"does not support.*double-precision float.*")
     else:
-        code = prickle.print_compiled(simple_fun, [1.0], opts)
+        code = parpy.print_compiled(simple_fun, [1.0], opts)
         assert_code_contains(code, float_ty)

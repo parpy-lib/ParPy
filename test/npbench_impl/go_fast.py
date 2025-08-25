@@ -1,15 +1,15 @@
 # https://numba.readthedocs.io/en/stable/user/5minguide.html
 
-import prickle
+import parpy
 import torch
 
-@prickle.jit
-def prickle_kernel(a, tmp, out, N):
-    prickle.label('i')
+@parpy.jit
+def parpy_kernel(a, tmp, out, N):
+    parpy.label('i')
     for i in range(N):
-        tmp[0] += prickle.tanh(a[i,i])
-    prickle.label('ix')
-    prickle.label('j')
+        tmp[0] += parpy.tanh(a[i,i])
+    parpy.label('ix')
+    parpy.label('j')
     out[:,:] = a[:,:] + tmp[0]
 
 def go_fast(a, opts, compile_only=False):
@@ -18,6 +18,6 @@ def go_fast(a, opts, compile_only=False):
     out = torch.empty_like(a)
     if compile_only:
         args = [a, tmp, out, N]
-        return prickle.print_compiled(prickle_kernel, args, opts)
-    prickle_kernel(a, tmp, out, N, opts=opts)
+        return parpy.print_compiled(parpy_kernel, args, opts)
+    parpy_kernel(a, tmp, out, N, opts=opts)
     return out

@@ -1,7 +1,7 @@
 import ctypes
 import numpy as np
 import pandas as pd
-import prickle
+import parpy
 import ssgetpy
 import subprocess
 import torch
@@ -17,29 +17,29 @@ beta = 2.0
 def torch_sddmm(A, B, C):
     return torch.sparse.sampled_addmm(C, A, B, alpha=alpha, beta=beta)
 
-@prickle.jit
-def prickle_sddmm_decompress_csr(C_crows, C_rows, N):
-    prickle.label('N')
+@parpy.jit
+def parpy_sddmm_decompress_csr(C_crows, C_rows, N):
+    parpy.label('N')
     for row in range(N):
-        prickle.label('M')
+        parpy.label('M')
         for i in range(C_crows[row], C_crows[row+1]):
             C_rows[i] = row
 
-@prickle.jit
-def prickle_sddmm_csr_kernel(A, B, C, D, N, alpha, beta):
+@parpy.jit
+def parpy_sddmm_csr_kernel(A, B, C, D, N, alpha, beta):
     # Convert CSR to a COO representation by decompressing the rows. This
     # allows us to naively parallelize across all non-zero values without the
     # need to do load-balancing, as we would need to using CSR (or binary
     # search, which is costly).
-    prickle_sddmm_decompress_csr(C["crows"], C["rows"], N)
-    prickle.label('nnz')
+    parpy_sddmm_decompress_csr(C["crows"], C["rows"], N)
+    parpy.label('nnz')
     for i in range(C["nnz"]):
         row = C["rows"][i]
         col = C["cols"][i]
-        t = prickle.sum(A[row, :] * B[:, col])
+        t = parpy.sum(A[row, :] * B[:, col])
         D[i] = alpha * t + beta * C["values"][i]
 
-def prickle_sddmm_csr(A, B, C):
+def parpy_sddmm_csr(A, B, C):
     D = torch.empty_like(C)
     N, K = A.shape
     nnz = C._nnz()
@@ -51,24 +51,24 @@ def prickle_sddmm_csr(A, B, C):
         "nnz": nnz
     }
     p = {
-        "N": prickle.threads(N),
-        "M": prickle.threads(32),
-        "nnz": prickle.threads(nnz),
+        "N": parpy.threads(N),
+        "M": parpy.threads(32),
+        "nnz": parpy.threads(nnz),
     }
-    opts = prickle.par(p)
-    prickle_sddmm_csr_kernel(A, B, C_dict, D.values(), N, alpha, beta, opts=opts)
+    opts = parpy.par(p)
+    parpy_sddmm_csr_kernel(A, B, C_dict, D.values(), N, alpha, beta, opts=opts)
     return D
 
-@prickle.jit
-def prickle_sddmm_coo_kernel(A, B, C, D, alpha, beta):
-    prickle.label('nnz')
+@parpy.jit
+def parpy_sddmm_coo_kernel(A, B, C, D, alpha, beta):
+    parpy.label('nnz')
     for i in range(C["nnz"]):
         row = C["rows"][i]
         col = C["cols"][i]
-        t = prickle.sum(A[row, :] * B[:, col])
+        t = parpy.sum(A[row, :] * B[:, col])
         D[i] = alpha * t + beta * C["values"][i]
 
-def prickle_sddmm_coo(A, B, C, C_rows):
+def parpy_sddmm_coo(A, B, C, C_rows):
     D = C.detach().clone()
     _, K = A.shape
     nnz = C._nnz()
@@ -78,8 +78,8 @@ def prickle_sddmm_coo(A, B, C, C_rows):
         "values": C.values(),
         "nnz": nnz
     }
-    opts = prickle.par({"nnz": prickle.threads(nnz)})
-    prickle_sddmm_coo_kernel(A, B, C_dict, D.values(), alpha, beta, opts=opts)
+    opts = parpy.par({"nnz": parpy.threads(nnz)})
+    parpy_sddmm_coo_kernel(A, B, C_dict, D.values(), alpha, beta, opts=opts)
     return D
 
 def validate_sparse_result(A, actual_A):
@@ -108,8 +108,8 @@ def csr_rows(csr_matrix):
     crows = csr_matrix.crow_indices()
     rows = torch.empty_like(csr_matrix.col_indices())
     N = len(crows)-1
-    p = {"N": prickle.threads(N), "M": prickle.threads(32)}
-    prickle_sddmm_decompress_csr(crows, rows, N, opts=prickle.par(p))
+    p = {"N": parpy.threads(N), "M": parpy.threads(32)}
+    parpy_sddmm_decompress_csr(crows, rows, N, opts=parpy.par(p))
     return rows
 
 def run_sddmm(framework, matrix_id, k):
@@ -129,16 +129,16 @@ def run_sddmm(framework, matrix_id, k):
     try:
         torch_d = torch_sddmm(dense_a, dense_b, sparse_c)
         # Use the cuSPARSE result as a baseline, and compare the output if using a
-        # Prickle framework.
+        # ParPy framework.
         if framework == "cuSPARSE":
             sparse_d = None
-        elif framework == "Prickle-CSR":
-            sparse_d = prickle_sddmm_csr(dense_a, dense_b, sparse_c)
-        elif framework == "Prickle-COO":
+        elif framework == "ParPy-CSR":
+            sparse_d = parpy_sddmm_csr(dense_a, dense_b, sparse_c)
+        elif framework == "ParPy-COO":
             # Convert from CSR to COO on the CPU to reduce peak memory usage on
             # the GPU, which is typically the limiting factor.
             sparse_c_rows = csr_rows(sparse_c)
-            sparse_d = prickle_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
+            sparse_d = parpy_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
             del sparse_c_rows
         else:
             raise RuntimeError(f"Unsupported framework {framework}")
@@ -162,17 +162,17 @@ def run_sddmm(framework, matrix_id, k):
     try:
         if framework == "cuSPARSE":
             fn = lambda: torch_sddmm(dense_a, dense_b, sparse_c)
-        elif framework == "Prickle-CSR":
-            fn = lambda: prickle_sddmm_csr(dense_a, dense_b, sparse_c)
-        elif framework == "Prickle-COO":
+        elif framework == "ParPy-CSR":
+            fn = lambda: parpy_sddmm_csr(dense_a, dense_b, sparse_c)
+        elif framework == "ParPy-COO":
             sparse_c_rows = csr_rows(sparse_c)
-            fn = lambda: prickle_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
+            fn = lambda: parpy_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
         else:
             raise RuntimeError(f"Unsupported framework {framework}")
         times = common.bench(matrix_id, fn, nwarmup=1)
         result = mk_framework_entry(framework, np.mean(times))
         common.append_csv(f"{common.SDDMM_NAME}-{k}.csv", [result])
-        if framework == "Prickle-COO":
+        if framework == "ParPy-COO":
             del sparse_c_rows
     except torch.cuda.OutOfMemoryError:
         return 34

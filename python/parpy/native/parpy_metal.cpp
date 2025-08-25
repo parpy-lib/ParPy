@@ -1,7 +1,7 @@
 #define NS_PRIVATE_IMPLEMENTATION
 #define MTL_PRIVATE_IMPLEMENTATION
 
-#include "prickle_metal.h"
+#include "parpy_metal.h"
 
 static MTL::Device *device;
 static MTL::CommandQueue *cq;
@@ -10,7 +10,7 @@ static MTL::ComputeCommandEncoder *ce;
 static int64_t queue_cap = 0;
 static int64_t queue_size = 0;
 
-extern "C" void prickle_init(int64_t queue_capacity) {
+extern "C" void parpy_init(int64_t queue_capacity) {
   if (device == nullptr) {
     device = MTL::CreateSystemDefaultDevice();
     queue_cap = queue_capacity;
@@ -22,36 +22,36 @@ extern "C" void prickle_init(int64_t queue_capacity) {
   }
 }
 
-extern "C" void prickle_sync() {
-  prickle_metal::sync();
+extern "C" void parpy_sync() {
+  parpy_metal::sync();
 }
 
-extern "C" MTL::Buffer *prickle_alloc_buffer(int64_t nbytes) {
+extern "C" MTL::Buffer *parpy_alloc_buffer(int64_t nbytes) {
   MTL::Buffer *buf = device->newBuffer(nbytes, MTL::ResourceStorageModeShared);
   if (buf == nullptr) {
-    prickle_metal::error_message = "Failed to allocate buffer";
+    parpy_metal::error_message = "Failed to allocate buffer";
     return nullptr;
   }
   return buf;
 }
 
-extern "C" void *prickle_ptr_buffer(MTL::Buffer *buf) {
+extern "C" void *parpy_ptr_buffer(MTL::Buffer *buf) {
   return buf->contents();
 }
 
-extern "C" void prickle_memcpy(void *dst, void *src, int64_t nbytes) {
+extern "C" void parpy_memcpy(void *dst, void *src, int64_t nbytes) {
   memcpy(dst, src, nbytes);
 }
 
-extern "C" void prickle_free_buffer(MTL::Buffer *buf) {
+extern "C" void parpy_free_buffer(MTL::Buffer *buf) {
   buf->release();
 }
 
-extern "C" const char *prickle_get_error_message() {
-  return prickle_metal::error_message;
+extern "C" const char *parpy_get_error_message() {
+  return parpy_metal::error_message;
 }
 
-namespace prickle_metal {
+namespace parpy_metal {
   MTL::Library *load_library(const char *lib_str) {
     NS::String *code = NS::String::string(lib_str, NS::ASCIIStringEncoding);
     NS::Error *err;
@@ -74,16 +74,16 @@ namespace prickle_metal {
   }
 
   int32_t alloc(MTL::Buffer **buf, int64_t nbytes) {
-    *buf = prickle_alloc_buffer(nbytes);
+    *buf = parpy_alloc_buffer(nbytes);
     if (*buf == nullptr) {
-      prickle_metal::error_message = "Buffer allocation failed";
+      parpy_metal::error_message = "Buffer allocation failed";
       return 1;
     }
     return 0;
   }
 
   void free(MTL::Buffer *b) {
-    prickle_free_buffer(b);
+    parpy_free_buffer(b);
   }
 
   void copy(void *dst, void *src, int64_t nbytes, int64_t k) {
@@ -97,7 +97,7 @@ namespace prickle_metal {
     //  3: both device
     dst = k & 1 ? ((MTL::Buffer*)dst)->contents() : dst;
     src = k & 2 ? ((MTL::Buffer*)src)->contents() : src;
-    prickle_memcpy(dst, src, nbytes);
+    parpy_memcpy(dst, src, nbytes);
   }
 
   int32_t launch_kernel(
@@ -109,7 +109,7 @@ namespace prickle_metal {
       if (cb != nullptr) cb->release();
       cb = cq->commandBuffer();
       if (cb == nullptr) {
-        prickle_metal::error_message = "Failed to set up command buffer";
+        parpy_metal::error_message = "Failed to set up command buffer";
         return 1;
       }
     }
@@ -117,7 +117,7 @@ namespace prickle_metal {
     if (ce == nullptr) {
       ce = cb->computeCommandEncoder();
       if (ce == nullptr) {
-        prickle_metal::error_message = "Failed to set up compute command encoder";
+        parpy_metal::error_message = "Failed to set up compute command encoder";
         return 1;
       }
     }
@@ -125,7 +125,7 @@ namespace prickle_metal {
     NS::Error *err;
     MTL::ComputePipelineState *state = device->newComputePipelineState(kernel, &err);
     if (state == nullptr) {
-      prickle_metal::error_message = "Error setting up compute pipeline state";
+      parpy_metal::error_message = "Error setting up compute pipeline state";
       return 1;
     }
 
@@ -136,7 +136,7 @@ namespace prickle_metal {
 
     int simd_width = state->threadExecutionWidth();
     if (simd_width != 32) {
-      prickle_metal::error_message = "Prickle only supports target with a SIMD width of 32";
+      parpy_metal::error_message = "ParPy only supports target with a SIMD width of 32";
       return 1;
     }
     NS::UInteger maxthreads = state->maxTotalThreadsPerThreadgroup();

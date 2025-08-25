@@ -1,13 +1,13 @@
-import prickle
+import parpy
 import torch
 
-@prickle.jit
-def prickle_kernel(corr, data, M):
-    prickle.label('i')
+@parpy.jit
+def parpy_kernel(corr, data, M):
+    parpy.label('i')
     for i in range(M-1):
-        prickle.label('j')
+        parpy.label('j')
         for j in range(i+1, M):
-            corr[i, j] = prickle.sum(data[:, i] * data[:, j])
+            corr[i, j] = parpy.sum(data[:, i] * data[:, j])
             corr[j, i] = corr[i, j]
 
 def correlation(M, float_n, data, opts, compile_only=False):
@@ -19,6 +19,6 @@ def correlation(M, float_n, data, opts, compile_only=False):
     corr = torch.eye(M, dtype=data.dtype)
     if compile_only:
         args = [corr, data, M]
-        return prickle.print_compiled(prickle_kernel, args, opts)
-    prickle_kernel(corr, data, M, opts=opts)
+        return parpy.print_compiled(parpy_kernel, args, opts)
+    parpy_kernel(corr, data, M, opts=opts)
     return corr

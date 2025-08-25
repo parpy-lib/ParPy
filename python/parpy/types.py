@@ -1,4 +1,4 @@
-from .prickle import ElemSize, ExtType
+from .parpy import ElemSize, ExtType
 
 Bool = ExtType.Scalar(ElemSize.Bool)
 I8 = ExtType.Scalar(ElemSize.I8)

@@ -1,5 +1,5 @@
 import numpy as np
-import prickle
+import parpy
 import pytest
 import subprocess
 import tempfile
@@ -8,11 +8,11 @@ from common import *
 
 np.random.seed(1234)
 
-@prickle.jit
+@parpy.jit
 def sum_elems_per_row(x, y, N):
     for i in range(N):
-        prickle.label('M')
-        y[i] = prickle.sum(x[i, :])
+        parpy.label('M')
+        y[i] = parpy.sum(x[i, :])
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_metal_no_parallelism(backend):
@@ -20,65 +20,65 @@ def test_metal_no_parallelism(backend):
     M = 20
     x = np.random.randn(N, M).astype(np.float32)
     y = np.ndarray(N).astype(np.float32)
-    p = {'M': prickle.threads(M)}
+    p = {'M': parpy.threads(M)}
     opts = par_opts(backend, p)
-    if backend == prickle.CompileBackend.Metal:
-        if prickle.backend.is_enabled(backend):
+    if backend == parpy.CompileBackend.Metal:
+        if parpy.backend.is_enabled(backend):
             sum_elems_per_row(x, y, N, opts=opts)
             assert np.allclose(np.sum(x, axis=1), y, atol=1e-5)
         return
     with pytest.raises(RuntimeError) as e_info:
-        code = prickle.print_compiled(sum_elems_per_row, [x, y, N], opts)
+        code = parpy.print_compiled(sum_elems_per_row, [x, y, N], opts)
     assert e_info.match(r".*Assignments are not allowed outside parallel code.*")
 
 def test_metal_catch_runtime_error():
-    backend = prickle.CompileBackend.Metal
+    backend = parpy.CompileBackend.Metal
     def helper():
         code = """
-#include "prickle_metal.h"
+#include "parpy_metal.h"
 extern "C"
 int32_t f() {
     MTL::Buffer *buf;
-    prickle_metal_check_error(prickle_metal::alloc(&buf, -1));
+    parpy_metal_check_error(parpy_metal::alloc(&buf, -1));
     return 0;
 }
         """
         with pytest.raises(RuntimeError) as e_info:
             opts = par_opts(backend, {})
-            fn = prickle.compile_string("f", code, opts)
+            fn = parpy.compile_string("f", code, opts)
             fn()
         assert e_info.match(r"Buffer allocation failed")
     run_if_backend_is_enabled(backend, helper)
 
 def test_metal_host_external():
-    backend = prickle.CompileBackend.Metal
+    backend = parpy.CompileBackend.Metal
     def helper():
-        import prickle.types as types
-        @prickle.external("add_metal_host", backend, prickle.Target.Host, header="<metal_utils.h>")
+        import parpy.types as types
+        @parpy.external("add_metal_host", backend, parpy.Target.Host, header="<metal_utils.h>")
         def add_metal(x: types.F32, y: types.F32) -> types.F32:
             return x + y
 
-        @prickle.jit
+        @parpy.jit
         def set_to_sum(x, a, b):
             c = add_metal(a, b)
-            prickle.label('N')
+            parpy.label('N')
             x[:] = c
         x = torch.zeros(10, dtype=torch.float32)
         a = 1.0
         b = 2.0
-        opts = par_opts(backend, {'N': prickle.threads(10)})
+        opts = par_opts(backend, {'N': parpy.threads(10)})
         opts.includes += ['test/code']
         set_to_sum(x, a, b, opts=opts)
         assert torch.allclose(x, torch.tensor(3.0))
     run_if_backend_is_enabled(backend, helper)
 
 def test_metal_parallel_host_external_fails():
-    backend = prickle.CompileBackend.Metal
+    backend = parpy.CompileBackend.Metal
     with pytest.raises(RuntimeError) as e_info:
-        import prickle.types as types
-        @prickle.external(
-            "dummy", backend, prickle.Target.Host,
-            parallelize=prickle.threads(1024)
+        import parpy.types as types
+        @parpy.external(
+            "dummy", backend, parpy.Target.Host,
+            parallelize=parpy.threads(1024)
         )
         def dummy(x: types.I64) -> types.I64:
             return x

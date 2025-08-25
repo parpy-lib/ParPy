@@ -1,9 +1,9 @@
 import pathlib
-from .prickle import CompileBackend, DataType
+from .parpy import CompileBackend, DataType
 
 DEFAULT_METAL_COMMAND_QUEUE_SIZE = 64
 PARIR_NATIVE_PATH = pathlib.Path(__file__).parent / "native"
-PARIR_METAL_BASE_LIB_PATH = PARIR_NATIVE_PATH / "prickle_metal_lib.so"
+PARIR_METAL_BASE_LIB_PATH = PARIR_NATIVE_PATH / "parpy_metal_lib.so"
 
 metal_lib = None
 
@@ -50,7 +50,7 @@ def compile_metal_runtime_lib():
     the launch of compute kernels and memory allocations. A runtime exception
     is raised if the function is called when the Metal backend is disabled.
     """
-    from prickle.backend import is_enabled
+    from parpy.backend import is_enabled
     import ctypes
     import shutil
     import subprocess
@@ -60,7 +60,7 @@ def compile_metal_runtime_lib():
         if not is_enabled(CompileBackend.Metal):
             raise RuntimeError("Cannot build Metal runtime library when the Metal backend is disabled")
         libpath = PARIR_METAL_BASE_LIB_PATH
-        src_path = libpath.parent / "prickle_metal.cpp"
+        src_path = libpath.parent / "parpy_metal.cpp"
         # We only need to build the library if the file does not exist or if
         # the source file was modified after the library was last built.
         if not libpath.exists() or os.path.getmtime(libpath) < os.path.getmtime(src_path):
@@ -79,15 +79,15 @@ def compile_metal_runtime_lib():
                 raise RuntimeError("Compilation of the Metal base library failed.\n" +
                                   f"stdout:\n{stdout}\nstderr:\n{stderr}")
         lib = ctypes.cdll.LoadLibrary(libpath)
-        lib.prickle_init.argtypes = [ctypes.c_int64]
-        lib.prickle_sync.argtypes = []
-        lib.prickle_alloc_buffer.argtypes = [ctypes.c_int64]
-        lib.prickle_alloc_buffer.restype = ctypes.c_void_p
-        lib.prickle_ptr_buffer.argtypes = [ctypes.c_void_p]
-        lib.prickle_ptr_buffer.restype = ctypes.c_void_p
-        lib.prickle_memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
-        lib.prickle_free_buffer.argtypes = [ctypes.c_void_p]
-        lib.prickle_init(DEFAULT_METAL_COMMAND_QUEUE_SIZE)
+        lib.parpy_init.argtypes = [ctypes.c_int64]
+        lib.parpy_sync.argtypes = []
+        lib.parpy_alloc_buffer.argtypes = [ctypes.c_int64]
+        lib.parpy_alloc_buffer.restype = ctypes.c_void_p
+        lib.parpy_ptr_buffer.argtypes = [ctypes.c_void_p]
+        lib.parpy_ptr_buffer.restype = ctypes.c_void_p
+        lib.parpy_memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
+        lib.parpy_free_buffer.argtypes = [ctypes.c_void_p]
+        lib.parpy_init(DEFAULT_METAL_COMMAND_QUEUE_SIZE)
         metal_lib = lib
 
 def sync(backend):
@@ -100,7 +100,7 @@ def sync(backend):
         _check_cuda_errors(runtime.cudaDeviceSynchronize())
     elif backend == CompileBackend.Metal:
         compile_metal_runtime_lib()
-        metal_lib.prickle_sync()
+        metal_lib.parpy_sync()
     else:
         raise RuntimeError(f"Called sync on unsupported compiler backend {backend}")
 
@@ -120,7 +120,7 @@ class Buffer:
             setattr(self, "__cuda_array_interface__", cuda_intf)
         elif self.backend == CompileBackend.Metal:
             compile_metal_runtime_lib()
-            self.ptr = metal_lib.prickle_ptr_buffer(self.buf)
+            self.ptr = metal_lib.parpy_ptr_buffer(self.buf)
             arr_intf = _to_array_interface(self.ptr, self.dtype, self.shape)
             setattr(self, "__array_interface__", arr_intf)
         else:
@@ -177,8 +177,8 @@ class Buffer:
                 # Need to wait for kernels to complete before we copy data.
                 self.sync()
                 if self.src_ptr is not None:
-                    metal_lib.prickle_memcpy(self.src_ptr, self.ptr, nbytes)
-                metal_lib.prickle_free_buffer(self.buf)
+                    metal_lib.parpy_memcpy(self.src_ptr, self.ptr, nbytes)
+                metal_lib.parpy_free_buffer(self.buf)
                 self.ptr = None
                 self.buf = None
 
@@ -232,9 +232,9 @@ class Buffer:
 
         compile_metal_runtime_lib()
         nbytes = reduce(mul, shape, 1) * dtype.size()
-        buf = metal_lib.prickle_alloc_buffer(nbytes)
-        ptr = metal_lib.prickle_ptr_buffer(buf)
-        metal_lib.prickle_memcpy(ptr, data_ptr, nbytes)
+        buf = metal_lib.parpy_alloc_buffer(nbytes)
+        ptr = metal_lib.parpy_ptr_buffer(buf)
+        metal_lib.parpy_memcpy(ptr, data_ptr, nbytes)
         return Buffer(buf, shape, dtype, CompileBackend.Metal, data_ptr)
 
     def from_array(t, backend=None):

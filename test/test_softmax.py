@@ -1,5 +1,5 @@
 import numpy as np
-import prickle
+import parpy
 import pytest
 import torch
 
@@ -8,21 +8,21 @@ from common import *
 torch.manual_seed(1234)
 np.random.seed(1234)
 
-@prickle.jit
+@parpy.jit
 def softmax(x, N, M, out):
     # We have N independent instances we want to do softmax on
-    prickle.label('N')
+    parpy.label('N')
     for i in range(N):
-        prickle.label('M')
-        m = prickle.max(x[i,:])
+        parpy.label('M')
+        m = parpy.max(x[i,:])
 
-        prickle.label('M')
-        out[i,:] = prickle.exp(x[i,:] - m)
+        parpy.label('M')
+        out[i,:] = parpy.exp(x[i,:] - m)
 
-        prickle.label('M')
-        s = prickle.sum(out[i,:])
+        parpy.label('M')
+        s = parpy.sum(out[i,:])
 
-        prickle.label('M')
+        parpy.label('M')
         out[i,:] = out[i,:] / s
 
 
@@ -41,14 +41,14 @@ def compare_softmax(opts):
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_softmax_seq_reduce(backend):
-    p = { "N" : prickle.threads(256) }
+    p = { "N" : parpy.threads(256) }
     run_if_backend_is_enabled(backend, lambda: compare_softmax(par_opts(backend, p)))
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_softmax_gpu(backend):
     p = {
-        "N" : prickle.threads(256),
-        "M": prickle.threads(128),
+        "N" : parpy.threads(256),
+        "M": parpy.threads(128),
     }
     run_if_backend_is_enabled(backend, lambda: compare_softmax(par_opts(backend, p)))
 
@@ -58,8 +58,8 @@ def test_softmax_compiles(backend):
     x = torch.randn((N, M), dtype=torch.float32)
     out = torch.zeros_like(x)
     p = {
-        "N" : prickle.threads(256),
-        "M": prickle.threads(128),
+        "N" : parpy.threads(256),
+        "M": parpy.threads(128),
     }
-    s = prickle.print_compiled(softmax, [x, N, M, out], par_opts(backend, p))
+    s = parpy.print_compiled(softmax, [x, N, M, out], par_opts(backend, p))
     assert len(s) != 0

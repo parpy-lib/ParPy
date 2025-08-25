@@ -14,9 +14,9 @@ enum ErrorKind {
 impl fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ErrorKind::Compile => write!(f, "Prickle compile error"),
-            ErrorKind::Name => write!(f, "Prickle name error"),
-            ErrorKind::Type => write!(f, "Prickle type error"),
+            ErrorKind::Compile => write!(f, "ParPy compile error"),
+            ErrorKind::Name => write!(f, "ParPy name error"),
+            ErrorKind::Type => write!(f, "ParPy type error"),
         }
     }
 }
@@ -56,21 +56,21 @@ impl fmt::Display for CompileError {
 pub type CompileResult<T> = Result<T, CompileError>;
 
 #[macro_export]
-macro_rules! prickle_compile_error {
+macro_rules! parpy_compile_error {
     ($i:expr,$($t:tt)*) => {{
         Err(CompileError::compile_err($i.error_msg(format!($($t)*))))
     }}
 }
 
 #[macro_export]
-macro_rules! prickle_internal_error {
+macro_rules! parpy_internal_error {
     ($i:expr,$($t:tt)*) => {{
         Err(CompileError::internal_err($i.error_msg(format!($($t)*))))
     }}
 }
 
 #[macro_export]
-macro_rules! prickle_type_error {
+macro_rules! parpy_type_error {
     ($i:expr,$($t:tt)*) => {{
         Err(CompileError::type_err($i.error_msg(format!($($t)*))))
     }}

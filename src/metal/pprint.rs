@@ -192,13 +192,13 @@ impl PrettyPrint for Expr {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 let Dim3 {x: bx, y: by, z: bz} = blocks;
                 let Dim3 {x: tx, y: ty, z: tz} = threads;
-                (env, format!("prickle_metal::launch_kernel({id}, {{{args}}}, \
+                (env, format!("parpy_metal::launch_kernel({id}, {{{args}}}, \
                                {bx}, {by}, {bz}, {tx}, {ty}, {tz})"))
             },
             Expr::AllocDevice {id, elem_ty, sz, ..} => {
                 let (env, id) = id.pprint(env);
                 let (env, ty) = elem_ty.pprint(env);
-                (env, format!("prickle_metal::alloc(&{id}, {sz} * sizeof({ty}))"))
+                (env, format!("parpy_metal::alloc(&{id}, {sz} * sizeof({ty}))"))
             },
             Expr::Projection {e, label, ..} => {
                 let (env, e) = e.pprint(env);
@@ -216,7 +216,7 @@ impl PrettyPrint for Expr {
             Expr::GetFun {lib, fun_id, ..} => {
                 let (env, lib) = lib.pprint(env);
                 let (env, fun_id) = fun_id.pprint(env);
-                (env, format!("prickle_metal::get_fun({lib}, \"{fun_id}\")"))
+                (env, format!("parpy_metal::get_fun({lib}, \"{fun_id}\")"))
             },
             Expr::LoadLibrary {tops, ..} => {
                 // The library code is included as a string literal. We escape the end of each line
@@ -226,7 +226,7 @@ impl PrettyPrint for Expr {
                 let tops = tops.lines()
                     .map(|l| format!("{l}\\n\\"))
                     .join("\n");
-                (env, format!("prickle_metal::load_library(\"\\\n{tops}\n\")"))
+                (env, format!("parpy_metal::load_library(\"\\\n{tops}\n\")"))
             },
         }
     }
@@ -301,7 +301,7 @@ impl PrettyPrint for Stmt {
                 (env, format!("{indent}metal::threadgroup_barrier(metal::mem_flags::mem_threadgroup);"))
             },
             Stmt::SubmitWork => {
-                (env, format!("{indent}prickle_metal::submit_work();"))
+                (env, format!("{indent}parpy_metal::submit_work();"))
             },
             Stmt::AllocThreadgroup {elem_ty, id, sz} => {
                 let (env, ty) = elem_ty.pprint(env);
@@ -313,16 +313,16 @@ impl PrettyPrint for Stmt {
                 let (env, src) = src.pprint(env);
                 let (env, dst) = dst.pprint(env);
                 let k = memcopy_kind(&src_mem, &dst_mem);
-                (env, format!("{indent}prickle_metal::copy((void*){dst}, \
+                (env, format!("{indent}parpy_metal::copy((void*){dst}, \
                                (void*){src}, {sz} * sizeof({ty}), {k});"))
             },
             Stmt::FreeDevice {id} => {
                 let (env, id) = id.pprint(env);
-                (env, format!("{indent}prickle_metal::free({id});"))
+                (env, format!("{indent}parpy_metal::free({id});"))
             },
             Stmt::CheckError {e} => {
                 let (env, e) = e.pprint(env);
-                (env, format!("{indent}prickle_metal_check_error({e});"))
+                (env, format!("{indent}parpy_metal_check_error({e});"))
             },
         }
     }

@@ -1,5 +1,5 @@
 import os
-import prickle
+import parpy
 import pytest
 import shutil
 import torch
@@ -8,10 +8,10 @@ import warnings
 # Explicitly clear the cache before running tests. This is important, as the
 # caching assumes the compiler is fixed. If the compiler is updated, we have to
 # clear the cache to ensure it runs.
-prickle.clear_cache()
+parpy.clear_cache()
 
 # Use all backends declared in the library
-compiler_backends = prickle.backend.backends
+compiler_backends = parpy.backend.backends
 
 # If the Metal backend is available according to PyTorch and the Metal-cpp
 # header is missing, we report that the Metal backend is currently disabled and
@@ -30,7 +30,7 @@ if torch.cuda.is_available() and not shutil.which("nvcc"):
     warnings.warn(msg, category=RuntimeWarning)
 
 def run_if_backend_is_enabled(backend, fn):
-    if prickle.backend.is_enabled(backend):
+    if parpy.backend.is_enabled(backend):
         import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("error")
@@ -39,7 +39,7 @@ def run_if_backend_is_enabled(backend, fn):
         pytest.skip(f"{backend} is not enabled")
 
 def run_if_clusters_are_enabled(backend, fn):
-    if backend == prickle.CompileBackend.Cuda and prickle.backend.is_enabled(backend):
+    if backend == parpy.CompileBackend.Cuda and parpy.backend.is_enabled(backend):
         major, minor = torch.cuda.get_device_capability()
         if major < 9:
             pytest.skip("Thread block clusters require CUDA compute capability 9.0 "
@@ -55,7 +55,7 @@ def run_if_clusters_are_enabled(backend, fn):
 # disables caching to prevent bugs in tests.
 
 def seq_opts(backend):
-    opts = prickle.CompileOptions()
+    opts = parpy.CompileOptions()
     opts.backend = backend
     opts.seq = True
     opts.verbose_backend_resolution = True
@@ -63,7 +63,7 @@ def seq_opts(backend):
     return opts
 
 def par_opts(backend, p):
-    opts = prickle.CompileOptions()
+    opts = parpy.CompileOptions()
     opts.backend = backend
     opts.parallelize = p
     opts.verbose_backend_resolution = True

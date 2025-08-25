@@ -1,7 +1,7 @@
 use super::ast::*;
-use crate::prickle_compile_error;
-use crate::prickle_internal_error;
-use crate::prickle_type_error;
+use crate::parpy_compile_error;
+use crate::parpy_internal_error;
+use crate::parpy_type_error;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::ast::ExprType;
 use crate::utils::err::*;
@@ -47,7 +47,7 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
         gpu_ast::Type::Scalar {sz} => {
             match sz {
                 ElemSize::F64 if env.on_device => {
-                    prickle_type_error!(i, "Metal does not support double-precision \
+                    parpy_type_error!(i, "Metal does not support double-precision \
                                             floating-point numbers.")
                 },
                 _ => Ok(Type::Scalar {sz})
@@ -56,7 +56,7 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
         gpu_ast::Type::Pointer {ty, mem} => {
             let ty = match from_gpu_ir_type(env, *ty, i) {
                 Ok(Type::Pointer {..}) => {
-                    prickle_type_error!(i, "Found nested pointer in generated code, \
+                    parpy_type_error!(i, "Found nested pointer in generated code, \
                                             which is not supported in Metal.")
                 },
                 Ok(ty) => Ok(Box::new(ty)),
@@ -72,7 +72,7 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
             }
         },
         gpu_ast::Type::Struct {id} => {
-            prickle_internal_error!(i, "Found struct type {id} in the Metal backend.")
+            parpy_internal_error!(i, "Found struct type {id} in the Metal backend.")
         }
     }
 }
@@ -100,7 +100,7 @@ fn from_gpu_ir_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
             Ok(Expr::Ternary {cond, thn, els, ty, i})
         },
         gpu_ast::Expr::StructFieldAccess {i, ..} => {
-            prickle_internal_error!(i, "Found struct field access in the Metal backend,\
+            parpy_internal_error!(i, "Found struct field access in the Metal backend,\
                                         where structs are not supported.")
         },
         gpu_ast::Expr::ArrayAccess {target, idx, i, ..} => {
@@ -123,7 +123,7 @@ fn from_gpu_ir_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
             Ok(Expr::Convert {e, ty})
         },
         gpu_ast::Expr::Struct {id, i, ..} => {
-            prickle_internal_error!(i, "Found struct {id} in the Metal backend,\
+            parpy_internal_error!(i, "Found struct {id} in the Metal backend,\
                                         where structs are not supported.")
         },
         gpu_ast::Expr::ThreadIdx {dim, i, ..} => Ok(Expr::ThreadIdx {dim, ty, i}),
@@ -139,7 +139,7 @@ fn from_gpu_ir_reduce_op(op: &BinOp, i: &Info) -> CompileResult<SimdOp> {
         BinOp::Min => Ok(SimdOp::Min),
         _ => {
             let op = Expr::print_binop(op, &Type::Void, &Type::Void).unwrap();
-            prickle_compile_error!(i, "Reduction on unsupported binary operation {op}")
+            parpy_compile_error!(i, "Reduction on unsupported binary operation {op}")
         }
     }
 }
@@ -180,17 +180,17 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             Ok(Stmt::Return {value})
         },
         gpu_ast::Stmt::Scope {i, ..} => {
-            prickle_internal_error!(i, "Found scope statement that should have \
+            parpy_internal_error!(i, "Found scope statement that should have \
                                         been eliminated.")
         },
         gpu_ast::Stmt::ParallelReduction {i, ..} => {
-            prickle_internal_error!(i, "Found parallel reduction statement \
+            parpy_internal_error!(i, "Found parallel reduction statement \
                                         that should have been eliminated.")
         },
         gpu_ast::Stmt::Synchronize {scope, i} => match scope {
             gpu_ast::SyncScope::Block => Ok(Stmt::ThreadgroupBarrier),
             gpu_ast::SyncScope::Cluster => {
-                prickle_internal_error!(i, "Found cluster-level synchronization point, \
+                parpy_internal_error!(i, "Found cluster-level synchronization point, \
                                             which is not supported by the Metal backend.")
             },
         },
@@ -204,7 +204,7 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             })
         },
         gpu_ast::Stmt::ClusterReduce {i, ..} => {
-            prickle_internal_error!(i, "Cluster reductions are not supported in Metal.")
+            parpy_internal_error!(i, "Cluster reductions are not supported in Metal.")
         },
         gpu_ast::Stmt::KernelLaunch {id, args, grid, i} => {
             let is_pointer_type = |ty: &gpu_ast::Type| match ty {
@@ -289,7 +289,7 @@ fn from_gpu_ir_attr(
             Ok(FunAttribute::LaunchBounds {threads})
         },
         gpu_ast::KernelAttribute::ClusterDims {..} => {
-            prickle_internal_error!(Info::default(), "Found unsupported cluster dimension \
+            parpy_internal_error!(Info::default(), "Found unsupported cluster dimension \
                                                       attribute in Metal backend.")
         }
     }
@@ -344,7 +344,7 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
             Ok(acc)
         },
         gpu_ast::Top::StructDef {id, ..} => {
-            prickle_internal_error!(Info::default(), "Found struct definition {id} \
+            parpy_internal_error!(Info::default(), "Found struct definition {id} \
                                                       in the Metal backend, where \
                                                       structs are not supported.")
         }
@@ -455,7 +455,7 @@ fn generate_kernel_library_top(lib_id: Name, tops: Vec<Top>) -> Top {
 
 pub fn from_gpu_ir(ast: gpu_ast::Ast) -> CompileResult<Ast> {
     let mut tops = vec![
-        Top::Include {header: "\"prickle_metal.h\"".to_string()}
+        Top::Include {header: "\"parpy_metal.h\"".to_string()}
     ];
     let acc = Ok(TopsAcc::default());
     let acc = ast.sfold_owned_result(acc, from_gpu_ir_top)?;

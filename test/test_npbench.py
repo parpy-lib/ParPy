@@ -34,7 +34,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import prickle
+import parpy
 import pytest
 import torch
 import numpy as np
@@ -43,13 +43,13 @@ from common import *
 import npbench_impl
 
 def float_ty(backend):
-    if backend == prickle.CompileBackend.Metal:
+    if backend == parpy.CompileBackend.Metal:
         return torch.float32
     else:
         return torch.float64
 
 def complex_ty(backend):
-    if backend == prickle.CompileBackend.Metal:
+    if backend == parpy.CompileBackend.Metal:
         return torch.complex64
     else:
         return torch.complex128
@@ -63,7 +63,7 @@ def adi_init(backend):
 def run_adi(backend, compile_only):
     from npbench_impl.adi import adi
     TSTEPS, N, u1 = adi_init(backend)
-    p = { 'i': prickle.threads(N-2) }
+    p = { 'i': parpy.threads(N-2) }
     opts = par_opts(backend, p)
     if compile_only:
         code = adi(TSTEPS, N, u1, opts, True)
@@ -86,7 +86,7 @@ def arc_distance_init(backend):
 def run_arc_distance(backend, compile_only):
     from npbench_impl.arc_distance import arc_distance
     N, t0, p0, t1, p1 = arc_distance_init(backend)
-    p = {'i': prickle.threads(N)}
+    p = {'i': parpy.threads(N)}
     opts = par_opts(backend, p)
     if compile_only:
         code = arc_distance(t0, p0, t1, p1, opts, True)
@@ -109,9 +109,9 @@ def run_azimint_naive(backend, compile_only):
     from npbench_impl.azimint_naive import azimint_naive
     npt, data, radius = azimint_naive_init(backend)
     p = {
-        'i': prickle.threads(npt),
-        'ix': prickle.threads(1024).reduce(),
-        'j': prickle.threads(1024).reduce()
+        'i': parpy.threads(npt),
+        'ix': parpy.threads(1024).reduce(),
+        'j': parpy.threads(1024).reduce()
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -141,7 +141,7 @@ def cavity_flow_init(backend):
 def run_cavity_flow(backend, compile_only):
     from npbench_impl.cavity_flow import cavity_flow
     nx, ny, nt, nit, u1, v1, dt, dx, dy, p1, rho, nu = cavity_flow_init(backend)
-    p = {'ny': prickle.threads(ny), 'nx': prickle.threads(nx)}
+    p = {'ny': parpy.threads(ny), 'nx': parpy.threads(nx)}
     opts = par_opts(backend, p)
     if compile_only:
         code = cavity_flow(nx, ny, nt, nit, u1, v1, dt, dx, dy, p1, rho, nu, opts, True)
@@ -174,7 +174,7 @@ def run_channel_flow(backend, compile_only):
     from npbench_impl.channel_flow import channel_flow
     nit, u1, v1, dt, dx, dy, p1, rho, nu, F = channel_flow_init(backend)
     ny, nx = u1.shape
-    p = {'ny': prickle.threads(ny), 'nx': prickle.threads(nx)}
+    p = {'ny': parpy.threads(ny), 'nx': parpy.threads(nx)}
     opts = par_opts(backend, p)
     if compile_only:
         code = channel_flow(nit, u1, v1, dt, dx, dy, p1, rho, nu, F, opts, True)
@@ -202,7 +202,7 @@ def cholesky_init(backend):
 
 def run_cholesky(backend, compile_only):
     from npbench_impl.cholesky import cholesky
-    p = { 'k': prickle.threads(256).reduce() }
+    p = { 'k': parpy.threads(256).reduce() }
     opts = par_opts(backend, p)
     A1 = cholesky_init(backend)
     if compile_only:
@@ -231,8 +231,8 @@ def run_compute(backend, compile_only):
     array_1, array_2, a, b, c = compute_init(backend)
     N, _ = array_1.shape
     p = {
-        'i': prickle.threads(N),
-        'j': prickle.threads(1024)
+        'i': parpy.threads(N),
+        'j': parpy.threads(1024)
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -262,7 +262,7 @@ def run_conv2d_bias(backend, compile_only):
     input, weights, bias = conv2d_init(backend)
     H_out = input.shape[1] - weights.shape[0] + 1
     W_out = input.shape[2] - weights.shape[0] + 1
-    p = {'i': prickle.threads(H_out), 'j': prickle.threads(W_out)}
+    p = {'i': parpy.threads(H_out), 'j': parpy.threads(W_out)}
     opts = par_opts(backend, p)
     if compile_only:
         code = conv2d_bias(input, weights, bias, opts, True)
@@ -285,8 +285,8 @@ def run_correlation(backend, compile_only):
     float_n, data = correlation_init(backend)
     _, M = data.shape
     p = {
-        'i': prickle.threads(M-1),
-        'j': prickle.threads(256),
+        'i': parpy.threads(M-1),
+        'j': parpy.threads(256),
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -311,8 +311,8 @@ def run_covariance(backend, compile_only):
     float_n, data = covariance_init(backend)
     _, M = data.shape
     p = {
-        'i': prickle.threads(M),
-        'j': prickle.threads(256),
+        'i': parpy.threads(M),
+        'j': parpy.threads(256),
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -359,8 +359,8 @@ def run_deriche(backend, compile_only):
     alpha, img_in = deriche_init(backend)
     W, H = img_in.shape
     p = {
-        'i': prickle.threads(W),
-        'j': prickle.threads(H)
+        'i': parpy.threads(W),
+        'j': parpy.threads(H)
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -378,12 +378,12 @@ def durbin_init(backend):
     return torch.tensor(r, dtype=float_ty(backend))
 
 def run_durbin(backend, compile_only):
-    if backend == prickle.CompileBackend.Metal:
+    if backend == parpy.CompileBackend.Metal:
         pytest.skip("Skip as test only seems to work using 64-bit floats")
     from npbench_impl.durbin import durbin
     p = {
-        'k_red': prickle.threads(512).reduce(),
-        'k': prickle.threads(512)
+        'k_red': parpy.threads(512).reduce(),
+        'k': parpy.threads(512)
     }
     opts = par_opts(backend, p)
     r = durbin_init(backend)
@@ -419,8 +419,8 @@ def run_fdtd2d(backend, compile_only):
     from npbench_impl.fdtd2d import fdtd2d
     TMAX, NX, NY, ex1, ey1, hz1, _fict_ = fdtd2d_init(backend)
     p = {
-        'i': prickle.threads(NX-1),
-        'j': prickle.threads(1024),
+        'i': parpy.threads(NX-1),
+        'j': parpy.threads(1024),
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -448,8 +448,8 @@ def run_floyd_warshall(backend, compile_only):
     from npbench_impl.floyd_warshall import floyd_warshall
     path1, N = floyd_warshall_init(backend)
     p = {
-        'i': prickle.threads(N),
-        'j': prickle.threads(N)
+        'i': parpy.threads(N),
+        'j': parpy.threads(N)
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -472,9 +472,9 @@ def run_go_fast(backend, compile_only):
     from npbench_impl.go_fast import go_fast
     x, N = go_fast_init(backend)
     p = {
-        'i': prickle.threads(1024).reduce(),
-        'ix': prickle.threads(N),
-        'j': prickle.threads(N)
+        'i': parpy.threads(1024).reduce(),
+        'ix': parpy.threads(N),
+        'j': parpy.threads(N)
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -500,9 +500,9 @@ def run_gramschmidt(backend, compile_only):
     A = gramschmidt_init(backend)
     M, N = A.shape
     p = {
-        'i': prickle.threads(M),
-        'i_reduce': prickle.threads(128).reduce(),
-        'j': prickle.threads(N)
+        'i': parpy.threads(M),
+        'i_reduce': parpy.threads(128).reduce(),
+        'j': parpy.threads(N)
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -530,7 +530,7 @@ def run_hdiff(backend, compile_only):
     from npbench_impl.hdiff import hdiff
     in_field, out_field, coeff = hdiff_init(backend)
     I, J, K = out_field.shape
-    p = {'I': prickle.threads(I), 'J': prickle.threads(J), 'K': prickle.threads(K)}
+    p = {'I': parpy.threads(I), 'J': parpy.threads(J), 'K': parpy.threads(K)}
     opts = par_opts(backend, p)
     if compile_only:
         code = hdiff(in_field, out_field, coeff, opts, True)
@@ -552,9 +552,9 @@ def heat_3d_init(backend):
 def run_heat_3d(backend, compile_only):
     from npbench_impl.heat_3d import heat_3d
     p = {
-        'i': prickle.threads(64),
-        'j': prickle.threads(64),
-        'k': prickle.threads(64)
+        'i': parpy.threads(64),
+        'j': parpy.threads(64),
+        'k': parpy.threads(64)
     }
     opts = par_opts(backend, p)
     TSTEPS, A1, B1 = heat_3d_init(backend)
@@ -581,7 +581,7 @@ def run_jacobi_1d(backend, compile_only):
     from npbench_impl.jacobi_1d import jacobi_1d
     TSTEPS, A1, B1 = jacobi_1d_init(backend)
     N, = A1.shape
-    p = {'i': prickle.threads(N-2)}
+    p = {'i': parpy.threads(N-2)}
     opts = par_opts(backend, p)
     if compile_only:
         code = jacobi_1d(TSTEPS, A1, B1, opts, True)
@@ -607,8 +607,8 @@ def run_jacobi_2d(backend, compile_only):
     TSTEPS, A1, B1 = jacobi_2d_init(backend)
     N, N = A1.shape
     p = {
-        'i': prickle.threads(N-1),
-        'j': prickle.threads(N-1),
+        'i': parpy.threads(N-1),
+        'j': parpy.threads(N-1),
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -680,7 +680,7 @@ def lu_init(backend):
 
 def run_lu(backend, compile_only):
     from npbench_impl.lu import lu
-    p = {'k': prickle.threads(128).reduce()}
+    p = {'k': parpy.threads(128).reduce()}
     opts = par_opts(backend, p)
     A1 = lu_init(backend)
     if compile_only:
@@ -702,7 +702,7 @@ def ludcmp_init(backend):
 
 def run_ludcmp(backend, compile_only):
     from npbench_impl.ludcmp import ludcmp
-    p = {'k': prickle.threads(128).reduce()}
+    p = {'k': parpy.threads(128).reduce()}
     opts = par_opts(backend, p)
     A1, b = ludcmp_init(backend)
     if compile_only:
@@ -739,8 +739,8 @@ def run_mlp(backend, compile_only):
     input, w1, b1, w2, b2, w3, b3 = mlp_init(backend)
     N, _ = input.shape
     p = {
-        'i': prickle.threads(N),
-        'j': prickle.threads(1024),
+        'i': parpy.threads(N),
+        'j': parpy.threads(1024),
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -769,9 +769,9 @@ def run_nbody(backend, compile_only):
     from npbench_impl.nbody import nbody
     mass, pos, vel, N, Nt, dt, G, softening = nbody_init(backend)
     p = {
-        'N2': prickle.threads(N*N),
-        'N': prickle.threads(N),
-        'reduce': prickle.threads(64).reduce()
+        'N2': parpy.threads(N*N),
+        'N': parpy.threads(N),
+        'reduce': parpy.threads(64).reduce()
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -821,7 +821,7 @@ def run_resnet(backend, compile_only):
     input, conv1, conv2, conv3 = resnet_init(backend)
     H_out = input.shape[1] - conv1.shape[0] + 1
     W_out = input.shape[2] - conv1.shape[0] + 1
-    p = {'i': prickle.threads(H_out), 'j': prickle.threads(W_out)}
+    p = {'i': parpy.threads(H_out), 'j': parpy.threads(W_out)}
     opts = par_opts(backend, p)
     if compile_only:
         code = resnet(input, conv1, conv2, conv3, opts, True)
@@ -857,10 +857,10 @@ def run_sselfeng(backend, compile_only):
     neigh_idx, dH, G, D, Sigma1 = sselfeng_init(backend)
     Nkz, NE, NA, Norb, Norb = G.shape
     p = {
-        'Nkz': prickle.threads(Nkz),
-        'NE': prickle.threads(NE),
-        'NA': prickle.threads(NA),
-        'threads': prickle.threads(32)
+        'Nkz': parpy.threads(Nkz),
+        'NE': parpy.threads(NE),
+        'NA': parpy.threads(NA),
+        'threads': parpy.threads(32)
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -906,10 +906,10 @@ def run_softmax(backend, compile_only):
     x = softmax_init(backend)
     N, H, SM, SM = x.shape
     p = {
-        'i': prickle.threads(N),
-        'j': prickle.threads(H),
-        'k': prickle.threads(SM),
-        'l': prickle.threads(256),
+        'i': parpy.threads(N),
+        'j': parpy.threads(H),
+        'k': parpy.threads(SM),
+        'l': parpy.threads(256),
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -942,8 +942,8 @@ def run_spmv(backend, compile_only):
     rows, cols, vals, x = spmv_init(backend)
     N, = x.shape
     p = {
-        'i': prickle.threads(N-1),
-        'j': prickle.threads(64).reduce(),
+        'i': parpy.threads(N-1),
+        'j': parpy.threads(64).reduce(),
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -980,9 +980,9 @@ def run_symm(backend, compile_only):
     alpha, beta, C1, A, B = symm_init(backend)
     M, N = C1.shape
     p = {
-        'M': prickle.threads(M),
-        'N': prickle.threads(N),
-        'i_red': prickle.threads(32).reduce()
+        'M': parpy.threads(M),
+        'N': parpy.threads(N),
+        'i_red': parpy.threads(32).reduce()
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -1019,8 +1019,8 @@ def run_syr2k(backend, compile_only):
     alpha, beta, C1, A, B = syr2k_init(backend)
     N, M = A.shape
     p = {
-        'i': prickle.threads(N),
-        'k': prickle.threads(256).reduce()
+        'i': parpy.threads(N),
+        'k': parpy.threads(256).reduce()
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -1053,8 +1053,8 @@ def run_syrk(backend, compile_only):
     alpha, beta, C1, A = syrk_init(backend)
     N, M = A.shape
     p = {
-        'i': prickle.threads(N),
-        'k': prickle.threads(256).reduce()
+        'i': parpy.threads(N),
+        'k': parpy.threads(256).reduce()
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -1085,8 +1085,8 @@ def run_trisolv(backend, compile_only):
     L, x, b1 = trisolv_init(backend)
     N, N = L.shape
     p = {
-        'N': prickle.threads(N),
-        'reduce': prickle.threads(256).reduce()
+        'N': parpy.threads(N),
+        'reduce': parpy.threads(256).reduce()
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -1120,8 +1120,8 @@ def run_trmm(backend, compile_only):
     alpha, A, B1 = trmm_init(backend)
     _, N = B1.shape
     p = {
-        'j': prickle.threads(N),
-        'k': prickle.threads(256).reduce()
+        'j': parpy.threads(N),
+        'k': parpy.threads(256).reduce()
     }
     opts = par_opts(backend, p)
     if compile_only:
@@ -1151,7 +1151,7 @@ def run_vadv(backend, compile_only):
     from npbench_impl.vadv import vadv
     dtr_stage, utens_stage1, u_stage, wcon, u_pos, utens = vadv_init(backend)
     I, J, _ = utens_stage1.shape
-    p = {'I': prickle.threads(I), 'J': prickle.threads(J)}
+    p = {'I': parpy.threads(I), 'J': parpy.threads(J)}
     opts = par_opts(backend, p)
     if compile_only:
         code = vadv(utens_stage1, u_stage, wcon, u_pos, utens, dtr_stage, opts, True)

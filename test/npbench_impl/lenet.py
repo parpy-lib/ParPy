@@ -1,14 +1,14 @@
-import prickle
+import parpy
 import torch
 
 def relu(x):
     return torch.maximum(x, torch.zeros_like(x))
 
-@prickle.jit
+@parpy.jit
 def conv2d_kernel(inputs, weights, output, H_out, W_out, N, C_in, C_out, K):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(H_out):
-        prickle.label('j')
+        parpy.label('j')
         for j in range(W_out):
             output[:,i,j,:] = 0.0
             for a in range(N):
@@ -27,26 +27,26 @@ def conv2d(input, weights, opts, compile_only=False):
     C_in = input.shape[3]
     C_out = weights.shape[3]
     output = torch.empty((N, H_out, W_out, C_out), dtype=torch.float32)
-    opts.parallelize = {'i': prickle.threads(H_out), 'j': prickle.threads(W_out)}
+    opts.parallelize = {'i': parpy.threads(H_out), 'j': parpy.threads(W_out)}
     if compile_only:
         args = [input, weights, output, H_out, W_out, N, C_in, C_out, K]
-        return prickle.print_compiled(conv2d_kernel, args, opts)
+        return parpy.print_compiled(conv2d_kernel, args, opts)
     conv2d_kernel(input, weights, output, H_out, W_out, N, C_in, C_out, K, opts=opts)
     return output
 
 
-@prickle.jit
+@parpy.jit
 def maxpool2d_kernel(x, output, N_0, N_1, N_2, N_3):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(N_1):
-        prickle.label('j')
+        parpy.label('j')
         for j in range(N_2):
-            output[:,i,j,:] = -prickle.inf
+            output[:,i,j,:] = -parpy.inf
             for a in range(N_0):
                 for b in range(N_3):
                     for ii in range(2):
                         for jj in range(2):
-                            output[a,i,j,b] = prickle.max(output[a,i,j,b], x[a,2*i+ii,2*j+jj,b])
+                            output[a,i,j,b] = parpy.max(output[a,i,j,b], x[a,2*i+ii,2*j+jj,b])
 
 # 2x2 maxpool operator, as used in LeNet-5
 def maxpool2d(x, opts, compile_only=False):
@@ -54,10 +54,10 @@ def maxpool2d(x, opts, compile_only=False):
         [x.shape[0], x.shape[1] // 2, x.shape[2] // 2, x.shape[3]], dtype=x.dtype
     )
     N_0, N_1, N_2, N_3 = output.shape
-    opts.parallelize = {'i': prickle.threads(N_1), 'j': prickle.threads(N_2)}
+    opts.parallelize = {'i': parpy.threads(N_1), 'j': parpy.threads(N_2)}
     if compile_only:
         args = [x, output, N_0, N_1, N_2, N_3]
-        return prickle.print_compiled(maxpool2d_kernel, args, opts)
+        return parpy.print_compiled(maxpool2d_kernel, args, opts)
     maxpool2d_kernel(x, output, N_0, N_1, N_2, N_3, opts=opts)
     return output
 
