@@ -1,12 +1,12 @@
 # Sparse Matrix-Vector Multiplication (SpMV)
-import prickle
+import parpy
 import torch
 
-@prickle.jit
+@parpy.jit
 def spmv_helper(A_row, A_col, A_val, N, x, y):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(N - 1):
-        prickle.label('j')
+        parpy.label('j')
         for j in range(A_row[i], A_row[i+1]):
             y[i] += A_val[j] * x[A_col[j]]
 
@@ -19,6 +19,6 @@ def spmv(A_row, A_col, A_val, x, opts, compile_only=False):
     y = torch.zeros(N - 1, dtype=A_val.dtype)
     if compile_only:
         args = [A_row, A_col, A_val, N, x, y]
-        return prickle.print_compiled(spmv_helper, args, opts)
+        return parpy.print_compiled(spmv_helper, args, opts)
     spmv_helper(A_row, A_col, A_val, N, x, y, opts=opts)
     return y

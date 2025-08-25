@@ -1,7 +1,7 @@
 use super::ast::*;
 use crate::option;
-use crate::prickle_compile_error;
-use crate::prickle_internal_error;
+use crate::parpy_compile_error;
+use crate::parpy_internal_error;
 use crate::utils::reduce;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -22,11 +22,11 @@ fn classify_reduction(
 ) -> CompileResult<ReductionScope> {
     if nthreads > tpb {
         if opts.backend != option::CompileBackend::Cuda {
-            prickle_internal_error!(i, "Found inter-block reduction after \
+            parpy_internal_error!(i, "Found inter-block reduction after \
                                         inter-block transformation in non-CUDA backend.")?
         };
         if !opts.use_cuda_thread_block_clusters {
-            prickle_internal_error!(i, "Found multi-block reduction after \
+            parpy_internal_error!(i, "Found multi-block reduction after \
                                         inter-block transformation, but thread \
                                         block clusters were not enabled.\n\
                                         To enable it, set the 'use_cuda_thread_block_clusters' \
@@ -41,7 +41,7 @@ fn classify_reduction(
                  of the compilation options to a larger value.",
                 nblocks, opts.max_thread_blocks_per_cluster
             );
-            prickle_internal_error!(i, "{}", msg)?
+            parpy_internal_error!(i, "{}", msg)?
         };
         Ok(ReductionScope::Cluster)
     } else if nthreads > 32 {
@@ -74,14 +74,14 @@ fn extract_bin_op(
                 Type::Scalar {sz} => {
                     Ok((*lhs, non_short_circuiting_op(op), *rhs, sz, i))
                 },
-                _ => prickle_compile_error!(i, "Expected the result of reduction \
+                _ => parpy_compile_error!(i, "Expected the result of reduction \
                                                 to be a scalar value, found {0}",
                                                 ty.pprint_default())
             }
         },
         Expr::Convert {e, ..} => extract_bin_op(*e),
         _ => {
-            prickle_compile_error!(i, "RHS of reduction statement should be a \
+            parpy_compile_error!(i, "RHS of reduction statement should be a \
                                        binary operation.")
         }
     }
@@ -118,20 +118,20 @@ pub fn extract_reduction_operands(
                              target {1}.",
                              lhs.pprint_default(), dst.pprint_default()
                         );
-                        prickle_compile_error!(i, "{}", msg)
+                        parpy_compile_error!(i, "{}", msg)
                     }
                 },
                 _ => {
-                    prickle_compile_error!(i, "Left-hand side of reduction must \
+                    parpy_compile_error!(i, "Left-hand side of reduction must \
                                                be a variable or tensor access.")
                 }
             }
         } else {
-            prickle_compile_error!(i, "Reduction for-loop statement must be an \
+            parpy_compile_error!(i, "Reduction for-loop statement must be an \
                                        assignment.")
         }
     } else {
-        prickle_compile_error!(i, "Reduction for-loop must contain a single \
+        parpy_compile_error!(i, "Reduction for-loop must contain a single \
                                    statement.")
     }
 }
@@ -145,7 +145,7 @@ fn reduction_op_neutral_element(
         Some(literal) => Ok(literal),
         None => {
             let op = Expr::print_binop(op, &Type::Void, &Type::Void).unwrap();
-            prickle_compile_error!(i, "Parallel reductions not supported for operator {op}.")
+            parpy_compile_error!(i, "Parallel reductions not supported for operator {op}.")
         },
     }
 }

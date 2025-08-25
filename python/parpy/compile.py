@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-cache_path = Path(f"{os.path.expanduser('~')}/.cache/prickle")
+cache_path = Path(f"{os.path.expanduser('~')}/.cache/parpy")
 cache_path.mkdir(parents=True, exist_ok=True)
 
 def _get_library_path(key):
@@ -110,7 +110,7 @@ def build_shared_library(key, source, opts):
     specified in the given options. The key is used to identify the source, and
     is assumed to be unique.
     """
-    from .prickle import CompileBackend
+    from .parpy import CompileBackend
     if not _is_cached(key):
         if opts.backend == CompileBackend.Cuda:
             _build_cuda_shared_library(key, source, opts)
@@ -126,7 +126,7 @@ def get_wrapper(name, key, opts):
     providing arguments via Python.
     """
     from .buffer import Buffer
-    from .prickle import ScalarSizes
+    from .parpy import ScalarSizes
     import ctypes
 
     libpath = _get_library_path(key)
@@ -176,8 +176,8 @@ def get_wrapper(name, key, opts):
         getattr(lib, name).restype = ctypes.c_int32
         status = getattr(lib, name)(*[value_or_ptr(arg) for arg in args])
         if status != 0:
-            lib.prickle_get_error_message.restype = ctypes.c_char_p
-            msg = lib.prickle_get_error_message()
+            lib.parpy_get_error_message.restype = ctypes.c_char_p
+            msg = lib.parpy_get_error_message()
             raise RuntimeError(f"{msg.decode('ascii')}")
     wrapper.__name__ = name
     return wrapper

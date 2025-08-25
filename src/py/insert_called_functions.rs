@@ -21,7 +21,7 @@ fn collect_called_functions_expr<'py>(
             })?;
             if let Some(ast_ref) = tops.get(id.get_str()) {
                 // If this function has not been included yet, we include it. If it is a
-                // user-defined function in Prickle, we recursively consider the body of this
+                // user-defined function in ParPy, we recursively consider the body of this
                 // function.
                 if !acc.contains(id.get_str()) {
                     acc.push(id.get_str().clone());

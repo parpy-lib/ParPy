@@ -1,13 +1,13 @@
-import prickle
+import parpy
 import torch
 
-@prickle.jit
+@parpy.jit
 def compute_helper(array_1, array_2, N, M, a, b, c, out):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(N):
-        prickle.label('j')
+        parpy.label('j')
         for j in range(M):
-            clamped = prickle.min(prickle.max(array_1[i,j], prickle.int64(2)), prickle.int64(10))
+            clamped = parpy.min(parpy.max(array_1[i,j], parpy.int64(2)), parpy.int64(10))
             out[i,j] = clamped * a + array_2[i,j] * b + c
 
 def compute(array_1, array_2, a, b, c, opts, compile_only=False):
@@ -15,6 +15,6 @@ def compute(array_1, array_2, a, b, c, opts, compile_only=False):
     N, M = array_1.shape
     if compile_only:
         args = [array_1, array_2, N, M, a, b, c, out]
-        return prickle.print_compiled(compute_helper, args, opts)
+        return parpy.print_compiled(compute_helper, args, opts)
     compute_helper(array_1, array_2, N, M, a, b, c, out, opts=opts)
     return out

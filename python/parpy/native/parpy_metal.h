@@ -5,21 +5,21 @@
 #include <string>
 #include <vector>
 
-#define prickle_metal_check_error(e) if (e != 0) return 1;
+#define parpy_metal_check_error(e) if (e != 0) return 1;
 
-// Functions used by the Prickle library when initializing, synchronizing with
+// Functions used by the ParPy library when initializing, synchronizing with
 // running GPU code, and operating on buffers.
-extern "C" void prickle_init(int64_t);
-extern "C" void prickle_sync();
-extern "C" MTL::Buffer *prickle_alloc_buffer(int64_t);
-extern "C" void *prickle_ptr_buffer(MTL::Buffer*);
-extern "C" void prickle_memcpy(void*, void*, int64_t);
-extern "C" void prickle_free_buffer(MTL::Buffer*);
-extern "C" const char *prickle_get_error_message();
+extern "C" void parpy_init(int64_t);
+extern "C" void parpy_sync();
+extern "C" MTL::Buffer *parpy_alloc_buffer(int64_t);
+extern "C" void *parpy_ptr_buffer(MTL::Buffer*);
+extern "C" void parpy_memcpy(void*, void*, int64_t);
+extern "C" void parpy_free_buffer(MTL::Buffer*);
+extern "C" const char *parpy_get_error_message();
 
 // The below functions are to be used in the generated kernel code from C++. We
 // wrap these in a namespace to avoid risk of name conflicts.
-namespace prickle_metal {
+namespace parpy_metal {
   const char *error_message = nullptr;
 
   MTL::Library *load_library(const char*);

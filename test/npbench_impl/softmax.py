@@ -1,24 +1,24 @@
-import prickle
+import parpy
 import torch
 
-@prickle.jit
+@parpy.jit
 def softmax_wrap(x, out, N, H, SM):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(N):
-        prickle.label('j')
+        parpy.label('j')
         for j in range(H):
-            prickle.label('k')
+            parpy.label('k')
             for k in range(SM):
-                prickle.label('l')
-                m = prickle.max(x[i,j,k,:])
+                parpy.label('l')
+                m = parpy.max(x[i,j,k,:])
 
-                prickle.label('l')
-                out[i,j,k,:] = prickle.exp(x[i,j,k,:]-m)
+                parpy.label('l')
+                out[i,j,k,:] = parpy.exp(x[i,j,k,:]-m)
 
-                prickle.label('l')
-                s = prickle.sum(out[i,j,k,:])
+                parpy.label('l')
+                s = parpy.sum(out[i,j,k,:])
 
-                prickle.label('l')
+                parpy.label('l')
                 out[i,j,k,:] /= s
 
 # Numerically-stable version of softmax
@@ -27,6 +27,6 @@ def softmax(x, opts, compile_only=False):
     N, H, SM, SM = x.shape
     if compile_only:
         args = [x, out, N, H, SM]
-        return prickle.print_compiled(softmax_wrap, args, opts)
+        return parpy.print_compiled(softmax_wrap, args, opts)
     softmax_wrap(x, out, N, H, SM, opts=opts)
     return out

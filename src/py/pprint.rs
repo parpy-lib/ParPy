@@ -271,7 +271,7 @@ impl PrettyPrint for Stmt {
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("{indent}with prickle.gpu:\n{body}"))
+                (env, format!("{indent}with parpy.gpu:\n{body}"))
             },
             Stmt::Scope {body, ..} => {
                 let env = env.incr_indent();
@@ -284,7 +284,7 @@ impl PrettyPrint for Stmt {
                 (env, format!("{indent}{func}({args})"))
             },
             Stmt::Label {label, ..} => {
-                (env, format!("{indent}prickle.label(\"{label}\")"))
+                (env, format!("{indent}parpy.label(\"{label}\")"))
             }
         }
     }
@@ -562,7 +562,7 @@ mod test {
     fn print_with_gpu_context() {
         let ret = Stmt::Return {value: uint(1), i: i()};
         let s = Stmt::WithGpuContext {body: vec![ret], i: i()};
-        assert_eq!(s.pprint_default(), "with prickle.gpu:\n  return 1")
+        assert_eq!(s.pprint_default(), "with parpy.gpu:\n  return 1")
     }
 
     #[test]

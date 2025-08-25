@@ -1,20 +1,20 @@
-import prickle
+import parpy
 import torch
 
 # Sample constants
 BET_M = 0.5
 BET_P = 0.5
 
-@prickle.jit
-def vadv_prickle(
+@parpy.jit
+def vadv_parpy(
     utens_stage, u_stage, wcon, u_pos, utens, dtr_stage, ccol, dcol, data_col, I, J, K,
     # Extra arguments we need to pre-allocate outside and pass along
     BET_M, BET_P, gav, gcv, as_, cs, acol, bcol, correction_term, divided, datacol
 ):
     for k in range(1):
-        prickle.label('I')
+        parpy.label('I')
         for i in range(I):
-            prickle.label('J')
+            parpy.label('J')
             for j in range(J):
                 gcv[i,j] = 0.25 * (wcon[i+1, j, k + 1] + wcon[i, j, k + 1])
                 cs[i,j] = gcv[i,j] * BET_M
@@ -33,9 +33,9 @@ def vadv_prickle(
                 dcol[i, j, k] = dcol[i, j, k] * divided[i,j]
 
     for k in range(1, K - 1):
-        prickle.label('I')
+        parpy.label('I')
         for i in range(I):
-            prickle.label('J')
+            parpy.label('J')
             for j in range(J):
                 gav[i,j] = -0.25 * (wcon[i+1, j, k] + wcon[i, j, k])
                 gcv[i,j] = 0.25 * (wcon[i+1, j, k + 1] + wcon[i, j, k + 1])
@@ -61,9 +61,9 @@ def vadv_prickle(
                 dcol[i, j, k] = (dcol[i, j, k] - (dcol[i, j, k - 1]) * acol[i,j]) * divided[i,j]
 
     for k in range(K - 1, K):
-        prickle.label('I')
+        parpy.label('I')
         for i in range(I):
-            prickle.label('J')
+            parpy.label('J')
             for j in range(J):
                 gav[i,j] = -0.25 * (wcon[i+1, j, k] + wcon[i, j, k])
                 as_[i,j] = gav[i,j] * BET_M
@@ -80,18 +80,18 @@ def vadv_prickle(
                 dcol[i, j, k] = (dcol[i, j, k] - (dcol[i, j, k - 1]) * acol[i,j]) * divided[i,j]
 
     for k in range(K - 1, K - 2, -1):
-        prickle.label('I')
+        parpy.label('I')
         for i in range(I):
-            prickle.label('J')
+            parpy.label('J')
             for j in range(J):
                 datacol[i,j] = dcol[i, j, k]
                 data_col[i,j] = datacol[i,j]
                 utens_stage[i, j, k] = dtr_stage * (datacol[i,j] - u_pos[i, j, k])
 
     for k in range(K - 2, -1, -1):
-        prickle.label('I')
+        parpy.label('I')
         for i in range(I):
-            prickle.label('J')
+            parpy.label('J')
             for j in range(J):
                 datacol[i,j] = dcol[i, j, k] - ccol[i, j, k] * data_col[i, j]
                 data_col[i,j] = datacol[i,j]
@@ -122,8 +122,8 @@ def vadv(utens_stage, u_stage, wcon, u_pos, utens, dtr_stage, opts, compile_only
             data_col, I, J, K, BET_M, BET_P, gav, gcv, as_, cs, acol, bcol,
             correction_term, divided, datacol,
         ]
-        return prickle.print_compiled(vadv_prickle, args, opts)
-    vadv_prickle(
+        return parpy.print_compiled(vadv_parpy, args, opts)
+    vadv_parpy(
         utens_stage, u_stage, wcon, u_pos, utens, dtr_stage, ccol, dcol,
         data_col, I, J, K, BET_M, BET_P, gav, gcv, as_, cs, acol, bcol,
         correction_term, divided, datacol,

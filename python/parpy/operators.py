@@ -73,4 +73,4 @@ def uint64(x):
     return int(x)
 
 def label(x):
-    assert x is not None, "prickle.label expects one argument"
+    assert x is not None, "parpy.label expects one argument"

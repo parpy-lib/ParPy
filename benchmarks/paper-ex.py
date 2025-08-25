@@ -4,45 +4,45 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import math
 import numpy as np
-import prickle
+import parpy
 import statistics
 import torch
 
-@prickle.jit
+@parpy.jit
 def sum_rows(x, out, N):
-    prickle.label('outer')
+    parpy.label('outer')
     for i in range(N):
-        prickle.label('inner')
-        out[i] = prickle.sum(x[i,:])
+        parpy.label('inner')
+        out[i] = parpy.sum(x[i,:])
 
 def sum_rows_wrap(x, p):
     N, M = x.shape
     y = torch.zeros(N, dtype=torch.float32, device='cuda')
-    sum_rows(x, y, N, opts=prickle.par(p))
+    sum_rows(x, y, N, opts=parpy.par(p))
     return y
 
 def print_sum_rows(args, p):
-    opts = prickle.par(p)
-    opts.backend = prickle.CompileBackend.Cuda
-    print(prickle.print_compiled(sum_rows, args, opts))
+    opts = parpy.par(p)
+    opts.backend = parpy.CompileBackend.Cuda
+    print(parpy.print_compiled(sum_rows, args, opts))
 
 def print_versions(N, M):
     x = torch.randn((N, M), dtype=torch.float32)
     y = torch.tensor((N,), dtype=torch.float32)
     args = [x, y, N]
 
-    p1 = { 'outer': prickle.threads(N) }
+    p1 = { 'outer': parpy.threads(N) }
     print("Version #1:")
     print_sum_rows(args, p1)
     p2 = {
-        'outer': prickle.threads(N),
-        'inner': prickle.threads(1024),
+        'outer': parpy.threads(N),
+        'inner': parpy.threads(1024),
     }
     print("\nVersion #2:")
     print_sum_rows(args, p2)
     p3 = {
-        'outer': prickle.threads(N),
-        'inner': prickle.threads(32 * 1024),
+        'outer': parpy.threads(N),
+        'inner': parpy.threads(32 * 1024),
     }
     print("\nVersion #3:")
     print_sum_rows(args, p3)
@@ -75,7 +75,7 @@ def bench(fn, arg):
 # Parallelization of the outer loop, should only run each on a separate thread.
 def version1(x):
     N, M = x.shape
-    p = { 'outer': prickle.threads(N) }
+    p = { 'outer': parpy.threads(N) }
     if N <= 1024:
         return sum_rows_wrap(x, p)
     else:
@@ -84,13 +84,13 @@ def version1(x):
 # Parallelize both loops, using at most one full block for the inner loop.
 def version2(x):
     N, M = x.shape
-    p = { 'outer': prickle.threads(N), 'inner': prickle.threads(1024) }
+    p = { 'outer': parpy.threads(N), 'inner': parpy.threads(1024) }
     return sum_rows_wrap(x, p)
 
 # Parallelize both loops so that each thread processes one element.
 def version3(x):
     N, M = x.shape
-    p = { 'outer': prickle.threads(N), 'inner': prickle.threads(32 * 1024) }
+    p = { 'outer': parpy.threads(N), 'inner': parpy.threads(32 * 1024) }
     return sum_rows_wrap(x, p)
 
 def print_times(times):

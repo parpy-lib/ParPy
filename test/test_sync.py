@@ -1,15 +1,15 @@
-import prickle
+import parpy
 import pytest
 import torch
 
 from common import *
 
-@prickle.jit
+@parpy.jit
 def sum_rows(x, N, out):
-    prickle.label('N')
+    parpy.label('N')
     for i in range(N):
-        prickle.label('M')
-        out[i] = prickle.sum(x[i,:])
+        parpy.label('M')
+        out[i] = parpy.sum(x[i,:])
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_reduce_multi_block(backend):
@@ -19,24 +19,24 @@ def test_reduce_multi_block(backend):
 
         # Parallelize reduction within a single block (n = 1024)
         out1 = torch.zeros(N, dtype=x.dtype)
-        p1 = {'N': prickle.threads(N), 'M': prickle.threads(1024)}
+        p1 = {'N': parpy.threads(N), 'M': parpy.threads(1024)}
         sum_rows(x, N, out1, opts=par_opts(backend, p1))
 
         # Parallelize reduction across multiple blocks (n > 1024)
         out2 = torch.zeros_like(out1)
-        p2 = {'N': prickle.threads(N), 'M': prickle.threads(2048)}
+        p2 = {'N': parpy.threads(N), 'M': parpy.threads(2048)}
         sum_rows(x, N, out2, opts=par_opts(backend, p2))
 
         assert torch.allclose(out1, out2, atol=1e-6)
     run_if_backend_is_enabled(backend, helper)
 
-@prickle.jit
+@parpy.jit
 def normalize(x, N):
-    prickle.label('N')
+    parpy.label('N')
     for i in range(N):
-        prickle.label('M_1')
-        s = prickle.sum(x[i,:])
-        prickle.label('M_2')
+        parpy.label('M_1')
+        s = parpy.sum(x[i,:])
+        parpy.label('M_2')
         x[i,:] /= s
 
 @pytest.mark.skip("Compiler does not currently support this kind of imbalanced parallelism")
@@ -46,26 +46,26 @@ def test_varying_parallelism(backend):
         N, M = 10, 20
         x = torch.randn(N, M, dtype=torch.float32)
         p = {
-            'N': prickle.threads(N),
-            'M_1': prickle.threads(128),
-            'M_2': prickle.threads(64)
+            'N': parpy.threads(N),
+            'M_1': parpy.threads(128),
+            'M_2': parpy.threads(64)
         }
         normalize(x, N, opts=par_opts(backend, p))
         assert torch.allclose(torch.sum(x, axis=-1), torch.ones(N))
     run_if_backend_is_enabled(backend, helper)
 
-@prickle.jit
+@parpy.jit
 def sum_exp_3d(x, N, M, out):
-    prickle.label('N')
+    parpy.label('N')
     for i in range(N):
-        prickle.label('M')
+        parpy.label('M')
         for j in range(M):
-            prickle.label('K_1')
-            x[i,j,:] = prickle.exp(x[i,j,:])
-        prickle.label('M')
+            parpy.label('K_1')
+            x[i,j,:] = parpy.exp(x[i,j,:])
+        parpy.label('M')
         for j in range(M):
-            prickle.label('K_2')
-            out[i,j] = prickle.sum(x[i,j,:])
+            parpy.label('K_2')
+            out[i,j] = parpy.sum(x[i,j,:])
 
 def sum_exp_3d_wrap(backend, par):
     N, M, K = 10, 20, 30
@@ -81,10 +81,10 @@ def sum_exp_3d_wrap(backend, par):
 def test_nested_imbalanced_parallelism(backend):
     def helper():
         p = {
-            'N': prickle.threads(10),
-            'M': prickle.threads(20),
-            'K_1': prickle.threads(32),
-            'K_2': prickle.threads(64),
+            'N': parpy.threads(10),
+            'M': parpy.threads(20),
+            'K_1': parpy.threads(32),
+            'K_2': parpy.threads(64),
         }
         sum_exp_3d_wrap(backend, p)
     run_if_backend_is_enabled(backend, helper)
@@ -94,9 +94,9 @@ def test_nested_imbalanced_parallelism(backend):
 def test_imbalanced_parallelism_in_sequential_for(backend):
     def helper():
         p = {
-            'N': prickle.threads(10),
-            'K_1': prickle.threads(32),
-            'K_2': prickle.threads(64),
+            'N': parpy.threads(10),
+            'K_1': parpy.threads(32),
+            'K_2': parpy.threads(64),
         }
         sum_exp_3d_wrap(backend, p)
     run_if_backend_is_enabled(backend, helper)

@@ -125,7 +125,7 @@ fn compile_ir<'py>(
 }
 
 #[pymodule]
-fn prickle(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn parpy(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(python_to_ir, m)?)?;
     m.add_function(wrap_pyfunction!(declare_external, m)?)?;
     m.add_function(wrap_pyfunction!(print_ast, m)?)?;

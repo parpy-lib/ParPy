@@ -3,7 +3,7 @@ import numpy as np
 from math import inf
 import os
 import pandas as pd
-import prickle
+import parpy
 import pytest
 import statistics
 import sys
@@ -90,16 +90,16 @@ def read_expected_output(fname):
     with open(path) as f:
         return np.asarray([float(l) for l in f.readlines()], dtype=np.float32)
 
-@prickle.jit
+@parpy.jit
 def forward_init_inst(hmm, seqs, alpha_src, inst):
     o = seqs["data"][inst, 0]
-    prickle.label('state')
+    parpy.label('state')
     for state in range(hmm["num_states"]):
         num_kmers = hmm["num_states"] // 16
         alpha_src[inst, state] = hmm["initial_prob"][state] + \
                                  hmm["output_prob"][o, state % num_kmers]
 
-@prickle.jit
+@parpy.jit
 def forward_step_inst(hmm, seqs, alpha1, alpha2, inst, t):
     alpha_src = alpha2
     alpha_dst = alpha1
@@ -107,16 +107,16 @@ def forward_step_inst(hmm, seqs, alpha1, alpha2, inst, t):
         alpha_src = alpha1
         alpha_dst = alpha2
     o = seqs["data"][inst, t]
-    prickle.label('state')
+    parpy.label('state')
     for state in range(hmm["num_states"]):
         if t < seqs["lens"][inst]:
             # Transitively inlined version of forward_prob_predecessors.
             num_kmers = hmm["num_states"] // 16
 
-            pred1 = prickle.int32((state // 4) % (hmm["num_states"] // 64))
-            pred2 = prickle.int32(hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
-            pred3 = prickle.int32(2 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
-            pred4 = prickle.int32(3 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
+            pred1 = parpy.int32((state // 4) % (hmm["num_states"] // 64))
+            pred2 = parpy.int32(hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
+            pred3 = parpy.int32(2 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
+            pred4 = parpy.int32(3 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
             t11 = hmm["trans1"][pred1 % num_kmers, state % 4]
             t12 = hmm["trans1"][pred2 % num_kmers, state % 4]
             t13 = hmm["trans1"][pred3 % num_kmers, state % 4]
@@ -127,8 +127,8 @@ def forward_step_inst(hmm, seqs, alpha1, alpha2, inst, t):
             p3 = t13 + t2 + alpha_src[inst, pred3]
             p4 = t14 + t2 + alpha_src[inst, pred4]
 
-            pred5 = prickle.int32(0)
-            p5 = prickle.float32(0.0)
+            pred5 = parpy.int32(0)
+            p5 = parpy.float32(0.0)
             if state // num_kmers == 15:
                 pred5 = state
                 p5 = hmm["gamma"]
@@ -137,37 +137,37 @@ def forward_step_inst(hmm, seqs, alpha1, alpha2, inst, t):
                 p5 = hmm["synthetic_248"]
             else:
                 pred5 = ((state // num_kmers) + 1) * num_kmers + state % num_kmers
-                p5 = prickle.float32(0.0)
+                p5 = parpy.float32(0.0)
             p5 = p5 + alpha_src[inst, pred5]
 
             # Inlined version of log_sum_exp.
-            maxp = prickle.max(p1, p2)
-            maxp = prickle.max(maxp, p3)
-            maxp = prickle.max(maxp, p4)
-            maxp = prickle.max(maxp, p5)
-            lsexp = maxp + prickle.log(prickle.exp(p1 - maxp) + prickle.exp(p2 - maxp) + prickle.exp(p3 - maxp) + prickle.exp(p4 - maxp) + prickle.exp(p5 - maxp))
-            lsexp = prickle.max(lsexp, prickle.float32(-prickle.inf))
+            maxp = parpy.max(p1, p2)
+            maxp = parpy.max(maxp, p3)
+            maxp = parpy.max(maxp, p4)
+            maxp = parpy.max(maxp, p5)
+            lsexp = maxp + parpy.log(parpy.exp(p1 - maxp) + parpy.exp(p2 - maxp) + parpy.exp(p3 - maxp) + parpy.exp(p4 - maxp) + parpy.exp(p5 - maxp))
+            lsexp = parpy.max(lsexp, parpy.float32(-parpy.inf))
 
             alpha_dst[inst, state] = lsexp + hmm["output_prob"][o, state % num_kmers]
 
-@prickle.jit
+@parpy.jit
 def forward_lse_inst(hmm, seqs, result, alpha1, alpha2, inst):
     # Summation of final alpha values
     alpha = alpha2
     if seqs["lens"][inst] & 1 != 0:
         alpha = alpha1
 
-    prickle.label('state')
-    maxp = prickle.max(alpha[inst, :], axis=0)
+    parpy.label('state')
+    maxp = parpy.max(alpha[inst, :], axis=0)
 
-    prickle.label('state')
-    psum = prickle.sum(prickle.exp(alpha[inst, :] - maxp), axis=0)
+    parpy.label('state')
+    psum = parpy.sum(parpy.exp(alpha[inst, :] - maxp), axis=0)
 
-    result[inst] = maxp + prickle.log(psum)
+    result[inst] = maxp + parpy.log(psum)
 
-@prickle.jit
+@parpy.jit
 def forward_kernel(hmm, seqs, result, alpha1, alpha2):
-    prickle.label('inst')
+    parpy.label('inst')
     for inst in range(seqs["num_instances"]):
         # Initialization
         forward_init_inst(hmm, seqs, alpha1, inst)
@@ -179,23 +179,23 @@ def forward_kernel(hmm, seqs, result, alpha1, alpha2):
         # Summation of final alpha values
         forward_lse_inst(hmm, seqs, result, alpha1, alpha2, inst)
 
-def forward_prickle(hmm, seqs, nthreads):
+def forward_parpy(hmm, seqs, nthreads):
     result = torch.zeros(seqs["num_instances"], dtype=torch.float32, device='cuda')
     alpha1 = torch.zeros((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32, device='cuda')
     alpha2 = torch.zeros_like(alpha1)
     p = {
-        'inst': prickle.threads(seqs["num_instances"]),
-        'state': prickle.threads(nthreads),
+        'inst': parpy.threads(seqs["num_instances"]),
+        'state': parpy.threads(nthreads),
     }
-    forward_kernel(hmm, seqs, result, alpha1, alpha2, opts=prickle.par(p))
+    forward_kernel(hmm, seqs, result, alpha1, alpha2, opts=parpy.par(p))
     return result
 
-class PrickleTuned:
+class ParPyTuned:
     def __init__(self, hmm, seqs):
         best_time = float('inf')
         best_nthreads = 0
         for nthreads in [2**n for n in range(10, 19) if 2**n <= hmm["num_states"]]:
-            times = common.bench("prickle-tuning", lambda: forward_prickle(hmm, seqs, nthreads), nruns=5, nwarmup=1)
+            times = common.bench("parpy-tuning", lambda: forward_parpy(hmm, seqs, nthreads), nruns=5, nwarmup=1)
             avg = statistics.mean(times)
             if avg < best_time:
                 best_time = avg
@@ -205,10 +205,10 @@ class PrickleTuned:
         self.nthreads = best_nthreads
 
     def __call__(self):
-        return forward_prickle(self.hmm, self.seqs, self.nthreads)
+        return forward_parpy(self.hmm, self.seqs, self.nthreads)
 
     def __name__(self):
-        return "PrickleTuned"
+        return "ParPyTuned"
 
 @triton.jit
 def forward_triton_init(
@@ -461,8 +461,8 @@ def forward_trellis(hmm, signals, k):
     return hmm.forward(signals)
 
 def run_forward(framework, k, config_id):
-    if framework == "prickle":
-        base_fn = forward_prickle
+    if framework == "parpy":
+        base_fn = forward_parpy
     elif framework == "triton":
         base_fn = forward_triton
     elif framework == "trellis":
@@ -499,8 +499,8 @@ def run_forward(framework, k, config_id):
     elif config_id == 2:
         fn = lambda: base_fn(hmm, seqs, hmm["num_states"])
     elif config_id == 3:
-        if framework == "prickle":
-            fn = PrickleTuned(hmm, seqs)
+        if framework == "parpy":
+            fn = ParPyTuned(hmm, seqs)
         else:
             fn = TritonTuned(hmm, seqs)
 
@@ -542,7 +542,7 @@ def print_configuration(files, framework, configuration):
     print(r"\\")
 
 def print_table(gpus, files):
-    frameworks = ["prickle", "triton", "trellis"]
+    frameworks = ["parpy", "triton", "trellis"]
     configurations = [1, 2, 3]
     kmer = [5, 7]
 
@@ -555,8 +555,8 @@ def print_table(gpus, files):
     print(f"Model & {model_format}\\\\")
     print(r"\hline")
 
-    # Print Prickle configurations
-    framework = "prickle"
+    # Print ParPy configurations
+    framework = "parpy"
     for configuration in configurations:
         print_configuration(files, framework, configuration)
 

@@ -1,7 +1,7 @@
 use super::par_tree;
 use crate::option;
 use crate::par;
-use crate::prickle_compile_error;
+use crate::parpy_compile_error;
 use crate::option::CompileOptions;
 use crate::ir::ast::*;
 use crate::utils::ast::ScalarSizes;
@@ -141,7 +141,7 @@ fn extract_neutral_element(
 ) -> CompileResult<Expr> {
     match reduce::neutral_element(op, sz, i) {
         Some(ne) => Ok(ne),
-        None => prickle_compile_error!(i, "Reduction operation {0} has unknown \
+        None => parpy_compile_error!(i, "Reduction operation {0} has unknown \
                                            neutral element.",
                                            op.pprint_default())
     }
@@ -314,14 +314,14 @@ fn extract_bin_op(
                 Type::Tensor {shape, sz} if shape.is_empty() => {
                     Ok((*lhs, non_short_circuiting_op(op), *rhs, sz, i))
                 },
-                _ => prickle_compile_error!(i, "Expected the result of reduction \
+                _ => parpy_compile_error!(i, "Expected the result of reduction \
                                                 to be a scalar value, found {0}",
                                                 ty.pprint_default())
             }
         },
         Expr::Convert {e, ..} => extract_bin_op(*e),
         _ => {
-            prickle_compile_error!(i, "RHS of reduction statement should be a \
+            parpy_compile_error!(i, "RHS of reduction statement should be a \
                                        binary operation.")
         }
     }
@@ -358,20 +358,20 @@ pub fn extract_reduction_operands(
                              target {1}.",
                              lhs.pprint_default(), dst.pprint_default()
                         );
-                        prickle_compile_error!(i, "{}", msg)
+                        parpy_compile_error!(i, "{}", msg)
                     }
                 },
                 _ => {
-                    prickle_compile_error!(i, "Left-hand side of reduction must \
+                    parpy_compile_error!(i, "Left-hand side of reduction must \
                                                be a variable or tensor access.")
                 }
             }
         } else {
-            prickle_compile_error!(i, "Reduction for-loop statement must be an \
+            parpy_compile_error!(i, "Reduction for-loop statement must be an \
                                        assignment.")
         }
     } else {
-        prickle_compile_error!(i, "Reduction for-loop must contain a single \
+        parpy_compile_error!(i, "Reduction for-loop must contain a single \
                                    statement.")
     }
 }
@@ -418,7 +418,7 @@ fn split_inter_block_parallel_reductions_stmt(
                 ));
                 Ok(acc)
             } else {
-                prickle_compile_error!(i, "Multi-block reductions must use a \
+                parpy_compile_error!(i, "Multi-block reductions must use a \
                                            multiple of {0} threads.",
                                            par.tpb)
             }
@@ -524,7 +524,7 @@ fn hoist_chunk(
                     body: inner_stmts, par: seq_par, i: seq_i
                 })
             },
-            _ => prickle_compile_error!(&i, "Internal error when hoisting \
+            _ => parpy_compile_error!(&i, "Internal error when hoisting \
                                            sequential loop")
         }?;
         Ok(vec![pre_stmt, seq_loop_stmt])
@@ -920,7 +920,7 @@ fn collect_variable_temp_data(
                     let ptr_ty = Type::Pointer {ty: Box::new(ty.clone())};
                     (ptr_ty, ty.clone())
                 },
-                _ => prickle_compile_error!(i, "Cannot allocate temporary data \
+                _ => parpy_compile_error!(i, "Cannot allocate temporary data \
                                                 for non-tensor variable {id}.")?
             };
             let new_id = id.clone().with_new_sym();

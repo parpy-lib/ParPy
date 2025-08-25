@@ -1,27 +1,27 @@
-import prickle
+import parpy
 import torch
 
 def relu(x):
     return torch.maximum(x, torch.zeros_like(x))
 
-@prickle.jit
+@parpy.jit
 def softmax_kernel(x, out, N, M):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(N):
-        prickle.label('j')
-        maxv = prickle.max(x[i,:])
-        prickle.label('j')
-        out[i,:] = prickle.exp(x[i,:] - maxv)
-        prickle.label('j')
-        s = prickle.sum(out[i,:])
-        prickle.label('j')
+        parpy.label('j')
+        maxv = parpy.max(x[i,:])
+        parpy.label('j')
+        out[i,:] = parpy.exp(x[i,:] - maxv)
+        parpy.label('j')
+        s = parpy.sum(out[i,:])
+        parpy.label('j')
         out[i,:] /= s
 
 def softmax(x, opts, compile_only=False):
     N, M = x.shape
     out = torch.empty_like(x)
     if compile_only:
-        return prickle.print_compiled(softmax_kernel, [x, out, N, M], opts)
+        return parpy.print_compiled(softmax_kernel, [x, out, N, M], opts)
     softmax_kernel(x, out, N, M, opts=opts)
     return out
 

@@ -1,4 +1,4 @@
-from .prickle import CompileBackend, CompileOptions
+from .parpy import CompileBackend, CompileOptions
 import os
 import shutil
 import torch

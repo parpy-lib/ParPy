@@ -1,7 +1,7 @@
 use super::ast::*;
 
-use crate::prickle_compile_error;
-use crate::prickle_internal_error;
+use crate::parpy_compile_error;
+use crate::parpy_internal_error;
 use crate::option::CompileOptions;
 use crate::utils::ast::ScalarSizes;
 use crate::utils::err::*;
@@ -53,25 +53,25 @@ fn to_ir_type(
 ) -> CompileResult<Type> {
     match ty {
         py_ast::Type::String => {
-            prickle_compile_error!(i, "Encountered standalone string type when translating to IR AST")
+            parpy_compile_error!(i, "Encountered standalone string type when translating to IR AST")
         },
         py_ast::Type::Tensor {sz, shape} => Ok(Type::Tensor {sz, shape}),
         py_ast::Type::Pointer {sz} => {
             Ok(Type::Pointer {ty: Box::new(Type::Tensor {sz, shape: vec![]})})
         },
         py_ast::Type::Tuple {..} => {
-            prickle_compile_error!(i, "Encountered standalone tuple type when translating to IR AST")
+            parpy_compile_error!(i, "Encountered standalone tuple type when translating to IR AST")
         },
         py_ast::Type::Dict {..} => {
             if let Some(id) = env.structs.get(&ty) {
                 Ok(Type::Struct {id: id.clone()})
             } else {
-                prickle_compile_error!(i, "Encountered unknown dictionary type when translating to IR AST")
+                parpy_compile_error!(i, "Encountered unknown dictionary type when translating to IR AST")
             }
         },
         py_ast::Type::Void => Ok(Type::Void),
         py_ast::Type::Unknown => {
-            prickle_compile_error!(i, "Encountered unknown type when translating to IR AST")
+            parpy_compile_error!(i, "Encountered unknown type when translating to IR AST")
         },
     }
 }
@@ -79,7 +79,7 @@ fn to_ir_type(
 fn to_float_literal_value(func: py_ast::Builtin, i: &Info) -> CompileResult<f64> {
     match func {
         py_ast::Builtin::Inf => Ok(f64::INFINITY),
-        _ => prickle_compile_error!(i, "Invalid builtin literal value: {func}")
+        _ => parpy_compile_error!(i, "Invalid builtin literal value: {func}")
     }
 }
 
@@ -96,7 +96,7 @@ fn to_unary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<UnOp> {
         py_ast::Builtin::Atan2 | py_ast::Builtin::Sum | py_ast::Builtin::Prod |
         py_ast::Builtin::Convert {..} | py_ast::Builtin::Label |
         py_ast::Builtin::GpuContext => {
-            prickle_compile_error!(i, "Invalid builtin unary operator: {func}")
+            parpy_compile_error!(i, "Invalid builtin unary operator: {func}")
         }
     }
 }
@@ -111,7 +111,7 @@ fn to_binary_op(func: py_ast::Builtin, i: &Info) -> CompileResult<BinOp> {
         py_ast::Builtin::Tanh | py_ast::Builtin::Abs | py_ast::Builtin::Sum |
         py_ast::Builtin::Prod | py_ast::Builtin::Convert {..} |
         py_ast::Builtin::Label | py_ast::Builtin::GpuContext => {
-            prickle_compile_error!(i, "Invalid builtin binary operator: {func}")
+            parpy_compile_error!(i, "Invalid builtin binary operator: {func}")
         }
     }
 }
@@ -138,7 +138,7 @@ fn to_builtin(
             let rhs = Box::new(args.remove(0));
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})
         },
-        n => prickle_compile_error!(i, "Builtin {func} does not expect {n} arguments")
+        n => parpy_compile_error!(i, "Builtin {func} does not expect {n} arguments")
     }
 }
 
@@ -227,7 +227,7 @@ fn to_ir_expr(
             Ok(Expr::Var {id, ty, i})
         },
         py_ast::Expr::String {i, ..} => {
-            prickle_compile_error!(i, "String literal may only be used in dict lookups")
+            parpy_compile_error!(i, "String literal may only be used in dict lookups")
         },
         py_ast::Expr::Bool {v, ty, i} => {
             let ty = to_ir_type(env, &i, ty)?;
@@ -297,19 +297,19 @@ fn to_ir_expr(
                             "Invalid dimensions. Indexing into tensor of shape \
                              {shape:?} using {n} indices"
                         );
-                        prickle_compile_error!(i, "{msg}")
+                        parpy_compile_error!(i, "{msg}")
                     }
                 } else {
                     let msg = "Indexing into non-tensor target {target} is not supported";
-                    prickle_compile_error!(i, "{msg}")
+                    parpy_compile_error!(i, "{msg}")
                 }
             }
         },
         py_ast::Expr::Slice {i, ..} => {
-            prickle_compile_error!(i, "Slices are not allowed outside of indexing")
+            parpy_compile_error!(i, "Slices are not allowed outside of indexing")
         },
         py_ast::Expr::Tuple {i, ..} => {
-            prickle_compile_error!(i, "Tuples are not allowed outside of indexing")
+            parpy_compile_error!(i, "Tuples are not allowed outside of indexing")
         },
         py_ast::Expr::Call {id, args, ty, i} => {
             let args = args.into_iter()
@@ -321,7 +321,7 @@ fn to_ir_expr(
             Ok(Expr::Call {id, args, par, ty, i})
         },
         py_ast::Expr::NeutralElement {i, ..} => {
-            prickle_internal_error!(i, "Intermediate reduction node remaining during IR translation")
+            parpy_internal_error!(i, "Intermediate reduction node remaining during IR translation")
         },
         py_ast::Expr::Builtin {func, args, ty, i, ..} => {
             let args = args.into_iter()
@@ -357,7 +357,7 @@ fn lookup_labels(
                  number of threads in parallelization.\n\
                  Labels of this statement: {labels}"
             );
-            prickle_compile_error!(i, "{}", msg)
+            parpy_compile_error!(i, "{}", msg)
         }
     }
 }
@@ -411,16 +411,16 @@ fn to_ir_stmt(
             Ok(Stmt::For {var, lo, hi, step: 1, body, par, i})
         },
         py_ast::Stmt::Scope {i, ..} => {
-            prickle_compile_error!(i,
+            parpy_compile_error!(i,
                 "Found intermediate scope statement that should have been \
                  removed by the compiler"
             )
         },
         py_ast::Stmt::Call {func, i, ..} => {
-            prickle_compile_error!(i, "Found unsupported function call to {func}")
+            parpy_compile_error!(i, "Found unsupported function call to {func}")
         },
         py_ast::Stmt::Label {i, ..} => {
-            prickle_compile_error!(i, "Found label without associated statement")
+            parpy_compile_error!(i, "Found label without associated statement")
         }
     }
 }

@@ -26,18 +26,18 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import prickle
+import parpy
 import torch
 
-@prickle.jit
+@parpy.jit
 def kernel(theta_1, phi_1, theta_2, phi_2, distance_matrix, N):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(N):
-        a = prickle.sin((theta_2[i] - theta_1[i]) / 2.0) ** 2.0
-        b = prickle.cos(theta_1[i]) * prickle.cos(theta_2[i]) * \
-            prickle.sin((phi_2[i] - phi_1[i]) / 2.0) ** 2.0
+        a = parpy.sin((theta_2[i] - theta_1[i]) / 2.0) ** 2.0
+        b = parpy.cos(theta_1[i]) * parpy.cos(theta_2[i]) * \
+            parpy.sin((phi_2[i] - phi_1[i]) / 2.0) ** 2.0
         temp = a + b
-        distance_matrix[i] = 2.0 * (prickle.atan2(prickle.sqrt(temp), prickle.sqrt(1.0 - temp)))
+        distance_matrix[i] = 2.0 * (parpy.atan2(parpy.sqrt(temp), parpy.sqrt(1.0 - temp)))
 
 def arc_distance(theta_1, phi_1, theta_2, phi_2, opts, compile_only=False):
     """
@@ -47,6 +47,6 @@ def arc_distance(theta_1, phi_1, theta_2, phi_2, opts, compile_only=False):
     distance_matrix = torch.empty_like(theta_1)
     if compile_only:
         args = [theta_1, phi_1, theta_2, phi_2, distance_matrix, N]
-        return prickle.print_compiled(kernel, args, opts)
+        return parpy.print_compiled(kernel, args, opts)
     kernel(theta_1, phi_1, theta_2, phi_2, distance_matrix, N, opts=opts)
     return distance_matrix

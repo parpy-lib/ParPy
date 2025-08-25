@@ -1,4 +1,4 @@
-import prickle
+import parpy
 import pytest
 import re
 import subprocess
@@ -9,81 +9,81 @@ from common import *
 
 torch.manual_seed(1234)
 
-@prickle.jit
+@parpy.jit
 def sum_rows(x, out, N):
-    prickle.label('outer')
+    parpy.label('outer')
     for i in range(N):
-        prickle.label('inner')
-        out[i] = prickle.sum(x[i,:])
+        parpy.label('inner')
+        out[i] = parpy.sum(x[i,:])
 
-@prickle.jit
+@parpy.jit
 def prod_rows(x, out, N):
-    prickle.label('outer')
+    parpy.label('outer')
     for i in range(N):
-        prickle.label('inner')
-        out[i] = prickle.prod(x[i,:])
+        parpy.label('inner')
+        out[i] = parpy.prod(x[i,:])
 
-@prickle.jit
+@parpy.jit
 def max_rows(x, out, N):
-    prickle.label('outer')
+    parpy.label('outer')
     for i in range(N):
-        prickle.label('inner')
-        out[i] = prickle.max(x[i,:])
+        parpy.label('inner')
+        out[i] = parpy.max(x[i,:])
 
-@prickle.jit
+@parpy.jit
 def min_rows(x, out, N):
-    prickle.label('outer')
+    parpy.label('outer')
     for i in range(N):
-        prickle.label('inner')
-        out[i] = prickle.min(x[i,:])
+        parpy.label('inner')
+        out[i] = parpy.min(x[i,:])
 
-@prickle.jit
+@parpy.jit
 def sum_axis(x, out, N):
-    prickle.label('outer')
-    prickle.label('inner')
-    out[:] = prickle.sum(x[:,:], axis=1)
+    parpy.label('outer')
+    parpy.label('inner')
+    out[:] = parpy.sum(x[:,:], axis=1)
 
-@prickle.jit
+@parpy.jit
 def prod_axis(x, out, N):
-    prickle.label('outer')
-    prickle.label('inner')
-    out[:] = prickle.prod(x[:,:], axis=1)
+    parpy.label('outer')
+    parpy.label('inner')
+    out[:] = parpy.prod(x[:,:], axis=1)
 
-@prickle.jit
+@parpy.jit
 def max_axis(x, out, N):
-    prickle.label('outer')
-    prickle.label('inner')
-    out[:] = prickle.max(x[:,:], axis=1)
+    parpy.label('outer')
+    parpy.label('inner')
+    out[:] = parpy.max(x[:,:], axis=1)
 
-@prickle.jit
+@parpy.jit
 def min_axis(x, out, N):
-    prickle.label('outer')
-    prickle.label('inner')
-    out[:] = prickle.min(x[:,:], axis=1)
+    parpy.label('outer')
+    parpy.label('inner')
+    out[:] = parpy.min(x[:,:], axis=1)
 
-@prickle.jit
+@parpy.jit
 def sum_2d(x, out, N):
-    with prickle.gpu:
-        prickle.label('outer')
-        out[0] = prickle.sum(x[:,:])
+    with parpy.gpu:
+        parpy.label('outer')
+        out[0] = parpy.sum(x[:,:])
 
-@prickle.jit
+@parpy.jit
 def prod_2d(x, out, N):
-    with prickle.gpu:
-        prickle.label('outer')
-        out[0] = prickle.prod(x[:,:])
+    with parpy.gpu:
+        parpy.label('outer')
+        out[0] = parpy.prod(x[:,:])
 
-@prickle.jit
+@parpy.jit
 def max_2d(x, out, N):
-    with prickle.gpu:
-        prickle.label('outer')
-        out[0] = prickle.max(x[:,:])
+    with parpy.gpu:
+        parpy.label('outer')
+        out[0] = parpy.max(x[:,:])
 
-@prickle.jit
+@parpy.jit
 def min_2d(x, out, N):
-    with prickle.gpu:
-        prickle.label('outer')
-        out[0] = prickle.min(x[:,:])
+    with parpy.gpu:
+        parpy.label('outer')
+        out[0] = parpy.min(x[:,:])
 
 def reduce_wrap(reduce_fn, x, opts):
     N, M = x.shape
@@ -121,7 +121,7 @@ def test_reduce_outer_parallel_gpu(fn, backend):
     def helper():
         N = 100
         M = 50
-        p = {'outer': prickle.threads(N)}
+        p = {'outer': parpy.threads(N)}
         compare_reduce(fn, N, M, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
 
@@ -132,8 +132,8 @@ def test_reduce_inner_and_outer_parallel_gpu(fn, backend):
         N = 100
         M = 50
         p = {
-            'outer': prickle.threads(N),
-            'inner': prickle.threads(128)
+            'outer': parpy.threads(N),
+            'inner': parpy.threads(128)
         }
         compare_reduce(fn, N, M, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
@@ -148,8 +148,8 @@ def test_irregular_reduction(fn, backend):
         N = 100
         M = 83
         p = {
-            'outer': prickle.threads(N),
-            'inner': prickle.threads(M)
+            'outer': parpy.threads(N),
+            'inner': parpy.threads(M)
         }
         compare_reduce(fn, N, M, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
@@ -164,8 +164,8 @@ def test_multi_block_reduction(fn, backend):
         N = 100
         M = 2048
         p = {
-            'outer': prickle.threads(N),
-            'inner': prickle.threads(M).tpb(512)
+            'outer': parpy.threads(N),
+            'inner': parpy.threads(M).tpb(512)
         }
         compare_reduce(fn, N, M, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
@@ -177,8 +177,8 @@ def test_clustered_reduction(fn, backend):
         N = 100
         M = 2048
         p = {
-            'outer': prickle.threads(N),
-            'inner': prickle.threads(M).tpb(512)
+            'outer': parpy.threads(N),
+            'inner': parpy.threads(M).tpb(512)
         }
         opts = par_opts(backend, p)
         opts.use_cuda_thread_block_clusters = True
@@ -192,8 +192,8 @@ def test_extended_clustered_reduction(fn, backend):
         N = 100
         M = 8192
         p = {
-            'outer': prickle.threads(N),
-            'inner': prickle.threads(M).tpb(512)
+            'outer': parpy.threads(N),
+            'inner': parpy.threads(M).tpb(512)
         }
         opts = par_opts(backend, p)
         opts.use_cuda_thread_block_clusters = True
@@ -208,13 +208,13 @@ def test_reduction_codegen(fn, backend):
     M = 50
     x = torch.randn((N, M), dtype=torch.float32)
     out = torch.zeros(N, dtype=x.dtype)
-    p = {'outer': prickle.threads(N)}
-    s1 = prickle.print_compiled(fn, [x, out, N], par_opts(backend, p))
+    p = {'outer': parpy.threads(N)}
+    s1 = parpy.print_compiled(fn, [x, out, N], par_opts(backend, p))
     if not fn in multi_dim_reduce_funs:
-        if backend == prickle.CompileBackend.Cuda:
+        if backend == parpy.CompileBackend.Cuda:
             pat = r".*<<<dim3\(1, 1, 1\), dim3\(128, 1, 1\).*>>>\(.*\);"
-        elif backend == prickle.CompileBackend.Metal:
-            pat = r"prickle_metal::launch_kernel\(.*1, 1, 1, 128, 1, 1\).*"
+        elif backend == parpy.CompileBackend.Metal:
+            pat = r"parpy_metal::launch_kernel\(.*1, 1, 1, 128, 1, 1\).*"
         else:
             pat = ""
         assert re.search(pat, s1, re.DOTALL) is not None
@@ -222,15 +222,15 @@ def test_reduction_codegen(fn, backend):
         assert len(s1) != 0
 
     p = {
-        'outer': prickle.threads(N),
-        'inner': prickle.threads(128)
+        'outer': parpy.threads(N),
+        'inner': parpy.threads(128)
     }
-    s2 = prickle.print_compiled(fn, [x, out, N], par_opts(backend, p))
+    s2 = parpy.print_compiled(fn, [x, out, N], par_opts(backend, p))
     if not fn in multi_dim_reduce_funs:
-        if backend == prickle.CompileBackend.Cuda:
+        if backend == parpy.CompileBackend.Cuda:
             pat = r".*<<<dim3\(1, 100, 1\), dim3\(128, 1, 1\).*>>>\(.*\);"
-        elif backend == prickle.CompileBackend.Metal:
-            pat = r"prickle_metal::launch_kernel\(.*1, 100, 1, 128, 1, 1\).*"
+        elif backend == parpy.CompileBackend.Metal:
+            pat = r"parpy_metal::launch_kernel\(.*1, 100, 1, 128, 1, 1\).*"
         else:
             pat = ""
         assert re.search(pat, s2, re.DOTALL) is not None
@@ -238,15 +238,15 @@ def test_reduction_codegen(fn, backend):
         assert len(s2) != 0
 
     p = {
-        'outer': prickle.threads(N),
-        'inner': prickle.threads(1024).tpb(128)
+        'outer': parpy.threads(N),
+        'inner': parpy.threads(1024).tpb(128)
     }
-    s3 = prickle.print_compiled(fn, [x, out, N], par_opts(backend, p))
+    s3 = parpy.print_compiled(fn, [x, out, N], par_opts(backend, p))
     if not fn in multi_dim_reduce_funs:
-        if backend == prickle.CompileBackend.Cuda:
+        if backend == parpy.CompileBackend.Cuda:
             pat = r".*<<<dim3\(1, 8, 100\), dim3\(128, 1, 1\).*>>>\(.*\);"
-        elif backend == prickle.CompileBackend.Metal:
-            pat = r"prickle_metal::launch_kernel\(.*1, 8, 100, 128, 1, 1\).*"
+        elif backend == parpy.CompileBackend.Metal:
+            pat = r"parpy_metal::launch_kernel\(.*1, 8, 100, 128, 1, 1\).*"
         else:
             pat = ""
         assert re.search(pat, s3, re.DOTALL) is not None
@@ -260,12 +260,12 @@ def test_clustered_reduction_codegen_in_cuda(fn):
     x = torch.randn((N, M), dtype=torch.float32)
     out = torch.zeros(N, dtype=x.dtype)
     p = {
-        'outer': prickle.threads(N),
-        'inner': prickle.threads(4096).tpb(512)
+        'outer': parpy.threads(N),
+        'inner': parpy.threads(4096).tpb(512)
     }
-    opts = par_opts(prickle.CompileBackend.Cuda, p)
+    opts = par_opts(parpy.CompileBackend.Cuda, p)
     opts.use_cuda_thread_block_clusters = True
-    s = prickle.print_compiled(fn, [x, out, N], opts)
+    s = parpy.print_compiled(fn, [x, out, N], opts)
     if not fn in multi_dim_reduce_funs:
         pat = r".*<<<dim3\(8, 100, 1\), dim3\(512, 1, 1\).*>>>\(.*\);"
         assert re.search(pat, s, re.DOTALL) is not None
@@ -279,11 +279,11 @@ def test_clustered_reduction_codegen_in_cuda(fn):
         assert len(s) != 0
 
     p = {
-        'outer': prickle.threads(N),
-        'inner': prickle.threads(4096).tpb(256)
+        'outer': parpy.threads(N),
+        'inner': parpy.threads(4096).tpb(256)
     }
     opts.parallelize = p
-    s = prickle.print_compiled(fn, [x, out, N], opts)
+    s = parpy.print_compiled(fn, [x, out, N], opts)
     if not fn in multi_dim_reduce_funs:
         # In this situation, where the kernel has 16 blocks, the compiler will
         # not use clusters unless the user explicitly sets the maximum number
@@ -294,12 +294,12 @@ def test_clustered_reduction_codegen_in_cuda(fn):
         assert len(s) != 0
 
     p = {
-        'outer': prickle.threads(N),
-        'inner': prickle.threads(4096).tpb(256)
+        'outer': parpy.threads(N),
+        'inner': parpy.threads(4096).tpb(256)
     }
     opts.parallelize = p
     opts.max_thread_blocks_per_cluster = 16
-    s = prickle.print_compiled(fn, [x, out, N], opts)
+    s = parpy.print_compiled(fn, [x, out, N], opts)
     if not fn in multi_dim_reduce_funs:
         pat = r".*<<<dim3\(16, 100, 1\), dim3\(256, 1, 1\).*>>>\(.*\);"
         assert re.search(pat, s, re.DOTALL) is not None
@@ -318,21 +318,21 @@ def test_clustered_reduction_compiles_in_cuda(fn):
         x = torch.randn((N, M), dtype=torch.float32)
         out = torch.zeros(N, dtype=x.dtype)
         p = {
-            'outer': prickle.threads(N),
-            'inner': prickle.threads(4096).tpb(512)
+            'outer': parpy.threads(N),
+            'inner': parpy.threads(4096).tpb(512)
         }
-        opts = par_opts(prickle.CompileBackend.Cuda, p)
+        opts = par_opts(parpy.CompileBackend.Cuda, p)
         opts.use_cuda_thread_block_clusters = True
         fn(x, out, N, opts=opts)
-    run_if_clusters_are_enabled(prickle.CompileBackend.Cuda, helper)
+    run_if_clusters_are_enabled(parpy.CompileBackend.Cuda, helper)
 
 # Tests using a custom step size.
-@prickle.jit
+@parpy.jit
 def odd_entries_sum(x, y, N, M):
-    prickle.label('N')
+    parpy.label('N')
     for i in range(N):
         y[i] = 0.0
-        prickle.label('M')
+        parpy.label('M')
         for j in range(1, M, 2):
             y[i] += x[i, j]
 
@@ -350,8 +350,8 @@ def odd_entries_wrap(backend, p):
 def test_odd_entries_single_block(backend):
     def helper():
         p = {
-            'N': prickle.threads(10),
-            'M': prickle.threads(32).reduce()
+            'N': parpy.threads(10),
+            'M': parpy.threads(32).reduce()
         }
         odd_entries_wrap(backend, p)
     run_if_backend_is_enabled(backend, helper)
@@ -360,8 +360,8 @@ def test_odd_entries_single_block(backend):
 def test_odd_entries_multiblock(backend):
     def helper():
         p = {
-            'N': prickle.threads(10),
-            'M': prickle.threads(2048).reduce()
+            'N': parpy.threads(10),
+            'M': parpy.threads(2048).reduce()
         }
         odd_entries_wrap(backend, p)
     run_if_backend_is_enabled(backend, helper)

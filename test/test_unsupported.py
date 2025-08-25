@@ -2,7 +2,7 @@
 # are correctly reported as errors already when parsing the Python function.
 
 import numpy as np
-import prickle
+import parpy
 import pytest
 import torch
 
@@ -10,7 +10,7 @@ from common import *
 
 def test_while_else_rejected():
     with pytest.raises(RuntimeError) as e_info:
-        @prickle.jit
+        @parpy.jit
         def while_fun(x, y, N):
             i = 0
             while i < N:
@@ -22,7 +22,7 @@ def test_while_else_rejected():
 
 def test_for_else_rejected():
     with pytest.raises(RuntimeError) as e_info:
-        @prickle.jit
+        @parpy.jit
         def for_else(x, y, N):
             for i in range(N):
                 y[i] = x[i]
@@ -32,7 +32,7 @@ def test_for_else_rejected():
 
 def test_with_unsupported_context():
     with pytest.raises(RuntimeError) as e_info:
-        @prickle.jit
+        @parpy.jit
         def with_context():
             with 5:
                 pass
@@ -40,16 +40,16 @@ def test_with_unsupported_context():
 
 def test_with_as():
     with pytest.raises(RuntimeError) as e_info:
-        @prickle.jit
+        @parpy.jit
         def with_as():
-            with prickle.gpu as x:
+            with parpy.gpu as x:
                 a = x + 1
     assert e_info.match(r".*lines 45-46.*")
 
 def test_dict_with_non_string_keys():
-    @prickle.jit
+    @parpy.jit
     def dict_arg(a):
-        with prickle.gpu:
+        with parpy.gpu:
             a["x"] = a["y"]
 
     with pytest.raises(RuntimeError) as e_info:
@@ -57,9 +57,9 @@ def test_dict_with_non_string_keys():
     assert e_info.match(r"(.*non-string key.*)|(Found no enabled GPU backends.*)")
 
 def test_dict_with_int_key():
-    @prickle.jit
+    @parpy.jit
     def dict_arg(a):
-        with prickle.gpu:
+        with parpy.gpu:
             a["x"] = a[2]
 
     with pytest.raises(RuntimeError) as e_info:
@@ -67,27 +67,27 @@ def test_dict_with_int_key():
     assert e_info.match(r"(.*non-string key.*)|(Found no enabled GPU backends.*)")
 
 def test_invalid_max_thread_blocks_per_cluster():
-    opts = prickle.CompileOptions()
+    opts = parpy.CompileOptions()
     with pytest.raises(RuntimeError) as e_info:
         opts.max_thread_blocks_per_cluster = 3
     assert e_info.match(r".*number of thread blocks per cluster must be a power of two.*")
 
 def test_empty_return():
     with pytest.raises(RuntimeError) as e_info:
-        @prickle.jit
+        @parpy.jit
         def empty_return():
             return
     assert e_info.match(r"Empty return statements are not supported")
 
 def test_return_in_main_function():
-    enabled_backends = [b for b in compiler_backends if prickle.backend.is_enabled(b)]
+    enabled_backends = [b for b in compiler_backends if parpy.backend.is_enabled(b)]
     if len(enabled_backends) == 0:
         pytest.skip("No available backends to use for compilation")
     else:
-        @prickle.jit
+        @parpy.jit
         def f_return(x):
-            with prickle.gpu:
-                y = prickle.sum(x[:])
+            with parpy.gpu:
+                y = parpy.sum(x[:])
                 return y
         backend = enabled_backends[0]
         with pytest.raises(RuntimeError) as e_info:

@@ -1,4 +1,4 @@
-import prickle
+import parpy
 import pytest
 import torch
 
@@ -6,36 +6,36 @@ from common import *
 
 torch.manual_seed(1234)
 
-@prickle.jit
+@parpy.jit
 def upper_bound_range(x, N):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(N):
         x[i] = i
 
-@prickle.jit
+@parpy.jit
 def no_step_range(x, N):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(1, N):
         x[i] = i
 
-@prickle.jit
+@parpy.jit
 def step_range(x, N):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(1, N, 2):
         x[i] = i
 
-@prickle.jit
+@parpy.jit
 def negative_step_range(x, N):
-    prickle.label('i')
+    parpy.label('i')
     for i in range(N-1, -1, -1):
         x[i] = i
 
 def range_helper(fn, backend, compile_only):
     N = 100
     x = torch.zeros((N,), dtype=torch.int64)
-    p = {'i': prickle.threads(32)}
+    p = {'i': parpy.threads(32)}
     if compile_only:
-        s = prickle.print_compiled(fn, [x, N], par_opts(backend, p))
+        s = parpy.print_compiled(fn, [x, N], par_opts(backend, p))
         assert len(s) != 0
     else:
         x_device = x.detach().clone()
@@ -57,7 +57,7 @@ def test_range_compile(fn, backend):
 
 def test_zero_step_fails():
     with pytest.raises(RuntimeError) as e_info:
-        @prickle.jit
+        @parpy.jit
         def zero_step(x, N):
             for i in range(0, N, 0):
                 x[i] = i

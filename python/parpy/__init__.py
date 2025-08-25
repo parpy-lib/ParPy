@@ -1,9 +1,9 @@
-from . import prickle
+from . import parpy
 from . import backend
 from . import buffer
 from . import types
 
-from .prickle import par, seq, CompileBackend, CompileOptions, Target
+from .parpy import par, seq, CompileBackend, CompileOptions, Target
 from .buffer import sync
 from .operators import *
 
@@ -54,7 +54,7 @@ def _convert_python_function_to_ir(fn, vars):
     # references to previously parsed functions.
     top_map = _get_tops(None)
     info = (filepath, line_ofs, col_ofs)
-    return prickle.python_to_ir(ast, info, top_map, vars)
+    return parpy.python_to_ir(ast, info, top_map, vars)
 
 def _check_kwarg(kwargs, key, default_value, expected_ty):
     if key not in kwargs or kwargs[key] is None:
@@ -67,7 +67,7 @@ def _check_kwarg(kwargs, key, default_value, expected_ty):
         raise RuntimeError(f"The keyword argument {key} should be of type {ty}")
 
 def _validate_external_type(target, backend, par):
-    from prickle import CompileBackend, Target
+    from parpy import CompileBackend, Target
     if backend == CompileBackend.Cuda:
         if target == Target.Host:
             raise RuntimeError(f"Host externals are not supported in the CUDA backend")
@@ -84,7 +84,7 @@ def _declare_external(fn, ext_name, target, header, parallelize, vars):
     src, line_ofs, col_ofs = _get_source_code(fn)
     ast = python_ast.parse(src)
     info = (filepath, line_ofs, col_ofs)
-    return prickle.declare_external(ast, info, ext_name, target, header, parallelize, vars)
+    return parpy.declare_external(ast, info, ext_name, target, header, parallelize, vars)
 
 def _check_kwargs(kwargs):
     default_opts = CompileOptions()
@@ -103,7 +103,7 @@ def _compile_function(ir_ast, args, opts):
     from .key import generate_fast_cache_key, generate_function_key
 
     # Extract the name of the main function in the IR AST.
-    name = prickle.get_function_name(ir_ast)
+    name = parpy.get_function_name(ir_ast)
 
     # Generate a key based on the IR AST, the function arguments, and the
     # compile options. If this key is found in the cache, we have already
@@ -116,7 +116,7 @@ def _compile_function(ir_ast, args, opts):
     # Generate the code based on the provided IR AST, arguments and compilation
     # options.
     top_map = _get_tops(opts.backend)
-    code, unsymb_code = prickle.compile_ir(ir_ast, args, opts, top_map)
+    code, unsymb_code = parpy.compile_ir(ir_ast, args, opts, top_map)
 
     # If the shared library corresponding to the generated code does not exist,
     # we run the underlying compiler to produce a shared library.
@@ -140,14 +140,14 @@ def threads(n):
     Produces a LoopPar object (used in parallel specifications) representing a
     parallel operation over `n` threads.
     """
-    return prickle.LoopPar().threads(n)
+    return parpy.LoopPar().threads(n)
 
 def reduce():
     """
     Produces a LoopPar object (used in parallel specifications) representing a
     parallelizable reduction.
     """
-    return prickle.LoopPar().reduce()
+    return parpy.LoopPar().reduce()
 
 def clear_cache():
     """
@@ -195,10 +195,10 @@ def print_compiled(fun, args, opts=CompileOptions()):
         ir_ast = _convert_python_function_to_ir(fun, vars)
     _, args = check_arguments(args, opts, False)
     top_map = _get_tops(opts.backend)
-    code, _ = prickle.compile_ir(ir_ast, args, opts, top_map)
+    code, _ = parpy.compile_ir(ir_ast, args, opts, top_map)
     return code
 
-def external(ext_name, backend, target, header=None, parallelize=prickle.LoopPar()):
+def external(ext_name, backend, target, header=None, parallelize=parpy.LoopPar()):
     import inspect
     globs = inspect.currentframe().f_back.f_globals
     locs = inspect.currentframe().f_back.f_locals

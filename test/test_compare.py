@@ -1,5 +1,5 @@
 import math
-import prickle
+import parpy
 import pytest
 import torch
 
@@ -7,56 +7,56 @@ from common import *
 
 torch.manual_seed(1234)
 
-@prickle.jit
-def prickle_eq(dst, a, b):
-    with prickle.gpu:
+@parpy.jit
+def parpy_eq(dst, a, b):
+    with parpy.gpu:
         if a[0] == b[0]:
             dst[0] = 1
         else:
             dst[0] = 0
 
-@prickle.jit
-def prickle_neq(dst, a, b):
-    with prickle.gpu:
+@parpy.jit
+def parpy_neq(dst, a, b):
+    with parpy.gpu:
         if a[0] != b[0]:
             dst[0] = 1
         else:
             dst[0] = 0
 
-@prickle.jit
-def prickle_leq(dst, a, b):
-    with prickle.gpu:
+@parpy.jit
+def parpy_leq(dst, a, b):
+    with parpy.gpu:
         if a[0] <= b[0]:
             dst[0] = 1
         else:
             dst[0] = 0
 
-@prickle.jit
-def prickle_geq(dst, a, b):
-    with prickle.gpu:
+@parpy.jit
+def parpy_geq(dst, a, b):
+    with parpy.gpu:
         if a[0] >= b[0]:
             dst[0] = 1
         else:
             dst[0] = 0
 
-@prickle.jit
-def prickle_lt(dst, a, b):
-    with prickle.gpu:
+@parpy.jit
+def parpy_lt(dst, a, b):
+    with parpy.gpu:
         if a[0] < b[0]:
             dst[0] = 1
         else:
             dst[0] = 0
 
-@prickle.jit
-def prickle_gt(dst, a, b):
-    with prickle.gpu:
+@parpy.jit
+def parpy_gt(dst, a, b):
+    with parpy.gpu:
         if a[0] > b[0]:
             dst[0] = 1
         else:
             dst[0] = 0
 
 def set_expected_behavior(dtype, backend):
-    if dtype == torch.float64 and backend == prickle.CompileBackend.Metal:
+    if dtype == torch.float64 and backend == parpy.CompileBackend.Metal:
         return True, r"Metal does not support double-precision floating-point numbers."
     else:
         return False, None
@@ -66,7 +66,7 @@ def compare_dtype_helper(fn, dtype, backend, compile_only):
     b = torch.randint(1, 10, (1,), dtype=dtype)
     dst = torch.zeros((1,), dtype=torch.int32)
     if compile_only:
-        s = prickle.print_compiled(fn, [dst, a, b], par_opts(backend, {}))
+        s = parpy.print_compiled(fn, [dst, a, b], par_opts(backend, {}))
         assert len(s) != 0
     else:
         dst_device = torch.zeros_like(dst)
@@ -84,7 +84,7 @@ def compare_dtype(fn, arg_dtype, backend, compile_only):
         compare_dtype_helper(fn, arg_dtype, backend, compile_only)
 
 functions = [
-    prickle_eq, prickle_neq, prickle_leq, prickle_geq, prickle_lt, prickle_gt
+    parpy_eq, parpy_neq, parpy_leq, parpy_geq, parpy_lt, parpy_gt
 ]
 cmp_dtypes = [
     torch.int8, torch.int16, torch.int32, torch.int64, torch.float16,

@@ -1,14 +1,14 @@
-import prickle
+import parpy
 import torch
 
 
-@prickle.jit
-def covariance_prickle(cov, data, float_n, M):
-    prickle.label('i')
+@parpy.jit
+def covariance_parpy(cov, data, float_n, M):
+    parpy.label('i')
     for i in range(M):
-        prickle.label('j')
+        parpy.label('j')
         for j in range(i, M):
-            s = prickle.sum(data[:, i] * data[:, j])
+            s = parpy.sum(data[:, i] * data[:, j])
             cov[i, j] = s / (float_n - 1.0)
             cov[j, i] = cov[i, j]
 
@@ -18,6 +18,6 @@ def covariance(M, float_n, data, opts, compile_only=False):
     cov = torch.zeros((M, M), dtype=data.dtype)
     if compile_only:
         args = [cov, data, float_n, M]
-        return prickle.print_compiled(covariance_prickle, args, opts)
-    covariance_prickle(cov, data, float_n, M, opts=opts)
+        return parpy.print_compiled(covariance_parpy, args, opts)
+    covariance_parpy(cov, data, float_n, M, opts=opts)
     return cov

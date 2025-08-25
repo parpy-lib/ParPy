@@ -1,7 +1,7 @@
 use super::ast::*;
 use crate::option;
-use crate::prickle_internal_error;
-use crate::prickle_type_error;
+use crate::parpy_internal_error;
+use crate::parpy_type_error;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::ast::ExprType;
 use crate::utils::err::*;
@@ -28,12 +28,12 @@ fn validate_unary_operation(
         UnOp::Tanh => match ty.get_scalar_elem_size() {
             Some(ElemSize::F32 | ElemSize::F64) => Ok(()),
             Some(ElemSize::F16) => {
-                prickle_type_error!(i, "Operation tanh not supported for \
+                parpy_type_error!(i, "Operation tanh not supported for \
                                         16-bit floats.")
             },
             Some(_) | None => {
                 let ty = ty.pprint_default();
-                prickle_type_error!(i, "Unexpected type {ty} of tanh \
+                parpy_type_error!(i, "Unexpected type {ty} of tanh \
                                         builtin (expected float).")
             }
         },
@@ -48,12 +48,12 @@ fn validate_binary_operation(
         BinOp::Atan2 => match ty.get_scalar_elem_size() {
             Some(ElemSize::F64) => Ok(()),
             Some(ElemSize::F16 | ElemSize::F32) => {
-                prickle_type_error!(i, "Operation atan2 is only supported \
+                parpy_type_error!(i, "Operation atan2 is only supported \
                                         for 64-bit floats.")
             },
             Some(_) | None => {
                 let ty = ty.pprint_default();
-                prickle_type_error!(i, "Unexpected type {ty} of atan2 \
+                parpy_type_error!(i, "Unexpected type {ty} of atan2 \
                                         builtin (expected float).")
             }
         },
@@ -153,20 +153,20 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             Ok(Stmt::Return {value})
         },
         gpu_ast::Stmt::Scope {i, ..} => {
-            prickle_internal_error!(i, "Found scope statement that should have \
+            parpy_internal_error!(i, "Found scope statement that should have \
                                         been eliminated.")
         },
         gpu_ast::Stmt::ParallelReduction {i, ..} => {
-            prickle_internal_error!(i, "Found parallel reduction statement \
+            parpy_internal_error!(i, "Found parallel reduction statement \
                                         that should have been eliminated.")
         },
         gpu_ast::Stmt::Synchronize {scope, ..} => Ok(Stmt::Synchronize {scope}),
         gpu_ast::Stmt::WarpReduce {i, ..} => {
-            prickle_internal_error!(i, "Found warp reduction statement that \
+            parpy_internal_error!(i, "Found warp reduction statement that \
                                         should have been eliminated.")
         },
         gpu_ast::Stmt::ClusterReduce {i, ..} => {
-            prickle_internal_error!(i, "Found cluster reduction statement that \
+            parpy_internal_error!(i, "Found cluster reduction statement that \
                                         should have been eliminated.")
         },
         gpu_ast::Stmt::KernelLaunch {id, args, grid, ..} => {
@@ -201,7 +201,7 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             })
         },
         gpu_ast::Stmt::CopyMemory {i, ..} => {
-            prickle_internal_error!(i, "Memory copying not supported in CUDA backend")
+            parpy_internal_error!(i, "Memory copying not supported in CUDA backend")
         },
     }
 }
@@ -337,7 +337,7 @@ pub fn from_gpu_ir(
     opts: &option::CompileOptions
 ) -> CompileResult<Ast> {
     let mut tops = vec![
-        Top::Include {header: "\"prickle_cuda.h\"".to_string()},
+        Top::Include {header: "\"parpy_cuda.h\"".to_string()},
         Top::Include {header: "<cmath>".to_string()},
         Top::Include {header: "<cstdint>".to_string()},
     ];

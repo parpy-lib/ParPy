@@ -3,7 +3,7 @@
 
 use super::ast::{Dim, LaunchArgs};
 use crate::par;
-use crate::prickle_compile_error;
+use crate::parpy_compile_error;
 use crate::ir::ast::*;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -35,12 +35,12 @@ impl ParLayer {
             } else if rhs.tpb == par::DEFAULT_TPB || lhs.tpb == rhs.tpb {
                 Ok(lhs)
             } else {
-                prickle_compile_error!(i, "Found inconsistent requests on the number \
+                parpy_compile_error!(i, "Found inconsistent requests on the number \
                                            of threads per block: {0} != {1}",
                                            lhs.tpb, rhs.tpb)
             }
         } else {
-            prickle_compile_error!(i, "Found inconsistent parallel structures: {lhs} != {rhs}")
+            parpy_compile_error!(i, "Found inconsistent parallel structures: {lhs} != {rhs}")
         }
     }
 }
@@ -77,7 +77,7 @@ impl Par {
             Ok(Par {layers, i: lhs.i})
         } else {
             let i = lhs.i;
-            prickle_compile_error!(i, "Found inconsistent number of layers in \
+            parpy_compile_error!(i, "Found inconsistent number of layers in \
                                        parallel structure ({0} != {1})",
                                        lhs.layers.len(), rhs.layers.len())
         }
@@ -130,7 +130,7 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
                      This is not supported because the compiller cannot generate \
                      efficient code for this."
                 );
-                prickle_compile_error!(i, "{}", msg)
+                parpy_compile_error!(i, "{}", msg)
             }
         },
         Stmt::For {body, par, ..} => {
@@ -172,7 +172,7 @@ impl ParEntry {
                 if acc_tpb == par::DEFAULT_TPB || acc_tpb == tpb {
                     Ok((tpb, acc_threads))
                 } else {
-                    prickle_compile_error!(
+                    parpy_compile_error!(
                         p.i,
                         "Found inconsistent number of threads per block: \
                          {acc_tpb} != {tpb}"

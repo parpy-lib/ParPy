@@ -1,12 +1,12 @@
-import prickle
+import parpy
 import torch
 
-@prickle.jit
-def prickle_kernel(A, B, TSTEPS):
+@parpy.jit
+def parpy_kernel(A, B, TSTEPS):
     for t in range(1, TSTEPS):
-        prickle.label('i')
-        prickle.label('j')
-        prickle.label('k')
+        parpy.label('i')
+        parpy.label('j')
+        parpy.label('k')
         B[1:-1, 1:-1,
           1:-1] = (0.125 * (A[2:, 1:-1, 1:-1] - 2.0 * A[1:-1, 1:-1, 1:-1] +
                             A[:-2, 1:-1, 1:-1]) + 0.125 *
@@ -15,9 +15,9 @@ def prickle_kernel(A, B, TSTEPS):
                    (A[1:-1, 1:-1, 2:] - 2.0 * A[1:-1, 1:-1, 1:-1] +
                     A[1:-1, 1:-1, 0:-2]) + A[1:-1, 1:-1, 1:-1])
 
-        prickle.label('i')
-        prickle.label('j')
-        prickle.label('k')
+        parpy.label('i')
+        parpy.label('j')
+        parpy.label('k')
         A[1:-1, 1:-1,
           1:-1] = (0.125 * (B[2:, 1:-1, 1:-1] - 2.0 * B[1:-1, 1:-1, 1:-1] +
                             B[:-2, 1:-1, 1:-1]) + 0.125 *
@@ -28,5 +28,5 @@ def prickle_kernel(A, B, TSTEPS):
 
 def heat_3d(TSTEPS, A, B, opts, compile_only=False):
     if compile_only:
-        return prickle.print_compiled(prickle_kernel, [A, B, TSTEPS], opts)
-    prickle_kernel(A, B, TSTEPS, opts=opts)
+        return parpy.print_compiled(parpy_kernel, [A, B, TSTEPS], opts)
+    parpy_kernel(A, B, TSTEPS, opts=opts)

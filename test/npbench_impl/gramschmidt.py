@@ -1,23 +1,23 @@
-import prickle
+import parpy
 import torch
 
-@prickle.jit
-def prickle_kernel(A, R, Q, M, N):
+@parpy.jit
+def parpy_kernel(A, R, Q, M, N):
     for k in range(N):
-        with prickle.gpu:
-            prickle.label('i_reduce')
-            nrm = prickle.sum(A[:,k] * A[:,k])
-            R[k,k] = prickle.sqrt(nrm)
-        prickle.label('i')
+        with parpy.gpu:
+            parpy.label('i_reduce')
+            nrm = parpy.sum(A[:,k] * A[:,k])
+            R[k,k] = parpy.sqrt(nrm)
+        parpy.label('i')
         Q[:,k] = A[:,k] / R[k,k]
-        prickle.label('j')
+        parpy.label('j')
         for j in range(k+1, N):
-            prickle.label('i_reduce')
-            R[k,j] = prickle.sum(Q[:,k] * A[:,j])
+            parpy.label('i_reduce')
+            R[k,j] = parpy.sum(Q[:,k] * A[:,j])
 
-        prickle.label('j')
+        parpy.label('j')
         for j in range(k+1, N):
-            prickle.label('i')
+            parpy.label('i')
             A[:,j] -= Q[:,k] * R[k,j]
 
 def gramschmidt(A, opts, compile_only=False):
@@ -26,6 +26,6 @@ def gramschmidt(A, opts, compile_only=False):
     M, N = A.shape
     if compile_only:
         args = [A, R, Q, M, N]
-        return prickle.print_compiled(prickle_kernel, args, opts)
-    prickle_kernel(A, R, Q, M, N, opts=opts)
+        return parpy.print_compiled(parpy_kernel, args, opts)
+    parpy_kernel(A, R, Q, M, N, opts=opts)
     return Q, R

@@ -1,6 +1,6 @@
 use super::ast::*;
 use crate::par;
-use crate::prickle_compile_error;
+use crate::parpy_compile_error;
 use crate::utils::err::*;
 use crate::utils::info::Info;
 use crate::utils::smap::SFold;
@@ -14,7 +14,7 @@ fn merge_tpb(ltpb: i64, rtpb: i64, i: &Info) -> CompileResult<i64> {
     } else if ltpb == rtpb {
         Ok(ltpb)
     } else {
-        prickle_compile_error!(i, "Found inconsistent threads per block {0} and \
+        parpy_compile_error!(i, "Found inconsistent threads per block {0} and \
                                    {1} among labels within parallel statements.",
                                    ltpb, rtpb)
     }

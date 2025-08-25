@@ -7,13 +7,13 @@
 # All content is under Creative Commons Attribution CC-BY 4.0,
 # and all code is under BSD-3 clause (previously under MIT, and changed on March 8, 2018).
 
-import prickle
+import parpy
 import torch
 
-@prickle.jit
+@parpy.jit
 def build_up_b(b, rho, dt, u, v, dx, dy):
-    prickle.label('ny')
-    prickle.label('nx')
+    parpy.label('ny')
+    parpy.label('nx')
     b[1:-1,
       1:-1] = (rho * (1.0 / dt * ((u[1:-1, 2:] - u[1:-1, 0:-2]) / (2.0 * dx) +
                                 (v[2:, 1:-1] - v[0:-2, 1:-1]) / (2.0 * dy)) -
@@ -22,35 +22,35 @@ def build_up_b(b, rho, dt, u, v, dx, dy):
                        (v[1:-1, 2:] - v[1:-1, 0:-2]) / (2.0 * dx)) -
                       ((v[2:, 1:-1] - v[0:-2, 1:-1]) / (2.0 * dy))**2.0))
 
-@prickle.jit
+@parpy.jit
 def pressure_poisson(nit, p, pn, dx, dy, b):
     for q in range(nit):
-        prickle.label('ny')
-        prickle.label('nx')
+        parpy.label('ny')
+        parpy.label('nx')
         pn[:,:] = p[:,:]
-        prickle.label('ny')
-        prickle.label('nx')
+        parpy.label('ny')
+        parpy.label('nx')
         p[1:-1, 1:-1] = (((pn[1:-1, 2:] + pn[1:-1, 0:-2]) * dy**2.0 +
                           (pn[2:, 1:-1] + pn[0:-2, 1:-1]) * dx**2.0) /
                          (2.0 * (dx**2.0 + dy**2.0)) - dx**2.0 * dy**2.0 /
                          (2.0 * (dx**2.0 + dy**2.0)) * b[1:-1, 1:-1])
 
-        prickle.label('ny')
+        parpy.label('ny')
         p[:, -1] = p[:, -2]  # dp/dx = 0 at x = 2
-        prickle.label('nx')
+        parpy.label('nx')
         p[0, :] = p[1, :]  # dp/dy = 0 at y = 0
-        prickle.label('ny')
+        parpy.label('ny')
         p[:, 0] = p[:, 1]  # dp/dx = 0 at x = 0
-        prickle.label('nx')
+        parpy.label('nx')
         p[-1, :] = 0.0  # p = 0 at y = 2
 
-@prickle.jit
+@parpy.jit
 def cavity_flow_kernel(nx, ny, nt, nit, u, un, v, vn, b, dt, dx, dy, p, pn, rho, nu):
     build_up_b(b, rho, dt, u, v, dx, dy)
     pressure_poisson(nit, p, pn, dx, dy, b)
 
-    prickle.label('ny')
-    prickle.label('nx')
+    parpy.label('ny')
+    parpy.label('nx')
     u[1:-1,
       1:-1] = (un[1:-1, 1:-1] - un[1:-1, 1:-1] * dt / dx *
                (un[1:-1, 1:-1] - un[1:-1, 0:-2]) -
@@ -62,8 +62,8 @@ def cavity_flow_kernel(nx, ny, nt, nit, u, un, v, vn, b, dt, dx, dy, p, pn, rho,
                 dt / dy**2.0 *
                 (un[2:, 1:-1] - 2.0 * un[1:-1, 1:-1] + un[0:-2, 1:-1])))
 
-    prickle.label('ny')
-    prickle.label('nx')
+    parpy.label('ny')
+    parpy.label('nx')
     v[1:-1,
       1:-1] = (vn[1:-1, 1:-1] - un[1:-1, 1:-1] * dt / dx *
                (vn[1:-1, 1:-1] - vn[1:-1, 0:-2]) -
@@ -75,21 +75,21 @@ def cavity_flow_kernel(nx, ny, nt, nit, u, un, v, vn, b, dt, dx, dy, p, pn, rho,
                 dt / dy**2.0 *
                 (vn[2:, 1:-1] - 2.0 * vn[1:-1, 1:-1] + vn[0:-2, 1:-1])))
 
-    prickle.label('nx')
+    parpy.label('nx')
     u[0, :] = 0.0
-    prickle.label('ny')
+    parpy.label('ny')
     u[:, 0] = 0.0
-    prickle.label('ny')
+    parpy.label('ny')
     u[:, -1] = 0.0
-    prickle.label('nx')
+    parpy.label('nx')
     u[-1, :] = 1.0  # set velocity on cavity lid equal to 1
-    prickle.label('nx')
+    parpy.label('nx')
     v[0, :] = 0.0
-    prickle.label('nx')
+    parpy.label('nx')
     v[-1, :] = 0.0
-    prickle.label('ny')
+    parpy.label('ny')
     v[:, 0] = 0.0
-    prickle.label('ny')
+    parpy.label('ny')
     v[:, -1] = 0.0
 
 def cavity_flow(nx, ny, nt, nit, u, v, dt, dx, dy, p, rho, nu, opts, compile_only=False):
@@ -105,7 +105,7 @@ def cavity_flow(nx, ny, nt, nit, u, v, dt, dx, dy, p, rho, nu, opts, compile_onl
 
         if compile_only:
             args = [nx, ny, nt, nit, u, un, v, vn, b, dt, dx, dy, p, pn, rho, nu]
-            return prickle.print_compiled(cavity_flow_kernel, args, opts)
+            return parpy.print_compiled(cavity_flow_kernel, args, opts)
         else:
             cavity_flow_kernel(
                 nx, ny, nt, nit, u, un, v, vn, b, dt, dx, dy, p, pn, rho, nu,
