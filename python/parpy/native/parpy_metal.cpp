@@ -22,8 +22,9 @@ extern "C" void parpy_init(int64_t queue_capacity) {
   }
 }
 
-extern "C" void parpy_sync() {
+extern "C" int32_t parpy_sync() {
   parpy_metal::sync();
+  return 0;
 }
 
 extern "C" MTL::Buffer *parpy_alloc_buffer(int64_t nbytes) {
@@ -39,12 +40,14 @@ extern "C" void *parpy_ptr_buffer(MTL::Buffer *buf) {
   return buf->contents();
 }
 
-extern "C" void parpy_memcpy(void *dst, void *src, int64_t nbytes) {
+extern "C" int32_t parpy_memcpy(void *dst, void *src, int64_t nbytes, int64_t _k) {
   memcpy(dst, src, nbytes);
+  return 0;
 }
 
-extern "C" void parpy_free_buffer(MTL::Buffer *buf) {
+extern "C" int32_t parpy_free_buffer(MTL::Buffer *buf) {
   buf->release();
+  return 0;
 }
 
 extern "C" const char *parpy_get_error_message() {
@@ -97,7 +100,7 @@ namespace parpy_metal {
     //  3: both device
     dst = k & 1 ? ((MTL::Buffer*)dst)->contents() : dst;
     src = k & 2 ? ((MTL::Buffer*)src)->contents() : src;
-    parpy_memcpy(dst, src, nbytes);
+    parpy_memcpy(dst, src, nbytes, k);
   }
 
   int32_t launch_kernel(

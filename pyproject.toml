@@ -18,7 +18,6 @@ dependencies = ["numpy", "torch"]
 
 [project.optional-dependencies]
 test = ["pytest", "scipy"]
-cuda = ["cuda-python"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

@@ -1,20 +1,16 @@
 import pathlib
 from .parpy import CompileBackend, DataType
+from .runtime import compile_runtime_lib
 
-DEFAULT_METAL_COMMAND_QUEUE_SIZE = 64
-PARIR_NATIVE_PATH = pathlib.Path(__file__).parent / "native"
-PARIR_METAL_BASE_LIB_PATH = PARIR_NATIVE_PATH / "parpy_metal_lib.so"
+def _check_errors(lib, rescode):
+    if rescode != 0:
+        msg = lib.parpy_get_error_message().decode('ascii')
+        raise RuntimeError(f"Error in runtime library: {msg} (code={rescode})")
 
-metal_lib = None
-
-# Inspired by the approach used in the cuda-python API documentation.
-def _check_cuda_errors(result):
-    if result[0].value:
-        from cuda.bindings import runtime
-        _, s = runtime.cudaGetErrorString(result[0])
-        raise RuntimeError(f"CUDA error {s} (code={result[0].value})")
-    else:
-        return result[1:]
+def _check_not_nullptr(lib, resptr):
+    if resptr == 0:
+        raise RuntimeError(f"{lib.parpy_get_error_message()}")
+    return resptr
 
 def _check_array_interface(intf):
     shape = intf["shape"]
@@ -43,66 +39,13 @@ def _to_array_interface(ptr, dtype, shape):
         'version': 3
     }
 
-def compile_metal_runtime_lib():
-    """
-    Compiles the Metal runtime library if it has not already been compiled. The
-    Metal runtime library provides convenient wrappers handling details such as
-    the launch of compute kernels and memory allocations. A runtime exception
-    is raised if the function is called when the Metal backend is disabled.
-    """
-    from parpy.backend import is_enabled
-    import ctypes
-    import shutil
-    import subprocess
-    import os
-    global metal_lib
-    if metal_lib is None:
-        if not is_enabled(CompileBackend.Metal):
-            raise RuntimeError("Cannot build Metal runtime library when the Metal backend is disabled")
-        libpath = PARIR_METAL_BASE_LIB_PATH
-        src_path = libpath.parent / "parpy_metal.cpp"
-        # We only need to build the library if the file does not exist or if
-        # the source file was modified after the library was last built.
-        if not libpath.exists() or os.path.getmtime(libpath) < os.path.getmtime(src_path):
-            metal_cpp_path = os.getenv("METAL_CPP_HEADER_PATH")
-            if metal_cpp_path is None:
-                raise RuntimeError("The path to the Metal C++ library must be provided " +
-                                   "via the 'METAL_CPP_HEADER_PATH' variable before " +
-                                   "using the Metal backend.")
-            frameworks = ["-framework", "Metal", "-framework", "Foundation", "-framework", "MetalKit"]
-            cmd = ["clang++", "-std=c++17", "-O3", "-shared", "-fpic",
-                   "-I", metal_cpp_path] + frameworks + [src_path, "-o", libpath]
-            r = subprocess.run(cmd, capture_output=True)
-            if r.returncode != 0:
-                stdout = r.stdout.decode('ascii')
-                stderr = r.stderr.decode('ascii')
-                raise RuntimeError("Compilation of the Metal base library failed.\n" +
-                                  f"stdout:\n{stdout}\nstderr:\n{stderr}")
-        lib = ctypes.cdll.LoadLibrary(libpath)
-        lib.parpy_init.argtypes = [ctypes.c_int64]
-        lib.parpy_sync.argtypes = []
-        lib.parpy_alloc_buffer.argtypes = [ctypes.c_int64]
-        lib.parpy_alloc_buffer.restype = ctypes.c_void_p
-        lib.parpy_ptr_buffer.argtypes = [ctypes.c_void_p]
-        lib.parpy_ptr_buffer.restype = ctypes.c_void_p
-        lib.parpy_memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
-        lib.parpy_free_buffer.argtypes = [ctypes.c_void_p]
-        lib.parpy_init(DEFAULT_METAL_COMMAND_QUEUE_SIZE)
-        metal_lib = lib
-
 def sync(backend):
     """
     Synchronizes the CPU and the target device by waiting until all running
     kernels complete.
     """
-    if backend == CompileBackend.Cuda:
-        from cuda.bindings import runtime
-        _check_cuda_errors(runtime.cudaDeviceSynchronize())
-    elif backend == CompileBackend.Metal:
-        compile_metal_runtime_lib()
-        metal_lib.parpy_sync()
-    else:
-        raise RuntimeError(f"Called sync on unsupported compiler backend {backend}")
+    lib = compile_runtime_lib(backend)
+    _check_errors(lib, lib.parpy_sync())
 
 class Buffer:
     def __init__(self, buf, shape, dtype, backend=None, src_ptr=None):
@@ -158,29 +101,20 @@ class Buffer:
         sync(self.backend)
 
     def cleanup(self):
-        from functools import reduce
-        from operator import mul
-        nbytes = reduce(mul, self.shape, 1) * self.dtype.size()
+        nbytes = self.dtype.size()
+        for sh in self.shape:
+            nbytes *= sh
+        lib = compile_runtime_lib(self.backend)
         if self.backend == CompileBackend.Cuda:
-            try:
-                from cuda.bindings import runtime
-            except ImportError:
-                # If we cannot import the library the program is about to quit.
-                # In this case, the memory will be deallocated on exit anyway.
-                return
             if self.src_ptr is not None:
-                _check_cuda_errors(runtime.cudaMemcpyAsync(self.src_ptr, self.buf, nbytes, runtime.cudaMemcpyKind.cudaMemcpyDeviceToHost, 0))
-                _check_cuda_errors(runtime.cudaFreeAsync(self.buf, 0))
-                self.buf = None
+                _check_errors(lib, lib.parpy_memcpy(self.src_ptr, self.buf, nbytes, 2))
+                _check_errors(lib, lib.parpy_free_buffer(self.buf))
         elif self.backend == CompileBackend.Metal:
-            if self.buf is not None:
-                # Need to wait for kernels to complete before we copy data.
-                self.sync()
-                if self.src_ptr is not None:
-                    metal_lib.parpy_memcpy(self.src_ptr, self.ptr, nbytes)
-                metal_lib.parpy_free_buffer(self.buf)
-                self.ptr = None
-                self.buf = None
+            # Need to wait for kernels to complete before we copy data.
+            _check_errors(lib, lib.sync())
+            if self.src_ptr is not None:
+                _check_errors(lib, lib.parpy_memcpy(self.src_ptr, self.ptr, nbytes, 2))
+            _check_errors(lib, lib.parpy_free_buffer(self.buf))
 
     def _from_array_cpu(t):
         # For the dummy backend, we just need any pointer to construct the
@@ -199,7 +133,6 @@ class Buffer:
         return Buffer(data_ptr, shape, dtype)
 
     def _from_array_cuda(t):
-        from cuda.bindings import runtime
         from functools import reduce
         from operator import mul
         # If the provided argument defines the __cuda_array_interface__, we can
@@ -216,8 +149,9 @@ class Buffer:
             raise RuntimeError(f"Cannot convert argument {t} to CUDA buffer")
 
         nbytes = reduce(mul, shape, 1) * dtype.size()
-        [ptr] = _check_cuda_errors(runtime.cudaMallocAsync(nbytes, 0))
-        _check_cuda_errors(runtime.cudaMemcpyAsync(ptr, data_ptr, nbytes, runtime.cudaMemcpyKind.cudaMemcpyHostToDevice, 0))
+        lib = compile_runtime_lib(CompileBackend.Cuda)
+        ptr = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
+        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, nbytes, 1))
         return Buffer(ptr, shape, dtype, CompileBackend.Cuda, data_ptr)
 
     def _from_array_metal(t):
@@ -230,11 +164,11 @@ class Buffer:
         else:
             raise RuntimeError(f"Cannot convert argument {t} to Metal buffer")
 
-        compile_metal_runtime_lib()
+        lib = compile_runtime_lib(CompileBackend.Metal)
         nbytes = reduce(mul, shape, 1) * dtype.size()
-        buf = metal_lib.parpy_alloc_buffer(nbytes)
-        ptr = metal_lib.parpy_ptr_buffer(buf)
-        metal_lib.parpy_memcpy(ptr, data_ptr, nbytes)
+        buf = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
+        ptr = lib.parpy_ptr_buffer(buf)
+        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, nbytes, 1))
         return Buffer(buf, shape, dtype, CompileBackend.Metal, data_ptr)
 
     def from_array(t, backend=None):
@@ -254,11 +188,11 @@ class Buffer:
         if self.backend is None:
             return np.asarray(self)
         elif self.backend == CompileBackend.Cuda:
-            from cuda.bindings import runtime
             a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
             shape, dtype, data_ptr = _check_array_interface(a.__array_interface__)
             nbytes = reduce(mul, shape, 1) * dtype.size()
-            _check_cuda_errors(runtime.cudaMemcpy(data_ptr, self.buf, nbytes, runtime.cudaMemcpyKind.cudaMemcpyDeviceToHost))
+            lib = compile_runtime_lib(self.backend)
+            _check_errors(lib, lib.parpy_memcpy(data_ptr, self.buf, nbytes, 2))
             return a
         elif self.backend == CompileBackend.Metal:
             self.sync()

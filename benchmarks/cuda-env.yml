@@ -12,7 +12,6 @@ dependencies:
   - gxx=12.4.0
   - coreutils
   - pip:
-    - "cuda-python==12.9"
     - cupy-cuda12x==13.4.1
     - dace==1.0.2
     - "jax[cuda12]==0.5.3"
