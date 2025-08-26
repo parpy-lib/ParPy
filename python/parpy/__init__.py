@@ -166,15 +166,16 @@ def compile_string(fun_name, code, opts=CompileOptions()):
     from .compile import build_shared_library, get_wrapper
     from .key import generate_fast_cache_key, generate_function_key
     from .validate import check_arguments
+    import functools
     opts = backend.resolve_backend(opts, True)
     cache_key = "string_" + generate_function_key(code, opts)
     build_shared_library(cache_key, code, opts)
     fn = get_wrapper(fun_name, cache_key, opts)
+    @functools.wraps(fn)
     def inner(*args):
         callbacks, args = check_arguments(args, opts, True)
         fn(*args)
         _run_callbacks(callbacks, opts)
-    inner.__name__ = fun_name
     return inner
 
 def print_compiled(fun, args, opts=CompileOptions()):

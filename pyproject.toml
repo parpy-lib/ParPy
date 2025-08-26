@@ -14,11 +14,7 @@ classifiers = [
 authors = [
   { name = "Lars Hummelgren", email = "lasse.hummelgren@gmail.com" }
 ]
-dependencies = ["numpy", "torch"]
-
-[project.optional-dependencies]
-test = ["pytest", "scipy"]
-cuda = ["cuda-python"]
+dependencies = ["numpy", "torch", "pytest", "scipy"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

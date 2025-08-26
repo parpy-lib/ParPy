@@ -6,16 +6,19 @@
   do { \
     cudaError_t err = (expr); \
     if (err != cudaSuccess) { \
-      parpy_cuda::error_message = cudaGetErrorString(err); \
       return 1; \
     } \
   } while (0)
 
-namespace parpy_cuda {
-  const char *error_message = nullptr;
-}
+// Functions used by the ParPy library when initializing, synchronizing with
+// running GPU code, and operating on buffers.
+extern "C" void parpy_init(int64_t);
+extern "C" int32_t parpy_sync();
+extern "C" void *parpy_alloc_buffer(int64_t);
+extern "C" int32_t parpy_memcpy(void*, void*, int64_t, int64_t);
+extern "C" int32_t parpy_free_buffer(void*);
 
-extern "C"
-const char *parpy_get_error_message() {
-  return parpy_cuda::error_message;
+extern "C" const char *parpy_get_error_message() {
+  cudaError_t err = cudaGetLastError();
+  return cudaGetErrorString(err);
 }

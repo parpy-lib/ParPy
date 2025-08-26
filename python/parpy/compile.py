@@ -27,7 +27,7 @@ def _report_compile_error(r, source, backend_name, temp_file, opts):
     raise RuntimeError(msg)
 
 def _build_cuda_shared_library(key, source, opts):
-    from .buffer import PARIR_NATIVE_PATH
+    from .runtime import PARPY_NATIVE_PATH
     import subprocess
     import tempfile
     import torch
@@ -39,7 +39,7 @@ def _build_cuda_shared_library(key, source, opts):
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
-        includes = opts.includes + [str(PARIR_NATIVE_PATH)]
+        includes = opts.includes + [str(PARPY_NATIVE_PATH)]
         include_cmd = _flatten([["-I", include] for include in includes])
         lib_cmd = _flatten([["-L", lib] for lib in opts.libs])
         commands = [
@@ -54,22 +54,23 @@ def _build_cuda_shared_library(key, source, opts):
             _report_compile_error(r, source, "CUDA", temp_file, opts)
 
 def _build_metal_shared_library(key, source, opts):
-    from .buffer import PARIR_NATIVE_PATH, PARIR_METAL_BASE_LIB_PATH
-    from .buffer import compile_metal_runtime_lib
+    from .parpy import CompileBackend
+    from .runtime import compile_runtime_lib
+    from .runtime import PARPY_NATIVE_PATH, PARPY_METAL_BASE_LIB_PATH
     import subprocess
     import tempfile
     libpath = _get_library_path(key)
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
-        compile_metal_runtime_lib()
+        compile_runtime_lib(CompileBackend.Metal)
         metal_cpp_path = os.getenv("METAL_CPP_HEADER_PATH")
-        includes = opts.includes + [metal_cpp_path, str(PARIR_NATIVE_PATH)]
+        includes = opts.includes + [metal_cpp_path, str(PARPY_NATIVE_PATH)]
         frameworks = ["-framework", "Metal", "-framework", "Foundation", "-framework", "MetalKit"]
         include_cmd = _flatten([["-I", include] for include in includes])
         lib_cmd = _flatten([["-L", lib] for lib in opts.libs])
         commands = [
-            "-O3", "-shared", "-fpic", "-std=c++17", str(PARIR_METAL_BASE_LIB_PATH),
+            "-O3", "-shared", "-fpic", "-std=c++17", str(PARPY_METAL_BASE_LIB_PATH),
             "-x", "c++", tmp.name, "-o", str(libpath)
         ]
         cmd = _flatten([["clang++"], opts.extra_flags, frameworks, include_cmd, lib_cmd, commands])

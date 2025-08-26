@@ -10,11 +10,11 @@
 // Functions used by the ParPy library when initializing, synchronizing with
 // running GPU code, and operating on buffers.
 extern "C" void parpy_init(int64_t);
-extern "C" void parpy_sync();
+extern "C" int32_t parpy_sync();
 extern "C" MTL::Buffer *parpy_alloc_buffer(int64_t);
 extern "C" void *parpy_ptr_buffer(MTL::Buffer*);
-extern "C" void parpy_memcpy(void*, void*, int64_t);
-extern "C" void parpy_free_buffer(MTL::Buffer*);
+extern "C" int32_t parpy_memcpy(void*, void*, int64_t, int64_t);
+extern "C" int32_t parpy_free_buffer(MTL::Buffer*);
 extern "C" const char *parpy_get_error_message();
 
 // The below functions are to be used in the generated kernel code from C++. We
