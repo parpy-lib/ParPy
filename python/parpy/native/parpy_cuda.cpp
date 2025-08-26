@@ -40,8 +40,3 @@ extern "C" int32_t parpy_free_buffer(void *p) {
   }
   return 0;
 }
-
-extern "C" const char *parpy_get_error_message() {
-  cudaError_t err = cudaGetLastError();
-  return cudaGetErrorString(err);
-}
