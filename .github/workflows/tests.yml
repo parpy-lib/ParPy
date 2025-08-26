@@ -34,7 +34,7 @@ jobs:
 
       - name: Install library
         run: |
-          pip install ".[test]"
+          pip install .
 
       - name: Rust library tests
         run: |
