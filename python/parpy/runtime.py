@@ -40,7 +40,7 @@ def _compile_metal_runtime_lib():
     import ctypes
     import os
     import subprocess
-    libpath = PARIR_METAL_BASE_LIB_PATH
+    libpath = PARPY_METAL_BASE_LIB_PATH
     src_path = libpath.parent / "parpy_metal.cpp"
     # We only need to build the library if the file does not exist or if
     # the source file was modified after the library was last built.

@@ -62,16 +62,33 @@ class Buffer:
             cuda_intf = _to_array_interface(self.buf, self.dtype, self.shape)
             setattr(self, "__cuda_array_interface__", cuda_intf)
         elif self.backend == CompileBackend.Metal:
-            compile_metal_runtime_lib()
-            self.ptr = metal_lib.parpy_ptr_buffer(self.buf)
+            lib = compile_runtime_lib(self.backend)
+            self.ptr = lib.parpy_ptr_buffer(self.buf)
             arr_intf = _to_array_interface(self.ptr, self.dtype, self.shape)
             setattr(self, "__array_interface__", arr_intf)
         else:
             raise RuntimeError(f"Unsupported compiler backend {backend}")
 
+        self.refcount = [1]
+
     def __del__(self):
-        if self.buf is not None:
-            self.cleanup()
+        self.refcount[0] -= 1
+        if self.refcount[0] == 0:
+            nbytes = self.dtype.size()
+            for sh in self.shape:
+                nbytes *= sh
+            if self.backend == CompileBackend.Cuda:
+                lib = compile_runtime_lib(self.backend)
+                if self.src_ptr is not None:
+                    _check_errors(lib, lib.parpy_memcpy(self.src_ptr, self.buf, nbytes, 2))
+                    _check_errors(lib, lib.parpy_free_buffer(self.buf))
+            elif self.backend == CompileBackend.Metal:
+                lib = compile_runtime_lib(self.backend)
+                # Need to wait for kernels to complete before we copy data.
+                _check_errors(lib, lib.sync())
+                if self.src_ptr is not None:
+                    _check_errors(lib, lib.parpy_memcpy(self.src_ptr, self.ptr, nbytes, 2))
+                _check_errors(lib, lib.parpy_free_buffer(self.buf))
 
     def __float__(self):
         if len(self.shape) == 0:
@@ -99,22 +116,6 @@ class Buffer:
 
     def sync(self):
         sync(self.backend)
-
-    def cleanup(self):
-        nbytes = self.dtype.size()
-        for sh in self.shape:
-            nbytes *= sh
-        lib = compile_runtime_lib(self.backend)
-        if self.backend == CompileBackend.Cuda:
-            if self.src_ptr is not None:
-                _check_errors(lib, lib.parpy_memcpy(self.src_ptr, self.buf, nbytes, 2))
-                _check_errors(lib, lib.parpy_free_buffer(self.buf))
-        elif self.backend == CompileBackend.Metal:
-            # Need to wait for kernels to complete before we copy data.
-            _check_errors(lib, lib.sync())
-            if self.src_ptr is not None:
-                _check_errors(lib, lib.parpy_memcpy(self.src_ptr, self.ptr, nbytes, 2))
-            _check_errors(lib, lib.parpy_free_buffer(self.buf))
 
     def _from_array_cpu(t):
         # For the dummy backend, we just need any pointer to construct the

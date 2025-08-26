@@ -44,7 +44,7 @@ def check_arg(arg, i, in_dict, opts, execute):
             return [], np.asarray(arg)
         else:
             buf = Buffer.from_array(arg, opts.backend)
-        callback = lambda: buf.cleanup()
+        callback = lambda: buf.__del__()
         return [callback], buf
     else:
         raise RuntimeError(f"Argument {i} has unsupported type {type(arg)}")

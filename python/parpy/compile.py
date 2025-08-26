@@ -54,6 +54,7 @@ def _build_cuda_shared_library(key, source, opts):
             _report_compile_error(r, source, "CUDA", temp_file, opts)
 
 def _build_metal_shared_library(key, source, opts):
+    from .parpy import CompileBackend
     from .runtime import compile_runtime_lib
     from .runtime import PARPY_NATIVE_PATH, PARPY_METAL_BASE_LIB_PATH
     import subprocess
