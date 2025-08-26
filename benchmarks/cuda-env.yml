@@ -1,4 +1,4 @@
-name: bench-env
+name: parpy-env
 channels:
   - pytorch
   - conda-forge
