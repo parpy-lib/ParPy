@@ -223,3 +223,21 @@ class Buffer:
             return np.asarray(self)
         else:
             raise RuntimeError(f"Unsupported buffer backend {self.backend}")
+
+    def reshape(self, *dims):
+        import math
+        curr_sz = math.prod(self.shape)
+        new_shape = tuple(*dims)
+        new_sz = math.prod(new_shape)
+        if curr_sz == new_sz:
+            return Buffer(self.buf, new_shape, self.dtype, backend=self.backend, src=self.src, refcount=self.refcount)
+
+    def with_type(self, new_dtype):
+        new_dtype = _resolve_dtype(new_dtype)
+        if isinstance(new_dtype, prickle.DataType):
+            if self.dtype.size() == new_dtype.size():
+                return Buffer(self.buf, self.shape, new_dtype, backend=self.backend, src=self.src, refcount=self.refcount)
+            else:
+                raise RuntimeError(f"Cannot convert between dtypes of different size ({self.dtype} to {new_dtype})")
+        else:
+            raise ValueError(f"Found unsupported data type: {type(new_dtype)}")
