@@ -46,3 +46,5 @@ def axpy_wrap(a, x):
     return y
 
 assert np.allclose(axpy_wrap(a, x), a)
+
+print("Test OK")
