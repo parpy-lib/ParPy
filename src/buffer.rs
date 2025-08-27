@@ -6,6 +6,13 @@ use pyo3::prelude::*;
 use std::collections::BTreeMap;
 use strum_macros::EnumIter;
 
+#[pyclass(eq, frozen)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum ExtType {
+    Scalar(ElemSize),
+    Pointer(ElemSize),
+}
+
 lazy_static! {
     static ref TYPEMAP: BTreeMap<&'static str, ElemSize> = vec![
         ("b1", ElemSize::Bool),
@@ -128,6 +135,14 @@ pub struct DataType {
     pub sz: ElemSize
 }
 
+fn find_byte_order() -> ByteOrder {
+    if cfg!(target_endian = "big") {
+        ByteOrder::BigEndian
+    } else {
+        ByteOrder::LittleEndian
+    }
+}
+
 #[pymethods]
 impl DataType {
     #[new]
@@ -144,6 +159,22 @@ impl DataType {
 
     fn __str__(&self) -> String {
         format!("{0}{1}", self.byteorder.__str__(), self.sz.__str__())
+    }
+
+    #[staticmethod]
+    fn from_ext_type(ty: ExtType) -> PyResult<DataType> {
+        match ty {
+            ExtType::Scalar(sz) => Ok(DataType::from_elem_size(sz)),
+            ExtType::Pointer(_) => {
+                Err(PyRuntimeError::new_err(format!("Pointer type cannot be used as data type")))
+            },
+        }
+    }
+
+    #[staticmethod]
+    fn from_elem_size(sz: ElemSize) -> DataType {
+        let byteorder = find_byte_order();
+        DataType {byteorder, sz}
     }
 
     fn size(&self) -> usize {

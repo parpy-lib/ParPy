@@ -15,13 +15,6 @@ use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::types::{PyCapsule, PyDict};
 
-#[pyclass(eq, frozen)]
-#[derive(Clone, Debug, PartialEq)]
-pub enum ExtType {
-    Scalar(utils::ast::ElemSize),
-    Pointer(utils::ast::ElemSize),
-}
-
 #[pyfunction]
 fn python_to_ir<'py>(
     py_ast: Bound<'py, PyAny>,
@@ -140,7 +133,7 @@ fn parpy(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<utils::ast::ScalarSizes>()?;
     m.add_class::<utils::ast::Target>()?;
     m.add_class::<buffer::DataType>()?;
-    m.add_class::<ExtType>()?;
+    m.add_class::<buffer::ExtType>()?;
     Ok(())
 }
 

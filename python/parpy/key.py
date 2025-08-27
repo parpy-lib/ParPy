@@ -1,12 +1,12 @@
 import hashlib
 
-def generate_function_key(code, opts):
+def _generate_function_key(code, opts):
     s = f"{code}+{opts.includes}+{opts.libs}+{opts.extra_flags}"
     h = hashlib.new("sha256")
     h.update(s.encode("ascii"))
     return h.hexdigest()
 
-def print_argument_key(arg):
+def _print_argument_key(arg):
     from .buffer import Buffer
     if isinstance(arg, dict):
         s = []
@@ -23,15 +23,15 @@ def print_argument_key(arg):
     else:
         return f"{arg}"
 
-def print_arguments_key(args):
-    return "-".join([print_argument_key(arg) for arg in args])
+def _print_arguments_key(args):
+    return "-".join([_print_argument_key(arg) for arg in args])
 
-def print_compile_options_key(opts):
+def _print_compile_options_key(opts):
     return str(opts)
 
-def generate_fast_cache_key(ir_ast, args, opts):
+def _generate_fast_cache_key(ir_ast, args, opts):
     from .parpy import print_ast
-    ir_key = print_ast(ir_ast)
-    args_key = print_arguments_key(args)
-    opts_key = print_compile_options_key(opts)
+    ir_key = _print_ast(ir_ast)
+    args_key = _print_arguments_key(args)
+    opts_key = _print_compile_options_key(opts)
     return f"{ir_key}+{args_key}+{opts_key}"

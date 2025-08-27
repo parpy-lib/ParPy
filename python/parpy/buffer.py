@@ -1,6 +1,6 @@
 import pathlib
 from .parpy import CompileBackend, DataType
-from .runtime import compile_runtime_lib
+from .runtime import _compile_runtime_lib
 
 def _check_errors(lib, rescode):
     if rescode != 0:
@@ -39,19 +39,30 @@ def _to_array_interface(ptr, dtype, shape):
         'version': 3
     }
 
+def _resolve_dtype(dtype):
+    """
+    Resolves the provided dtype - provided to allow users to construct buffers
+    using the more easily accessible types defined in the 'parpy.types' module.
+    """
+    from .types import ExtType
+    if isinstance(dtype, ExtType):
+        return DataType.from_ext_type(dtype)
+    else:
+        return dtype
+
 def sync(backend):
     """
     Synchronizes the CPU and the target device by waiting until all running
     kernels complete.
     """
-    lib = compile_runtime_lib(backend)
+    lib = _compile_runtime_lib(backend)
     _check_errors(lib, lib.parpy_sync())
 
 class Buffer:
     def __init__(self, buf, shape, dtype, backend=None, src_ptr=None):
         self.buf = buf
-        self.shape = shape
-        self.dtype = dtype
+        self.shape = tuple(shape)
+        self.dtype = _resolve_dtype(dtype)
         self.backend = backend
         self.src_ptr = src_ptr
 
@@ -62,7 +73,7 @@ class Buffer:
             cuda_intf = _to_array_interface(self.buf, self.dtype, self.shape)
             setattr(self, "__cuda_array_interface__", cuda_intf)
         elif self.backend == CompileBackend.Metal:
-            lib = compile_runtime_lib(self.backend)
+            lib = _compile_runtime_lib(self.backend)
             self.ptr = lib.parpy_ptr_buffer(self.buf)
             arr_intf = _to_array_interface(self.ptr, self.dtype, self.shape)
             setattr(self, "__array_interface__", arr_intf)
@@ -78,12 +89,12 @@ class Buffer:
             for sh in self.shape:
                 nbytes *= sh
             if self.backend == CompileBackend.Cuda:
-                lib = compile_runtime_lib(self.backend)
+                lib = _compile_runtime_lib(self.backend)
                 if self.src_ptr is not None:
                     _check_errors(lib, lib.parpy_memcpy(self.src_ptr, self.buf, nbytes, 2))
                     _check_errors(lib, lib.parpy_free_buffer(self.buf))
             elif self.backend == CompileBackend.Metal:
-                lib = compile_runtime_lib(self.backend)
+                lib = _compile_runtime_lib(self.backend)
                 # Need to wait for kernels to complete before we copy data.
                 _check_errors(lib, lib.sync())
                 if self.src_ptr is not None:
@@ -150,7 +161,7 @@ class Buffer:
             raise RuntimeError(f"Cannot convert argument {t} to CUDA buffer")
 
         nbytes = reduce(mul, shape, 1) * dtype.size()
-        lib = compile_runtime_lib(CompileBackend.Cuda)
+        lib = _compile_runtime_lib(CompileBackend.Cuda)
         ptr = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
         _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, nbytes, 1))
         return Buffer(ptr, shape, dtype, CompileBackend.Cuda, data_ptr)
@@ -165,7 +176,7 @@ class Buffer:
         else:
             raise RuntimeError(f"Cannot convert argument {t} to Metal buffer")
 
-        lib = compile_runtime_lib(CompileBackend.Metal)
+        lib = _compile_runtime_lib(CompileBackend.Metal)
         nbytes = reduce(mul, shape, 1) * dtype.size()
         buf = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
         ptr = lib.parpy_ptr_buffer(buf)
@@ -192,7 +203,7 @@ class Buffer:
             a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
             shape, dtype, data_ptr = _check_array_interface(a.__array_interface__)
             nbytes = reduce(mul, shape, 1) * dtype.size()
-            lib = compile_runtime_lib(self.backend)
+            lib = _compile_runtime_lib(self.backend)
             _check_errors(lib, lib.parpy_memcpy(data_ptr, self.buf, nbytes, 2))
             return a
         elif self.backend == CompileBackend.Metal:

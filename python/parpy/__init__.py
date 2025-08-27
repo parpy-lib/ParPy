@@ -100,7 +100,7 @@ def _check_kwargs(kwargs):
 
 def _compile_function(ir_ast, args, opts):
     from .compile import build_shared_library, get_wrapper
-    from .key import generate_fast_cache_key, generate_function_key
+    from .key import _generate_fast_cache_key, _generate_function_key
 
     # Extract the name of the main function in the IR AST.
     name = parpy.get_function_name(ir_ast)
@@ -109,7 +109,7 @@ def _compile_function(ir_ast, args, opts):
     # compile options. If this key is found in the cache, we have already
     # compiled the function in this way before, so we return the cached wrapper
     # function.
-    fast_cache_key = generate_fast_cache_key(ir_ast, args, opts)
+    fast_cache_key = _generate_fast_cache_key(ir_ast, args, opts)
     if fast_cache_key in _fun_cache:
         return _fun_cache[fast_cache_key]
 
@@ -120,7 +120,7 @@ def _compile_function(ir_ast, args, opts):
 
     # If the shared library corresponding to the generated code does not exist,
     # we run the underlying compiler to produce a shared library.
-    cache_key = generate_function_key(unsymb_code, opts)
+    cache_key = _generate_function_key(unsymb_code, opts)
     build_shared_library(cache_key, code, opts)
 
     # Return a wrapper function which ensures the arguments are correctly
@@ -164,11 +164,11 @@ def compile_string(fun_name, code, opts=CompileOptions()):
     entry point function with the specified name.
     """
     from .compile import build_shared_library, get_wrapper
-    from .key import generate_fast_cache_key, generate_function_key
+    from .key import _generate_function_key
     from .validate import check_arguments
     import functools
-    opts = backend.resolve_backend(opts, True)
-    cache_key = "string_" + generate_function_key(code, opts)
+    opts = backend._resolve_backend(opts, True)
+    cache_key = "string_" + _generate_function_key(code, opts)
     build_shared_library(cache_key, code, opts)
     fn = get_wrapper(fun_name, cache_key, opts)
     @functools.wraps(fn)
@@ -186,7 +186,7 @@ def print_compiled(fun, args, opts=CompileOptions()):
     """
     from .validate import check_arguments
     import inspect
-    opts = backend.resolve_backend(opts, False)
+    opts = backend._resolve_backend(opts, False)
     if fun in _ir_asts:
         ir_ast = _ir_asts[fun]
     else:
@@ -236,7 +236,7 @@ def jit(fun):
 
     @functools.wraps(fun)
     def inner(*args, **kwargs):
-        opts = backend.resolve_backend(_check_kwargs(kwargs), True)
+        opts = backend._resolve_backend(_check_kwargs(kwargs), True)
         callbacks, args = check_arguments(args, opts, True)
         # If the user explicitly requests sequential execution by setting the 'seq'
         # keyword argument to True, we call the original Python function.

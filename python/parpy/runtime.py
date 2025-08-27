@@ -75,7 +75,7 @@ def _compile_metal_runtime_lib():
     lib.parpy_init(DEFAULT_METAL_COMMAND_QUEUE_SIZE)
     return lib
 
-def compile_runtime_lib(backend):
+def _compile_runtime_lib(backend):
     """
     Compiles the runtime library for a backend unless it has already been
     compiled.
