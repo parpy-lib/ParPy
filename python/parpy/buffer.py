@@ -41,7 +41,7 @@ def _to_array_interface(ptr, dtype, shape):
 
 def _extract_array_interface(a, allow_cuda=False):
     if allow_cuda and hasattr(a, "__cuda_array_interface__"):
-        return _check_array_interface(a.__cuda_array_interface_)
+        return _check_array_interface(a.__cuda_array_interface__)
     elif hasattr(a, "__array_interface__"):
         return _check_array_interface(a.__array_interface__)
     elif hasattr(a, "__array__"):

@@ -1,7 +1,7 @@
 import importlib
 import numpy as np
 import parpy
-from parpy.operators import int16, exp, float32, inf, log, max
+from parpy.operators import int16, exp, float32, inf, log, max, sum
 import pytest
 import torch
 
@@ -152,12 +152,12 @@ def forward_kernel(hmm, seqs, alpha1, alpha2, result):
             alpha = alpha1
 
         parpy.label('state')
-        maxp = parpy_ops.max(alpha[inst, :])
+        maxp = max(alpha[inst, :])
 
         parpy.label('state')
-        psum = parpy_ops.sum(parpy_ops.exp(alpha[inst, :] - maxp))
+        psum = sum(exp(alpha[inst, :] - maxp))
 
-        result[inst] = maxp + parpy_ops.log(psum)
+        result[inst] = maxp + log(psum)
 
 def forward(hmm, seqs, opts):
     alpha1 = torch.zeros((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32)
