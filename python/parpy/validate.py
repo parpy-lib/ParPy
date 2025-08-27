@@ -39,7 +39,7 @@ def check_arg(arg, i, in_dict, opts, execute):
         # will not be executed, we do not copy data so we can generate code for
         # a backend even if it is not available.
         if not execute:
-            buf = Buffer.from_array(arg)
+            buf = Buffer.from_array(arg, None)
         elif opts.seq:
             return [], np.asarray(arg)
         else:
