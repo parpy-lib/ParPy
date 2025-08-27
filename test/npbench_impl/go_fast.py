@@ -1,13 +1,14 @@
 # https://numba.readthedocs.io/en/stable/user/5minguide.html
 
 import parpy
+from parpy.operators import tanh
 import torch
 
 @parpy.jit
 def parpy_kernel(a, tmp, out, N):
     parpy.label('i')
     for i in range(N):
-        tmp[0] += parpy.tanh(a[i,i])
+        tmp[0] += tanh(a[i,i])
     parpy.label('ix')
     parpy.label('j')
     out[:,:] = a[:,:] + tmp[0]

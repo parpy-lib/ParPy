@@ -4,6 +4,7 @@ from math import inf
 import os
 import pandas as pd
 import parpy
+import parpy.operators as parpy_ops
 import pytest
 import statistics
 import sys
@@ -113,10 +114,10 @@ def forward_step_inst(hmm, seqs, alpha1, alpha2, inst, t):
             # Transitively inlined version of forward_prob_predecessors.
             num_kmers = hmm["num_states"] // 16
 
-            pred1 = parpy.int32((state // 4) % (hmm["num_states"] // 64))
-            pred2 = parpy.int32(hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
-            pred3 = parpy.int32(2 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
-            pred4 = parpy.int32(3 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
+            pred1 = parpy_ops.int32((state // 4) % (hmm["num_states"] // 64))
+            pred2 = parpy_ops.int32(hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
+            pred3 = parpy_ops.int32(2 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
+            pred4 = parpy_ops.int32(3 * hmm["num_states"] // 64 + (state // 4) % (hmm["num_states"] // 64))
             t11 = hmm["trans1"][pred1 % num_kmers, state % 4]
             t12 = hmm["trans1"][pred2 % num_kmers, state % 4]
             t13 = hmm["trans1"][pred3 % num_kmers, state % 4]
@@ -127,8 +128,8 @@ def forward_step_inst(hmm, seqs, alpha1, alpha2, inst, t):
             p3 = t13 + t2 + alpha_src[inst, pred3]
             p4 = t14 + t2 + alpha_src[inst, pred4]
 
-            pred5 = parpy.int32(0)
-            p5 = parpy.float32(0.0)
+            pred5 = parpy_ops.int32(0)
+            p5 = parpy_ops.float32(0.0)
             if state // num_kmers == 15:
                 pred5 = state
                 p5 = hmm["gamma"]
@@ -137,16 +138,22 @@ def forward_step_inst(hmm, seqs, alpha1, alpha2, inst, t):
                 p5 = hmm["synthetic_248"]
             else:
                 pred5 = ((state // num_kmers) + 1) * num_kmers + state % num_kmers
-                p5 = parpy.float32(0.0)
+                p5 = parpy_ops.float32(0.0)
             p5 = p5 + alpha_src[inst, pred5]
 
             # Inlined version of log_sum_exp.
-            maxp = parpy.max(p1, p2)
-            maxp = parpy.max(maxp, p3)
-            maxp = parpy.max(maxp, p4)
-            maxp = parpy.max(maxp, p5)
-            lsexp = maxp + parpy.log(parpy.exp(p1 - maxp) + parpy.exp(p2 - maxp) + parpy.exp(p3 - maxp) + parpy.exp(p4 - maxp) + parpy.exp(p5 - maxp))
-            lsexp = parpy.max(lsexp, parpy.float32(-parpy.inf))
+            maxp = parpy_ops.max(p1, p2)
+            maxp = parpy_ops.max(maxp, p3)
+            maxp = parpy_ops.max(maxp, p4)
+            maxp = parpy_ops.max(maxp, p5)
+            lsexp = maxp + parpy_ops.log(
+                parpy_ops.exp(p1 - maxp) +
+                parpy_ops.exp(p2 - maxp) +
+                parpy_ops.exp(p3 - maxp) +
+                parpy_ops.exp(p4 - maxp) +
+                parpy_ops.exp(p5 - maxp)
+            )
+            lsexp = parpy_ops.max(lsexp, parpy_ops.float32(-parpy_ops.inf))
 
             alpha_dst[inst, state] = lsexp + hmm["output_prob"][o, state % num_kmers]
 
@@ -158,12 +165,12 @@ def forward_lse_inst(hmm, seqs, result, alpha1, alpha2, inst):
         alpha = alpha1
 
     parpy.label('state')
-    maxp = parpy.max(alpha[inst, :], axis=0)
+    maxp = parpy_ops.max(alpha[inst, :], axis=0)
 
     parpy.label('state')
-    psum = parpy.sum(parpy.exp(alpha[inst, :] - maxp), axis=0)
+    psum = parpy_ops.sum(parpy_ops.exp(alpha[inst, :] - maxp), axis=0)
 
-    result[inst] = maxp + parpy.log(psum)
+    result[inst] = maxp + parpy_ops.log(psum)
 
 @parpy.jit
 def forward_kernel(hmm, seqs, result, alpha1, alpha2):

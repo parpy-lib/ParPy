@@ -1,4 +1,5 @@
 import parpy
+from parpy.operators import exp
 import torch
 
 @parpy.jit
@@ -52,17 +53,17 @@ def deriche(alpha, img_in, opts, compile_only=False):
     y2 = torch.empty_like(img_in)
     img_out = torch.empty_like(img_in)
     W, H = img_in.shape
-    k = (1.0 - parpy.exp(-alpha)) * (1.0 - parpy.exp(-alpha)) / (
-        1.0 + alpha * parpy.exp(-alpha) - parpy.exp(2.0 * alpha))
+    k = (1.0 - exp(-alpha)) * (1.0 - exp(-alpha)) / (
+        1.0 + alpha * exp(-alpha) - exp(2.0 * alpha))
     a = torch.empty(8, dtype=y1.dtype)
     b = torch.empty(2, dtype=y1.dtype)
     c = torch.empty_like(b)
     a[0] = a[4] = k
-    a[1] = a[5] = k * parpy.exp(-alpha) * (alpha - 1.0)
-    a[2] = a[6] = k * parpy.exp(-alpha) * (alpha + 1.0)
-    a[3] = a[7] = -k * parpy.exp(-2.0 * alpha)
+    a[1] = a[5] = k * exp(-alpha) * (alpha - 1.0)
+    a[2] = a[6] = k * exp(-alpha) * (alpha + 1.0)
+    a[3] = a[7] = -k * exp(-2.0 * alpha)
     b[0] = 2.0**(-alpha)
-    b[1] = -parpy.exp(-2.0 * alpha)
+    b[1] = -exp(-2.0 * alpha)
     c[0] = c[1] = 1.0
     if compile_only:
         args = [a, b, c, img_in, img_out, y1, y2, W, H]

@@ -1,6 +1,7 @@
 # Copyright 2021 ETH Zurich and the NPBench authors. All rights reserved.
 
 import parpy
+from parpy.operators import sum
 import torch
 
 @parpy.jit
@@ -29,8 +30,8 @@ def scattering_self_energies_kernel(neigh_idx, dH, G, D, Sigma, dHG, dHD, Nkz,
 
                                             # first complex row/column matrix
                                             # multiplication
-                                            t1 = parpy.sum(G[k,E-w,idx,x,:,0] * dH[a,b,i,:,y,z])
-                                            t2 = parpy.sum(G[k,E-w,idx,x,:,1] * dH[a,b,i,:,y,z_inv])
+                                            t1 = sum(G[k,E-w,idx,x,:,0] * dH[a,b,i,:,y,z])
+                                            t2 = sum(G[k,E-w,idx,x,:,1] * dH[a,b,i,:,y,z_inv])
                                             dHG[k,E,a,x,y,z] = t1 + t2 * sign
 
                                             # complex elementwise multiplication
@@ -46,8 +47,8 @@ def scattering_self_energies_kernel(neigh_idx, dH, G, D, Sigma, dHG, dHD, Nkz,
                                             sign = -1.0 if z == 0 else 1.0
 
                                             # second complex matrix multiply
-                                            t1 = parpy.sum(dHG[k,E,a,x,:,0] * dHD[k,E,a,:,y,z])
-                                            t2 = parpy.sum(dHG[k,E,a,x,:,1] * dHD[k,E,a,:,y,z_inv])
+                                            t1 = sum(dHG[k,E,a,x,:,0] * dHD[k,E,a,:,y,z])
+                                            t2 = sum(dHG[k,E,a,x,:,1] * dHD[k,E,a,:,y,z_inv])
                                             Sigma[k,E,a,x,y,z] += t1 + t2 * sign
                                     else:
                                         # Dummy else-branch to balance

@@ -1,4 +1,5 @@
 import parpy
+from parpy.operators import sum
 import torch
 
 @parpy.jit
@@ -7,7 +8,7 @@ def parpy_kernel(corr, data, M):
     for i in range(M-1):
         parpy.label('j')
         for j in range(i+1, M):
-            corr[i, j] = parpy.sum(data[:, i] * data[:, j])
+            corr[i, j] = sum(data[:, i] * data[:, j])
             corr[j, i] = corr[i, j]
 
 def correlation(M, float_n, data, opts, compile_only=False):

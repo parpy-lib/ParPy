@@ -16,7 +16,7 @@ backend = parpy.CompileBackend.Cuda
 def col_sum(x, y, N):
     parpy.label('N')
     for i in range(N):
-        y[i] = parpy.sum(x[i, :])
+        y[i] = parpy.operators.sum(x[i, :])
 
 # The 'cuda_fp16.h' header should only be included when we are using 16-bit
 # floats.

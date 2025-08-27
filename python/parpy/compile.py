@@ -55,7 +55,7 @@ def _build_cuda_shared_library(key, source, opts):
 
 def _build_metal_shared_library(key, source, opts):
     from .parpy import CompileBackend
-    from .runtime import compile_runtime_lib
+    from .runtime import _compile_runtime_lib
     from .runtime import PARPY_NATIVE_PATH, PARPY_METAL_BASE_LIB_PATH
     import subprocess
     import tempfile
@@ -63,7 +63,7 @@ def _build_metal_shared_library(key, source, opts):
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
-        compile_runtime_lib(CompileBackend.Metal)
+        _compile_runtime_lib(CompileBackend.Metal)
         metal_cpp_path = os.getenv("METAL_CPP_HEADER_PATH")
         includes = opts.includes + [metal_cpp_path, str(PARPY_NATIVE_PATH)]
         frameworks = ["-framework", "Metal", "-framework", "Foundation", "-framework", "MetalKit"]

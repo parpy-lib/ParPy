@@ -9,6 +9,7 @@
 # 7th European Conference on Python in Science (EuroSciPy 2014).
 
 import parpy
+from parpy.operators import float32, float64, max
 import pytest
 import torch
 
@@ -16,11 +17,11 @@ import torch
 def parpy_kernel_32bit(data, radius, res, rmax, npt, N):
     parpy.label('ix')
     for i in range(N):
-        rmax[0] = parpy.max(rmax[0], radius[i])
+        rmax[0] = max(rmax[0], radius[i])
     parpy.label('i')
     for i in range(npt):
-        r1 = rmax[0] * parpy.float32(i) / parpy.float32(npt)
-        r2 = rmax[0] * parpy.float32(i+1) / parpy.float32(npt)
+        r1 = rmax[0] * float32(i) / float32(npt)
+        r2 = rmax[0] * float32(i+1) / float32(npt)
         c = 0.0
         parpy.label('j')
         for j in range(N):
@@ -39,11 +40,11 @@ def parpy_kernel_32bit(data, radius, res, rmax, npt, N):
 def parpy_kernel(data, radius, res, rmax, npt, N):
     parpy.label('ix')
     for i in range(N):
-        rmax[0] = parpy.max(rmax[0], radius[i])
+        rmax[0] = max(rmax[0], radius[i])
     parpy.label('i')
     for i in range(npt):
-        r1 = rmax[0] * parpy.float64(i) / parpy.float64(npt)
-        r2 = rmax[0] * parpy.float64(i+1) / parpy.float64(npt)
+        r1 = rmax[0] * float64(i) / float64(npt)
+        r2 = rmax[0] * float64(i+1) / float64(npt)
         c = 0.0
         parpy.label('j')
         for j in range(N):

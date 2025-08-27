@@ -1,6 +1,7 @@
 from enum import Enum
 import math
 import parpy
+import parpy.operators
 import pytest
 import numpy as np
 
@@ -82,12 +83,12 @@ def parpy_aug_ops(dst, a, b):
 @parpy.jit
 def parpy_max(dst, a, b):
     with parpy.gpu:
-        dst[0] = parpy.max(a[0], b[0])
+        dst[0] = parpy.operators.max(a[0], b[0])
 
 @parpy.jit
 def parpy_min(dst, a, b):
     with parpy.gpu:
-        dst[0] = parpy.min(a[0], b[0])
+        dst[0] = parpy.operators.min(a[0], b[0])
 
 def arith_binop_dtype(fn, ldtype, rdtype, compile_only, backend):
     a = np.random.randint(1, 10, (1,)).astype(ldtype)
@@ -215,27 +216,27 @@ def test_bin_arith_mixed_types(fn, dtypes, backend):
 @parpy.jit
 def parpy_cos(dst, src):
     with parpy.gpu:
-        dst[0] = parpy.cos(src[0])
+        dst[0] = parpy.operators.cos(src[0])
 
 @parpy.jit
 def parpy_sin(dst, src):
     with parpy.gpu:
-        dst[0] = parpy.sin(src[0])
+        dst[0] = parpy.operators.sin(src[0])
 
 @parpy.jit
 def parpy_tanh(dst, src):
     with parpy.gpu:
-        dst[0] = parpy.tanh(src[0])
+        dst[0] = parpy.operators.tanh(src[0])
 
 @parpy.jit
 def parpy_atan2(dst, src):
     with parpy.gpu:
-        dst[0] = parpy.atan2(src[0], src[0])
+        dst[0] = parpy.operators.atan2(src[0], src[0])
 
 @parpy.jit
 def parpy_sqrt(dst, src):
     with parpy.gpu:
-        dst[0] = parpy.sqrt(src[0])
+        dst[0] = parpy.operators.sqrt(src[0])
 
 def arith_unop_dtype(fn, dtype, compile_only, backend):
     src = np.array([0.5], dtype=dtype)

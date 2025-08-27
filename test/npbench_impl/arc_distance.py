@@ -27,17 +27,19 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import parpy
+from parpy.operators import atan2, cos, sin, sqrt
+import parpy.operators as ppops
 import torch
 
 @parpy.jit
 def kernel(theta_1, phi_1, theta_2, phi_2, distance_matrix, N):
     parpy.label('i')
     for i in range(N):
-        a = parpy.sin((theta_2[i] - theta_1[i]) / 2.0) ** 2.0
-        b = parpy.cos(theta_1[i]) * parpy.cos(theta_2[i]) * \
-            parpy.sin((phi_2[i] - phi_1[i]) / 2.0) ** 2.0
+        a = sin((theta_2[i] - theta_1[i]) / 2.0) ** 2.0
+        b = cos(theta_1[i]) * cos(theta_2[i]) * \
+            sin((phi_2[i] - phi_1[i]) / 2.0) ** 2.0
         temp = a + b
-        distance_matrix[i] = 2.0 * (parpy.atan2(parpy.sqrt(temp), parpy.sqrt(1.0 - temp)))
+        distance_matrix[i] = 2.0 * (atan2(sqrt(temp), sqrt(1.0 - temp)))
 
 def arc_distance(theta_1, phi_1, theta_2, phi_2, opts, compile_only=False):
     """

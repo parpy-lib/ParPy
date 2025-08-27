@@ -1,10 +1,11 @@
 import parpy
+from parpy.operators import int32
 import torch
 
 @parpy.jit
 def crc16_kernel(data, poly, N, out):
     with parpy.gpu:
-        crc = parpy.int32(0xFFFF)
+        crc = int32(0xFFFF)
         for j in range(N):
             b = data[j]
             cur_byte = 0xFF & b

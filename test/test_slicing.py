@@ -29,7 +29,7 @@ def matmul_slice(a, b, M, N, c):
         parpy.label('N')
         for j in range(N):
             parpy.label('K')
-            c[i,j] = parpy.sum(a[i,:] * b[:,j])
+            c[i,j] = parpy.operators.sum(a[i,:] * b[:,j])
 
 @parpy.jit
 def jacobi_1d(nsteps, A, B):
@@ -49,13 +49,13 @@ def slice_assignment(x):
 def slice_multi_dim_sum(x, out):
     with parpy.gpu:
         parpy.label('N')
-        out[0] = parpy.sum(x[:,:])
+        out[0] = parpy.operators.sum(x[:,:])
 
 @parpy.jit
 def slice_multi_dim_interspersed_sum(x, out):
     with parpy.gpu:
         parpy.label('N')
-        out[0] = parpy.sum(x[:,0,:,2])
+        out[0] = parpy.operators.sum(x[:,0,:,2])
 
 @parpy.jit
 def slice_assign_to_new_var(x):
@@ -65,25 +65,25 @@ def slice_assign_to_new_var(x):
 @parpy.jit
 def slice_assign_invalid_dims(x, y):
     with parpy.gpu:
-        y[:] = parpy.sum(x[:,:,:], axis=0)
+        y[:] = parpy.operators.sum(x[:,:,:], axis=0)
 
 @parpy.jit
 def slice_reduce_incompatible_shapes(x, y, out):
     with parpy.gpu:
-        out[0] = parpy.sum(x[:,:] * y[:], axis=0)
+        out[0] = parpy.operators.sum(x[:,:] * y[:], axis=0)
 
 @parpy.jit
 def slice_reduce_in_loop(x, y, N, out):
     parpy.label('N')
     for i in range(N):
         parpy.label('M')
-        out[i] = parpy.sum(x[i,:] * y[:,i])
+        out[i] = parpy.operators.sum(x[i,:] * y[:,i])
 
 @parpy.jit
 def slice_invalid_reduce_assignment(x, y, z, N):
     parpy.label('N')
     for i in range(N):
-        x[i,:] = parpy.min(y[i,:] + z[:,i])
+        x[i,:] = parpy.operators.min(y[i,:] + z[:,i])
 
 @parpy.jit
 def slice_invalid_dims(x, y, N):
@@ -94,7 +94,7 @@ def slice_invalid_dims(x, y, N):
 @parpy.jit
 def slice_in_range(x, y):
     parpy.label('N')
-    for i in range(parpy.sum(y[:])):
+    for i in range(parpy.operators.sum(y[:])):
         x[i] = i
 
 @parpy.jit

@@ -46,7 +46,7 @@ def is_enabled(backend, verbose=False):
 # every time we want to resolve the available backends.
 available = [b for b in backends if is_enabled(b, False)]
 
-def resolve_backend(opts, strict):
+def _resolve_backend(opts, strict):
     """
     If the provided options specify the backend as `CompileBackend.Auto`, this
     function attempts to resolve it by finding a uniquely supported backend. If
