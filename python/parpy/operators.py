@@ -1,7 +1,6 @@
 from builtins import abs
 from numpy import cos, exp, inf, log, sin, sqrt, tanh
 from numpy import arctan2 as atan2
-import builtins
 import numpy as np
 import contextlib
 

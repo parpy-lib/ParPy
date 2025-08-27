@@ -194,7 +194,7 @@ class Buffer:
         _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, nbytes, 1))
         return Buffer(buf, shape, dtype, CompileBackend.Metal, src=t)
 
-    def from_array(t, backend=None):
+    def from_array(t, backend):
         if backend is None:
             return Buffer._from_array_cpu(t)
         if backend == CompileBackend.Cuda:
@@ -231,6 +231,8 @@ class Buffer:
         new_sz = math.prod(new_shape)
         if curr_sz == new_sz:
             return Buffer(self.buf, new_shape, self.dtype, backend=self.backend, src=self.src, refcount=self.refcount)
+        else:
+            raise ValueError(f"Cannot reshape buffer of shape {self.shape} to {new_shape}")
 
     def with_type(self, new_dtype):
         new_dtype = _resolve_dtype(new_dtype)

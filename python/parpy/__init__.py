@@ -4,7 +4,7 @@ from . import buffer
 from . import operators
 from . import types
 
-from .parpy import par, seq, CompileBackend, CompileOptions, Target
+from .parpy import par, seq, CompileBackend, CompileOptions, ElemSize, Target
 from .buffer import sync
 from .operators import gpu, label
 
@@ -200,6 +200,10 @@ def print_compiled(fun, args, opts=CompileOptions()):
     return code
 
 def external(ext_name, backend, target, header=None, parallelize=parpy.LoopPar()):
+    """
+    Decorator used to indicate that the associated function refers to an
+    externally defined function.
+    """
     import inspect
     globs = inspect.currentframe().f_back.f_globals
     locs = inspect.currentframe().f_back.f_locals
