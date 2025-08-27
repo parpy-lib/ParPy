@@ -209,7 +209,7 @@ def external(ext_name, backend, target, header=None, parallelize=parpy.LoopPar()
 
         @functools.wraps(fn)
         def inner(*args):
-            return fun(*args)
+            return fn(*args)
         _validate_external_type(target, backend, parallelize)
         ext_decl = _declare_external(fn, ext_name, target, header, parallelize, vars)
         if not backend in _ext_decls:
