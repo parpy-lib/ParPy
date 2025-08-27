@@ -9,7 +9,7 @@ def normalize_rows(t, nrows, ncols):
     parpy.label('i')
     for i in range(nrows):
         parpy.label('j1')
-        s = parpy.sum(t[i, :])
+        s = parpy.operators.sum(t[i, :])
 
         parpy.label('j2')
         t[i, :] /= s
@@ -47,7 +47,7 @@ def test_normalize_multirow(backend):
 def normalize_rows_no_annot(t, nrows, ncols):
     parpy.label('i')
     for i in range(nrows):
-        s = parpy.float32(0.0)
+        s = parpy.operators.float32(0.0)
         parpy.label('j1')
         for j in range(ncols):
             s = s + t[i, j]

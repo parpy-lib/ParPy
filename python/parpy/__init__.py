@@ -1,11 +1,12 @@
 from . import parpy
 from . import backend
 from . import buffer
+from . import operators
 from . import types
 
 from .parpy import par, seq, CompileBackend, CompileOptions, Target
 from .buffer import sync
-from .operators import *
+from .operators import gpu, label
 
 __version__ = "0.1.0"
 
@@ -34,7 +35,7 @@ def _get_source_code(fn):
     # The Python AST parser requires properly indented code. Therefore, we make
     # sure to dedent it properly in case it is a nested function, including
     # removing any documentation strings that may prevent proper dedentation.
-    col_ofs = builtins.sum(1 for _ in itertools.takewhile(str.isspace, src[0]))
+    col_ofs = sum(1 for _ in itertools.takewhile(str.isspace, src[0]))
     src = textwrap.dedent("".join(src))
     if inspect.getdoc(fn) is not None:
         src = inspect.cleandoc(src)
@@ -42,7 +43,6 @@ def _get_source_code(fn):
 
 def _convert_python_function_to_ir(fn, vars):
     import ast as python_ast
-    import builtins
     import inspect
     import itertools
     filepath = inspect.getfile(fn)

@@ -1,4 +1,5 @@
 import parpy
+from parpy.operators import sqrt, sum
 import torch
 
 @parpy.jit
@@ -6,14 +7,14 @@ def parpy_kernel(A, R, Q, M, N):
     for k in range(N):
         with parpy.gpu:
             parpy.label('i_reduce')
-            nrm = parpy.sum(A[:,k] * A[:,k])
-            R[k,k] = parpy.sqrt(nrm)
+            nrm = sum(A[:,k] * A[:,k])
+            R[k,k] = sqrt(nrm)
         parpy.label('i')
         Q[:,k] = A[:,k] / R[k,k]
         parpy.label('j')
         for j in range(k+1, N):
             parpy.label('i_reduce')
-            R[k,j] = parpy.sum(Q[:,k] * A[:,j])
+            R[k,j] = sum(Q[:,k] * A[:,j])
 
         parpy.label('j')
         for j in range(k+1, N):

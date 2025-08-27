@@ -1,4 +1,5 @@
 import parpy
+from parpy.operators import sum
 import torch
 
 
@@ -8,7 +9,7 @@ def covariance_parpy(cov, data, float_n, M):
     for i in range(M):
         parpy.label('j')
         for j in range(i, M):
-            s = parpy.sum(data[:, i] * data[:, j])
+            s = sum(data[:, i] * data[:, j])
             cov[i, j] = s / (float_n - 1.0)
             cov[j, i] = cov[i, j]
 

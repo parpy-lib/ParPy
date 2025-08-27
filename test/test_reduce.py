@@ -14,76 +14,76 @@ def sum_rows(x, out, N):
     parpy.label('outer')
     for i in range(N):
         parpy.label('inner')
-        out[i] = parpy.sum(x[i,:])
+        out[i] = parpy.operators.sum(x[i,:])
 
 @parpy.jit
 def prod_rows(x, out, N):
     parpy.label('outer')
     for i in range(N):
         parpy.label('inner')
-        out[i] = parpy.prod(x[i,:])
+        out[i] = parpy.operators.prod(x[i,:])
 
 @parpy.jit
 def max_rows(x, out, N):
     parpy.label('outer')
     for i in range(N):
         parpy.label('inner')
-        out[i] = parpy.max(x[i,:])
+        out[i] = parpy.operators.max(x[i,:])
 
 @parpy.jit
 def min_rows(x, out, N):
     parpy.label('outer')
     for i in range(N):
         parpy.label('inner')
-        out[i] = parpy.min(x[i,:])
+        out[i] = parpy.operators.min(x[i,:])
 
 @parpy.jit
 def sum_axis(x, out, N):
     parpy.label('outer')
     parpy.label('inner')
-    out[:] = parpy.sum(x[:,:], axis=1)
+    out[:] = parpy.operators.sum(x[:,:], axis=1)
 
 @parpy.jit
 def prod_axis(x, out, N):
     parpy.label('outer')
     parpy.label('inner')
-    out[:] = parpy.prod(x[:,:], axis=1)
+    out[:] = parpy.operators.prod(x[:,:], axis=1)
 
 @parpy.jit
 def max_axis(x, out, N):
     parpy.label('outer')
     parpy.label('inner')
-    out[:] = parpy.max(x[:,:], axis=1)
+    out[:] = parpy.operators.max(x[:,:], axis=1)
 
 @parpy.jit
 def min_axis(x, out, N):
     parpy.label('outer')
     parpy.label('inner')
-    out[:] = parpy.min(x[:,:], axis=1)
+    out[:] = parpy.operators.min(x[:,:], axis=1)
 
 @parpy.jit
 def sum_2d(x, out, N):
     with parpy.gpu:
         parpy.label('outer')
-        out[0] = parpy.sum(x[:,:])
+        out[0] = parpy.operators.sum(x[:,:])
 
 @parpy.jit
 def prod_2d(x, out, N):
     with parpy.gpu:
         parpy.label('outer')
-        out[0] = parpy.prod(x[:,:])
+        out[0] = parpy.operators.prod(x[:,:])
 
 @parpy.jit
 def max_2d(x, out, N):
     with parpy.gpu:
         parpy.label('outer')
-        out[0] = parpy.max(x[:,:])
+        out[0] = parpy.operators.max(x[:,:])
 
 @parpy.jit
 def min_2d(x, out, N):
     with parpy.gpu:
         parpy.label('outer')
-        out[0] = parpy.min(x[:,:])
+        out[0] = parpy.operators.min(x[:,:])
 
 def reduce_wrap(reduce_fn, x, opts):
     N, M = x.shape

@@ -14,13 +14,13 @@ def softmax(x, N, M, out):
     parpy.label('N')
     for i in range(N):
         parpy.label('M')
-        m = parpy.max(x[i,:])
+        m = parpy.operators.max(x[i,:])
 
         parpy.label('M')
-        out[i,:] = parpy.exp(x[i,:] - m)
+        out[i,:] = parpy.operators.exp(x[i,:] - m)
 
         parpy.label('M')
-        s = parpy.sum(out[i,:])
+        s = parpy.operators.sum(out[i,:])
 
         parpy.label('M')
         out[i,:] = out[i,:] / s

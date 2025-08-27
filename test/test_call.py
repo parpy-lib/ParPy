@@ -30,7 +30,7 @@ def parpy_add_mul_nested(x, y, N):
 @parpy.jit
 def parpy_sum_call(x, y):
     with parpy.gpu:
-        y[0] = parpy.sum(x[:])
+        y[0] = parpy.operators.sum(x[:])
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_direct_call_expr(backend):

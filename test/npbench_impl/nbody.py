@@ -2,6 +2,7 @@
 # TODO: Add GPL-3.0 License
 
 import parpy
+from parpy.operators import sqrt, sum
 import torch
 """
 Create Your Own N-body Simulation (With Python)
@@ -34,17 +35,17 @@ def getAcc_kernel(pos, mass, G, softening, dx, dy, dz, inv_r3, a, N):
     parpy.label('N')
     for i in range(0, N):
         parpy.label('reduce')
-        a[i,0] = parpy.sum(G * (dx[i,:] * inv_r3[i,:]) * mass[:,0])
+        a[i,0] = sum(G * (dx[i,:] * inv_r3[i,:]) * mass[:,0])
         parpy.label('reduce')
-        a[i,1] = parpy.sum(G * (dy[i,:] * inv_r3[i,:]) * mass[:,0])
+        a[i,1] = sum(G * (dy[i,:] * inv_r3[i,:]) * mass[:,0])
         parpy.label('reduce')
-        a[i,2] = parpy.sum(G * (dz[i,:] * inv_r3[i,:]) * mass[:,0])
+        a[i,2] = sum(G * (dz[i,:] * inv_r3[i,:]) * mass[:,0])
 
 @parpy.jit
 def getEnergy_kernel(pos, vel, mass, G, KE, PE, dx, dy, dz, inv_r, tmp, N):
     with parpy.gpu:
         parpy.label('i')
-        KE[0] = parpy.sum(mass[:,0] * (vel[:,0]**2.0 + vel[:,1]**2.0 + vel[:,2]**2.0))
+        KE[0] = sum(mass[:,0] * (vel[:,0]**2.0 + vel[:,1]**2.0 + vel[:,2]**2.0))
         KE[0] *= 0.5
 
     parpy.label('N2')
@@ -59,7 +60,7 @@ def getEnergy_kernel(pos, vel, mass, G, KE, PE, dx, dy, dz, inv_r, tmp, N):
     for ij in range(N*N):
         i = ij // N
         j = ij % N
-        inv_r[i,j] = parpy.sqrt(dx[i,j]**2.0 + dy[i,j]**2.0 + dz[i,j]**2.0)
+        inv_r[i,j] = sqrt(dx[i,j]**2.0 + dy[i,j]**2.0 + dz[i,j]**2.0)
         if inv_r[i,j] > 0.0:
             inv_r[i,j] = 1.0 / inv_r[i,j]
 

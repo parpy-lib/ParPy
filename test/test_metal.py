@@ -12,7 +12,7 @@ np.random.seed(1234)
 def sum_elems_per_row(x, y, N):
     for i in range(N):
         parpy.label('M')
-        y[i] = parpy.sum(x[i, :])
+        y[i] = parpy.operators.sum(x[i, :])
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_metal_no_parallelism(backend):

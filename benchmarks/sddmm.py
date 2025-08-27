@@ -2,6 +2,7 @@ import ctypes
 import numpy as np
 import pandas as pd
 import parpy
+from parpy.operators import sum
 import ssgetpy
 import subprocess
 import torch
@@ -36,7 +37,7 @@ def parpy_sddmm_csr_kernel(A, B, C, D, N, alpha, beta):
     for i in range(C["nnz"]):
         row = C["rows"][i]
         col = C["cols"][i]
-        t = parpy.sum(A[row, :] * B[:, col])
+        t = sum(A[row, :] * B[:, col])
         D[i] = alpha * t + beta * C["values"][i]
 
 def parpy_sddmm_csr(A, B, C):
@@ -65,7 +66,7 @@ def parpy_sddmm_coo_kernel(A, B, C, D, alpha, beta):
     for i in range(C["nnz"]):
         row = C["rows"][i]
         col = C["cols"][i]
-        t = parpy.sum(A[row, :] * B[:, col])
+        t = sum(A[row, :] * B[:, col])
         D[i] = alpha * t + beta * C["values"][i]
 
 def parpy_sddmm_coo(A, B, C, C_rows):

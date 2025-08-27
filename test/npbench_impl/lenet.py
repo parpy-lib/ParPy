@@ -1,4 +1,5 @@
 import parpy
+from parpy.operators import inf, max
 import torch
 
 def relu(x):
@@ -41,12 +42,12 @@ def maxpool2d_kernel(x, output, N_0, N_1, N_2, N_3):
     for i in range(N_1):
         parpy.label('j')
         for j in range(N_2):
-            output[:,i,j,:] = -parpy.inf
+            output[:,i,j,:] = -inf
             for a in range(N_0):
                 for b in range(N_3):
                     for ii in range(2):
                         for jj in range(2):
-                            output[a,i,j,b] = parpy.max(output[a,i,j,b], x[a,2*i+ii,2*j+jj,b])
+                            output[a,i,j,b] = max(output[a,i,j,b], x[a,2*i+ii,2*j+jj,b])
 
 # 2x2 maxpool operator, as used in LeNet-5
 def maxpool2d(x, opts, compile_only=False):

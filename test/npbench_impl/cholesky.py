@@ -1,10 +1,11 @@
 import parpy
+from parpy.operators import sqrt
 import torch
 
 @parpy.jit
 def parpy_kernel(A, N):
     with parpy.gpu:
-        A[0,0] = parpy.sqrt(A[0,0])
+        A[0,0] = sqrt(A[0,0])
         for i in range(1, N):
             for j in range(i):
                 s = 0.0
@@ -17,7 +18,7 @@ def parpy_kernel(A, N):
             for k in range(i):
                 s += A[i,k] * A[i,k]
             A[i,i] -= s
-            A[i,i] = parpy.sqrt(A[i,i])
+            A[i,i] = sqrt(A[i,i])
 
 def cholesky(A, opts, compile_only=False):
     N, _ = A.shape

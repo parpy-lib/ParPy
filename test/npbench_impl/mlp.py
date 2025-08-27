@@ -1,4 +1,5 @@
 import parpy
+from parpy.operators import exp, max, sum
 import torch
 
 def relu(x):
@@ -9,11 +10,11 @@ def softmax_kernel(x, out, N, M):
     parpy.label('i')
     for i in range(N):
         parpy.label('j')
-        maxv = parpy.max(x[i,:])
+        maxv = max(x[i,:])
         parpy.label('j')
-        out[i,:] = parpy.exp(x[i,:] - maxv)
+        out[i,:] = exp(x[i,:] - maxv)
         parpy.label('j')
-        s = parpy.sum(out[i,:])
+        s = sum(out[i,:])
         parpy.label('j')
         out[i,:] /= s
 
