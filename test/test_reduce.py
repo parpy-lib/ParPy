@@ -63,27 +63,23 @@ def min_axis(x, out, N):
 
 @parpy.jit
 def sum_2d(x, out, N):
-    with parpy.gpu:
-        parpy.label('outer')
-        out[0] = parpy.operators.sum(x[:,:])
+    parpy.label('outer')
+    out[0] = parpy.operators.sum(x[:,:])
 
 @parpy.jit
 def prod_2d(x, out, N):
-    with parpy.gpu:
-        parpy.label('outer')
-        out[0] = parpy.operators.prod(x[:,:])
+    parpy.label('outer')
+    out[0] = parpy.operators.prod(x[:,:])
 
 @parpy.jit
 def max_2d(x, out, N):
-    with parpy.gpu:
-        parpy.label('outer')
-        out[0] = parpy.operators.max(x[:,:])
+    parpy.label('outer')
+    out[0] = parpy.operators.max(x[:,:])
 
 @parpy.jit
 def min_2d(x, out, N):
-    with parpy.gpu:
-        parpy.label('outer')
-        out[0] = parpy.operators.min(x[:,:])
+    parpy.label('outer')
+    out[0] = parpy.operators.min(x[:,:])
 
 def reduce_wrap(reduce_fn, x, opts):
     N, M = x.shape

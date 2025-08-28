@@ -8,7 +8,7 @@ from .parpy import par, seq, CompileBackend, CompileOptions, ElemSize, Target
 from .buffer import sync
 from .operators import gpu, label
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 _ir_asts = {}
 _ext_decls = {}

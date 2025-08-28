@@ -978,7 +978,7 @@ fn type_check_stmt(
             }?;
             Ok((env, Stmt::Return {value, i}))
         },
-        Stmt::WithGpuContext {..} | Stmt::Scope {..} | Stmt::Label {..} => {
+        Stmt::WithGpuContext {..} | Stmt::Label {..} => {
             stmt.smap_accum_l_result(Ok(env), type_check_stmt)
         },
         Stmt::Call {func, i, ..} => {

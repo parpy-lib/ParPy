@@ -273,12 +273,6 @@ impl PrettyPrint for Stmt {
                 let env = env.decr_indent();
                 (env, format!("{indent}with parpy.gpu:\n{body}"))
             },
-            Stmt::Scope {body, ..} => {
-                let env = env.incr_indent();
-                let (env, body) = pprint_iter(body.iter(), env, "\n");
-                let env = env.decr_indent();
-                (env, format!("{indent}if True: # scope\n{body}"))
-            },
             Stmt::Call {func, args, ..} => {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{indent}{func}({args})"))
