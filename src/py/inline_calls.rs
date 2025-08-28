@@ -93,10 +93,6 @@ fn inline_function_calls_stmt<'py>(
             let body = inline_function_calls_stmts(body, tops)?;
             acc.push(Stmt::WithGpuContext {body, i});
         },
-        Stmt::Scope {body, i} => {
-            let body = inline_function_calls_stmts(body, tops)?;
-            acc.push(Stmt::Scope {body, i})
-        },
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Return {..} |
         Stmt::Label {..} => {
             acc.push(stmt);

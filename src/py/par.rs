@@ -22,8 +22,8 @@ fn ensure_parallelism_stmt(
         Stmt::Label {label, ..} if par.contains_key(label) => true,
         Stmt::WithGpuContext {..} => true,
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::For {..} |
-        Stmt::While {..} | Stmt::If {..} | Stmt::Return {..} | Stmt::Scope {..} |
-        Stmt::Label {..} | Stmt::Call {..} => {
+        Stmt::While {..} | Stmt::If {..} | Stmt::Return {..} | Stmt::Label {..} |
+        Stmt::Call {..} => {
             s.sfold(acc, |acc, s| ensure_parallelism_stmt(acc, s, par))
         }
     }
