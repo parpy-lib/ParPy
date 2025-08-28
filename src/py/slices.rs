@@ -299,7 +299,7 @@ fn generate_for_loops(
                         Stmt::Assign {dst, expr: ne, labels: vec![], i: i.clone()}
                     }
                 };
-                stmt = Stmt::Scope {body: vec![pre_stmt, stmt], i: i.clone()};
+                stmt = Stmt::WithGpuContext {body: vec![pre_stmt, stmt], i: i.clone()};
             } else {
                 py_runtime_error!(i, "Cannot apply reduction on empty dimension")?
             }
