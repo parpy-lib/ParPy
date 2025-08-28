@@ -9,10 +9,12 @@ from common import *
 np.random.seed(1234)
 
 @parpy.jit
-def sum_elems_per_row(x, y, N):
+def sum_elems_per_row(x, y, N, M):
     for i in range(N):
+        y[i] = 0.0
         parpy.label('M')
-        y[i] = parpy.operators.sum(x[i, :])
+        for j in range(M):
+            y[i] += x[i,j]
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_metal_no_parallelism(backend):
@@ -24,11 +26,11 @@ def test_metal_no_parallelism(backend):
     opts = par_opts(backend, p)
     if backend == parpy.CompileBackend.Metal:
         if parpy.backend.is_enabled(backend):
-            sum_elems_per_row(x, y, N, opts=opts)
+            sum_elems_per_row(x, y, N, M, opts=opts)
             assert np.allclose(np.sum(x, axis=1), y, atol=1e-5)
         return
     with pytest.raises(RuntimeError) as e_info:
-        code = parpy.print_compiled(sum_elems_per_row, [x, y, N], opts)
+        code = parpy.print_compiled(sum_elems_per_row, [x, y, N, M], opts)
     assert e_info.match(r".*Assignments are not allowed outside parallel code.*")
 
 def test_metal_catch_runtime_error():

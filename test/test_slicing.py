@@ -47,15 +47,13 @@ def slice_assignment(x):
 
 @parpy.jit
 def slice_multi_dim_sum(x, out):
-    with parpy.gpu:
-        parpy.label('N')
-        out[0] = parpy.operators.sum(x[:,:])
+    parpy.label('N')
+    out[0] = parpy.operators.sum(x[:,:])
 
 @parpy.jit
 def slice_multi_dim_interspersed_sum(x, out):
-    with parpy.gpu:
-        parpy.label('N')
-        out[0] = parpy.operators.sum(x[:,0,:,2])
+    parpy.label('N')
+    out[0] = parpy.operators.sum(x[:,0,:,2])
 
 @parpy.jit
 def slice_assign_to_new_var(x):
