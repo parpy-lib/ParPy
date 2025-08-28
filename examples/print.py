@@ -5,7 +5,7 @@ import parpy
 def sum_rows(x, out, N):
     parpy.label('outer')
     for i in range(N):
-        out[i] = parpy.sum(x[i,:])
+        out[i] = parpy.operators.sum(x[i,:])
 
 # Generate input data using NumPy
 import numpy as np
