@@ -262,6 +262,7 @@ fn single_block_reduce_loop(
     op: BinOp,
     rhs: Expr,
     int_ty: Type,
+    tpb: i64,
     i: &Info
 ) -> Stmt {
     let assign = Stmt::Assign {
@@ -281,7 +282,7 @@ fn single_block_reduce_loop(
     let par = LoopPar {
         nthreads: i64::min(nblocks as i64, par::DEFAULT_TPB),
         reduction: true,
-        tpb: par::DEFAULT_TPB
+        tpb
     };
     Stmt::For {
         var,
@@ -414,7 +415,7 @@ fn split_inter_block_parallel_reductions_stmt(
                 ));
                 acc.push(Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i: i.clone()});
                 acc.push(single_block_reduce_loop(
-                    id, nblocks, lhs, op, temp_access, int_ty, &i
+                    id, nblocks, lhs, op, temp_access, int_ty, par.tpb, &i
                 ));
                 Ok(acc)
             } else {
