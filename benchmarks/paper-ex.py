@@ -13,7 +13,7 @@ def sum_rows(x, out, N):
     parpy.label('outer')
     for i in range(N):
         parpy.label('inner')
-        out[i] = parpy.sum(x[i,:])
+        out[i] = parpy.operators.sum(x[i,:])
 
 def sum_rows_wrap(x, p):
     N, M = x.shape
