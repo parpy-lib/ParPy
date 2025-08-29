@@ -323,7 +323,7 @@ def odd_entries_sum(x, y, N, M):
 def odd_entries_wrap(backend, p):
     N = 10
     M = 4096
-    x = np.random.randn((N, M), dtype=np.float32)
+    x = np.random.randn(N, M).astype(np.float32)
     out = np.zeros((N,), dtype=x.dtype)
     parpy.jit(odd_entries_sum)(x, out, N, M, opts=par_opts(backend, p))
     out_seq = np.zeros_like(out)

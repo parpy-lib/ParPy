@@ -89,9 +89,9 @@ def test_buffer_torch_ref(backend):
         assert b.dtype == torch.float32
         if backend == parpy.CompileBackend.Cuda:
             assert b.device == torch.device('cuda', index=0)
+            b[0] = 5.0
+            v = a.numpy()
+            assert np.allclose(v[0], 5.0)
         else:
             assert b.device == torch.device('cpu')
-        b[0] = 5.0
-        v = a.numpy()
-        assert np.allclose(v[0], 5.0)
     run_if_backend_is_enabled(backend, helper)
