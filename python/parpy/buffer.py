@@ -134,10 +134,11 @@ class Buffer:
                 lib = _compile_runtime_lib(self.backend)
                 if src_ptr is not None:
                     _check_errors(lib, lib.parpy_memcpy(src_ptr, self.buf, nbytes, 2))
+                    _check_errors(lib, lib.sync())
+                else:
                     _check_errors(lib, lib.parpy_free_buffer(self.buf))
             elif self.backend == CompileBackend.Metal:
                 lib = _compile_runtime_lib(self.backend)
-                # Need to wait for kernels to complete before we copy data.
                 _check_errors(lib, lib.sync())
                 if src_ptr is not None:
                     _check_errors(lib, lib.parpy_memcpy(src_ptr, self.buf, nbytes, 2))
