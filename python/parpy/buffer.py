@@ -1,5 +1,5 @@
 import pathlib
-from .parpy import CompileBackend, DataType
+from .parpy import CompileBackend, DataType, ElemSize
 from .runtime import _compile_runtime_lib
 
 def _check_errors(lib, rescode):
@@ -54,9 +54,8 @@ def _resolve_dtype(dtype):
     Resolves the provided dtype - provided to allow users to construct buffers
     using the more easily accessible types defined in the 'parpy.types' module.
     """
-    from .types import ExtType
-    if isinstance(dtype, ExtType):
-        return DataType.from_ext_type(dtype)
+    if isinstance(dtype, ElemSize):
+        return DataType.from_elem_size(dtype)
     else:
         return dtype
 
@@ -199,7 +198,8 @@ class Buffer:
 
         lib = _compile_runtime_lib(CompileBackend.Cuda)
         ptr = Buffer._alloc_data(shape, dtype, lib)
-        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, nbytes, 1))
+        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, _size(shape, dtype), 1))
+        _check_errors(lib, lib.sync())
         return Buffer(ptr, shape, dtype, CompileBackend.Cuda, src=t)
 
     def _from_array_metal(t):
@@ -210,7 +210,8 @@ class Buffer:
 
         lib = _compile_runtime_lib(CompileBackend.Metal)
         ptr = Buffer._alloc_data(shape, dtype, lib)
-        _check_errors(lib, lib.parpy_memcpy(buf, data_ptr, nbytes, 1))
+        _check_errors(lib, lib.parpy_memcpy(buf, data_ptr, _size(shape, dtype), 1))
+        _check_errors(lib, lib.sync())
         return Buffer(buf, shape, dtype, CompileBackend.Metal, src=t)
 
     def from_array(t, backend):
@@ -230,23 +231,29 @@ class Buffer:
         import numpy as np
         if self.backend is None:
             return np.asarray(self)
-        elif self.backend == CompileBackend.Cuda:
+        else:
             a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
             _, _, data_ptr = _check_array_interface(a.__array_interface__)
             lib = _compile_runtime_lib(self.backend)
             _check_errors(lib, lib.parpy_memcpy(data_ptr, self.buf, self.size(), 2))
             _check_errors(lib, lib.sync())
             return a
+
+    def torch_ref(self):
+        import torch
+        if self.backend is None:
+            return torch.as_tensor(self.numpy())
+        elif self.backend == CompileBackend.Cuda:
+            return torch.as_tensor(self, device='cuda')
         elif self.backend == CompileBackend.Metal:
-            self.sync()
-            return np.asarray(self)
+            return torch.as_tensor(self.numpy())
         else:
             raise RuntimeError(f"Unsupported buffer backend {self.backend}")
 
     def reshape(self, *dims):
         import math
         curr_sz = math.prod(self.shape)
-        new_shape = tuple(*dims)
+        new_shape = tuple(dims)
         new_sz = math.prod(new_shape)
         if curr_sz == new_sz:
             return Buffer(self.buf, new_shape, self.dtype, backend=self.backend, src=self.src, refcount=self.refcount)
@@ -255,10 +262,11 @@ class Buffer:
 
     def with_type(self, new_dtype):
         new_dtype = _resolve_dtype(new_dtype)
-        if isinstance(new_dtype, prickle.DataType):
-            if self.dtype.size() == new_dtype.size():
-                return Buffer(self.buf, self.shape, new_dtype, backend=self.backend, src=self.src, refcount=self.refcount)
-            else:
-                raise RuntimeError(f"Cannot convert between dtypes of different size ({self.dtype} to {new_dtype})")
+        if isinstance(new_dtype, DataType):
+            b = empty(self.shape, new_dtype, self.backend)
+            lib = _compile_runtime_lib(self.backend)
+            _check_errors(lib, lib.parpy_memcpy(b.buf, self.buf, self.size(), 3))
+            _check_errors(lib, lib.sync())
+            return b
         else:
             raise ValueError(f"Found unsupported data type: {type(new_dtype)}")

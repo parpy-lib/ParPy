@@ -9,7 +9,6 @@ use strum_macros::EnumIter;
 #[pyclass(eq, frozen)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExtType {
-    Scalar(ElemSize),
     Pointer(ElemSize),
 }
 
@@ -58,6 +57,15 @@ impl ElemSize {
             ElemSize::F64 => "f8",
         };
         s.to_string()
+    }
+
+    fn size(&self) -> usize {
+        match self {
+            ElemSize::Bool | ElemSize::I8 | ElemSize::U8 => 1,
+            ElemSize::I16 | ElemSize::U16 | ElemSize::F16 => 2,
+            ElemSize::I32 | ElemSize::U32 | ElemSize::F32 => 4,
+            ElemSize::I64 | ElemSize::U64 | ElemSize::F64 => 8,
+        }
     }
 
     fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -161,14 +169,8 @@ impl DataType {
         format!("{0}{1}", self.byteorder.__str__(), self.sz.__str__())
     }
 
-    #[staticmethod]
-    fn from_ext_type(ty: ExtType) -> PyResult<DataType> {
-        match ty {
-            ExtType::Scalar(sz) => Ok(DataType::from_elem_size(sz)),
-            ExtType::Pointer(_) => {
-                Err(PyRuntimeError::new_err(format!("Pointer type cannot be used as data type")))
-            },
-        }
+    fn __eq__(&self, other: &DataType) -> bool {
+        self.byteorder == other.byteorder && self.sz == other.sz
     }
 
     #[staticmethod]
@@ -178,12 +180,7 @@ impl DataType {
     }
 
     fn size(&self) -> usize {
-        match self.sz {
-            ElemSize::Bool | ElemSize::I8 | ElemSize::U8 => 1,
-            ElemSize::I16 | ElemSize::U16 | ElemSize::F16 => 2,
-            ElemSize::I32 | ElemSize::U32 | ElemSize::F32 => 4,
-            ElemSize::I64 | ElemSize::U64 | ElemSize::F64 => 8,
-        }
+        self.sz.size()
     }
 
     fn is_signed_integer(&self) -> bool {
