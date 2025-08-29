@@ -140,7 +140,7 @@ class Buffer:
                 # Need to wait for kernels to complete before we copy data.
                 _check_errors(lib, lib.sync())
                 if src_ptr is not None:
-                    _check_errors(lib, lib.parpy_memcpy(src_ptr, self.ptr, nbytes, 2))
+                    _check_errors(lib, lib.parpy_memcpy(src_ptr, self.buf, nbytes, 2))
                 _check_errors(lib, lib.parpy_free_buffer(self.buf))
 
     def __float__(self):
@@ -209,7 +209,7 @@ class Buffer:
             raise RuntimeError(f"Cannot convert argument {t} to Metal buffer")
 
         lib = _compile_runtime_lib(CompileBackend.Metal)
-        ptr = Buffer._alloc_data(shape, dtype, lib)
+        buf = Buffer._alloc_data(shape, dtype, lib)
         _check_errors(lib, lib.parpy_memcpy(buf, data_ptr, _size(shape, dtype), 1))
         _check_errors(lib, lib.sync())
         return Buffer(buf, shape, dtype, CompileBackend.Metal, src=t)
@@ -240,6 +240,11 @@ class Buffer:
             return a
 
     def torch_ref(self):
+        """
+        Constructs a reference to the data in torch when using the CUDA
+        backend. Otherwise, it produces a tensor containing a copy of the data
+        in the original buffer.
+        """
         import torch
         if self.backend is None:
             return torch.as_tensor(self.numpy())

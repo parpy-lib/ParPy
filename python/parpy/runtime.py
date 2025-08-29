@@ -15,7 +15,7 @@ def init_library(libpath):
     lib.parpy_sync.restype = ctypes.c_int32
     lib.parpy_alloc_buffer.argtypes = [ctypes.c_int64]
     lib.parpy_alloc_buffer.restype = ctypes.c_void_p
-    lib.parpy_memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
+    lib.parpy_memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64, ctypes.c_int64]
     lib.parpy_memcpy.restype = ctypes.c_int32
     lib.parpy_memset.argtypes = [ctypes.c_void_p, ctypes.c_int64, ctypes.c_int8]
     lib.parpy_memset.restype = ctypes.c_int32
@@ -71,7 +71,6 @@ def _compile_metal_runtime_lib():
 
     lib = init_library(libpath)
     lib.parpy_init.argtypes = [ctypes.c_int64]
-    lib.parpy_init.restype = ctypes.c_void
     lib.parpy_ptr_buffer.argtypes = [ctypes.c_void_p]
     lib.parpy_ptr_buffer.restype = ctypes.c_void_p
     lib.parpy_init(DEFAULT_METAL_COMMAND_QUEUE_SIZE)
