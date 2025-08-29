@@ -40,8 +40,23 @@ extern "C" void *parpy_ptr_buffer(MTL::Buffer *buf) {
   return buf->contents();
 }
 
-extern "C" int32_t parpy_memcpy(void *dst, void *src, int64_t nbytes, int64_t _k) {
+extern "C" int32_t parpy_memcpy(void *dst, void *src, int64_t nbytes, int64_t k) {
+  // If an argument represents device memory, it is an MTL::Buffer pointer
+  // from which we need to extract the actual data pointer. Otherwise, we use
+  // the provided pointer immediately. We use 'k' to encode the memory types
+  // of the arguments:
+  //  0: both host
+  //  1: source is in host memory, destination on device
+  //  2: source is in device memory, destination on host
+  //  3: both device
+  dst = k & 1 ? ((MTL::Buffer*)dst)->contents() : dst;
+  src = k & 2 ? ((MTL::Buffer*)src)->contents() : src;
   memcpy(dst, src, nbytes);
+  return 0;
+}
+
+extern "C" int32_t parpy_memset(void *ptr, int64_t nbytes, int8_t value) {
+  memset(ptr, nbytes, value);
   return 0;
 }
 
@@ -90,16 +105,6 @@ namespace parpy_metal {
   }
 
   void copy(void *dst, void *src, int64_t nbytes, int64_t k) {
-    // If an argument represents device memory, it is an MTL::Buffer pointer
-    // from which we need to extract the actual data pointer. Otherwise, we use
-    // the provided pointer immediately. We use 'k' to encode the memory types
-    // of the arguments:
-    //  0: both host
-    //  1: source is in host memory, destination on device
-    //  2: source is in device memory, destination on host
-    //  3: both device
-    dst = k & 1 ? ((MTL::Buffer*)dst)->contents() : dst;
-    src = k & 2 ? ((MTL::Buffer*)src)->contents() : src;
     parpy_memcpy(dst, src, nbytes, k);
   }
 

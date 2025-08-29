@@ -74,6 +74,24 @@ def sync(backend):
     lib = _compile_runtime_lib(backend)
     _check_errors(lib, lib.parpy_sync())
 
+def empty(shape, dtype, backend):
+    dtype = _resolve_dtype(dtype)
+    lib = _compile_runtime_lib(backend)
+    ptr = Buffer._alloc_data(shape, dtype, lib)
+    return Buffer(ptr, shape, dtype, backend=backend)
+
+def empty_like(b):
+    return empty(b.shape, b.dtype, b.backend)
+
+def zeros(shape, dtype, backend):
+    b = empty(shape, dtype, backend)
+    lib = _compile_runtime_lib(backend)
+    _check_errors(lib, lib.parpy_memset(b.buf, b.size(), 0))
+    return b
+
+def zeros_like(b):
+    return zeros(shape, dtype, backend)
+
 class Buffer:
     def __init__(self, buf, shape, dtype, backend=None, src=None, refcount=None):
         if refcount is None:
@@ -153,6 +171,10 @@ class Buffer:
     def sync(self):
         sync(self.backend)
 
+    def _alloc_data(shape, dtype, lib):
+        nbytes = _size(shape, dtype)
+        return _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
+
     def _from_array_cpu(t):
         # For the dummy backend, we just need any pointer to construct the
         # Buffer, so we use a CUDA pointer if this is available to ensure no
@@ -175,9 +197,8 @@ class Buffer:
         except ValueError:
             raise RuntimeError(f"Cannot convert argument {t} to CUDA buffer")
 
-        nbytes = _size(shape, dtype)
         lib = _compile_runtime_lib(CompileBackend.Cuda)
-        ptr = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
+        ptr = Buffer._alloc_data(shape, dtype, lib)
         _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, nbytes, 1))
         return Buffer(ptr, shape, dtype, CompileBackend.Cuda, src=t)
 
@@ -188,10 +209,8 @@ class Buffer:
             raise RuntimeError(f"Cannot convert argument {t} to Metal buffer")
 
         lib = _compile_runtime_lib(CompileBackend.Metal)
-        nbytes = _size(shape, dtype)
-        buf = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
-        ptr = lib.parpy_ptr_buffer(buf)
-        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, nbytes, 1))
+        ptr = Buffer._alloc_data(shape, dtype, lib)
+        _check_errors(lib, lib.parpy_memcpy(buf, data_ptr, nbytes, 1))
         return Buffer(buf, shape, dtype, CompileBackend.Metal, src=t)
 
     def from_array(t, backend):

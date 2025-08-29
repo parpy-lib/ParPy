@@ -8,8 +8,25 @@ PARPY_METAL_BASE_LIB_PATH = PARPY_NATIVE_PATH / "parpy_metal_lib.so"
 
 libs = {}
 
-def _compile_cuda_runtime_lib():
+def init_library(libpath):
     import ctypes
+    lib = ctypes.cdll.LoadLibrary(libpath)
+    lib.parpy_sync.argtypes = []
+    lib.parpy_sync.restype = ctypes.c_int32
+    lib.parpy_alloc_buffer.argtypes = [ctypes.c_int64]
+    lib.parpy_alloc_buffer.restype = ctypes.c_void_p
+    lib.parpy_memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
+    lib.parpy_memcpy.restype = ctypes.c_int32
+    lib.parpy_memset.argtypes = [ctypes.c_void_p, ctypes.c_int64, ctypes.c_int8]
+    lib.parpy_memset.restype = ctypes.c_int32
+    lib.parpy_free_buffer.argtypes = [ctypes.c_void_p]
+    lib.parpy_free_buffer.restype = ctypes.c_int32
+    lib.parpy_get_error_message.argtypes = []
+    lib.parpy_get_error_message.restype = ctypes.c_char_p
+    return lib
+
+
+def _compile_cuda_runtime_lib():
     import os
     import subprocess
     libpath = PARPY_CUDA_BASE_LIB_PATH
@@ -26,15 +43,7 @@ def _compile_cuda_runtime_lib():
             raise RuntimeError("Compilation of the CUDA runtime library failed.\n"
                               f"stdout:\n{stdout}\nstderr:\n{stderr}")
 
-    lib = ctypes.cdll.LoadLibrary(libpath)
-    lib.parpy_sync.argtypes = []
-    lib.parpy_sync.restype = ctypes.c_int32
-    lib.parpy_alloc_buffer.argtypes = [ctypes.c_int64]
-    lib.parpy_alloc_buffer.restype = ctypes.c_void_p
-    lib.parpy_memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
-    lib.parpy_free_buffer.argtypes = [ctypes.c_void_p]
-    lib.parpy_get_error_message.restype = ctypes.c_char_p
-    return lib
+    return init_library(libpath)
 
 def _compile_metal_runtime_lib():
     import ctypes
@@ -60,18 +69,11 @@ def _compile_metal_runtime_lib():
             raise RuntimeError("Compilation of the Metal base library failed.\n" +
                               f"stdout:\n{stdout}\nstderr:\n{stderr}")
 
-    lib = ctypes.cdll.LoadLibrary(libpath)
+    lib = init_library(libpath)
     lib.parpy_init.argtypes = [ctypes.c_int64]
-    lib.parpy_sync.argtypes = []
-    lib.parpy_sync.restype = ctypes.c_int
-    lib.parpy_alloc_buffer.argtypes = [ctypes.c_int64]
-    lib.parpy_alloc_buffer.restype = ctypes.c_void_p
+    lib.parpy_init.restype = ctypes.c_void
     lib.parpy_ptr_buffer.argtypes = [ctypes.c_void_p]
     lib.parpy_ptr_buffer.restype = ctypes.c_void_p
-    lib.parpy_memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
-    lib.parpy_free_buffer.argtypes = [ctypes.c_void_p]
-    lib.parpy_get_error_message.restype = ctypes.c_char_p
-
     lib.parpy_init(DEFAULT_METAL_COMMAND_QUEUE_SIZE)
     return lib
 
