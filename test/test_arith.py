@@ -9,83 +9,67 @@ from common import *
 
 np.random.seed(1234)
 
-@parpy.jit
 def parpy_add(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] + b[0]
 
-@parpy.jit
 def parpy_sub(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] - b[0]
 
-@parpy.jit
 def parpy_mul(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] * b[0]
 
-@parpy.jit
 def parpy_div_int(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] // b[0]
 
-@parpy.jit
 def parpy_div(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] / b[0]
 
-@parpy.jit
 def parpy_rem(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] % b[0]
 
-@parpy.jit
 def parpy_pow(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] ** b[0]
 
-@parpy.jit
 def parpy_abs(dst, a, b):
     with parpy.gpu:
         dst[0] = abs(a[0]) + abs(b[0])
 
-@parpy.jit
 def parpy_bit_and(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] & b[0]
 
-@parpy.jit
 def parpy_bit_or(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] | b[0]
 
-@parpy.jit
 def parpy_bit_xor(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] ^ b[0]
 
-@parpy.jit
 def parpy_bit_shl(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] << b[0]
 
-@parpy.jit
 def parpy_bit_shr(dst, a, b):
     with parpy.gpu:
         dst[0] = a[0] >> b[0]
 
-@parpy.jit
 def parpy_aug_ops(dst, a, b):
     with parpy.gpu:
         dst[0] += a[0]
         dst[0] -= b[0]
 
-@parpy.jit
 def parpy_max(dst, a, b):
     with parpy.gpu:
         dst[0] = parpy.operators.max(a[0], b[0])
 
-@parpy.jit
 def parpy_min(dst, a, b):
     with parpy.gpu:
         dst[0] = parpy.operators.min(a[0], b[0])
@@ -99,8 +83,8 @@ def arith_binop_dtype(fn, ldtype, rdtype, compile_only, backend):
         assert len(s) != 0
     else:
         dst_device = np.zeros_like(dst)
-        fn(dst_device, a, b, opts=par_opts(backend, {}))
-        fn(dst, a, b, opts=seq_opts(backend))
+        parpy.jit(fn)(dst_device, a, b, opts=par_opts(backend, {}))
+        fn(dst, a, b)
         assert np.allclose(dst, dst_device, atol=1e-5)
 
 bitwise_funs = [
@@ -213,27 +197,22 @@ def test_bin_arith_mixed_types(fn, dtypes, backend):
         lambda: bin_arith_helper(fn, dtypes[0], dtypes[1], False, backend)
     )
 
-@parpy.jit
 def parpy_cos(dst, src):
     with parpy.gpu:
         dst[0] = parpy.operators.cos(src[0])
 
-@parpy.jit
 def parpy_sin(dst, src):
     with parpy.gpu:
         dst[0] = parpy.operators.sin(src[0])
 
-@parpy.jit
 def parpy_tanh(dst, src):
     with parpy.gpu:
         dst[0] = parpy.operators.tanh(src[0])
 
-@parpy.jit
 def parpy_atan2(dst, src):
     with parpy.gpu:
         dst[0] = parpy.operators.atan2(src[0], src[0])
 
-@parpy.jit
 def parpy_sqrt(dst, src):
     with parpy.gpu:
         dst[0] = parpy.operators.sqrt(src[0])
@@ -246,8 +225,8 @@ def arith_unop_dtype(fn, dtype, compile_only, backend):
         assert len(s) != 0
     else:
         dst_device = np.zeros_like(dst)
-        fn(dst_device, src, opts=par_opts(backend, {}))
-        fn(dst, src, opts=seq_opts(backend))
+        parpy.jit(fn)(dst_device, src, opts=par_opts(backend, {}))
+        fn(dst, src)
         assert np.allclose(dst, dst_device, atol=1e-5)
 
 float_funs = [parpy_cos, parpy_sin, parpy_tanh, parpy_atan2, parpy_sqrt]

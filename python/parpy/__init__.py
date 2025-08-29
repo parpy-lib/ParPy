@@ -4,7 +4,7 @@ from . import buffer
 from . import operators
 from . import types
 
-from .parpy import par, seq, CompileBackend, CompileOptions, ElemSize, Target
+from .parpy import par, CompileBackend, CompileOptions, ElemSize, Target
 from .buffer import sync
 from .operators import gpu, label
 
@@ -242,12 +242,7 @@ def jit(fun):
     def inner(*args, **kwargs):
         opts = backend._resolve_backend(_check_kwargs(kwargs), True)
         callbacks, args = check_arguments(args, opts, True)
-        # If the user explicitly requests sequential execution by setting the 'seq'
-        # keyword argument to True, we call the original Python function.
-        if opts.seq:
-            fun(*args)
-        else:
-            _compile_function(ir_ast, args, opts)(*args)
+        _compile_function(ir_ast, args, opts)(*args)
         _run_callbacks(callbacks, opts)
     _ir_asts[inner] = ir_ast
     return inner

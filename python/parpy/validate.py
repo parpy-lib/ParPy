@@ -21,15 +21,9 @@ def check_arg(arg, i, in_dict, opts, execute):
     elif isinstance(arg, dict):
         return check_dict(arg, i, in_dict, opts, execute)
     elif isinstance(arg, Buffer):
-        if execute and opts.seq:
-            return [], arg.numpy()
-        else:
-            return [], arg
+        return [], arg
     elif hasattr(arg, "__cuda_array_interface__"):
         if opts.backend == CompileBackend.Cuda:
-            if opts.seq:
-                raise RuntimeError(f"Argument {i} is a CUDA array, which cannot " +
-                                    "be used in sequential execution.")
             return [], Buffer.from_array(arg, CompileBackend.Cuda)
         else:
             raise RuntimeError(f"Argument {i} is a CUDA array, which is not "
@@ -40,8 +34,6 @@ def check_arg(arg, i, in_dict, opts, execute):
         # a backend even if it is not available.
         if not execute:
             buf = Buffer.from_array(arg, None)
-        elif opts.seq:
-            return [], np.asarray(arg)
         else:
             buf = Buffer.from_array(arg, opts.backend)
         callback = lambda: buf.__del__()

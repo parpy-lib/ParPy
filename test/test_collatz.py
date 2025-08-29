@@ -6,7 +6,6 @@ from common import *
 
 torch.manual_seed(1234)
 
-@parpy.jit
 def collatz(out, N):
     parpy.label('i')
     for i in range(1, N+1):
@@ -20,16 +19,19 @@ def collatz(out, N):
             count = count + 1
         out[i] = count
 
-def collatz_wrap(N, opts):
+def collatz_wrap(N, opts=None):
     out = torch.zeros(N+1, dtype=torch.int32)
-    collatz(out, N, opts=opts)
+    if opts is None:
+        collatz(out, N)
+    else:
+        parpy.jit(collatz)(out, N, opts=opts)
     return out
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_collatz_gpu(backend):
     def helper():
         N = 1000
-        expected = collatz_wrap(N, seq_opts(backend))
+        expected = collatz_wrap(N)
         p = {'i': parpy.threads(256)}
         actual = collatz_wrap(N, par_opts(backend, p))
         assert torch.allclose(expected, actual)

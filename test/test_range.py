@@ -6,25 +6,21 @@ from common import *
 
 torch.manual_seed(1234)
 
-@parpy.jit
 def upper_bound_range(x, N):
     parpy.label('i')
     for i in range(N):
         x[i] = i
 
-@parpy.jit
 def no_step_range(x, N):
     parpy.label('i')
     for i in range(1, N):
         x[i] = i
 
-@parpy.jit
 def step_range(x, N):
     parpy.label('i')
     for i in range(1, N, 2):
         x[i] = i
 
-@parpy.jit
 def negative_step_range(x, N):
     parpy.label('i')
     for i in range(N-1, -1, -1):
@@ -39,8 +35,8 @@ def range_helper(fn, backend, compile_only):
         assert len(s) != 0
     else:
         x_device = x.detach().clone()
-        upper_bound_range(x_device, N, opts=par_opts(backend, p))
-        upper_bound_range(x, N, opts=seq_opts(backend))
+        parpy.jit(fn)(x_device, N, opts=par_opts(backend, p))
+        fn(x, N)
         assert torch.allclose(x, x_device)
 
 range_funs = [upper_bound_range, no_step_range, step_range, negative_step_range]

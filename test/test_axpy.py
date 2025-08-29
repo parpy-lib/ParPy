@@ -6,14 +6,16 @@ from common import *
 
 torch.manual_seed(1234)
 
-@parpy.jit
 def axpy(a, x, y, out, N):
     parpy.label('i')
     out[:] = a * x[:] + y[:]
 
-def axpy_wrap(a, x, y, N, opts):
+def axpy_wrap(a, x, y, N, opts=None):
     out = torch.zeros_like(x)
-    axpy(a, x, y, out, N, opts=opts)
+    if opts is None:
+        axpy(a, x, y, out, N)
+    else:
+        parpy.jit(axpy)(a, x, y, out, N, opts=opts)
     return out
 
 def axpy_test_data():
@@ -27,7 +29,7 @@ def axpy_test_data():
 def test_axpy_gpu(backend):
     def helper():
         N, a, x, y = axpy_test_data()
-        expected = axpy_wrap(a, x, y, N, seq_opts(backend))
+        expected = axpy_wrap(a, x, y, N, None)
         p = {'i': parpy.threads(128)}
         actual = axpy_wrap(a, x, y, N, par_opts(backend, p))
         assert torch.allclose(expected, actual, atol=1e-5)
@@ -38,7 +40,7 @@ def test_axpy_compile_fails_no_parallelism(backend):
     N, a, x, y = axpy_test_data()
     out = torch.zeros_like(x)
     with pytest.raises(RuntimeError) as e_info:
-        parpy.print_compiled(axpy, [a, x, y, out, N], seq_opts(backend))
+        parpy.print_compiled(axpy, [a, x, y, out, N], par_opts(backend, {}))
     assert e_info.match(r".*does not contain any parallelism.*")
 
 @pytest.mark.parametrize('backend', compiler_backends)

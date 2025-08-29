@@ -5,7 +5,6 @@ import torch
 
 from common import *
 
-@parpy.jit
 def syrk(alpha, beta, C, A, N, M):
     parpy.label('i')
     for i in range(N):
@@ -42,13 +41,13 @@ def syrk_run_par(backend, nthreads):
 
         # Run sequentially to produce a reference solution
         C_ref = C.clone()
-        syrk(alpha, beta, C_ref, A, N, M, opts=seq_opts(backend))
+        syrk(alpha, beta, C_ref, A, N, M)
 
         # Run in parallel using the specified number of threads and validate the
         # result
         p = syrk_par_spec(N, nthreads)
         C_device = C.clone()
-        syrk(alpha, beta, C_device, A, N, M, opts=par_opts(backend, p))
+        parpy.jit(syrk)(alpha, beta, C_device, A, N, M, opts=par_opts(backend, p))
 
         assert torch.allclose(C_ref, C_device), f"Run failed using {nthreads} threads"
     run_if_backend_is_enabled(backend, helper)

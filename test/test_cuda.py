@@ -12,7 +12,6 @@ np.random.seed(1234)
 
 backend = parpy.CompileBackend.Cuda
 
-@parpy.jit
 def col_sum(x, y, N):
     parpy.label('N')
     for i in range(N):
@@ -88,9 +87,7 @@ def test_cuda_graph_runs_correctly():
         M = 10
         x = np.random.randn(N, M).astype(np.float32)
         y1 = np.zeros((N,)).astype(np.float32)
-        opts.seq = True
-        col_sum(x, y1, 20, opts=opts)
-        opts.seq = False
+        col_sum(x, y1, 20)
         y2 = np.zeros((N,)).astype(np.float32)
         fn(x, y2, 20)
         assert np.allclose(y1, y2)
