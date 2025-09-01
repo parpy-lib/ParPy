@@ -23,11 +23,6 @@ pub struct CompileOptions {
     #[pyo3(get, set)]
     pub parallelize: BTreeMap<String, LoopPar>,
 
-    // When enabled, the function is not JIT compiled but instead executes sequentially using the
-    // Python interpreter.
-    #[pyo3(get, set)]
-    pub seq: bool,
-
     // When enabled, the front-end compiler will print detailed information on why each disabled
     // backend is not considered to be available.
     #[pyo3(get, set)]
@@ -96,7 +91,6 @@ impl Default for CompileOptions {
     fn default() -> Self {
         CompileOptions {
             parallelize: BTreeMap::new(),
-            seq: false,
             verbose_backend_resolution: false,
             backend: CompileBackend::Auto,
             use_cuda_thread_block_clusters: false,
@@ -164,14 +158,6 @@ impl CompileOptions {
 pub fn par(p: BTreeMap<String, LoopPar>) -> PyResult<CompileOptions> {
     let mut opts = CompileOptions::default();
     opts.parallelize = p;
-    Ok(opts)
-}
-
-// Constructs the default options but requesting sequential execution.
-#[pyfunction]
-pub fn seq() -> PyResult<CompileOptions> {
-    let mut opts = CompileOptions::default();
-    opts.seq = true;
     Ok(opts)
 }
 

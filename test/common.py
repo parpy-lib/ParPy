@@ -49,18 +49,9 @@ def run_if_clusters_are_enabled(backend, fn):
     run_if_backend_is_enabled(backend, fn)
 
 # In this file, we define short-hand functions for specifying the compile
-# options to be passed to the JIT compiler. The 'seq_opts' function ensures the
-# code runs sequentially in the Python interpreter, while the 'par_opts'
-# function runs with the given parallelization specification and (importantly)
-# disables caching to prevent bugs in tests.
-
-def seq_opts(backend):
-    opts = parpy.CompileOptions()
-    opts.backend = backend
-    opts.seq = True
-    opts.verbose_backend_resolution = True
-    opts.debug_print = True
-    return opts
+# options to be passed to the JIT compiler. The 'par_opts' function runs with
+# the given parallelization specification and (importantly) disables caching to
+# prevent bugs in tests.
 
 def par_opts(backend, p):
     opts = parpy.CompileOptions()

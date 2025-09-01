@@ -27,16 +27,13 @@ extern "C" int32_t parpy_memcpy(void *dst, void *src, int64_t nbytes, int64_t k)
   } else {
     err = cudaMemcpyAsync(dst, src, nbytes, cudaMemcpyDeviceToDevice, 0);
   }
-  if (err != cudaSuccess) {
-    return 1;
-  }
-  return 0;
+  return (int32_t)err;
+}
+
+extern "C" int32_t parpy_memset(void *ptr, int64_t nbytes, int8_t value) {
+  return (int32_t)cudaMemset(ptr, value, nbytes);
 }
 
 extern "C" int32_t parpy_free_buffer(void *p) {
-  cudaError_t err = cudaFreeAsync(p, 0);
-  if (err != cudaSuccess) {
-    return 1;
-  }
-  return 0;
+  return (int32_t)cudaFreeAsync(p, 0);
 }

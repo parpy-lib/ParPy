@@ -7,7 +7,6 @@ from common import *
 
 torch.manual_seed(1234)
 
-@parpy.jit
 def parpy_eq(dst, a, b):
     with parpy.gpu:
         if a[0] == b[0]:
@@ -15,7 +14,6 @@ def parpy_eq(dst, a, b):
         else:
             dst[0] = 0
 
-@parpy.jit
 def parpy_neq(dst, a, b):
     with parpy.gpu:
         if a[0] != b[0]:
@@ -23,7 +21,6 @@ def parpy_neq(dst, a, b):
         else:
             dst[0] = 0
 
-@parpy.jit
 def parpy_leq(dst, a, b):
     with parpy.gpu:
         if a[0] <= b[0]:
@@ -31,7 +28,6 @@ def parpy_leq(dst, a, b):
         else:
             dst[0] = 0
 
-@parpy.jit
 def parpy_geq(dst, a, b):
     with parpy.gpu:
         if a[0] >= b[0]:
@@ -39,7 +35,6 @@ def parpy_geq(dst, a, b):
         else:
             dst[0] = 0
 
-@parpy.jit
 def parpy_lt(dst, a, b):
     with parpy.gpu:
         if a[0] < b[0]:
@@ -47,7 +42,6 @@ def parpy_lt(dst, a, b):
         else:
             dst[0] = 0
 
-@parpy.jit
 def parpy_gt(dst, a, b):
     with parpy.gpu:
         if a[0] > b[0]:
@@ -70,8 +64,8 @@ def compare_dtype_helper(fn, dtype, backend, compile_only):
         assert len(s) != 0
     else:
         dst_device = torch.zeros_like(dst)
-        fn(dst_device, a, b, opts=par_opts(backend, {}))
-        fn(dst, a, b, opts=seq_opts(backend))
+        parpy.jit(fn)(dst_device, a, b, opts=par_opts(backend, {}))
+        fn(dst, a, b)
         assert dst == dst_device
 
 def compare_dtype(fn, arg_dtype, backend, compile_only):

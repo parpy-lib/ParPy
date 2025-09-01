@@ -14,6 +14,7 @@ extern "C" int32_t parpy_sync();
 extern "C" MTL::Buffer *parpy_alloc_buffer(int64_t);
 extern "C" void *parpy_ptr_buffer(MTL::Buffer*);
 extern "C" int32_t parpy_memcpy(void*, void*, int64_t, int64_t);
+extern "C" int32_t parpy_memset(void*, int64_t, int8_t);
 extern "C" int32_t parpy_free_buffer(MTL::Buffer*);
 extern "C" const char *parpy_get_error_message();
 

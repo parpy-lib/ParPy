@@ -1,5 +1,5 @@
 import pathlib
-from .parpy import CompileBackend, DataType
+from .parpy import CompileBackend, DataType, ElemSize
 from .runtime import _compile_runtime_lib
 
 def _check_errors(lib, rescode):
@@ -54,9 +54,8 @@ def _resolve_dtype(dtype):
     Resolves the provided dtype - provided to allow users to construct buffers
     using the more easily accessible types defined in the 'parpy.types' module.
     """
-    from .types import ExtType
-    if isinstance(dtype, ExtType):
-        return DataType.from_ext_type(dtype)
+    if isinstance(dtype, ElemSize):
+        return DataType.from_elem_size(dtype)
     else:
         return dtype
 
@@ -73,6 +72,24 @@ def sync(backend):
     """
     lib = _compile_runtime_lib(backend)
     _check_errors(lib, lib.parpy_sync())
+
+def empty(shape, dtype, backend):
+    dtype = _resolve_dtype(dtype)
+    lib = _compile_runtime_lib(backend)
+    ptr = Buffer._alloc_data(shape, dtype, lib)
+    return Buffer(ptr, shape, dtype, backend=backend)
+
+def empty_like(b):
+    return empty(b.shape, b.dtype, b.backend)
+
+def zeros(shape, dtype, backend):
+    b = empty(shape, dtype, backend)
+    lib = _compile_runtime_lib(backend)
+    _check_errors(lib, lib.parpy_memset(b.buf, b.size(), 0))
+    return b
+
+def zeros_like(b):
+    return zeros(shape, dtype, backend)
 
 class Buffer:
     def __init__(self, buf, shape, dtype, backend=None, src=None, refcount=None):
@@ -117,13 +134,14 @@ class Buffer:
                 lib = _compile_runtime_lib(self.backend)
                 if src_ptr is not None:
                     _check_errors(lib, lib.parpy_memcpy(src_ptr, self.buf, nbytes, 2))
+                    _check_errors(lib, lib.sync())
+                else:
                     _check_errors(lib, lib.parpy_free_buffer(self.buf))
             elif self.backend == CompileBackend.Metal:
                 lib = _compile_runtime_lib(self.backend)
-                # Need to wait for kernels to complete before we copy data.
                 _check_errors(lib, lib.sync())
                 if src_ptr is not None:
-                    _check_errors(lib, lib.parpy_memcpy(src_ptr, self.ptr, nbytes, 2))
+                    _check_errors(lib, lib.parpy_memcpy(src_ptr, self.buf, nbytes, 2))
                 _check_errors(lib, lib.parpy_free_buffer(self.buf))
 
     def __float__(self):
@@ -153,6 +171,10 @@ class Buffer:
     def sync(self):
         sync(self.backend)
 
+    def _alloc_data(shape, dtype, lib):
+        nbytes = _size(shape, dtype)
+        return _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
+
     def _from_array_cpu(t):
         # For the dummy backend, we just need any pointer to construct the
         # Buffer, so we use a CUDA pointer if this is available to ensure no
@@ -175,10 +197,10 @@ class Buffer:
         except ValueError:
             raise RuntimeError(f"Cannot convert argument {t} to CUDA buffer")
 
-        nbytes = _size(shape, dtype)
         lib = _compile_runtime_lib(CompileBackend.Cuda)
-        ptr = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
-        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, nbytes, 1))
+        ptr = Buffer._alloc_data(shape, dtype, lib)
+        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, _size(shape, dtype), 1))
+        _check_errors(lib, lib.sync())
         return Buffer(ptr, shape, dtype, CompileBackend.Cuda, src=t)
 
     def _from_array_metal(t):
@@ -188,10 +210,9 @@ class Buffer:
             raise RuntimeError(f"Cannot convert argument {t} to Metal buffer")
 
         lib = _compile_runtime_lib(CompileBackend.Metal)
-        nbytes = _size(shape, dtype)
-        buf = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
-        ptr = lib.parpy_ptr_buffer(buf)
-        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, nbytes, 1))
+        buf = Buffer._alloc_data(shape, dtype, lib)
+        _check_errors(lib, lib.parpy_memcpy(buf, data_ptr, _size(shape, dtype), 1))
+        _check_errors(lib, lib.sync())
         return Buffer(buf, shape, dtype, CompileBackend.Metal, src=t)
 
     def from_array(t, backend):
@@ -211,23 +232,34 @@ class Buffer:
         import numpy as np
         if self.backend is None:
             return np.asarray(self)
-        elif self.backend == CompileBackend.Cuda:
+        else:
             a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
             _, _, data_ptr = _check_array_interface(a.__array_interface__)
             lib = _compile_runtime_lib(self.backend)
             _check_errors(lib, lib.parpy_memcpy(data_ptr, self.buf, self.size(), 2))
             _check_errors(lib, lib.sync())
             return a
+
+    def torch_ref(self):
+        """
+        Constructs a reference to the data in torch when using the CUDA
+        backend. Otherwise, it produces a tensor containing a copy of the data
+        in the original buffer.
+        """
+        import torch
+        if self.backend is None:
+            return torch.as_tensor(self.numpy())
+        elif self.backend == CompileBackend.Cuda:
+            return torch.as_tensor(self, device='cuda')
         elif self.backend == CompileBackend.Metal:
-            self.sync()
-            return np.asarray(self)
+            return torch.as_tensor(self.numpy())
         else:
             raise RuntimeError(f"Unsupported buffer backend {self.backend}")
 
     def reshape(self, *dims):
         import math
         curr_sz = math.prod(self.shape)
-        new_shape = tuple(*dims)
+        new_shape = tuple(dims)
         new_sz = math.prod(new_shape)
         if curr_sz == new_sz:
             return Buffer(self.buf, new_shape, self.dtype, backend=self.backend, src=self.src, refcount=self.refcount)
@@ -236,10 +268,11 @@ class Buffer:
 
     def with_type(self, new_dtype):
         new_dtype = _resolve_dtype(new_dtype)
-        if isinstance(new_dtype, prickle.DataType):
-            if self.dtype.size() == new_dtype.size():
-                return Buffer(self.buf, self.shape, new_dtype, backend=self.backend, src=self.src, refcount=self.refcount)
-            else:
-                raise RuntimeError(f"Cannot convert between dtypes of different size ({self.dtype} to {new_dtype})")
+        if isinstance(new_dtype, DataType):
+            b = empty(self.shape, new_dtype, self.backend)
+            lib = _compile_runtime_lib(self.backend)
+            _check_errors(lib, lib.parpy_memcpy(b.buf, self.buf, self.size(), 3))
+            _check_errors(lib, lib.sync())
+            return b
         else:
             raise ValueError(f"Found unsupported data type: {type(new_dtype)}")

@@ -6,21 +6,21 @@ import torch
 from common import *
 
 @parpy.jit
-def parpy_add(x: parpy.types.F32, y: parpy.types.F32):
+def parpy_add_call(x: parpy.types.F32, y: parpy.types.F32):
     return x + y
 
 @parpy.jit
-def parpy_mul(x: parpy.types.F32, y: parpy.types.F32):
+def parpy_mul_call(x: parpy.types.F32, y: parpy.types.F32):
     return x * y
 
 @parpy.jit
 def parpy_add_mul(x: parpy.types.F32, y: parpy.types.F32, z: parpy.types.F32):
-    return parpy_mul(parpy_add(x, y), z)
+    return parpy_mul_call(parpy_add_call(x, y), z)
 
 @parpy.jit
 def parpy_add_direct(x, y, N):
     parpy.label('N')
-    y[:] = parpy_add(x[:], y[:])
+    y[:] = parpy_add_call(x[:], y[:])
 
 @parpy.jit
 def parpy_add_mul_nested(x, y, N):

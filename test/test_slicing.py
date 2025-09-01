@@ -1,29 +1,25 @@
+import numpy as np
 import parpy
 import pytest
-import torch
 
 from common import *
 
-torch.manual_seed(1234)
+np.random.seed(1234)
 
-@parpy.jit
 def add_slices(x, y, out):
     parpy.label('N')
     out[:] = x[:] + y[:]
 
-@parpy.jit
 def add_slices_2d(x, y, out):
     parpy.label('N')
     parpy.label('M')
     out[:,:] = x[:,:] + y[:,:]
 
-@parpy.jit
 def mul_discontinuous_2d(x, y, out):
     parpy.label('N')
     parpy.label('M')
     out[:,:] = x[:,0,:] * y[0,:,:]
 
-@parpy.jit
 def matmul_slice(a, b, M, N, c):
     for i in range(M):
         parpy.label('N')
@@ -31,7 +27,6 @@ def matmul_slice(a, b, M, N, c):
             parpy.label('K')
             c[i,j] = parpy.operators.sum(a[i,:] * b[:,j])
 
-@parpy.jit
 def jacobi_1d(nsteps, A, B):
     for t in range(1, nsteps):
         parpy.label('N')
@@ -39,71 +34,60 @@ def jacobi_1d(nsteps, A, B):
         parpy.label('N')
         A[1:-1] = (B[:-2] + B[1:-1] + B[2:]) / 3.0
 
-@parpy.jit
 def slice_assignment(x):
     parpy.label('N')
     parpy.label('M')
     x[:,:] = 0.0
 
-@parpy.jit
 def slice_multi_dim_sum(x, out):
     parpy.label('N')
     out[0] = parpy.operators.sum(x[:,:])
 
-@parpy.jit
 def slice_multi_dim_interspersed_sum(x, out):
     parpy.label('N')
     out[0] = parpy.operators.sum(x[:,0,:,2])
 
-@parpy.jit
 def slice_assign_to_new_var(x):
     with parpy.gpu:
         y = x[:]
 
-@parpy.jit
 def slice_assign_invalid_dims(x, y):
     with parpy.gpu:
         y[:] = parpy.operators.sum(x[:,:,:], axis=0)
 
-@parpy.jit
 def slice_reduce_incompatible_shapes(x, y, out):
     with parpy.gpu:
         out[0] = parpy.operators.sum(x[:,:] * y[:], axis=0)
 
-@parpy.jit
 def slice_reduce_in_loop(x, y, N, out):
     parpy.label('N')
     for i in range(N):
         parpy.label('M')
         out[i] = parpy.operators.sum(x[i,:] * y[:,i])
 
-@parpy.jit
 def slice_invalid_reduce_assignment(x, y, z, N):
     parpy.label('N')
     for i in range(N):
         x[i,:] = parpy.operators.min(y[i,:] + z[:,i])
 
-@parpy.jit
 def slice_invalid_dims(x, y, N):
     parpy.label('N')
     for i in range(N):
         x[i,:] = y[i,:,:]
 
-@parpy.jit
 def slice_in_range(x, y):
     parpy.label('N')
     for i in range(parpy.operators.sum(y[:])):
         x[i] = i
 
-@parpy.jit
 def temp_slices(x, y, z):
     parpy.label('N')
     x[:] = (y[1:] + z[:-1])[1:-1]
 
 def run_slicing_test(compile_only, spec, backend):
     def clone_arg(arg):
-        if isinstance(arg, torch.Tensor):
-            return arg.detach().clone()
+        if isinstance(arg, np.ndarray):
+            return np.copy(arg)
         else:
             return arg
     if len(spec) == 4:
@@ -128,16 +112,16 @@ def run_slicing_test(compile_only, spec, backend):
     else:
         if err:
             with pytest.raises(err) as e_info:
-                fn(*args, opts=par_opts(backend, p))
+                parpy.jit(fn)(*args, opts=par_opts(backend, p))
             assert e_info.match(err_msg)
         else:
             seq_args = [clone_arg(arg) for arg in args]
-            fn(*args, opts=par_opts(backend, p))
-            fn(*seq_args, opts=seq_opts(backend))
-            assert torch.allclose(args[-1], seq_args[-1], atol=1e-5)
+            parpy.jit(fn)(*args, opts=par_opts(backend, p))
+            fn(*seq_args)
+            assert np.allclose(args[-1], seq_args[-1], atol=1e-5)
 
 def tensor(*shapes):
-    return torch.randn(shapes, dtype=torch.float32)
+    return np.random.randn(*shapes).astype(np.float32)
 
 fun_specs = [
     (add_slices, [tensor(10), tensor(10), tensor(10)]),

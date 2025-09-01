@@ -1,99 +1,88 @@
+import numpy as np
 import parpy
 import pytest
 import re
 import subprocess
 import tempfile
-import torch
 
 from common import *
 
-torch.manual_seed(1234)
+np.random.seed(1234)
 
-@parpy.jit
 def sum_rows(x, out, N):
     parpy.label('outer')
     for i in range(N):
         parpy.label('inner')
         out[i] = parpy.operators.sum(x[i,:])
 
-@parpy.jit
 def prod_rows(x, out, N):
     parpy.label('outer')
     for i in range(N):
         parpy.label('inner')
         out[i] = parpy.operators.prod(x[i,:])
 
-@parpy.jit
 def max_rows(x, out, N):
     parpy.label('outer')
     for i in range(N):
         parpy.label('inner')
         out[i] = parpy.operators.max(x[i,:])
 
-@parpy.jit
 def min_rows(x, out, N):
     parpy.label('outer')
     for i in range(N):
         parpy.label('inner')
         out[i] = parpy.operators.min(x[i,:])
 
-@parpy.jit
 def sum_axis(x, out, N):
     parpy.label('outer')
     parpy.label('inner')
     out[:] = parpy.operators.sum(x[:,:], axis=1)
 
-@parpy.jit
 def prod_axis(x, out, N):
     parpy.label('outer')
     parpy.label('inner')
     out[:] = parpy.operators.prod(x[:,:], axis=1)
 
-@parpy.jit
 def max_axis(x, out, N):
     parpy.label('outer')
     parpy.label('inner')
     out[:] = parpy.operators.max(x[:,:], axis=1)
 
-@parpy.jit
 def min_axis(x, out, N):
     parpy.label('outer')
     parpy.label('inner')
     out[:] = parpy.operators.min(x[:,:], axis=1)
 
-@parpy.jit
 def sum_2d(x, out, N):
     parpy.label('outer')
     out[0] = parpy.operators.sum(x[:,:])
 
-@parpy.jit
 def prod_2d(x, out, N):
     parpy.label('outer')
     out[0] = parpy.operators.prod(x[:,:])
 
-@parpy.jit
 def max_2d(x, out, N):
     parpy.label('outer')
     out[0] = parpy.operators.max(x[:,:])
 
-@parpy.jit
 def min_2d(x, out, N):
     parpy.label('outer')
     out[0] = parpy.operators.min(x[:,:])
 
-def reduce_wrap(reduce_fn, x, opts):
+def reduce_wrap(reduce_fn, x, opts=None):
     N, M = x.shape
-    out = torch.zeros(N, dtype=x.dtype)
-    reduce_fn(x, out, N, opts=opts)
+    out = np.zeros(N, dtype=x.dtype)
+    if opts is None:
+        reduce_fn(x, out, N)
+    else:
+        parpy.jit(reduce_fn)(x, out, N, opts=opts)
     return out
 
 def compare_reduce(reduce_fn, N, M, opts):
-    x = torch.randn((N, M), dtype=torch.float32)
-    opts.seq = True
-    expected = reduce_wrap(reduce_fn, x, opts)
-    opts.seq = False
+    x = np.random.randn(N, M).astype(np.float32)
+    expected = reduce_wrap(reduce_fn, x)
     actual = reduce_wrap(reduce_fn, x, opts)
-    assert torch.allclose(expected, actual, atol=1e-4), f"{expected}\n{actual}"
+    assert np.allclose(expected, actual, atol=1e-4), f"{expected}\n{actual}"
 
 reduce_funs = [
     sum_rows,
@@ -202,8 +191,8 @@ def test_extended_clustered_reduction(fn, backend):
 def test_reduction_codegen(fn, backend):
     N = 100
     M = 50
-    x = torch.randn((N, M), dtype=torch.float32)
-    out = torch.zeros(N, dtype=x.dtype)
+    x = np.random.randn(N, M).astype(np.float32)
+    out = np.zeros((N,), dtype=x.dtype)
     p = {'outer': parpy.threads(N)}
     s1 = parpy.print_compiled(fn, [x, out, N], par_opts(backend, p))
     if not fn in multi_dim_reduce_funs:
@@ -253,8 +242,8 @@ def test_reduction_codegen(fn, backend):
 def test_clustered_reduction_codegen_in_cuda(fn):
     N = 100
     M = 50
-    x = torch.randn((N, M), dtype=torch.float32)
-    out = torch.zeros(N, dtype=x.dtype)
+    x = np.random.randn(N, M).astype(np.float32)
+    out = np.zeros((N,), dtype=x.dtype)
     p = {
         'outer': parpy.threads(N),
         'inner': parpy.threads(4096).tpb(512)
@@ -311,8 +300,8 @@ def test_clustered_reduction_compiles_in_cuda(fn):
     def helper():
         N = 100
         M = 50
-        x = torch.randn((N, M), dtype=torch.float32)
-        out = torch.zeros(N, dtype=x.dtype)
+        x = np.random.randn(N, M).astype(np.float32)
+        out = np.zeros((N,), dtype=x.dtype)
         p = {
             'outer': parpy.threads(N),
             'inner': parpy.threads(4096).tpb(512)
@@ -323,7 +312,6 @@ def test_clustered_reduction_compiles_in_cuda(fn):
     run_if_clusters_are_enabled(parpy.CompileBackend.Cuda, helper)
 
 # Tests using a custom step size.
-@parpy.jit
 def odd_entries_sum(x, y, N, M):
     parpy.label('N')
     for i in range(N):
@@ -335,12 +323,12 @@ def odd_entries_sum(x, y, N, M):
 def odd_entries_wrap(backend, p):
     N = 10
     M = 4096
-    x = torch.randn((N, M), dtype=torch.float32)
-    out = torch.zeros(N, dtype=x.dtype)
-    odd_entries_sum(x, out, N, M, opts=par_opts(backend, p))
-    out_seq = torch.zeros_like(out)
-    odd_entries_sum(x, out_seq, N, M, opts=seq_opts(backend))
-    assert torch.allclose(out, out_seq, atol=1e-4)
+    x = np.random.randn(N, M).astype(np.float32)
+    out = np.zeros((N,), dtype=x.dtype)
+    parpy.jit(odd_entries_sum)(x, out, N, M, opts=par_opts(backend, p))
+    out_seq = np.zeros_like(out)
+    odd_entries_sum(x, out_seq, N, M)
+    assert np.allclose(out, out_seq, atol=1e-4)
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_odd_entries_single_block(backend):
