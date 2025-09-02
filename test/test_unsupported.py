@@ -93,3 +93,14 @@ def test_return_in_main_function():
         with pytest.raises(RuntimeError) as e_info:
             f_return(np.ndarray(10), opts=par_opts(backend, {}))
         assert e_info.match(r"The called function f_return cannot return a value")
+
+def test_call_without_compiler_options():
+    with pytest.raises(RuntimeError) as e_info:
+        @parpy.jit
+        def fun_with_args(x, y):
+            with parpy.gpu:
+                x[:] += y[:]
+        x = np.ndarray((10,), dtype=np.float32)
+        y = np.ndarray((10,), dtype=np.float32)
+        fun_with_args(x, y)
+    assert e_info.match("Missing required keyword argument opts in call to fun_with_args")
