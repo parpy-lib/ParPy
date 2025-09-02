@@ -53,7 +53,7 @@ def test_dict_with_non_string_keys():
             a["x"] = a["y"]
 
     with pytest.raises(RuntimeError) as e_info:
-        dict_arg({'x': 2, 'y': 4, 3: 5})
+        dict_arg({'x': 2, 'y': 4, 3: 5}, opts=parpy.par({}))
     assert e_info.match(r"(.*non-string key.*)|(Found no enabled GPU backends.*)")
 
 def test_dict_with_int_key():
@@ -63,7 +63,7 @@ def test_dict_with_int_key():
             a["x"] = a[2]
 
     with pytest.raises(RuntimeError) as e_info:
-        dict_arg({'x': 2, 2: 4})
+        dict_arg({'x': 2, 2: 4}, opts=parpy.par({}))
     assert e_info.match(r"(.*non-string key.*)|(Found no enabled GPU backends.*)")
 
 def test_invalid_max_thread_blocks_per_cluster():
