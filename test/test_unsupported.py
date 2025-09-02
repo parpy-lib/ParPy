@@ -53,7 +53,7 @@ def test_dict_with_non_string_keys():
             a["x"] = a["y"]
 
     with pytest.raises(RuntimeError) as e_info:
-        dict_arg({'x': 2, 'y': 4, 3: 5})
+        dict_arg({'x': 2, 'y': 4, 3: 5}, opts=parpy.par({}))
     assert e_info.match(r"(.*non-string key.*)|(Found no enabled GPU backends.*)")
 
 def test_dict_with_int_key():
@@ -63,7 +63,7 @@ def test_dict_with_int_key():
             a["x"] = a[2]
 
     with pytest.raises(RuntimeError) as e_info:
-        dict_arg({'x': 2, 2: 4})
+        dict_arg({'x': 2, 2: 4}, opts=parpy.par({}))
     assert e_info.match(r"(.*non-string key.*)|(Found no enabled GPU backends.*)")
 
 def test_invalid_max_thread_blocks_per_cluster():
@@ -93,3 +93,14 @@ def test_return_in_main_function():
         with pytest.raises(RuntimeError) as e_info:
             f_return(np.ndarray(10), opts=par_opts(backend, {}))
         assert e_info.match(r"The called function f_return cannot return a value")
+
+def test_call_without_compiler_options():
+    with pytest.raises(RuntimeError) as e_info:
+        @parpy.jit
+        def fun_with_args(x, y):
+            with parpy.gpu:
+                x[:] += y[:]
+        x = np.ndarray((10,), dtype=np.float32)
+        y = np.ndarray((10,), dtype=np.float32)
+        fun_with_args(x, y)
+    assert e_info.match("Missing required keyword argument opts in call to fun_with_args")

@@ -56,9 +56,9 @@ def _convert_python_function_to_ir(fn, vars):
     info = (filepath, line_ofs, col_ofs)
     return parpy.python_to_ir(ast, info, top_map, vars)
 
-def _check_kwarg(kwargs, key, default_value, expected_ty):
+def _check_kwarg(kwargs, key, expected_ty, fun_name):
     if key not in kwargs or kwargs[key] is None:
-        return default_value
+        raise RuntimeError(f"Missing required keyword argument {key} in call to {fun_name}")
     elif isinstance(kwargs[key], expected_ty):
         v = kwargs[key]
         del kwargs[key]
@@ -86,9 +86,9 @@ def _declare_external(fn, ext_name, target, header, parallelize, vars):
     info = (filepath, line_ofs, col_ofs)
     return parpy.declare_external(ast, info, ext_name, target, header, parallelize, vars)
 
-def _check_kwargs(kwargs):
+def _check_kwargs(kwargs, fun_name):
     default_opts = CompileOptions()
-    opts = _check_kwarg(kwargs, "opts", default_opts, type(default_opts))
+    opts = _check_kwarg(kwargs, "opts", type(default_opts), fun_name)
 
     # If the compiler is given any other keyword arguments than those specified
     # above, it reports an error specifying which keyword arguments were not
@@ -240,7 +240,7 @@ def jit(fun):
 
     @functools.wraps(fun)
     def inner(*args, **kwargs):
-        opts = backend._resolve_backend(_check_kwargs(kwargs), True)
+        opts = backend._resolve_backend(_check_kwargs(kwargs, fun.__name__), True)
         callbacks, args = check_arguments(args, opts, True)
         _compile_function(ir_ast, args, opts)(*args)
         _run_callbacks(callbacks, opts)
