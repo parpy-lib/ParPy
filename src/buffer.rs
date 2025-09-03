@@ -87,6 +87,24 @@ impl ElemSize {
         }
     }
 
+    fn to_torch<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let torch = py.import("torch")?;
+        match self {
+            ElemSize::Bool => torch.getattr("bool"),
+            ElemSize::I8 => torch.getattr("int8"),
+            ElemSize::I16 => torch.getattr("int16"),
+            ElemSize::I32 => torch.getattr("int32"),
+            ElemSize::I64 => torch.getattr("int64"),
+            ElemSize::U8 => torch.getattr("uint8"),
+            ElemSize::F16 => torch.getattr("float16"),
+            ElemSize::F32 => torch.getattr("float32"),
+            ElemSize::F64 => torch.getattr("float64"),
+            ElemSize::U16 | ElemSize::U32 | ElemSize::U64 => {
+                Err(PyRuntimeError::new_err(format!("Unsupported Torch type: {self}")))
+            }
+        }
+    }
+
     fn to_ctype<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let ctypes = py.import("ctypes")?;
         match self {
@@ -210,6 +228,10 @@ impl DataType {
 
     fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         self.sz.to_numpy(py)
+    }
+
+    fn to_torch<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        self.sz.to_torch(py)
     }
 
     fn to_ctype<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

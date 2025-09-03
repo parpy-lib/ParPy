@@ -1,5 +1,6 @@
 from .parpy import CompileBackend
 from .buffer import Buffer
+from .buffer import from_array
 import numpy as np
 
 def check_dict(arg, i, in_dict, opts, execute):
@@ -24,7 +25,7 @@ def check_arg(arg, i, in_dict, opts, execute):
         return [], arg
     elif hasattr(arg, "__cuda_array_interface__"):
         if opts.backend == CompileBackend.Cuda:
-            return [], Buffer.from_array(arg, CompileBackend.Cuda)
+            return [], from_array(arg, CompileBackend.Cuda)
         else:
             raise RuntimeError(f"Argument {i} is a CUDA array, which is not "
                                 "supported in {opts.backend}.")
@@ -33,9 +34,9 @@ def check_arg(arg, i, in_dict, opts, execute):
         # will not be executed, we do not copy data so we can generate code for
         # a backend even if it is not available.
         if not execute:
-            buf = Buffer.from_array(arg, None)
+            buf = from_array(arg, None)
         else:
-            buf = Buffer.from_array(arg, opts.backend)
+            buf = from_array(arg, opts.backend)
         callback = lambda: buf.__del__()
         return [callback], buf
     else:

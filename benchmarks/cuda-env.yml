@@ -1,4 +1,4 @@
-name: parpy-env
+name: cuda-parpy-env
 channels:
   - pytorch
   - conda-forge

@@ -1,4 +1,4 @@
-name: parpy-env
+name: metal-parpy-env
 channels:
   - conda-forge
 dependencies:

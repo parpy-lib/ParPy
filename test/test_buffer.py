@@ -73,7 +73,7 @@ def test_buffer_back_to_back_conversion(backend):
         import numpy as np
         shape = (20, 10, 32)
         a = np.random.randn(*shape)
-        b = parpy.buffer.Buffer.from_array(a, backend)
+        b = parpy.buffer.from_array(a, backend)
         c = b.numpy()
         assert np.allclose(a, c)
     run_if_backend_is_enabled(backend, helper)
