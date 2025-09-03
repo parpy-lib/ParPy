@@ -105,7 +105,7 @@ def zeros(shape, dtype, backend):
         return b
 
 def zeros_like(b):
-    return zeros(shape, dtype, backend)
+    return zeros(b.shape, b.dtype, b.backend)
 
 def from_array(t, backend):
     if backend is None:
