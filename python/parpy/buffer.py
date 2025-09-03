@@ -65,6 +65,10 @@ def _size(shape, dtype):
         sz *= dim
     return sz
 
+def _alloc_data(shape, dtype, lib):
+    nbytes = _size(shape, dtype)
+    return _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
+
 def sync(backend):
     """
     Synchronizes the CPU and the target device by waiting until all running
@@ -76,13 +80,14 @@ def sync(backend):
 def empty(shape, dtype, backend):
     dtype = _resolve_dtype(dtype)
     lib = _compile_runtime_lib(backend)
-    ptr = Buffer._alloc_data(shape, dtype, lib)
+    ptr = _alloc_data(shape, dtype, lib)
     return Buffer(ptr, shape, dtype, backend=backend)
 
 def empty_like(b):
     return empty(b.shape, b.dtype, b.backend)
 
 def zeros(shape, dtype, backend):
+    dtype = _resolve_dtype(dtype)
     b = empty(shape, dtype, backend)
     lib = _compile_runtime_lib(backend)
     _check_errors(lib, lib.parpy_memset(b.buf, b.size(), 0))
@@ -91,8 +96,34 @@ def zeros(shape, dtype, backend):
 def zeros_like(b):
     return zeros(shape, dtype, backend)
 
+def from_array(t, backend):
+    # For the dummy backend, we just need any pointer to construct the
+    # Buffer, so we use a CUDA pointer if this is available to ensure no
+    # copying is performed (this Buffer is only used for validation
+    # purposes, it should never be dereferenced).
+    if backend is None:
+        try:
+            shape, dtype, data_ptr = _extract_array_interface(t, allow_cuda=True)
+        except ValueError:
+            raise RuntimeError(f"Cannot convert argument {t} to CPU buffer")
+        return Buffer(data_ptr, shape, dtype, None, copy_back=False)
+
+    try:
+        allow_cuda = backend == CompileBackend.Cuda
+        shape, dtype, data_ptr = _extract_array_interface(t, allow_cuda=allow_cuda)
+        if allow_cuda and hasattr(t, "__cuda_array_interface__"):
+            return Buffer(data_ptr, shape, dtype, backend, src=t, copy_back=False)
+    except ValueError:
+        raise RuntimeError("Cannot convert argument {t} to buffer of backend {backend}")
+
+    lib = _compile_runtime_lib(backend)
+    ptr = _alloc_data(shape, dtype, lib)
+    _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, _size(shape, dtype), 1))
+    _check_errors(lib, lib.sync())
+    return Buffer(ptr, shape, dtype, backend, src=t)
+
 class Buffer:
-    def __init__(self, buf, shape, dtype, backend=None, src=None, refcount=None):
+    def __init__(self, buf, shape, dtype, backend=None, src=None, refcount=None, copy_back=True):
         if refcount is None:
             self.refcount = [1]
         else:
@@ -104,6 +135,7 @@ class Buffer:
         self.dtype = _resolve_dtype(dtype)
         self.backend = backend
         self.src = src
+        self.copy_back = copy_back
 
         if self.backend is None:
             arr_intf = _to_array_interface(self.buf, self.dtype, self.shape)
@@ -125,24 +157,31 @@ class Buffer:
             nbytes = self.dtype.size()
             for sh in self.shape:
                 nbytes *= sh
-            if self.src is not None:
-                allow_cuda = self.backend == CompileBackend.Cuda
-                _, _, src_ptr = _extract_array_interface(self.src, allow_cuda=allow_cuda)
-            else:
-                src_ptr = None
-            if self.backend == CompileBackend.Cuda:
-                lib = _compile_runtime_lib(self.backend)
-                if src_ptr is not None:
-                    _check_errors(lib, lib.parpy_memcpy(src_ptr, self.buf, nbytes, 2))
-                    _check_errors(lib, lib.sync())
+
+            # When the buffer consists of a reference to the original array,
+            # i.e., it is constructed without copying, we do not want to copy
+            # back data after destroying it nor do we want to deallocate its
+            # memory.
+            if self.copy_back:
+                # Extract the pointer to the source from which this buffer was
+                # constructed. If the source is not defined, the buffer is
+                # standalone, and we do not need to copy back data when
+                # destroying it.
+                if self.src is not None:
+                    _, _, src_ptr = _extract_array_interface(self.src, allow_cuda=False)
                 else:
-                    _check_errors(lib, lib.parpy_free_buffer(self.buf))
-            elif self.backend == CompileBackend.Metal:
+                    src_ptr = None
+
                 lib = _compile_runtime_lib(self.backend)
-                _check_errors(lib, lib.sync())
-                if src_ptr is not None:
-                    _check_errors(lib, lib.parpy_memcpy(src_ptr, self.buf, nbytes, 2))
+                if self.backend == CompileBackend.Cuda:
+                    if src_ptr is not None:
+                        _check_errors(lib, lib.parpy_memcpy(src_ptr, self.buf, nbytes, 2))
+                elif self.backend == CompileBackend.Metal:
+                    _check_errors(lib, lib.sync())
+                    if src_ptr is not None:
+                        _check_errors(lib, lib.parpy_memcpy(src_ptr, self.buf, nbytes, 2))
                 _check_errors(lib, lib.parpy_free_buffer(self.buf))
+                _check_errors(lib, lib.sync())
 
     def __float__(self):
         if len(self.shape) == 0:
@@ -170,60 +209,6 @@ class Buffer:
 
     def sync(self):
         sync(self.backend)
-
-    def _alloc_data(shape, dtype, lib):
-        nbytes = _size(shape, dtype)
-        return _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
-
-    def _from_array_cpu(t):
-        # For the dummy backend, we just need any pointer to construct the
-        # Buffer, so we use a CUDA pointer if this is available to ensure no
-        # copying is performed (this Buffer is only used for validation
-        # purposes, it should never be dereferenced).
-        try:
-            shape, dtype, data_ptr = _extract_array_interface(t, allow_cuda=True)
-        except ValueError:
-            raise RuntimeError(f"Cannot convert argument {t} to CPU buffer")
-        return Buffer(data_ptr, shape, dtype, None)
-
-    def _from_array_cuda(t):
-        # If the provided argument defines the __cuda_array_interface__, we can
-        # construct the buffer without copying data. Otherwise, we allocate a
-        # new buffer based on the provided data.
-        try:
-            shape, dtype, data_ptr = _extract_array_interface(t, allow_cuda=True)
-            if hasattr(t, "__cuda_array_interface__"):
-                return Buffer(data_ptr, shape, dtype, CompileBackend.Cuda, src=t)
-        except ValueError:
-            raise RuntimeError(f"Cannot convert argument {t} to CUDA buffer")
-
-        lib = _compile_runtime_lib(CompileBackend.Cuda)
-        ptr = Buffer._alloc_data(shape, dtype, lib)
-        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, _size(shape, dtype), 1))
-        _check_errors(lib, lib.sync())
-        return Buffer(ptr, shape, dtype, CompileBackend.Cuda, src=t)
-
-    def _from_array_metal(t):
-        try:
-            shape, dtype, data_ptr = _extract_array_interface(t)
-        except ValueError:
-            raise RuntimeError(f"Cannot convert argument {t} to Metal buffer")
-
-        lib = _compile_runtime_lib(CompileBackend.Metal)
-        buf = Buffer._alloc_data(shape, dtype, lib)
-        _check_errors(lib, lib.parpy_memcpy(buf, data_ptr, _size(shape, dtype), 1))
-        _check_errors(lib, lib.sync())
-        return Buffer(buf, shape, dtype, CompileBackend.Metal, src=t)
-
-    def from_array(t, backend):
-        if backend is None:
-            return Buffer._from_array_cpu(t)
-        if backend == CompileBackend.Cuda:
-            return Buffer._from_array_cuda(t)
-        elif backend == CompileBackend.Metal:
-            return Buffer._from_array_metal(t)
-        else:
-            raise RuntimeError(f"Unsupported buffer backend {backend}")
 
     def size(self):
         return _size(self.shape, self.dtype)
