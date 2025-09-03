@@ -12,6 +12,16 @@ def test_buffer_empty(backend):
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('backend', compiler_backends)
+def test_buffer_empty_like(backend):
+    def helper():
+        shape = (20, 10, 32)
+        b1 = parpy.buffer.empty(shape, parpy.types.F32, backend)
+        b2 = parpy.buffer.empty_like(b1)
+        assert b1.shape == b2.shape
+        assert b1._get_ptr() != b2._get_ptr()
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
 def test_buffer_zeros(backend):
     def helper():
         import numpy as np
@@ -19,6 +29,18 @@ def test_buffer_zeros(backend):
         b = parpy.buffer.zeros(shape, parpy.types.F32, backend)
         n = b.numpy()
         assert np.allclose(n, np.zeros(shape, dtype=np.float32))
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_buffer_zeros_like(backend):
+    def helper():
+        import numpy as np
+        shape = (20, 10, 32)
+        b1 = parpy.buffer.empty(shape, parpy.types.F32, backend)
+        b2 = parpy.buffer.zeros_like(b1)
+        assert b1.shape == b2.shape
+        assert b1._get_ptr() != b2._get_ptr()
+        assert np.allclose(b2.numpy(), np.zeros(shape, dtype=np.float32))
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('backend', compiler_backends)
