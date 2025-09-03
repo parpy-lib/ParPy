@@ -87,7 +87,7 @@ def empty(shape, dtype, backend):
         lib = _compile_runtime_lib(backend)
         nbytes = _size(shape, dtype)
         buf = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
-        return MetalBuffer(buf, shape, dtype, backend)
+        return MetalBuffer(buf, shape, dtype)
 
 def empty_like(b):
     return empty(b.shape, b.dtype, b.backend)
@@ -286,11 +286,11 @@ class CudaBuffer(Buffer):
 class MetalBuffer(Buffer):
     def __init__(self, buf, shape, dtype, src=None, refcount=None):
         super().__init__(buf, shape, dtype, src, refcount)
+        self.lib = _compile_runtime_lib(CompileBackend.Metal)
         ptr = self.lib.parpy_ptr_buffer(self.buf)
         arr_intf = _to_array_interface(ptr, self.dtype, self.shape)
         self.__array_interface__ = arr_intf
         self.backend = CompileBackend.Metal
-        self.lib = _compile_runtime_lib(self.backend)
 
     def _deconstruct(self, src_ptr):
         _check_errors(self.lib, self.lib.sync())
@@ -310,7 +310,7 @@ class MetalBuffer(Buffer):
         buf = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
         _check_errors(lib, lib.parpy_memcpy(buf, data_ptr, nbytes, 1))
         _check_errors(lib, lib.sync())
-        return MetalBuffer(buf, shape, dtype, backend, src=t)
+        return MetalBuffer(buf, shape, dtype, src=t)
 
     def _get_ptr(self):
         return self.buf
