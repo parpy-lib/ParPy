@@ -79,109 +79,69 @@ def sync(backend):
 
 def empty(shape, dtype, backend):
     dtype = _resolve_dtype(dtype)
-    lib = _compile_runtime_lib(backend)
-    ptr = _alloc_data(shape, dtype, lib)
-    return Buffer(ptr, shape, dtype, backend=backend)
+    if backend == CompileBackend.Cuda:
+        import torch
+        t = torch.empty(*shape, dtype=dtype.to_torch(), device='cuda')
+        return CudaBuffer(t, shape, dtype)
+    else:
+        lib = _compile_runtime_lib(backend)
+        nbytes = _size(shape, dtype)
+        buf = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
+        return MetalBuffer(buf, shape, dtype, backend)
 
 def empty_like(b):
     return empty(b.shape, b.dtype, b.backend)
 
 def zeros(shape, dtype, backend):
     dtype = _resolve_dtype(dtype)
-    b = empty(shape, dtype, backend)
-    lib = _compile_runtime_lib(backend)
-    _check_errors(lib, lib.parpy_memset(b.buf, b.size(), 0))
-    return b
+    if backend == CompileBackend.Cuda:
+        import torch
+        t = torch.zeros(*shape, dtype=dtype.to_torch(), device='cuda')
+        return CudaBuffer(t, shape, dtype)
+    else:
+        b = empty(shape, dtype, backend)
+        lib = _compile_runtime_lib(backend)
+        _check_errors(lib, lib.parpy_memset(b.buf, b.size(), 0))
+        return b
 
 def zeros_like(b):
     return zeros(shape, dtype, backend)
 
 def from_array(t, backend):
-    # For the dummy backend, we just need any pointer to construct the
-    # Buffer, so we use a CUDA pointer if this is available to ensure no
-    # copying is performed (this Buffer is only used for validation
-    # purposes, it should never be dereferenced).
     if backend is None:
-        try:
-            shape, dtype, data_ptr = _extract_array_interface(t, allow_cuda=True)
-        except ValueError:
-            raise RuntimeError(f"Cannot convert argument {t} to CPU buffer")
-        return Buffer(data_ptr, shape, dtype, None, copy_back=False)
-
-    try:
-        allow_cuda = backend == CompileBackend.Cuda
-        shape, dtype, data_ptr = _extract_array_interface(t, allow_cuda=allow_cuda)
-        if allow_cuda and hasattr(t, "__cuda_array_interface__"):
-            return Buffer(data_ptr, shape, dtype, backend, src=t, copy_back=False)
-    except ValueError:
-        raise RuntimeError("Cannot convert argument {t} to buffer of backend {backend}")
-
-    lib = _compile_runtime_lib(backend)
-    ptr = _alloc_data(shape, dtype, lib)
-    _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, _size(shape, dtype), 1))
-    _check_errors(lib, lib.sync())
-    return Buffer(ptr, shape, dtype, backend, src=t)
+        return DummyBuffer._from_array(t)
+    elif backend == CompileBackend.Cuda:
+        return CudaBuffer._from_array(t)
+    elif backend == CompileBackend.Metal:
+        return MetalBuffer._from_array(t)
+    else:
+        raise ValueError(f"Cannot convert to buffer of unknown backend {backend}")
 
 class Buffer:
-    def __init__(self, buf, shape, dtype, backend=None, src=None, refcount=None, copy_back=True):
+    def __init__(self, buf, shape, dtype, src=None, refcount=None):
+        if type(self) is Buffer:
+            raise RuntimeError(f"Cannot construct instance of base Buffer class")
+
+        self.buf = buf
+        self.shape = shape
+        self.dtype = _resolve_dtype(dtype)
+        self.src = src
+
         if refcount is None:
             self.refcount = [1]
         else:
             self.refcount = refcount
             self.refcount[0] += 1
 
-        self.buf = buf
-        self.shape = tuple(shape)
-        self.dtype = _resolve_dtype(dtype)
-        self.backend = backend
-        self.src = src
-        self.copy_back = copy_back
-
-        if self.backend is None:
-            arr_intf = _to_array_interface(self.buf, self.dtype, self.shape)
-            setattr(self, "__array_interface__", arr_intf)
-        elif self.backend == CompileBackend.Cuda:
-            cuda_intf = _to_array_interface(self.buf, self.dtype, self.shape)
-            setattr(self, "__cuda_array_interface__", cuda_intf)
-        elif self.backend == CompileBackend.Metal:
-            lib = _compile_runtime_lib(self.backend)
-            self.ptr = lib.parpy_ptr_buffer(self.buf)
-            arr_intf = _to_array_interface(self.ptr, self.dtype, self.shape)
-            setattr(self, "__array_interface__", arr_intf)
-        else:
-            raise RuntimeError(f"Unsupported compiler backend {backend}")
-
     def __del__(self):
         self.refcount[0] -= 1
         if self.refcount[0] == 0:
-            nbytes = self.dtype.size()
-            for sh in self.shape:
-                nbytes *= sh
+            if self.src is not None:
+                _, _, src_ptr = _extract_array_interface(self.src)
+            else:
+                src_ptr = None
 
-            # When the buffer consists of a reference to the original array,
-            # i.e., it is constructed without copying, we do not want to copy
-            # back data after destroying it nor do we want to deallocate its
-            # memory.
-            if self.copy_back:
-                # Extract the pointer to the source from which this buffer was
-                # constructed. If the source is not defined, the buffer is
-                # standalone, and we do not need to copy back data when
-                # destroying it.
-                if self.src is not None:
-                    _, _, src_ptr = _extract_array_interface(self.src, allow_cuda=False)
-                else:
-                    src_ptr = None
-
-                lib = _compile_runtime_lib(self.backend)
-                if self.backend == CompileBackend.Cuda:
-                    if src_ptr is not None:
-                        _check_errors(lib, lib.parpy_memcpy(src_ptr, self.buf, nbytes, 2))
-                elif self.backend == CompileBackend.Metal:
-                    _check_errors(lib, lib.sync())
-                    if src_ptr is not None:
-                        _check_errors(lib, lib.parpy_memcpy(src_ptr, self.buf, nbytes, 2))
-                _check_errors(lib, lib.parpy_free_buffer(self.buf))
-                _check_errors(lib, lib.sync())
+            self._deconstruct(src_ptr)
 
     def __float__(self):
         if len(self.shape) == 0:
@@ -207,6 +167,12 @@ class Buffer:
                 return self.__int__()
         raise ValueError(f"Cannot use buffer of shape {self.shape} and type {self.dtype} as index")
 
+    def _deconstruct(self, src_ptr):
+        pass
+
+    def _get_ptr(self):
+        return self.buf
+
     def sync(self):
         sync(self.backend)
 
@@ -215,31 +181,11 @@ class Buffer:
 
     def numpy(self):
         import numpy as np
-        if self.backend is None:
-            return np.asarray(self)
-        else:
-            a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
-            _, _, data_ptr = _check_array_interface(a.__array_interface__)
-            lib = _compile_runtime_lib(self.backend)
-            _check_errors(lib, lib.parpy_memcpy(data_ptr, self.buf, self.size(), 2))
-            _check_errors(lib, lib.sync())
-            return a
+        return np.asarray(self)
 
     def torch_ref(self):
-        """
-        Constructs a reference to the data in torch when using the CUDA
-        backend. Otherwise, it produces a tensor containing a copy of the data
-        in the original buffer.
-        """
         import torch
-        if self.backend is None:
-            return torch.as_tensor(self.numpy())
-        elif self.backend == CompileBackend.Cuda:
-            return torch.as_tensor(self, device='cuda')
-        elif self.backend == CompileBackend.Metal:
-            return torch.as_tensor(self.numpy())
-        else:
-            raise RuntimeError(f"Unsupported buffer backend {self.backend}")
+        return torch.as_tensor(self.numpy())
 
     def reshape(self, *dims):
         import math
@@ -247,17 +193,145 @@ class Buffer:
         new_shape = tuple(dims)
         new_sz = math.prod(new_shape)
         if curr_sz == new_sz:
-            return Buffer(self.buf, new_shape, self.dtype, backend=self.backend, src=self.src, refcount=self.refcount)
+            return type(self)(self.buf, new_shape, self.dtype, self.src, self.refcount)
         else:
             raise ValueError(f"Cannot reshape buffer of shape {self.shape} to {new_shape}")
 
     def with_type(self, new_dtype):
+        raise RuntimeError(f"Cannot instantiate base Buffer class")
+
+class DummyBuffer(Buffer):
+    def __init__(self, buf, shape, dtype, src=None, refcount=None):
+        super().__init__(buf, shape, dtype, src, refcount)
+        arr_intf = _to_array_interface(self.buf, self.dtype, self.shape)
+        self.__array_interface__ = arr_intf
+
+    @classmethod
+    def _make_view(buf, shape, dtype, src, refcount):
+        return DummyBuffer(buf, shape, dtype, src, refcount)
+
+    def _from_array(t):
+        try:
+            shape, dtype, data_ptr = _extract_array_interface(t, allow_cuda=True)
+        except ValueError:
+            raise RuntimeError(f"Cannot convert argument {t} to CPU buffer")
+        return DummyBuffer(data_ptr, shape, dtype)
+
+    def with_type(self, new_dtype):
         new_dtype = _resolve_dtype(new_dtype)
         if isinstance(new_dtype, DataType):
-            b = empty(self.shape, new_dtype, self.backend)
-            lib = _compile_runtime_lib(self.backend)
-            _check_errors(lib, lib.parpy_memcpy(b.buf, self.buf, self.size(), 3))
-            _check_errors(lib, lib.sync())
-            return b
+            return DummyBuffer(self.buf, self.shape, new_dtype, self.src, self.refcount)
+        else:
+            raise ValueError(f"Found unsupported data type: {type(new_dtype)}")
+
+class CudaBuffer(Buffer):
+    def __init__(self, buf, shape, dtype, src=None, refcount=None):
+        super().__init__(buf, shape, dtype, src, refcount)
+        self.__cuda_array_interface__ = buf.__cuda_array_interface__
+        self.backend = CompileBackend.Cuda
+        self.lib = _compile_runtime_lib(self.backend)
+
+    def _deconstruct(self, src_ptr):
+        if src_ptr is not None:
+            _, _, buf_ptr = _extract_array_interface(self.buf, allow_cuda=True)
+            nbytes = _size(self.shape, self.dtype)
+            _check_errors(self.lib, self.lib.parpy_memcpy(src_ptr, buf_ptr, self.size(), 2))
+        _check_errors(self.lib, self.lib.sync())
+
+    def _from_array(t):
+        try:
+            shape, dtype, data_ptr = _extract_array_interface(t, allow_cuda=True)
+            if hasattr(t, "__cuda_array_interface__"):
+                return CudaBuffer(t, shape, dtype)
+        except ValueError:
+            raise ValueError(f"Cannot convert argument {t} to a CUDA buffer")
+
+        import torch
+        if len(shape) == 0:
+            data = torch.empty((), dtype=dtype.to_torch(), device='cuda')
+        else:
+            data = torch.empty(*shape, dtype=dtype.to_torch(), device='cuda')
+        _, _, ptr = _extract_array_interface(data, allow_cuda=True)
+        lib = _compile_runtime_lib(CompileBackend.Cuda)
+        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, _size(shape, dtype), 1))
+        _check_errors(lib, lib.sync())
+        return CudaBuffer(data, shape, dtype, src=t)
+
+    def _get_ptr(self):
+        _, _, ptr = _extract_array_interface(self.buf, allow_cuda=True)
+        return ptr
+
+    def numpy(self):
+        import numpy as np
+        a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
+        _, _, a_ptr = _extract_array_interface(a)
+        _, _, buf_ptr = _extract_array_interface(self.buf, allow_cuda=True)
+        _check_errors(self.lib, self.lib.parpy_memcpy(a_ptr, buf_ptr, self.size(), 2))
+        return a
+
+    def torch_ref(self):
+        return self.buf
+
+    def with_type(self, new_dtype):
+        new_dtype = _resolve_dtype(new_dtype)
+        if isinstance(new_dtype, DataType):
+            if self.dtype.size() == new_dtype.size():
+                return CudaBuffer(self.buf, self.shape, new_dtype, self.src, self.refcount)
+            else:
+                t = self.buf.detach().clone().to(new_dtype.to_torch())
+                return CudaBuffer(t, self.shape, new_dtype)
+        else:
+            raise ValueError(f"Found unsupported data type: {type(new_dtype)}")
+
+class MetalBuffer(Buffer):
+    def __init__(self, buf, shape, dtype, src=None, refcount=None):
+        super().__init__(buf, shape, dtype, src, refcount)
+        ptr = self.lib.parpy_ptr_buffer(self.buf)
+        arr_intf = _to_array_interface(ptr, self.dtype, self.shape)
+        self.__array_interface__ = arr_intf
+        self.backend = CompileBackend.Metal
+        self.lib = _compile_runtime_lib(self.backend)
+
+    def _deconstruct(self, src_ptr):
+        _check_errors(self.lib, self.lib.sync())
+        if src_ptr is not None:
+            _check_errors(self.lib, self.lib.parpy_memcpy(src_ptr, self.buf, self.size(), 2))
+        _check_errors(self.lib, self.lib.parpy_free_buffer(self.buf))
+        _check_errors(self.lib, self.lib.sync())
+
+    def _from_array(t):
+        try:
+            shape, dtype, data_ptr = _extract_array_interface(t)
+        except ValueError:
+            raise ValueError(f"Cannot convert argument {t} to a Metal buffer")
+
+        lib = _compile_runtime_lib(CompileBackend.Metal)
+        nbytes = _size(shape, dtype)
+        buf = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
+        _check_errors(lib, lib.parpy_memcpy(buf, data_ptr, nbytes, 1))
+        _check_errors(lib, lib.sync())
+        return MetalBuffer(buf, shape, dtype, backend, src=t)
+
+    def _get_ptr(self):
+        return self.buf
+
+    def numpy(self):
+        import numpy as np
+        a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
+        _, _, data_ptr = _check_array_interface(a.__array_interface__)
+        _check_errors(self.lib, self.lib.parpy_memcpy(data_ptr, self.buf, self.size(), 2))
+        _check_errors(self.lib, self.lib.sync())
+        return a
+
+    def with_type(self, new_dtype):
+        new_dtype = _resolve_dtype(new_dtype)
+        if isinstance(new_dtype, DataType):
+            if self.dtype.size() == new_dtype.size():
+                return MetalBuffer(self.buf, self.shape, new_dtype, self.src, self.refcount)
+            else:
+                b = empty(self.shape, new_dtype, CompileBackend.Metal)
+                _check_errors(self.lib, self.lib.parpy_memcpy(b.buf, self.buf, self.size(), 3))
+                _check_errors(self.lib, self.lib.sync())
+                return b
         else:
             raise ValueError(f"Found unsupported data type: {type(new_dtype)}")

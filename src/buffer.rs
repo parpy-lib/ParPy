@@ -87,6 +87,9 @@ impl ElemSize {
         }
     }
 
+    // Converts the ElemSize to a dtype in PyTorch. Note how U16, U32, and U64 are translated to
+    // signed integer types. We do this to work around limitations of PyTorch tensors - we treat
+    // its data as unsigned internally in ParPy code.
     fn to_torch<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let torch = py.import("torch")?;
         match self {
@@ -96,12 +99,12 @@ impl ElemSize {
             ElemSize::I32 => torch.getattr("int32"),
             ElemSize::I64 => torch.getattr("int64"),
             ElemSize::U8 => torch.getattr("uint8"),
+            ElemSize::U16 => torch.getattr("int16"),
+            ElemSize::U32 => torch.getattr("int32"),
+            ElemSize::U64 => torch.getattr("int64"),
             ElemSize::F16 => torch.getattr("float16"),
             ElemSize::F32 => torch.getattr("float32"),
             ElemSize::F64 => torch.getattr("float64"),
-            ElemSize::U16 | ElemSize::U32 | ElemSize::U64 => {
-                Err(PyRuntimeError::new_err(format!("Unsupported Torch type: {self}")))
-            }
         }
     }
 
