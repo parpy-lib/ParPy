@@ -53,7 +53,7 @@ def test_buffer_int_sign_conversion(backend):
         b2 = b1.with_type(parpy.types.U32)
         assert b1.dtype == parpy.buffer.DataType.from_elem_size(parpy.types.I32)
         assert b2.dtype == parpy.buffer.DataType.from_elem_size(parpy.types.U32)
-        assert b1.buf != b2.buf
+        assert b1._get_ptr() == b2._get_ptr()
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('backend', compiler_backends)
@@ -64,7 +64,7 @@ def test_buffer_convert_int_to_float_type(backend):
         b2 = b1.with_type(parpy.types.F64)
         assert b1.dtype == parpy.buffer.DataType.from_elem_size(parpy.types.I32)
         assert b2.dtype == parpy.buffer.DataType.from_elem_size(parpy.types.F64)
-        assert b1.buf != b2.buf
+        assert b1._get_ptr() != b2._get_ptr()
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('backend', compiler_backends)

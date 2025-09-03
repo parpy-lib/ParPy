@@ -134,7 +134,7 @@ fn convert_type<'py>(
     let parpy = py.import("parpy")?;
     let buffer = parpy.getattr("buffer")?;
     let ty = arg.get_type();
-    if ty.eq(buffer.getattr("Buffer")?)? {
+    if arg.is_instance(&buffer.getattr("Buffer")?)? {
         let dtype = arg.getattr("dtype")?.extract::<DataType>()?;
         let sz = dtype.sz;
         let shape = get_buffer_shape(&arg)?;

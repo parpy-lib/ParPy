@@ -165,7 +165,7 @@ def get_wrapper(name, key, opts):
             if len(arg.shape) == 0:
                 return arg.numpy()
             else:
-                return arg.buf
+                return arg._get_ptr()
         else:
             return arg
 

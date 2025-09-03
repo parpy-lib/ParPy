@@ -33,10 +33,7 @@ def check_arg(arg, i, in_dict, opts, execute):
         # Copy data to memory accessible from the GPU. If the resulting code
         # will not be executed, we do not copy data so we can generate code for
         # a backend even if it is not available.
-        if not execute:
-            buf = from_array(arg, None)
-        else:
-            buf = from_array(arg, opts.backend)
+        buf = from_array(arg, opts.backend if execute else None)
         callback = lambda: buf.__del__()
         return [callback], buf
     else:
