@@ -183,7 +183,7 @@ class Buffer:
         import numpy as np
         return np.asarray(self)
 
-    def torch_ref(self):
+    def torch(self):
         import torch
         return torch.as_tensor(self.numpy())
 
@@ -272,7 +272,7 @@ class CudaBuffer(Buffer):
         _check_errors(self.lib, self.lib.parpy_memcpy(a_ptr, buf_ptr, self.size(), 2))
         return a
 
-    def torch_ref(self):
+    def torch(self):
         return self.buf.reshape(self.shape).to(dtype=self.dtype.to_torch())
 
     def copy(self):

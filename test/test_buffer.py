@@ -101,13 +101,13 @@ def test_buffer_back_to_back_conversion(backend):
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('backend', compiler_backends)
-def test_buffer_torch_ref(backend):
+def test_buffer_torch(backend):
     def helper():
         import numpy as np
         import torch
         shape = (20, 10, 32)
         a = parpy.buffer.zeros(shape, parpy.types.F32, backend)
-        b = a.torch_ref()
+        b = a.torch()
         assert b.dtype == torch.float32
         if backend == parpy.CompileBackend.Cuda:
             assert b.device == torch.device('cuda', index=0)
