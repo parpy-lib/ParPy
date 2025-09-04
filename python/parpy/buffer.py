@@ -187,6 +187,9 @@ class Buffer:
         import torch
         return torch.as_tensor(self.numpy())
 
+    def copy(self):
+        raise RuntimeError(f"Cannot instantiate base Buffer class")
+
     def reshape(self, *dims):
         import math
         curr_sz = math.prod(self.shape)
@@ -272,6 +275,10 @@ class CudaBuffer(Buffer):
     def torch_ref(self):
         return self.buf.reshape(self.shape).to(dtype=self.dtype.to_torch())
 
+    def copy(self):
+        data = self.buf.detach().clone()
+        return CudaBuffer(data, self.shape, self.dtype)
+
     def with_type(self, new_dtype):
         new_dtype = _resolve_dtype(new_dtype)
         if isinstance(new_dtype, DataType):
@@ -323,15 +330,22 @@ class MetalBuffer(Buffer):
         _check_errors(self.lib, self.lib.sync())
         return a
 
+    def copy(self):
+        b = empty(self.shape, self.dtype, CompileBackend.Metal)
+        _check_errors(self.lib, self.lib.parpy_memcpy(b.buf, self.buf, self.size(), 3))
+        _check_errors(self.lib, self.lib.sync())
+        return b
+
     def with_type(self, new_dtype):
         new_dtype = _resolve_dtype(new_dtype)
         if isinstance(new_dtype, DataType):
             if self.dtype.size() == new_dtype.size():
                 return MetalBuffer(self.buf, self.shape, new_dtype, self.src, self.refcount)
             else:
-                b = empty(self.shape, new_dtype, CompileBackend.Metal)
-                _check_errors(self.lib, self.lib.parpy_memcpy(b.buf, self.buf, self.size(), 3))
-                _check_errors(self.lib, self.lib.sync())
+                old_dtype = self.dtype
+                self.dtype = new_dtype
+                b = self.copy()
+                self.dtype = old_dtype
                 return b
         else:
             raise ValueError(f"Found unsupported data type: {type(new_dtype)}")
