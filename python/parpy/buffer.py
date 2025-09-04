@@ -270,7 +270,7 @@ class CudaBuffer(Buffer):
         return a
 
     def torch_ref(self):
-        return self.buf
+        return self.buf.reshape(self.shape).to(dtype=self.dtype.to_torch())
 
     def with_type(self, new_dtype):
         new_dtype = _resolve_dtype(new_dtype)
