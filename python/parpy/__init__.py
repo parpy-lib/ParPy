@@ -8,7 +8,7 @@ from .parpy import par, CompileBackend, CompileOptions, ElemSize, Target
 from .buffer import sync
 from .operators import gpu, label
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 _ir_asts = {}
 _ext_decls = {}
@@ -173,9 +173,8 @@ def compile_string(fun_name, code, opts=CompileOptions()):
     fn = get_wrapper(fun_name, cache_key, opts)
     @functools.wraps(fn)
     def inner(*args):
-        callbacks, args = check_arguments(args, opts, True)
+        args = check_arguments(args, opts, True)
         fn(*args)
-        _run_callbacks(callbacks, opts)
     return inner
 
 def print_compiled(fun, args, opts=CompileOptions()):
@@ -194,7 +193,7 @@ def print_compiled(fun, args, opts=CompileOptions()):
         locs = inspect.currentframe().f_back.f_locals
         vars = (globs, locs)
         ir_ast = _convert_python_function_to_ir(fun, vars)
-    _, args = check_arguments(args, opts, False)
+    args = check_arguments(args, opts, False)
     top_map = _get_tops(opts.backend)
     code, _ = parpy.compile_ir(ir_ast, args, opts, top_map)
     return code
@@ -241,8 +240,7 @@ def jit(fun):
     @functools.wraps(fun)
     def inner(*args, **kwargs):
         opts = backend._resolve_backend(_check_kwargs(kwargs, fun.__name__), True)
-        callbacks, args = check_arguments(args, opts, True)
+        args = check_arguments(args, opts, True)
         _compile_function(ir_ast, args, opts)(*args)
-        _run_callbacks(callbacks, opts)
     _ir_asts[inner] = ir_ast
     return inner
