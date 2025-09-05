@@ -275,7 +275,7 @@ class CudaBuffer(Buffer):
         return CudaBuffer(data, self.shape, self.dtype)
 
     def reshape(self, *dims):
-        b = self.reshape(*dims)
+        b = super().reshape(*dims)
         b.buf = b.buf.reshape(b.shape)
         return b
 
