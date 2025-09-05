@@ -44,6 +44,100 @@ def test_buffer_zeros_like(backend):
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('backend', compiler_backends)
+def test_buffer_from_numpy_array(backend):
+    def helper():
+        import numpy as np
+        shape = (20, 10, 32)
+        a = np.ndarray(shape, dtype=np.float32)
+        b = parpy.buffer.from_array(a, backend)
+        assert b.shape == shape
+        assert b.dtype == parpy.buffer.DataType.from_elem_size(parpy.types.F32)
+        assert b.src is a
+    run_if_backend_is_enabled(backend, helper)
+
+def test_buffer_from_array_none_backend():
+    import numpy as np
+    shape = (20, 10, 32)
+    a = np.ndarray(shape, dtype=np.float32)
+    b = parpy.buffer.from_array(a, None)
+    assert b.shape == shape
+    assert b.dtype == parpy.buffer.DataType.from_elem_size(parpy.types.F32)
+
+def test_buffer_from_array_invalid_backend():
+    import numpy as np
+    a = np.ndarray((10,), dtype=np.float32)
+    with pytest.raises(ValueError) as e_info:
+        b = parpy.buffer.from_array(a, 5)
+    assert e_info.match("Cannot convert to buffer of unknown backend 5")
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_buffer_singleton_to_float(backend):
+    def helper():
+        import numpy as np
+        a = np.array(2.5, dtype=np.float32)
+        b = parpy.buffer.from_array(a, backend)
+        assert float(b) == 2.5
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_buffer_singleton_to_int(backend):
+    def helper():
+        import numpy as np
+        a = np.array(2, dtype=np.int32)
+        b = parpy.buffer.from_array(a, backend)
+        assert int(b) == 2
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_buffer_singleton_to_bool(backend):
+    def helper():
+        import numpy as np
+        a = np.array(True, dtype=np.bool)
+        b = parpy.buffer.from_array(a, backend)
+        assert bool(b)
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_buffer_size(backend):
+    def helper():
+        shape = (20, 10, 32)
+        dtype = parpy.types.I16
+        b = parpy.buffer.empty(shape, dtype, backend)
+        assert dtype.size() == 2
+        assert b.size() == 20 * 10 * 32 * 2
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_buffer_to_numpy(backend):
+    def helper():
+        import numpy as np
+        shape = (20, 10, 32)
+        dtype = parpy.types.I16
+        b = parpy.buffer.zeros(shape, dtype, backend)
+        a = b.numpy()
+        assert a.shape == shape
+        assert a.dtype == np.int16
+        assert np.allclose(a, 0)
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_buffer_to_torch(backend):
+    def helper():
+        import torch
+        shape = (20, 10, 32)
+        dtype = parpy.types.I16
+        b = parpy.buffer.zeros(shape, dtype, backend)
+        a = b.torch()
+        assert a.shape == shape
+        assert a.dtype == torch.int16
+        assert torch.allclose(a, torch.zeros(shape, dtype=torch.int16, device=a.device))
+        if backend == parpy.CompileBackend.Cuda:
+            assert a.device == torch.device('cuda', 0)
+        else:
+            assert a.device == torch.device('cpu')
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
 def test_buffer_reshape_refcount(backend):
     def helper():
         shape = (20, 10, 32)
@@ -98,22 +192,4 @@ def test_buffer_back_to_back_conversion(backend):
         b = parpy.buffer.from_array(a, backend)
         c = b.numpy()
         assert np.allclose(a, c)
-    run_if_backend_is_enabled(backend, helper)
-
-@pytest.mark.parametrize('backend', compiler_backends)
-def test_buffer_torch(backend):
-    def helper():
-        import numpy as np
-        import torch
-        shape = (20, 10, 32)
-        a = parpy.buffer.zeros(shape, parpy.types.F32, backend)
-        b = a.torch()
-        assert b.dtype == torch.float32
-        if backend == parpy.CompileBackend.Cuda:
-            assert b.device == torch.device('cuda', index=0)
-            b[0] = 5.0
-            v = a.numpy()
-            assert np.allclose(v[0], 5.0)
-        else:
-            assert b.device == torch.device('cpu')
     run_if_backend_is_enabled(backend, helper)
