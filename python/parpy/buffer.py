@@ -265,18 +265,19 @@ class CudaBuffer(Buffer):
 
     def numpy(self):
         import numpy as np
-        a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
-        _, _, a_ptr = _extract_array_interface(a)
-        _, _, buf_ptr = _extract_array_interface(self.buf, allow_cuda=True)
-        _check_errors(self.lib, self.lib.parpy_memcpy(a_ptr, buf_ptr, self.size(), 2))
-        return a
+        return np.asarray(self.buf.cpu())
 
     def torch(self):
-        return self.buf.reshape(self.shape).to(dtype=self.dtype.to_torch())
+        return self.buf
 
     def copy(self):
         data = self.buf.detach().clone()
         return CudaBuffer(data, self.shape, self.dtype)
+
+    def reshape(self, *dims):
+        b = self.reshape(*dims)
+        b.buf = b.buf.reshape(b.shape)
+        return b
 
     def with_type(self, new_dtype):
         new_dtype = _resolve_dtype(new_dtype)
@@ -292,11 +293,11 @@ class CudaBuffer(Buffer):
 class MetalBuffer(Buffer):
     def __init__(self, buf, shape, dtype, src=None, refcount=None):
         super().__init__(buf, shape, dtype, src, refcount)
-        self.lib = _compile_runtime_lib(CompileBackend.Metal)
+        self.backend = CompileBackend.Metal
+        self.lib = _compile_runtime_lib(self.backend)
         ptr = self.lib.parpy_ptr_buffer(self.buf)
         arr_intf = _to_array_interface(ptr, self.dtype, self.shape)
         self.__array_interface__ = arr_intf
-        self.backend = CompileBackend.Metal
 
     def _deconstruct(self, src_ptr):
         self.sync()
