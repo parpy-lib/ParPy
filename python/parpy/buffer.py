@@ -339,10 +339,8 @@ class MetalBuffer(Buffer):
             if self.dtype.size() == new_dtype.size():
                 return MetalBuffer(self.buf, self.shape, new_dtype, self.src, self.refcount)
             else:
-                old_dtype = self.dtype
-                self.dtype = new_dtype
-                b = self.copy()
-                self.dtype = old_dtype
-                return b
+                import numpy as np
+                t = np.asarray(self).astype(dtype=new_dtype.to_numpy())
+                return MetalBuffer._from_array(t)
         else:
             raise ValueError(f"Found unsupported data type: {type(new_dtype)}")
