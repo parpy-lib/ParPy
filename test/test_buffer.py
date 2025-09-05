@@ -91,8 +91,8 @@ def test_buffer_singleton_to_int(backend):
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_buffer_singleton_to_bool(backend):
     def helper():
-        import numpy as np
-        a = np.array(True, dtype=np.bool)
+        import torch
+        a = torch.tensor(True, dtype=torch.bool)
         b = parpy.buffer.from_array(a, backend)
         assert bool(b)
     run_if_backend_is_enabled(backend, helper)
