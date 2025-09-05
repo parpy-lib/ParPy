@@ -239,7 +239,7 @@ class CudaBuffer(Buffer):
             _, _, buf_ptr = _extract_array_interface(self.buf, allow_cuda=True)
             nbytes = _size(self.shape, self.dtype)
             _check_errors(self.lib, self.lib.parpy_memcpy(src_ptr, buf_ptr, self.size(), 2))
-        _check_errors(self.lib, self.lib.sync())
+            self.sync()
 
     def _from_array(t):
         try:
@@ -257,7 +257,6 @@ class CudaBuffer(Buffer):
         _, _, ptr = _extract_array_interface(data, allow_cuda=True)
         lib = _compile_runtime_lib(CompileBackend.Cuda)
         _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, _size(shape, dtype), 1))
-        _check_errors(lib, lib.sync())
         return CudaBuffer(data, shape, dtype, src=t)
 
     def _get_ptr(self):
@@ -300,11 +299,10 @@ class MetalBuffer(Buffer):
         self.backend = CompileBackend.Metal
 
     def _deconstruct(self, src_ptr):
-        _check_errors(self.lib, self.lib.sync())
+        self.sync()
         if src_ptr is not None:
             _check_errors(self.lib, self.lib.parpy_memcpy(src_ptr, self.buf, self.size(), 2))
         _check_errors(self.lib, self.lib.parpy_free_buffer(self.buf))
-        _check_errors(self.lib, self.lib.sync())
 
     def _from_array(t):
         try:
@@ -316,7 +314,6 @@ class MetalBuffer(Buffer):
         nbytes = _size(shape, dtype)
         buf = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
         _check_errors(lib, lib.parpy_memcpy(buf, data_ptr, nbytes, 1))
-        _check_errors(lib, lib.sync())
         return MetalBuffer(buf, shape, dtype, src=t)
 
     def _get_ptr(self):
@@ -326,14 +323,14 @@ class MetalBuffer(Buffer):
         import numpy as np
         a = np.ndarray(self.shape, dtype=self.dtype.to_numpy())
         _, _, data_ptr = _check_array_interface(a.__array_interface__)
+        self.sync()
         _check_errors(self.lib, self.lib.parpy_memcpy(data_ptr, self.buf, self.size(), 2))
-        _check_errors(self.lib, self.lib.sync())
         return a
 
     def copy(self):
-        b = empty(self.shape, self.dtype, CompileBackend.Metal)
+        b = empty(self.shape, self.dtype, self.backend)
+        self.sync()
         _check_errors(self.lib, self.lib.parpy_memcpy(b.buf, self.buf, self.size(), 3))
-        _check_errors(self.lib, self.lib.sync())
         return b
 
     def with_type(self, new_dtype):
