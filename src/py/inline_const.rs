@@ -4,6 +4,7 @@
 
 use super::ast::*;
 use crate::py_runtime_error;
+use crate::py_type_error;
 use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -156,7 +157,7 @@ fn add_scalar_constant<'py>(
                     Ok(acc)
                 },
                 Err(e) => {
-                    py_runtime_error!(i, "Extracting scalar value failed: {e}")
+                    py_type_error!(i, "Extracting scalar value failed with error {e}")
                 }
             }
         },
@@ -175,14 +176,14 @@ fn add_scalar_constant<'py>(
                     add_scalar_constant(acc?, target, &field)
                 })
         },
-        Type::Unknown => add_untyped_scalar_constant(acc, target, arg),
         _ => Ok(acc)
     }
 }
 
 fn make_const_map<'py, 'a>(
     args: &'a Vec<Bound<'py, PyAny>>,
-    params: &'a Vec<Param>
+    params: &'a Vec<Param>,
+    typed: bool
 ) -> PyResult<BTreeMap<Expr, Expr>> {
     args.iter()
         .zip(params.iter())
@@ -190,7 +191,11 @@ fn make_const_map<'py, 'a>(
             let target = Expr::Var {
                 id: id.clone(), ty: ty.clone(), i: i.clone()
             };
-            add_scalar_constant(acc?, target, arg)
+            if typed {
+                add_scalar_constant(acc?, target, arg)
+            } else {
+                add_untyped_scalar_constant(acc?, target, arg)
+            }
         })
 }
 
@@ -198,7 +203,7 @@ pub fn inline_scalar_values_def<'py>(
     def: FunDef,
     args: &Vec<Bound<'py, PyAny>>
 ) -> PyResult<FunDef> {
-    let const_map = make_const_map(args, &def.params)?;
+    let const_map = make_const_map(args, &def.params, false)?;
     replace_constants_def(&const_map, def)
 }
 
@@ -206,7 +211,7 @@ pub fn inline_scalar_values<'py>(
     ast: Ast,
     args: &Vec<Bound<'py, PyAny>>
 ) -> PyResult<Ast> {
-    let const_map = make_const_map(args, &ast.main.params)?;
+    let const_map = make_const_map(args, &ast.main.params, true)?;
     let main = replace_constants_def(&const_map, ast.main)?;
     Ok(Ast {main, ..ast})
 }
