@@ -80,12 +80,12 @@ fn replace_constants_def(
     Ok(FunDef {body, ..def})
 }
 
-fn add_scalar_constant<'py>(
+fn add_untyped_scalar_constant<'py>(
     mut acc: BTreeMap<Expr, Expr>,
     target: Expr,
     arg: &Bound<'py, PyAny>
 ) -> PyResult<BTreeMap<Expr, Expr>> {
-    let ty = target.get_type().clone();
+    let ty = Type::Unknown;
     let i = target.get_info();
     let py = arg.py();
     if arg.is_instance(&PyBool::type_object(py))? {
@@ -119,6 +119,64 @@ fn add_scalar_constant<'py>(
             })
     } else {
         Ok(acc)
+    }
+}
+
+fn extract_scalar_value<'py>(
+    arg: &Bound<'py, PyAny>,
+    i: &Info,
+    sz: ElemSize
+) -> PyResult<Expr> {
+    if sz == ElemSize::Bool {
+        let v = arg.extract::<bool>()?;
+        Ok(Expr::Bool {v, ty: Type::fixed_scalar(sz), i: i.clone()})
+    } else if sz.is_integer() {
+        let v = arg.extract::<i128>()?;
+        Ok(Expr::Int {v, ty: Type::fixed_scalar(sz), i: i.clone()})
+    } else if sz.is_floating_point() {
+        let v = arg.extract::<f64>()?;
+        Ok(Expr::Float {v, ty: Type::fixed_scalar(sz), i: i.clone()})
+    } else {
+        py_runtime_error!(i, "Invalid scalar of element type {sz}")
+    }
+}
+
+fn add_scalar_constant<'py>(
+    mut acc: BTreeMap<Expr, Expr>,
+    target: Expr,
+    arg: &Bound<'py, PyAny>
+) -> PyResult<BTreeMap<Expr, Expr>> {
+    let ty = target.get_type();
+    let i = target.get_info();
+    match ty {
+        Type::Tensor {sz: TensorElemSize::Fixed {sz}, shape} if shape.is_empty() => {
+            match extract_scalar_value(arg, &i, sz.clone()) {
+                Ok(value) => {
+                    acc.insert(target, value);
+                    Ok(acc)
+                },
+                Err(e) => {
+                    py_runtime_error!(i, "Extracting scalar value failed: {e}")
+                }
+            }
+        },
+        Type::Dict {fields} => {
+            fields.iter()
+                .fold(Ok(acc), |acc, (k, ty)| {
+                    let i = target.get_info();
+                    let target = Expr::Subscript {
+                        target: Box::new(target.clone()),
+                        idx: Box::new(Expr::String {
+                            v: k.clone(), ty: Type::String, i: i.clone()
+                        }),
+                        ty: ty.clone(), i: i.clone()
+                    };
+                    let field = arg.get_item(k)?;
+                    add_scalar_constant(acc?, target, &field)
+                })
+        },
+        Type::Unknown => add_untyped_scalar_constant(acc, target, arg),
+        _ => Ok(acc)
     }
 }
 
