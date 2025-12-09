@@ -2,6 +2,7 @@ mod adjust_negative_indices;
 pub mod ast;
 mod constant_fold;
 mod eliminate_duplicate_functions;
+mod for_loops;
 mod free_vars;
 mod from_py;
 mod inline_calls;
