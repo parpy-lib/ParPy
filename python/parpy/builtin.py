@@ -23,6 +23,22 @@ def label(x):
 def inline(e):
     pass
 
+def ranges(*args):
+    def interpret_range(arg):
+        if isinstance(arg, tuple):
+            if len(arg) > 0 and len(arg) <= 3:
+                return range(*arg)
+            else:
+                raise RuntimeError(f"Invalid number of arguments to range: {len(arg)}")
+        else:
+            return range(arg)
+    ranges = [interpret_range(a) for a in args]
+    if len(ranges) == 1:
+        return ranges[0]
+    else:
+        import itertools
+        return itertools.product(*ranges)
+
 def static_backend_eq(x):
     return False
 
