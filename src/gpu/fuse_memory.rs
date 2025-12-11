@@ -46,6 +46,16 @@ struct FuseEnv {
     write_state: BTreeMap<Name, BTreeSet<Expr>>,
 }
 
+impl Default for FuseEnv {
+    fn default() -> FuseEnv {
+        FuseEnv {
+            shared_mem_vars: BTreeSet::new(),
+            write_locs: BTreeMap::new(),
+            write_state: BTreeMap::new()
+        }
+    }
+}
+
 fn try_extract_conditional_assignment(thn: &Expr, els: &Expr) -> Option<(Expr, Expr)> {
     if let Expr::Convert {ty: Type::Void, ..} = els {
         if let Expr::Convert {e, ty: Type::Void} = thn {
@@ -210,27 +220,48 @@ fn replace_reads_with_locals_expr(env: FuseEnv, e: Expr) -> (FuseEnv, Expr) {
     }
 }
 
+fn filter_write_locs(
+    mut env: FuseEnv,
+    inner_write_locs: BTreeMap<ArrayLoc, Name>
+) -> FuseEnv {
+    // NOTE(larshum, 2025-12-10): We may have performed writes to some arrays within a nested scope
+    // (e.g., inside a for-loop). Any arrays that were written to in this scope are ignored
+    // following the loop, as their values may have changed relative to any local variables.
+    let used_arrays = inner_write_locs.keys()
+        .map(|loc| loc.id.clone())
+        .collect::<BTreeSet<Name>>();
+    env.write_locs = env.write_locs.into_iter()
+        .filter(|(loc, _)| !used_arrays.contains(&loc.id))
+        .collect::<BTreeMap<ArrayLoc, Name>>();
+    env
+}
+
 fn replace_reads_with_locals_stmt(env: FuseEnv, s: Stmt) -> (FuseEnv, Stmt) {
     match s {
         Stmt::For {var_ty, var, init, cond, incr, body, unroll, i} => {
             let inner_env = FuseEnv {write_locs: BTreeMap::new(), ..env.clone()};
-            let (_, body) = body.smap_accum_l(inner_env, replace_reads_with_locals_stmt);
+            let (inner_env, body) = body.smap_accum_l(inner_env, replace_reads_with_locals_stmt);
+            let env = filter_write_locs(env, inner_env.write_locs);
             (env, Stmt::For {var_ty, var, init, cond, incr, body, unroll, i})
         },
         Stmt::If {cond, thn, els, i} => {
             let inner_env = FuseEnv {write_locs: BTreeMap::new(), ..env.clone()};
-            let (_, thn) = thn.smap_accum_l(inner_env.clone(), replace_reads_with_locals_stmt);
-            let (_, els) = els.smap_accum_l(inner_env, replace_reads_with_locals_stmt);
+            let (thn_env, thn) = thn.smap_accum_l(inner_env.clone(), replace_reads_with_locals_stmt);
+            let (els_env, els) = els.smap_accum_l(inner_env, replace_reads_with_locals_stmt);
+            let env = filter_write_locs(env, thn_env.write_locs);
+            let env = filter_write_locs(env, els_env.write_locs);
             (env, Stmt::If {cond, thn, els, i})
         },
         Stmt::While {cond, body, i} => {
             let inner_env = FuseEnv {write_locs: BTreeMap::new(), ..env.clone()};
-            let (_, body) = body.smap_accum_l(inner_env, replace_reads_with_locals_stmt);
+            let (inner_env, body) = body.smap_accum_l(inner_env, replace_reads_with_locals_stmt);
+            let env = filter_write_locs(env, inner_env.write_locs);
             (env, Stmt::While {cond, body, i})
         },
         Stmt::Scope {body, i} => {
             let inner_env = FuseEnv {write_locs: BTreeMap::new(), ..env.clone()};
-            let (_, body) = body.smap_accum_l(inner_env, replace_reads_with_locals_stmt);
+            let (inner_env, body) = body.smap_accum_l(inner_env, replace_reads_with_locals_stmt);
+            let env = filter_write_locs(env, inner_env.write_locs);
             (env, Stmt::Scope {body, i})
         },
         _ => {
@@ -383,14 +414,10 @@ fn apply_kernel_body(body: Vec<Stmt>) -> CompileResult<Vec<Stmt>> {
     //    compiler can optimize this extra variable away if it ends up being unused.
     let body = body.sflatten(vec![], store_write_results_in_temporary_variable);
 
-    // 2. If we read from memory after writing to it previously, we can now refer to the temporary
-    //    variable in which the written value is stored instead. This can eliminate unnecessary
-    //    loads from global memory.
-    let env = FuseEnv {
-        shared_mem_vars: BTreeSet::new(),
-        write_locs: BTreeMap::new(),
-        write_state: BTreeMap::new()
-    };
+    // 2. If we read from memory after writing to it previously, without any writes in-between,  we
+    //    can now refer to the temporary variable in which the written value is stored instead.
+    //    This can eliminate unnecessary loads from global memory.
+    let env = FuseEnv::default();
     let env = body.sfold(env, collect_shared_memory_variables);
     let (env, body) = body.smap_accum_l(env, replace_reads_with_locals_stmt);
 
@@ -527,6 +554,113 @@ mod test {
                    BinOp::Add,
                    float(2.0, Some(ElemSize::F32)),
                    scalar(ElemSize::F32)
+                ),
+                i: i()
+            }
+        ];
+        assert_eq_bodies(apply_kernel_body(body).unwrap(), expected);
+    }
+
+    #[test]
+    fn read_after_write_in_nested_scope() {
+        // The second use should not be replaced with a temporary variable because the for-loop
+        // could (and in this case, it actually does) write to the same location.
+        let loc = array_access(
+            var("x", pointer(scalar(ElemSize::I32), MemSpace::Device)),
+            int(1, Some(ElemSize::I32)),
+            scalar(ElemSize::I32)
+        );
+        let body = vec![
+            assign(loc.clone(), int(1, Some(ElemSize::I32))),
+            Stmt::For {
+                var_ty: scalar(ElemSize::I32), var: id("i"),
+                init: int(0, Some(ElemSize::I32)),
+                cond: binop(
+                    var("i", scalar(ElemSize::I32)),
+                    BinOp::Lt,
+                    int(10, Some(ElemSize::I32)),
+                    scalar(ElemSize::Bool)
+                ),
+                incr: binop(
+                    var("i", scalar(ElemSize::I32)),
+                    BinOp::Add,
+                    int(1, Some(ElemSize::I32)),
+                    scalar(ElemSize::I32)
+                ),
+                body: vec![
+                    assign(
+                        array_access(
+                            var("x", pointer(scalar(ElemSize::I32), MemSpace::Device)),
+                            var("i", scalar(ElemSize::I32)),
+                            scalar(ElemSize::I32)
+                        ),
+                        var("i", scalar(ElemSize::I32))
+                    )
+                ],
+                unroll: false,
+                i: i()
+            },
+            Stmt::Expr {
+                e: binop(
+                    loc.clone(),
+                    BinOp::Add,
+                    int(2, Some(ElemSize::I32)),
+                    scalar(ElemSize::I32)
+                ),
+                i: i()
+            }
+        ];
+        let t = Name::sym_str("t");
+        let var_t = Expr::Var {id: t.clone(), ty: scalar(ElemSize::I32), i: i()};
+        let t_for = Name::sym_str("t");
+        let expected = vec![
+            Stmt::Definition {
+                ty: scalar(ElemSize::I32),
+                id: t.clone(),
+                expr: int(1, Some(ElemSize::I32)),
+                i: i()
+            },
+            assign(loc.clone(), var_t.clone()),
+            Stmt::For {
+                var_ty: scalar(ElemSize::I32), var: id("i"),
+                init: int(0, Some(ElemSize::I32)),
+                cond: binop(
+                    var("i", scalar(ElemSize::I32)),
+                    BinOp::Lt,
+                    int(10, Some(ElemSize::I32)),
+                    scalar(ElemSize::Bool)
+                ),
+                incr: binop(
+                    var("i", scalar(ElemSize::I32)),
+                    BinOp::Add,
+                    int(1, Some(ElemSize::I32)),
+                    scalar(ElemSize::I32)
+                ),
+                body: vec![
+                    Stmt::Definition {
+                        ty: scalar(ElemSize::I32),
+                        id: t_for.clone(),
+                        expr: var("i", scalar(ElemSize::I32)),
+                        i: i()
+                    },
+                    assign(
+                        array_access(
+                            var("x", pointer(scalar(ElemSize::I32), MemSpace::Device)),
+                            var("i", scalar(ElemSize::I32)),
+                            scalar(ElemSize::I32)
+                        ),
+                        Expr::Var {id: t_for, ty: scalar(ElemSize::I32), i: i()}
+                    )
+                ],
+                unroll: false,
+                i: i()
+            },
+            Stmt::Expr {
+                e: binop(
+                    loc.clone(),
+                    BinOp::Add,
+                    int(2, Some(ElemSize::I32)),
+                    scalar(ElemSize::I32)
                 ),
                 i: i()
             }
