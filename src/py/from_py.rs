@@ -1,4 +1,5 @@
 use super::ast::*;
+use super::for_loops;
 use crate::py_runtime_error;
 use crate::py_internal_error;
 use crate::ext::types::{ExtType, TypeVar};
@@ -15,14 +16,15 @@ use pyo3::types::*;
 use std::collections::BTreeMap;
 use std::ffi::CString;
 
-struct ConvertEnv<'py, 'a> {
-    ast: Bound<'py, PyModule>,
-    globals: Bound<'py, PyDict>,
-    locals: Bound<'py, PyDict>,
-    tops: &'a BTreeMap<String, Bound<'py, PyCapsule>>,
-    filepath: &'a str,
-    line_ofs: usize,
-    col_ofs: usize
+#[derive(Debug)]
+pub struct ConvertEnv<'py, 'a> {
+    pub ast: Bound<'py, PyModule>,
+    pub globals: Bound<'py, PyDict>,
+    pub locals: Bound<'py, PyDict>,
+    pub tops: &'a BTreeMap<String, Bound<'py, PyCapsule>>,
+    pub filepath: &'a str,
+    pub line_ofs: usize,
+    pub col_ofs: usize
 }
 
 fn extract_node_info<'py>(node: &Bound<'py, PyAny>) -> PyResult<Info> {
@@ -140,7 +142,7 @@ fn eval_name<'py, 'a>(
     py.eval(&CString::new(s)?, Some(&env.globals), Some(&env.locals))
 }
 
-fn eval_node<'py, 'a>(
+pub fn eval_node<'py, 'a>(
     e: &Bound<'py, PyAny>,
     env: &ConvertEnv<'py, 'a>,
     py: Python<'py>
@@ -463,7 +465,7 @@ fn try_get_qualified_name<'py>(
     Ok(format!("{module_id}.{func_id}"))
 }
 
-fn convert_expr<'py, 'a>(
+pub fn convert_expr<'py, 'a>(
     expr: Bound<'py, PyAny>, env: &ConvertEnv<'py, 'a>
 ) -> PyResult<Expr> {
     let i = extract_info(&expr, env);
@@ -612,79 +614,13 @@ fn construct_expr_stmt(
     }
 }
 
-fn ensure_non_zero_step_size(e: &Expr) -> PyResult<()> {
-    match e {
-        Expr::Int {v, i, ..} if *v == 0 => {
-            py_runtime_error!(i, "For-loop step size must be non-zero")
-        },
-        _ => Ok(())
-    }
-}
-
 fn convert_stmt<'py, 'a>(
     stmt: Bound<'py, PyAny>,
     env: &ConvertEnv<'py, 'a>
 ) -> PyResult<Stmt> {
     let i = extract_info(&stmt, env);
     if stmt.is_instance(&env.ast.getattr("For")?)? {
-        // Ensure that the for-loop only assigns to a single variable
-        let target = stmt.getattr("target")?;
-        let var = if target.is_instance(&env.ast.getattr("Name")?)? {
-            let s = target.getattr("id")?.extract::<String>()?;
-            Ok(Name::new(s))
-        } else {
-            py_runtime_error!(i, "For-loops must assign to a single variable")
-        }?;
-
-        // Ensure the for-loop iterates over the range builtin
-        let iter = stmt.getattr("iter")?;
-        let range_fn = if iter.is_instance(&env.ast.getattr("Call")?)? {
-            let func = iter.getattr("func")?;
-            if func.is_instance(&env.ast.getattr("Name")?)? {
-                let fun_id = func.getattr("id")?.extract::<String>()?;
-                let py = stmt.py();
-                let builtins = py.import("builtins")?;
-                match eval_name(fun_id, env, py) {
-                    Ok(e) if e.eq(builtins.getattr("range")?)? => Ok(iter),
-                    _ => py_runtime_error!(i, "For-loop must iterate using the range builtin")
-                }
-            } else {
-                py_runtime_error!(i, "For-loop must iterate using the range builtin")
-            }
-        } else {
-            py_runtime_error!(i, "For-loop must iterate using the range builtin")
-        }?;
-
-        // Extract the bounds and the step size of the range.
-        let range_args = range_fn.getattr("args")?;
-        let (lo, hi, step) = match range_args.len()? {
-            1 => {
-                let lo = Expr::Int {v: 0, ty: Type::Unknown, i: i.clone()};
-                let hi = convert_expr(range_args.get_item(0)?, env)?;
-                Ok((lo, hi, Expr::Int {v: 1, ty: Type::Unknown, i: i.clone()}))
-            },
-            2 => {
-                let lo = convert_expr(range_args.get_item(0)?, env)?;
-                let hi = convert_expr(range_args.get_item(1)?, env)?;
-                Ok((lo, hi, Expr::Int {v: 1, ty: Type::Unknown, i: i.clone()}))
-            },
-            3 => {
-                let lo = convert_expr(range_args.get_item(0)?, env)?;
-                let hi = convert_expr(range_args.get_item(1)?, env)?;
-                let step = convert_expr(range_args.get_item(2)?, env)?;
-                ensure_non_zero_step_size(&step)?;
-                Ok((lo, hi, step))
-            }
-            _ => py_runtime_error!(i, "Invalid number of arguments passed to range")
-        }?;
-
-        let body = convert_stmts(stmt.getattr("body")?, env)?;
-
-        if stmt.getattr("orelse")?.len()? == 0 {
-            Ok(Stmt::For {var, lo, hi, step, body, labels: vec![], i})
-        } else {
-            py_runtime_error!(i, "For-loops with an else-clause are not supported")
-        }
+        for_loops::convert_for_loop(stmt, i, env)
     } else if stmt.is_instance(&env.ast.getattr("If")?)? {
         let cond = convert_expr(stmt.getattr("test")?, env)?;
         let thn = convert_stmts(stmt.getattr("body")?, env)?;
@@ -775,7 +711,7 @@ fn merge_body_infos(body: &Vec<Stmt>) -> Info {
     })
 }
 
-fn convert_stmts<'py, 'a>(
+pub fn convert_stmts<'py, 'a>(
     body: Bound<'py, PyAny>,
     env: &ConvertEnv<'py, 'a>
 ) -> PyResult<Vec<Stmt>> {
@@ -1767,7 +1703,7 @@ mod test {
     #[test]
     fn convert_stmt_for_in_loop_fail() {
         let e = convert_stmt_wrap("for x in s:\n  x = x + 1");
-        assert_py_error_matches(e, r".*must iterate using the range builtin");
+        assert_py_error_matches(e, r".*must iterate using.*");
     }
 
     #[test]
