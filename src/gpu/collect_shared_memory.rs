@@ -270,19 +270,22 @@ fn apply_top(
     match t {
         Top::ExtDecl {..} | Top::StructDef {..} => Ok((acc, t)),
         Top::KernelFunDef {mut attrs, id, params, body, i} => {
-            println!("kernel {id}");
             let (env, body) = determine_shared_memory_use(acc, body)?;
-            let SharedMemoryEnv {local_state, func_smem_use} = env;
+            let SharedMemoryEnv {local_state, mut func_smem_use} = env;
             if local_state.peak_usage_bytes > 0 {
                 attrs.push(KernelAttribute::SharedMemory {
                     id: local_state.smem_id,
                     bytes: local_state.peak_usage_bytes
                 });
             }
+            let mem_use = MemoryUse {
+                bytes: local_state.peak_usage_bytes,
+                alignment: 1
+            };
+            func_smem_use.insert(id.clone(), mem_use);
             Ok((func_smem_use, Top::KernelFunDef {attrs, id, params, body, i}))
         },
         Top::FunDef {ret_ty, id, mut params, body, target, i} => {
-            println!("device function {id}");
             let (env, body) = determine_shared_memory_use(acc, body)?;
             let SharedMemoryEnv {local_state, mut func_smem_use} = env;
             // If this function uses a non-zero amount of shared memory, we add a parameter
@@ -311,7 +314,37 @@ fn apply_top(
     }
 }
 
+fn set_smem_in_kernel_launch_stmt(
+    smem_use: &BTreeMap<Name, MemoryUse>,
+    s: Stmt
+) -> Stmt {
+    match s {
+        Stmt::KernelLaunch {id, args, grid, smem, i} => {
+            match smem_use.get(&id) {
+                Some(MemoryUse {bytes, ..}) => {
+                    Stmt::KernelLaunch {id, args, grid, smem: *bytes, i}
+                },
+                None => Stmt::KernelLaunch {id, args, grid, smem, i}
+            }
+        },
+        _ => s.smap(|s| set_smem_in_kernel_launch_stmt(smem_use, s))
+    }
+}
+
+fn set_smem_in_kernel_launch(
+    smem_use: &BTreeMap<Name, MemoryUse>,
+    t: Top
+) -> Top {
+    match t {
+        Top::FunDef {ret_ty, id, params, body, target, i} => {
+            let body = body.smap(|s| set_smem_in_kernel_launch_stmt(&smem_use, s));
+            Top::FunDef {ret_ty, id, params, body, target, i}
+        },
+        _ => t
+    }
+}
+
 pub fn apply(ast: Ast) -> CompileResult<Ast> {
-    let (_, ast) = ast.smap_accum_l_result(Ok(BTreeMap::new()), apply_top)?;
-    Ok(ast)
+    let (smem_use, ast) = ast.smap_accum_l_result(Ok(BTreeMap::new()), apply_top)?;
+    Ok(ast.smap(|t| set_smem_in_kernel_launch(&smem_use, t)))
 }
