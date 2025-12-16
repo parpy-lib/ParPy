@@ -3,6 +3,7 @@ mod buffers;
 mod codegen;
 mod error;
 mod pprint;
+mod threadgroup;
 
 #[cfg(test)]
 mod ast_builder;
@@ -23,6 +24,9 @@ pub fn codegen(gpu_ast: gpu_ast::Ast) -> CompileResult<Ast> {
 
     // Convert the GPU AST to a Metal AST.
     let metal_ast = codegen::from_gpu_ir(gpu_ast)?;
+
+    // Insert parameters containing threadgroup local memory for applicable kernels.
+    let metal_ast = threadgroup::configure_ast(metal_ast);
 
     Ok(error::add_error_handling(metal_ast))
 }

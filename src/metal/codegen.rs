@@ -318,7 +318,7 @@ fn from_gpu_ir_attr(
                                                       attribute in Metal backend.")
         },
         gpu_ast::KernelAttribute::SharedMemory {id, bytes} => {
-            Ok(FunAttribute::SharedMemory {id, bytes})
+            Ok(FunAttribute::ThreadgroupMemory {id, bytes})
         },
     }
 }

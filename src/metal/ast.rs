@@ -344,6 +344,7 @@ impl SFlatten<Stmt> for Stmt {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ParamAttribute {
     Buffer {idx: i64},
+    Threadgroup {idx: i64},
     ThreadIndex, BlockIndex
 }
 
@@ -357,7 +358,7 @@ pub struct Param {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FunAttribute {
     LaunchBounds {threads: i64},
-    SharedMemory {id: Name, bytes: usize},
+    ThreadgroupMemory {id: Name, bytes: usize},
     ExternC,
 }
 

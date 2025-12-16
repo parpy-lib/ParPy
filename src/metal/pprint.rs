@@ -367,6 +367,7 @@ impl PrettyPrint for ParamAttribute {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
             ParamAttribute::Buffer {idx} => format!("buffer({idx})"),
+            ParamAttribute::Threadgroup {idx} => format!("threadgroup({idx})"),
             ParamAttribute::ThreadIndex => format!("thread_position_in_threadgroup"),
             ParamAttribute::BlockIndex => format!("threadgroup_position_in_grid"),
         };
@@ -398,7 +399,7 @@ impl PrettyPrint for FunAttribute {
             FunAttribute::ExternC => {
                 (env, format!("extern \"C\""))
             },
-            FunAttribute::SharedMemory {..} => {
+            FunAttribute::ThreadgroupMemory {..} => {
                 (env, format!(""))
             },
         }
