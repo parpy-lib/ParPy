@@ -104,15 +104,12 @@ def forward_init_inst(hmm, seqs, alpha_src, inst):
 
 @parpy.jit
 def forward_step_inst(hmm, seqs, alpha1, alpha2, inst, t):
-    alpha_src = alpha2
-    alpha_dst = alpha1
-    if t & 1:
-        alpha_src = alpha1
-        alpha_dst = alpha2
+    alpha_src = alpha1 if t & 1 else alpha2
+    alpha_dst = alpha2 if t & 1 else alpha1
     o = seqs["data"][inst, t]
-    parpy.label('state')
-    for state in range(hmm["num_states"]):
-        if t < seqs["lens"][inst]:
+    if t < seqs["lens"][inst]:
+        parpy.label('forw_step')
+        for state in range(hmm["num_states"]):
             # Transitively inlined version of forward_prob_predecessors.
             num_kmers = hmm["num_states"] // 16
 
@@ -188,6 +185,10 @@ def forward_kernel(hmm, seqs, result, alpha1, alpha2):
         # Summation of final alpha values
         pb.inline(forward_lse_inst(hmm, seqs, result, alpha1, alpha2, inst))
 
+with open("out.cu", "r") as f:
+    code = f.read()
+fn = parpy.compile_string("forward_kernel", code, parpy.par({}))
+
 def forward_parpy(hmm, seqs, nthreads):
     result = torch.zeros(seqs["num_instances"], dtype=torch.float32, device='cuda')
     alpha1 = torch.zeros((seqs["num_instances"], hmm["num_states"]), dtype=torch.float32, device='cuda')
@@ -195,10 +196,14 @@ def forward_parpy(hmm, seqs, nthreads):
     p = {
         'inst': parpy.threads(seqs["num_instances"]),
         'state': parpy.threads(nthreads),
+        'forw_step': parpy.threads(nthreads // 8).tpb(128).unroll()
     }
     opts = parpy.par(p)
     opts.force_int_size = pt.I64
-    forward_kernel(hmm, seqs, result, alpha1, alpha2, opts=opts)
+    #print(parpy.print_compiled(forward_kernel, [hmm, seqs, result, alpha1, alpha2], opts))
+    #exit(0)
+    #forward_kernel(hmm, seqs, result, alpha1, alpha2, opts=opts)
+    fn(hmm, seqs, result, alpha1, alpha2)
     return result
 
 class ParPyTuned:
@@ -236,12 +241,8 @@ def forward_triton_init(
 @triton.jit
 def forward_triton_step(hmm_output_prob, hmm_trans1, hmm_trans2, hmm_gamma: tl.float32, hmm_synthetic_248: tl.float32, hmm_num_states: tl.constexpr, seqs_data, seqs_lens, seqs_maxlen: tl.constexpr, alpha1, alpha2, t, BLOCK_SIZE: tl.constexpr):
   instance = tl.program_id(axis=0)
-  if t & 1:
-    alpha_src = alpha1
-    alpha_dst = alpha2
-  else:
-    alpha_src = alpha2
-    alpha_dst = alpha1
+  alpha_src = alpha1 if t & 1 else alpha2
+  alpha_dst = alpha2 if t & 1 else alpha1
   state_ofs = BLOCK_SIZE * tl.program_id(axis=1)
   state_idx = state_ofs + tl.arange(0, BLOCK_SIZE)
   idx = instance * hmm_num_states + state_idx
@@ -311,9 +312,6 @@ def forward_triton_step(hmm_output_prob, hmm_trans1, hmm_trans2, hmm_gamma: tl.f
 
     outp = tl.load(hmm_output_prob + o * num_kmers + state_idx % num_kmers)
     tl.store(alpha_dst + idx, lsexp + outp)
-  elif seq_len == t:
-    alpha_val = tl.load(alpha_src + idx)
-    tl.store(alpha_dst + idx, alpha_val)
 
 @triton.jit
 def forward_triton_steps(hmm_output_prob, hmm_trans1, hmm_trans2, hmm_gamma : tl.float32, hmm_synthetic_248 : tl.float32, hmm_num_states : tl.constexpr, seqs_data, seqs_lens, seqs_maxlen : tl.constexpr, alpha1, alpha2):

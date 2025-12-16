@@ -37,7 +37,8 @@ impl Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FuncAttribute {
-    NonPortableClusterSizeAllowed
+    NonPortableClusterSizeAllowed,
+    MaxDynamicSharedMemorySize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -69,6 +70,7 @@ pub enum Expr {
     FuncSetAttribute {
         func: Name, attr: FuncAttribute, value: Box<Expr>, ty: Type, i: Info
     },
+    ValidateSharedMemUsage {nbytes: Box<Expr>, ty: Type, i: Info},
     ShflXorSync {
         mask: Box<Expr>, value: Box<Expr>, offset: Box<Expr>, ty: Type, i: Info
     },
@@ -108,6 +110,7 @@ impl ExprType<Type> for Expr {
             Expr::Error {ty, ..} => ty,
             Expr::GetLastError {ty, ..} => ty,
             Expr::FuncSetAttribute {ty, ..} => ty,
+            Expr::ValidateSharedMemUsage {ty, ..} => ty,
             Expr::ShflXorSync {ty, ..} => ty,
             Expr::MallocAsync {ty, ..} => ty,
             Expr::FreeAsync {ty, ..} => ty,
@@ -155,6 +158,7 @@ impl InfoNode for Expr {
             Expr::Error {i, ..} => i.clone(),
             Expr::GetLastError {i, ..} => i.clone(),
             Expr::FuncSetAttribute {i, ..} => i.clone(),
+            Expr::ValidateSharedMemUsage {i, ..} => i.clone(),
             Expr::ShflXorSync {i, ..} => i.clone(),
             Expr::MallocAsync {i, ..} => i.clone(),
             Expr::FreeAsync {i, ..} => i.clone(),
@@ -231,6 +235,10 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, value) = f(acc?, *value)?;
                 Ok((acc, Expr::FuncSetAttribute {func, attr, value: Box::new(value), ty, i}))
             },
+            Expr::ValidateSharedMemUsage {nbytes, ty, i} => {
+                let (acc, nbytes) = f(acc?, *nbytes)?;
+                Ok((acc, Expr::ValidateSharedMemUsage {nbytes: Box::new(nbytes), ty, i}))
+            },
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
             Expr::ThreadIdx {..} | Expr::BlockIdx {..} | Expr::Error {..} |
             Expr::GetLastError {..} | Expr::ShflXorSync {..} |  Expr::MallocAsync {..} |
@@ -260,6 +268,7 @@ impl SFold<Expr> for Expr {
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
             Expr::FuncSetAttribute {value, ..} => f(acc?, value),
+            Expr::ValidateSharedMemUsage {nbytes, ..} => f(acc?, nbytes),
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
             Expr::Error {..} | Expr::GetLastError {..} | Expr::ThreadIdx {..} |
             Expr::BlockIdx {..} | Expr::ShflXorSync {..} | Expr::MallocAsync {..} |
@@ -293,9 +302,10 @@ pub enum Stmt {
     // CUDA-specific nodes
     Synchronize {scope: SyncScope},
     KernelLaunch {
-        id: Name, blocks: Dim3, threads: Dim3, stream: Stream, args: Vec<Expr>
+        id: Name, blocks: Dim3, threads: Dim3, smem: usize, stream: Stream,
+        args: Vec<Expr>
     },
-    AllocShared {ty: Type, id: Name, sz: usize},
+    AllocShared {ty: Type, id: Name},
     CheckError {e: Expr},
 }
 
@@ -335,9 +345,9 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, e) = f(acc?, e)?;
                 Ok((acc, Stmt::Expr {e}))
             },
-            Stmt::KernelLaunch {id, blocks, threads, args, stream} => {
+            Stmt::KernelLaunch {id, blocks, threads, smem, stream, args} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Stmt::KernelLaunch {id, blocks, threads, args, stream}))
+                Ok((acc, Stmt::KernelLaunch {id, blocks, threads, smem, stream, args}))
             },
             Stmt::CheckError {e} => {
                 let (acc, e) = f(acc?, e)?;
@@ -466,6 +476,7 @@ pub struct Param {
 pub enum KernelAttribute {
     LaunchBounds {threads: i64},
     ClusterDims {dims: Dim3},
+    SharedMemory {id: Name, bytes: usize},
 }
 
 #[derive(Clone, Debug, PartialEq)]

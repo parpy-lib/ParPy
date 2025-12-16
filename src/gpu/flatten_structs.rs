@@ -98,11 +98,11 @@ fn flatten_structs_host_stmt(
             env.insert(id, fields);
             (env, None)
         },
-        Stmt::KernelLaunch {id, args, grid, i} => {
+        Stmt::KernelLaunch {id, args, grid, smem, i} => {
             let args = args.into_iter()
                 .flat_map(|a| expand_kernel_launch_argument(&env, a))
                 .collect::<Vec<Expr>>();
-            (env, Some(Stmt::KernelLaunch {id, args, grid, i}))
+            (env, Some(Stmt::KernelLaunch {id, args, grid, smem, i}))
         },
         _ => (env, Some(s))
     }

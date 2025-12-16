@@ -129,7 +129,7 @@ mod test {
             defn(Type::Error, id("y"), Some(var("x", Type::Error))),
             Stmt::KernelLaunch {
                 id: id("kernel"), blocks: Dim3::default(), threads: Dim3::default(),
-                stream: Stream::Default, args: vec![]
+                smem: 0, stream: Stream::Default, args: vec![]
             }
         ]
     }
@@ -157,7 +157,7 @@ mod test {
             Stmt::CheckError {e: var("x", Type::Error)},
             Stmt::KernelLaunch {
                 id: id("kernel"), blocks: Dim3::default(), threads: Dim3::default(),
-                stream: Stream::Default, args: vec![]
+                smem: 0, stream: Stream::Default, args: vec![]
             }
         ];
         assert_eq!(stmts, expected);
@@ -174,7 +174,7 @@ mod test {
             Stmt::CheckError {e: var("x", Type::Error)},
             Stmt::KernelLaunch {
                 id: id("kernel"), blocks: Dim3::default(), threads: Dim3::default(),
-                stream: Stream::Default, args: vec![]
+                smem: 0, stream: Stream::Default, args: vec![]
             },
             Stmt::CheckError {e: Expr::GetLastError {ty: Type::Error, i: i()}},
         ];

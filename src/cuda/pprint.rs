@@ -54,6 +54,8 @@ impl PrettyPrint for FuncAttribute {
         let s = match self {
             FuncAttribute::NonPortableClusterSizeAllowed =>
                 format!("cudaFuncAttributeNonPortableClusterSizeAllowed"),
+            FuncAttribute::MaxDynamicSharedMemorySize =>
+                format!("cudaFuncAttributeMaxDynamicSharedMemorySize"),
         };
         (env, s)
     }
@@ -271,6 +273,10 @@ impl PrettyPrint for Expr {
                 let (env, value) = value.pprint(env);
                 (env, format!("cudaFuncSetAttribute({func}, {attr}, {value})"))
             },
+            Expr::ValidateSharedMemUsage {nbytes, ..} => {
+                let (env, nbytes) = nbytes.pprint(env);
+                (env, format!("parpy_cuda::check_shared_memory_usage({nbytes})"))
+            },
             Expr::ShflXorSync {mask, value, offset, ..} => {
                 let (env, mask) = mask.pprint(env);
                 let (env, value) = value.pprint(env);
@@ -425,18 +431,18 @@ impl PrettyPrint for Stmt {
                 };
                 (env, format!("{indent}{s};"))
             },
-            Stmt::KernelLaunch {id, blocks, threads, args, stream} => {
+            Stmt::KernelLaunch {id, blocks, threads, smem, stream, args} => {
                 let (env, id) = id.pprint(env);
                 let (env, blocks) = blocks.pprint(env);
                 let (env, threads) = threads.pprint(env);
-                let (env, args) = pprint_iter(args.iter(), env, ", ");
                 let (env, stream) = stream.pprint(env);
-                (env, format!("{indent}{id}<<<dim3({blocks}), dim3({threads}), 0, {stream}>>>({args});"))
+                let (env, args) = pprint_iter(args.iter(), env, ", ");
+                (env, format!("{indent}{id}<<<dim3({blocks}), dim3({threads}), {smem}, {stream}>>>({args});"))
             },
-            Stmt::AllocShared {ty, id, sz} => {
+            Stmt::AllocShared {ty, id} => {
                 let (env, ty) = ty.pprint(env);
                 let (env, id) = id.pprint(env);
-                (env, format!("{indent}__shared__ {ty} {id}[{sz}];"))
+                (env, format!("{indent}extern __shared__ {ty} {id}[];"))
             },
             Stmt::CheckError {e} => {
                 let (env, e) = e.pprint(env);
@@ -494,6 +500,7 @@ impl PrettyPrint for KernelAttribute {
                 let (env, dims) = dims.pprint(env);
                 (env, format!("__cluster_dims__({dims})"))
             },
+            KernelAttribute::SharedMemory {..} => (env, format!("")),
         }
     }
 }
@@ -861,6 +868,7 @@ mod test {
             threads: Dim3::default()
                 .with_dim(&Dim::Y, 6)
                 .with_dim(&Dim::Z, 7),
+            smem: 0,
             stream: Stream::Default,
             args: vec![uvar("x"), uvar("y")],
         };

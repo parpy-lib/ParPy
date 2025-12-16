@@ -143,7 +143,8 @@ namespace parpy_metal {
       MTL::Function *kernel,
       std::vector<metal_buffer*> args,
       int64_t block_x, int64_t block_y, int64_t block_z,
-      int64_t thread_x, int64_t thread_y, int64_t thread_z) {
+      int64_t thread_x, int64_t thread_y, int64_t thread_z,
+      int64_t smem_bytes) {
     if (cb == nullptr || cb->status() != MTL::CommandBufferStatusNotEnqueued) {
       if (cb != nullptr) cb->release();
       cb = cq->commandBuffer();
@@ -169,6 +170,11 @@ namespace parpy_metal {
     }
 
     ce->setComputePipelineState(state);
+    if (smem_bytes > 32768) {
+      parpy_metal::error_message = "Metal does not support using more than 32 KB of threadgroup memory";
+      return 1;
+    }
+    ce->setThreadgroupMemoryLength(smem_bytes, 0);
     for (int i = 0; i < args.size(); i++) {
       ce->setBuffer(args[i]->buf, args[i]->offset, i);
     }

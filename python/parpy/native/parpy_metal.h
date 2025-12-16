@@ -38,7 +38,7 @@ namespace parpy_metal {
   void copy(void*, void*, int64_t, int64_t);
   int32_t launch_kernel(
       MTL::Function*, std::vector<metal_buffer*>, int64_t, int64_t, int64_t,
-      int64_t, int64_t, int64_t);
+      int64_t, int64_t, int64_t, int64_t);
   void submit_work();
   void sync();
 }

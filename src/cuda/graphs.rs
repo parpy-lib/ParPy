@@ -182,8 +182,8 @@ fn use_env_stream_expr(stream: &Stream, e: Expr) -> Expr {
 
 fn use_env_stream_stmt(stream: &Stream, s: Stmt) -> Stmt {
     match s {
-        Stmt::KernelLaunch {id, blocks, threads, args, ..} => {
-            Stmt::KernelLaunch {id, blocks, threads, stream: stream.clone(), args}
+        Stmt::KernelLaunch {id, blocks, threads, smem, args, ..} => {
+            Stmt::KernelLaunch {id, blocks, threads, smem, stream: stream.clone(), args}
         },
         _ => {
             s.smap(|s| use_env_stream_stmt(stream, s))

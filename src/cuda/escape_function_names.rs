@@ -20,10 +20,10 @@ fn escape_expr(e: Expr) -> Expr {
 
 fn escape_stmt(s: Stmt) -> Stmt {
     match s {
-        Stmt::KernelLaunch {id, blocks, threads, stream, args} => {
+        Stmt::KernelLaunch {id, blocks, threads, smem, stream, args} => {
             let id = escape_name(id);
             let args = args.smap(escape_expr);
-            Stmt::KernelLaunch {id, blocks, threads, stream, args}
+            Stmt::KernelLaunch {id, blocks, threads, smem, stream, args}
         },
         _ => s.smap(escape_stmt).smap(escape_expr)
     }

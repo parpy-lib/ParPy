@@ -457,8 +457,11 @@ fn from_ir_stmt(
                     let args = fv.into_iter()
                         .map(|(id, ty)| Expr::Var {id, ty, i: i.clone()})
                         .collect::<Vec<Expr>>();
+                    // NOTE(larshum, 2025-12-16): The shared memory usage is initialized to zero,
+                    // and updated to its actual value at a later stage in the compilation.
                     host_body.push(Stmt::KernelLaunch {
-                        id: kernel_id, args, grid: m.grid.clone(), i: i.clone()
+                        id: kernel_id, args, grid: m.grid.clone(), smem: 0,
+                        i: i.clone()
                     });
                     Ok(kernels)
                 },

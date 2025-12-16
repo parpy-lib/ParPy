@@ -38,6 +38,7 @@ fn from_gpu_ir_mem(mem: gpu_ast::MemSpace) -> MemSpace {
     match mem {
         gpu_ast::MemSpace::Host => MemSpace::Host,
         gpu_ast::MemSpace::Device => MemSpace::Device,
+        gpu_ast::MemSpace::Shared => MemSpace::Threadgroup,
     }
 }
 
@@ -230,7 +231,7 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
         gpu_ast::Stmt::ClusterReduce {i, ..} => {
             parpy_internal_error!(i, "Cluster reductions are not supported in Metal.")
         },
-        gpu_ast::Stmt::KernelLaunch {id, args, grid, i} => {
+        gpu_ast::Stmt::KernelLaunch {id, args, grid, smem, i} => {
             let is_pointer_type = |ty: &gpu_ast::Type| match ty {
                 gpu_ast::Type::Pointer {..} => true,
                 _ => false
@@ -246,7 +247,7 @@ fn from_gpu_ir_stmt(env: &CodegenEnv, s: gpu_ast::Stmt) -> CompileResult<Stmt> {
             let ty = Type::Scalar {sz: ElemSize::I32};
             Ok(Stmt::Definition {
                 ty: ty.clone(), id: Name::sym_str("err"),
-                expr: Expr::KernelLaunch {id, blocks, threads, args, ty, i}
+                expr: Expr::KernelLaunch {id, blocks, threads, smem, args, ty, i}
             })
         },
         gpu_ast::Stmt::AllocDevice {elem_ty, id, sz, i} => {
@@ -315,7 +316,10 @@ fn from_gpu_ir_attr(
         gpu_ast::KernelAttribute::ClusterDims {..} => {
             parpy_internal_error!(Info::default(), "Found unsupported cluster dimension \
                                                       attribute in Metal backend.")
-        }
+        },
+        gpu_ast::KernelAttribute::SharedMemory {id, bytes} => {
+            Ok(FunAttribute::SharedMemory {id, bytes})
+        },
     }
 }
 

@@ -18,6 +18,9 @@ pub enum MemSpace {
 
     // Global memory on the device (e.g., a GPU)
     Device,
+
+    // Shared memory on the device
+    Shared,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -400,7 +403,7 @@ pub enum Stmt {
     // Represents the launch of a kernel with a specified name invoked with the provided vector of
     // arguments and the specified launch arguments, controlling the number of blocks and threads
     // of the executing grid.
-    KernelLaunch {id: Name, args: Vec<Expr>, grid: LaunchArgs, i: Info},
+    KernelLaunch {id: Name, args: Vec<Expr>, grid: LaunchArgs, smem: usize, i: Info},
 
     // Statements related to memory management. Note that we distinguish between different kinds of
     // memory allocations as shared memory allocations introduce a new variable while device
@@ -489,9 +492,9 @@ impl SMapAccum<Expr> for Stmt {
                     block_idx, shared_var, temp_var, blocks_per_cluster, op, int_ty, res_ty, i
                 }))
             },
-            Stmt::KernelLaunch {id, args, grid, i} => {
+            Stmt::KernelLaunch {id, args, grid, smem, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Stmt::KernelLaunch {id, args, grid, i}))
+                Ok((acc, Stmt::KernelLaunch {id, args, grid, smem, i}))
             },
             Stmt::CopyMemory {elem_ty, src, dst, sz, src_mem, dst_mem, i} => {
                 let (acc, src) = f(acc?, src)?;
@@ -651,6 +654,7 @@ pub struct Field {
 pub enum KernelAttribute {
     LaunchBounds {threads: i64},
     ClusterDims {dims: Dim3},
+    SharedMemory {id: Name, bytes: usize},
 }
 
 #[derive(Clone, Debug, PartialEq)]

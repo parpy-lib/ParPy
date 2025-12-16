@@ -11,7 +11,7 @@ pub use crate::gpu::ast::Dim3;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MemSpace {
-    Host, Device,
+    Host, Device, Threadgroup,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -59,7 +59,8 @@ pub enum Expr {
 
     // Metal-specific nodes
     KernelLaunch {
-        id: Name, blocks: Dim3, threads: Dim3, args: Vec<Expr>, ty: Type, i: Info
+        id: Name, blocks: Dim3, threads: Dim3, smem: usize, args: Vec<Expr>,
+        ty: Type, i: Info
     },
     AllocDevice {id: Name, elem_ty: Type, sz: usize, ty: Type, i: Info},
     Projection {e: Box<Expr>, label: String, ty: Type, i: Info},
@@ -184,9 +185,9 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
             },
-            Expr::KernelLaunch {id, blocks, threads, args, ty, i} => {
+            Expr::KernelLaunch {id, blocks, threads, args, smem, ty, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Expr::KernelLaunch {id, blocks, threads, args, ty, i}))
+                Ok((acc, Expr::KernelLaunch {id, blocks, threads, args, smem, ty, i}))
             },
             Expr::Projection {e, label, ty, i} => {
                 let (acc, e) = f(acc?, *e)?;
@@ -356,6 +357,7 @@ pub struct Param {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FunAttribute {
     LaunchBounds {threads: i64},
+    SharedMemory {id: Name, bytes: usize},
     ExternC,
 }
 
