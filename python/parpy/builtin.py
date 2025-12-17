@@ -50,6 +50,3 @@ def static_fail(s):
 
 def alloc_shared(shape, dtype):
     pass
-
-def sync():
-    pass
