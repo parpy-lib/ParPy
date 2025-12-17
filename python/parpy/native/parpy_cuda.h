@@ -25,11 +25,21 @@ extern "C" int32_t parpy_ensure_sufficient_shared_memory(int64_t);
 namespace parpy_cuda {
   std::string error_message;
 
+  bool fetched_device_properties = false;
+  cudaDeviceProp prop;
+
+  cudaDeviceProp get_device_properties() {
+    if (!fetched_device_properties) {
+      int dev;
+      cudaGetDevice(&dev);
+      cudaGetDeviceProperties(&prop, dev);
+      fetched_device_properties = true;
+    }
+    return prop;
+  }
+
   int32_t check_shared_memory_usage(uint64_t nbytes) {
-    int dev;
-    cudaGetDevice(&dev);
-    cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, dev);
+    cudaDeviceProp prop = get_device_properties();
     if (nbytes > prop.sharedMemPerBlock) {
       std::ostringstream ss;
       ss << "Insufficient shared memory. ";
