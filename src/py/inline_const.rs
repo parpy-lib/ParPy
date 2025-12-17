@@ -4,7 +4,6 @@
 
 use super::ast::*;
 use crate::py_runtime_error;
-use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::smap::SMapAccum;
@@ -149,6 +148,7 @@ mod test {
     use super::*;
     use crate::test::*;
     use crate::py::ast_builder::*;
+    use crate::utils::ast::ExprType;
     use crate::utils::name::Name;
     use std::ffi::CString;
     use pyo3::types;
