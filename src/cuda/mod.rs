@@ -8,6 +8,7 @@ mod insert_stream_argument;
 mod memory;
 mod pprint;
 mod reduce;
+mod shared_memory;
 
 #[cfg(test)]
 mod ast_builder;
@@ -30,6 +31,9 @@ pub fn codegen(
 
     // Convert the GPU AST to a CUDA C++ AST.
     let cuda_ast = codegen::from_gpu_ir(gpu_ast, opts)?;
+
+    // Insert validation and proper configuration of shared memory.
+    let cuda_ast = shared_memory::configure_ast(cuda_ast);
 
     // Adds a prefix to the names of all called functions and their definitions to avoid naming
     // collisions with existing functions.

@@ -39,7 +39,7 @@ impl SubVars<py_ast::Expr> for py_ast::Expr {
             py_ast::Expr::Convert {..} | py_ast::Expr::GpuContext {..} |
             py_ast::Expr::Inline {..} | py_ast::Expr::Label {..} |
             py_ast::Expr::StaticBackendEq {..} | py_ast::Expr::StaticTypesEq {..} |
-            py_ast::Expr::StaticFail {..} =>  {
+            py_ast::Expr::StaticFail {..} | py_ast::Expr::AllocShared {..} =>  {
                 self.smap(|e| e.sub_vars(env))
             }
         }

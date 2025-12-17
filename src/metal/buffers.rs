@@ -92,9 +92,9 @@ fn with_temporary_buffer_management(acc: BufferEnv, s: Stmt) -> Vec<Stmt> {
 
 fn insert_temporary_buffers_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
     match s {
-        Stmt::KernelLaunch {id, args, grid, i} => {
+        Stmt::KernelLaunch {id, args, grid, smem, i} => {
             let (bufs, args) = args.smap_accum_l(BTreeMap::new(), insert_temporary_buffers_arg);
-            let launch_stmt = Stmt::KernelLaunch {id, args, grid, i};
+            let launch_stmt = Stmt::KernelLaunch {id, args, grid, smem, i};
             let mut stmts = with_temporary_buffer_management(bufs, launch_stmt);
             acc.append(&mut stmts);
             acc

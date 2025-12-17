@@ -176,6 +176,7 @@ pub enum Expr {
     StaticBackendEq {backend: CompileBackend, ty: Type, i: Info},
     StaticTypesEq {lhs: TensorElemSize, rhs: TensorElemSize, ty: Type, i: Info},
     StaticFail {msg: String, ty: Type, i: Info},
+    AllocShared {shape: Vec<Expr>, sz: TensorElemSize, ty: Type, i: Info},
 }
 
 impl Expr {
@@ -203,6 +204,7 @@ impl Expr {
             Expr::StaticBackendEq {..} => 19,
             Expr::StaticTypesEq {..} => 20,
             Expr::StaticFail {..} => 21,
+            Expr::AllocShared {..} => 22,
         }
     }
 
@@ -230,6 +232,7 @@ impl Expr {
             Expr::StaticBackendEq {backend, ty, ..} => Expr::StaticBackendEq {backend, ty, i},
             Expr::StaticTypesEq {lhs, rhs, ty, ..} => Expr::StaticTypesEq {lhs, rhs, ty, i},
             Expr::StaticFail {msg, ty, ..} => Expr::StaticFail {msg, ty, i},
+            Expr::AllocShared {shape, sz, ty, ..} => Expr::AllocShared {shape, sz, ty, i},
         }
     }
 }
@@ -259,18 +262,23 @@ impl ExprType<Type> for Expr {
             Expr::StaticBackendEq {ty, ..} => ty,
             Expr::StaticTypesEq {ty, ..} => ty,
             Expr::StaticFail {ty, ..} => ty,
+            Expr::AllocShared {ty, ..} => ty,
         }
     }
 
     fn is_leaf_node(&self) -> bool {
         match self {
             Expr::Var {..} | Expr::String {..} | Expr::Bool {..} |
-            Expr::Int {..} | Expr::Float {..} => true,
+            Expr::Int {..} | Expr::Float {..} | Expr::Inline {..} |
+            Expr::Label {..} | Expr::StaticFail {..} => {
+                true
+            },
             Expr::UnOp {..} | Expr::BinOp {..} | Expr::ReduceOp {..} | Expr::IfExpr {..} |
             Expr::Subscript {..} | Expr::Slice {..} | Expr::Tuple {..} | Expr::List {..} |
             Expr::Call {..} | Expr::Callback {..} | Expr::Convert {..} | Expr::GpuContext {..} |
-            Expr::Inline {..} | Expr::Label {..} | Expr::StaticBackendEq {..} |
-            Expr::StaticTypesEq {..} | Expr::StaticFail {..} => false,
+            Expr::StaticBackendEq {..} | Expr::StaticTypesEq {..} | Expr::AllocShared {..} => {
+                false
+            },
         }
     }
 }
@@ -318,6 +326,9 @@ impl Ord for Expr {
                 llhs.cmp(rlhs).then(lrhs.cmp(rrhs)),
             (Expr::StaticFail {msg: lmsg, ..}, Expr::StaticFail {msg: rmsg, ..}) =>
                 lmsg.cmp(rmsg),
+            ( Expr::AllocShared {shape: lshape, sz: lsz, ..}
+            , Expr::AllocShared {shape: rshape, sz: rsz, ..} ) =>
+                lshape.cmp(rshape).then(lsz.cmp(rsz)),
             (lhs, rhs) => lhs.discriminator().cmp(&rhs.discriminator())
         }
     }
@@ -362,6 +373,7 @@ impl InfoNode for Expr {
             Expr::StaticBackendEq {i, ..} => i.clone(),
             Expr::StaticTypesEq {i, ..} => i.clone(),
             Expr::StaticFail {i, ..} => i.clone(),
+            Expr::AllocShared {i, ..} => i.clone(),
         }
     }
 }
@@ -438,6 +450,10 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Inline {e: Box::new(e), ty, i}))
             },
+            Expr::AllocShared {shape, sz, ty, i} => {
+                let (acc, shape) = shape.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::AllocShared {shape, sz, ty, i}))
+            },
             Expr::Var {..} | Expr::String {..} | Expr::Bool {..} |
             Expr::Int {..} | Expr::Float {..} | Expr::GpuContext {..} |
             Expr::Label {..} | Expr::StaticBackendEq {..} |
@@ -467,6 +483,7 @@ impl SFold<Expr> for Expr {
             Expr::Callback {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
             Expr::Inline {e, ..} => f(acc?, e),
+            Expr::AllocShared {shape, ..} => shape.sfold_result(acc, &f),
             Expr::Var {..} | Expr::String {..} | Expr::Bool {..} |
             Expr::Int {..} | Expr::Float {..} | Expr::GpuContext {..} |
             Expr::Label {..} | Expr::StaticBackendEq {..} |

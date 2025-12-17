@@ -44,7 +44,7 @@ mod test {
     fn kernel_launch_expr() -> Expr {
         Expr::KernelLaunch {
             id: id("f"), blocks: Dim3::default(), threads: Dim3::default(),
-            args: vec![], ty: scalar(ElemSize::I32), i: i()
+            smem: 0, args: vec![], ty: scalar(ElemSize::I32), i: i()
         }
     }
 

@@ -175,7 +175,7 @@ def test_reduction_codegen(fn, backend):
         if backend == parpy.CompileBackend.Cuda:
             pat = r".*<<<dim3\(1, 1, 1\), dim3\(128, 1, 1\).*>>>\(.*\);"
         elif backend == parpy.CompileBackend.Metal:
-            pat = r"parpy_metal::launch_kernel\(.*1, 1, 1, 128, 1, 1\).*"
+            pat = r"parpy_metal::launch_kernel\(.*1, 1, 1, 128, 1, 1, .*\).*"
         else:
             pat = ""
         assert re.search(pat, s1, re.DOTALL) is not None
@@ -191,7 +191,7 @@ def test_reduction_codegen(fn, backend):
         if backend == parpy.CompileBackend.Cuda:
             pat = r".*<<<dim3\(1, 100, 1\), dim3\(128, 1, 1\).*>>>\(.*\);"
         elif backend == parpy.CompileBackend.Metal:
-            pat = r"parpy_metal::launch_kernel\(.*1, 100, 1, 128, 1, 1\).*"
+            pat = r"parpy_metal::launch_kernel\(.*1, 100, 1, 128, 1, 1, .*\).*"
         else:
             pat = ""
         assert re.search(pat, s2, re.DOTALL) is not None
@@ -207,7 +207,7 @@ def test_reduction_codegen(fn, backend):
         if backend == parpy.CompileBackend.Cuda:
             pat = r".*<<<dim3\(1, 8, 100\), dim3\(128, 1, 1\).*>>>\(.*\);"
         elif backend == parpy.CompileBackend.Metal:
-            pat = r"parpy_metal::launch_kernel\(.*1, 8, 100, 128, 1, 1\).*"
+            pat = r"parpy_metal::launch_kernel\(.*1, 8, 100, 128, 1, 1, .*\).*"
         else:
             pat = ""
         assert re.search(pat, s3, re.DOTALL) is not None
@@ -234,7 +234,7 @@ def test_clustered_reduction_codegen_in_cuda(fn):
         assert re.search(pat, s, re.DOTALL) is not None
         # This attribute should only be inserted when we use more than 8 thread
         # blocks per cluster.
-        pat = r".*cudaFuncSetAttribute.*"
+        pat = r".*cudaFuncAttributeNonPortableClusterSizeAllowed.*"
         assert re.search(pat, s, re.DOTALL) is None
     else:
         assert len(s) != 0
@@ -266,7 +266,7 @@ def test_clustered_reduction_codegen_in_cuda(fn):
         assert re.search(pat, s, re.DOTALL) is not None
         pat = r".*__cluster_dims__\(16, 1, 1\).*"
         assert re.search(pat, s, re.DOTALL) is not None
-        pat = r".*cudaFuncSetAttribute.*"
+        pat = r".*cudaFuncAttributeNonPortableClusterSizeAllowed.*"
         assert re.search(pat, s, re.DOTALL) is not None
     else:
         assert len(s) != 0

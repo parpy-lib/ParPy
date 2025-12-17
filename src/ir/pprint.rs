@@ -153,6 +153,11 @@ impl PrettyPrint for Stmt {
                 let (env, elem_ty) = elem_ty.pprint(env);
                 (env, format!("{indent}{id} = alloc[{elem_ty}]({sz});"))
             },
+            Stmt::AllocShared {id, elem_ty, sz, ..} => {
+                let (env, id) = id.pprint(env);
+                let (env, elem_ty) = elem_ty.pprint(env);
+                (env, format!("{indent}{id} = alloc_shared[{elem_ty}]({sz});"))
+            },
             Stmt::Free {id, ..} => {
                 let (env, id) = id.pprint(env);
                 (env, format!("{indent}free({id});"))

@@ -15,8 +15,8 @@ def _flatten(xss):
     return [x for xs in xss for x in xs]
 
 def _report_compile_error(r, source, backend_name, temp_file, opts):
-    stdout = r.stdout.decode('ascii')
-    stderr = r.stderr.decode('ascii')
+    stdout = r.stdout.decode('utf-8')
+    stderr = r.stderr.decode('utf-8')
     msg =\
         f"Compilation of generated {backend_name} code failed with exit code {r.returncode}:\n"\
         f"Standard out:\n{stdout}\nStandard error:\n{stderr}"

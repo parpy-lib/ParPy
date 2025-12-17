@@ -1,5 +1,6 @@
 pub mod ast;
 mod codegen;
+mod collect_shared_memory;
 mod constant_fold;
 pub mod flatten_structs;
 mod free_vars;
@@ -62,6 +63,13 @@ pub fn from_general_ir(
     // of a kernel.
     let ast = fuse_memory::apply(ast)?;
     debug_env.print("GPU AST after fusing memory operations", &ast);
+
+    // Collect use of shared memory within each kernel or device function. Based on this
+    // information, we encode the amount of required dynamic shared memory in each kernel node, and
+    // determine the offset of each shared memory use. Also, this pass ensures shared memory is
+    // never used outside device code.
+    let ast = collect_shared_memory::apply(ast)?;
+    debug_env.print("GPU AST after collecting uses of shared memory in kernels", &ast);
 
     // Transform memory writes where multiple threads write to the same location so that only one
     // thread writes and the threads are synchronized afterward.

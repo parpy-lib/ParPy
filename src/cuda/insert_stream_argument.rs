@@ -17,9 +17,9 @@ fn use_stream_argument_expr(stream_id: &Name, e: Expr) -> Expr {
 
 fn use_stream_argument_stmt(stream_id: &Name, s: Stmt) -> Stmt {
     match s {
-        Stmt::KernelLaunch {id, blocks, threads, stream: _, args} => {
+        Stmt::KernelLaunch {id, blocks, threads, smem, stream: _, args} => {
             let stream = Stream::Id(stream_id.clone());
-            Stmt::KernelLaunch {id, blocks, threads, stream, args}
+            Stmt::KernelLaunch {id, blocks, threads, smem, stream, args}
         },
         _ => {
             s.smap(|s| use_stream_argument_stmt(&stream_id, s))

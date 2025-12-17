@@ -24,8 +24,13 @@ extern "C" int32_t parpy_memcpy(void *dst, void *src, int64_t nbytes, int64_t k)
     err = cudaMemcpyAsync(dst, src, nbytes, cudaMemcpyHostToDevice, 0);
   } else if (k == 2) {
     err = cudaMemcpyAsync(dst, src, nbytes, cudaMemcpyDeviceToHost, 0);
-  } else {
+  } else if (k == 3) {
     err = cudaMemcpyAsync(dst, src, nbytes, cudaMemcpyDeviceToDevice, 0);
+  } else {
+    std::ostringstream ss;
+    ss << "Invalid value k = " << k << " provided to parpy_memcpy().";
+    parpy_cuda::error_message = ss.str();
+    return 1;
   }
   return (int32_t)err;
 }

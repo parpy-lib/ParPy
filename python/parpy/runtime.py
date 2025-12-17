@@ -25,7 +25,6 @@ def init_library(libpath):
     lib.parpy_get_error_message.restype = ctypes.c_char_p
     return lib
 
-
 def _compile_cuda_runtime_lib():
     import os
     import subprocess

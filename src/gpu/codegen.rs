@@ -350,6 +350,10 @@ fn generate_kernel_stmt(
             parpy_compile_error!(i, "Memory allocation is not supported in \
                                      parallel code.")?
         },
+        ir_ast::Stmt::AllocShared {id, elem_ty, sz, i} => {
+            let elem_ty = from_ir_type(elem_ty);
+            acc.push(Stmt::AllocShared {id, elem_ty, sz, i});
+        },
         ir_ast::Stmt::Free {i, ..} => {
             parpy_compile_error!(i, "Memory deallocation is not supported in \
                                      parallel code.")?
@@ -416,8 +420,8 @@ fn from_ir_stmt(
             Ok(kernels)
         },
         ir_ast::Stmt::SyncPoint {i, ..} => {
-            parpy_compile_error!(i, "Internal error: Found synchronization point \
-                                       outside parallel code")
+            parpy_internal_error!(i, "Found synchronization point outside \
+                                      parallel code")
         },
         ir_ast::Stmt::For {var, lo, hi, step, body, par, i} => {
             let var_ty = from_ir_type(lo.get_type().clone());
@@ -453,8 +457,11 @@ fn from_ir_stmt(
                     let args = fv.into_iter()
                         .map(|(id, ty)| Expr::Var {id, ty, i: i.clone()})
                         .collect::<Vec<Expr>>();
+                    // NOTE(larshum, 2025-12-16): The shared memory usage is initialized to zero,
+                    // and updated to its actual value at a later stage in the compilation.
                     host_body.push(Stmt::KernelLaunch {
-                        id: kernel_id, args, grid: m.grid.clone(), i: i.clone()
+                        id: kernel_id, args, grid: m.grid.clone(), smem: 0,
+                        i: i.clone()
                     });
                     Ok(kernels)
                 },
@@ -500,6 +507,10 @@ fn from_ir_stmt(
             host_body.push(Stmt::Definition {ty, id: id.clone(), expr, i: i.clone()});
             host_body.push(Stmt::AllocDevice {id, elem_ty, sz, i});
             Ok(kernels)
+        },
+        ir_ast::Stmt::AllocShared {i, ..} => {
+            parpy_internal_error!(i, "Found shared memory allocation outside \
+                                      parallel code")
         },
         ir_ast::Stmt::Free {id, i} => {
             host_body.push(Stmt::FreeDevice {id, i});

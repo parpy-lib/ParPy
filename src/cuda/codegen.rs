@@ -163,7 +163,7 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
         },
         gpu_ast::Stmt::Scope {i, ..} => {
             parpy_internal_error!(i, "Found scope statement that should have \
-                                        been eliminated.")
+                                      been eliminated.")
         },
         gpu_ast::Stmt::Expr {e, ..} => {
             let e = from_gpu_ir_expr(e)?;
@@ -171,23 +171,23 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
         },
         gpu_ast::Stmt::ParallelReduction {i, ..} => {
             parpy_internal_error!(i, "Found parallel reduction statement \
-                                        that should have been eliminated.")
+                                      that should have been eliminated.")
         },
         gpu_ast::Stmt::Synchronize {scope, ..} => Ok(Stmt::Synchronize {scope}),
         gpu_ast::Stmt::WarpReduce {i, ..} => {
             parpy_internal_error!(i, "Found warp reduction statement that \
-                                        should have been eliminated.")
+                                      should have been eliminated.")
         },
         gpu_ast::Stmt::ClusterReduce {i, ..} => {
             parpy_internal_error!(i, "Found cluster reduction statement that \
-                                        should have been eliminated.")
+                                      should have been eliminated.")
         },
-        gpu_ast::Stmt::KernelLaunch {id, args, grid, ..} => {
+        gpu_ast::Stmt::KernelLaunch {id, args, grid, smem, ..} => {
             let args = args.into_iter()
                 .map(from_gpu_ir_expr)
                 .collect::<CompileResult<Vec<Expr>>>()?;
             let gpu_ast::LaunchArgs {blocks, threads} = grid;
-            Ok(Stmt::KernelLaunch {id, blocks, threads, args, stream: Stream::Default})
+            Ok(Stmt::KernelLaunch {id, blocks, threads, smem, args, stream: Stream::Default})
         },
         gpu_ast::Stmt::AllocDevice {elem_ty, id, sz, i} => {
             let ty = from_gpu_ir_type(elem_ty);
@@ -200,9 +200,9 @@ fn from_gpu_ir_stmt(s: gpu_ast::Stmt) -> CompileResult<Stmt> {
                 })
             })
         },
-        gpu_ast::Stmt::AllocShared {elem_ty, id, sz, ..} => {
-            let ty = from_gpu_ir_type(elem_ty);
-            Ok(Stmt::AllocShared {ty, id, sz})
+        gpu_ast::Stmt::AllocShared {i, ..} => {
+            parpy_internal_error!(i, "Found static shared memory allocation node \
+                                      that should have been eliminated.")
         },
         gpu_ast::Stmt::FreeDevice {id, i} => {
             let err_id = Name::sym_str("err");
@@ -248,6 +248,9 @@ fn from_gpu_ir_attr(attr: gpu_ast::KernelAttribute) -> KernelAttribute {
         },
         gpu_ast::KernelAttribute::ClusterDims {dims} => {
             KernelAttribute::ClusterDims {dims}
+        },
+        gpu_ast::KernelAttribute::SharedMemory {id, bytes} => {
+            KernelAttribute::SharedMemory {id, bytes}
         },
     }
 }

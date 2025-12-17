@@ -4,14 +4,15 @@
 
 use super::ast::*;
 use crate::py_runtime_error;
-use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::smap::SMapAccum;
 
 use std::collections::BTreeMap;
 
+use pyo3::PyTypeInfo;
 use pyo3::prelude::*;
+use pyo3::types::*;
 
 fn replace_constants_expr(
     consts: &BTreeMap<Expr, Expr>,
@@ -37,7 +38,8 @@ fn replace_constants_expr(
         Expr::BinOp {..} | Expr::ReduceOp {..} | Expr::IfExpr {..} | Expr::Slice {..} |
         Expr::Tuple {..} | Expr::List {..} | Expr::Call {..} | Expr::Callback {..} |
         Expr::Convert {..} | Expr::GpuContext {..} | Expr::Inline {..} | Expr::Label {..} |
-        Expr::StaticBackendEq {..} | Expr::StaticTypesEq {..} | Expr::StaticFail {..} => {
+        Expr::StaticBackendEq {..} | Expr::StaticTypesEq {..} | Expr::StaticFail {..} |
+        Expr::AllocShared {..} => {
             e.smap(|e| replace_constants_expr(consts, e))
         }
     }
@@ -77,77 +79,68 @@ fn replace_constants_def(
     Ok(FunDef {body, ..def})
 }
 
-fn extract_scalar_value<'py>(
-    arg: &Bound<'py, PyAny>,
-    i: &Info,
-    sz: ElemSize
-) -> PyResult<Expr> {
-    if sz == ElemSize::Bool {
-        let v = arg.extract::<bool>()?;
-        Ok(Expr::Bool {v, ty: Type::fixed_scalar(sz), i: i.clone()})
-    } else if sz.is_integer() {
-        let v = arg.extract::<i128>()?;
-        Ok(Expr::Int {v, ty: Type::fixed_scalar(sz), i: i.clone()})
-    } else if sz.is_floating_point() {
-        let v = arg.extract::<f64>()?;
-        Ok(Expr::Float {v, ty: Type::fixed_scalar(sz), i: i.clone()})
-    } else {
-        py_runtime_error!(i, "Invalid scalar of element type {sz}")
-    }
-}
-
 fn add_scalar_constant<'py>(
     mut acc: BTreeMap<Expr, Expr>,
     target: Expr,
     arg: &Bound<'py, PyAny>
 ) -> PyResult<BTreeMap<Expr, Expr>> {
-    let ty = target.get_type();
+    let ty = Type::Unknown;
     let i = target.get_info();
-    match ty {
-        Type::Tensor {sz: TensorElemSize::Fixed {sz}, shape} if shape.is_empty() => {
-            match extract_scalar_value(arg, &i, sz.clone()) {
-                Ok(value) => {
-                    acc.insert(target, value);
-                    Ok(acc)
-                },
-                Err(e) => {
-                    py_runtime_error!(i, "Extracting scalar value failed: {e}")
-                }
-            }
-        },
-        Type::Dict {fields} => {
-            fields.iter()
-                .fold(Ok(acc), |acc, (k, ty)| {
-                    let i = target.get_info();
-                    let target = Expr::Subscript {
-                        target: Box::new(target.clone()),
-                        idx: Box::new(Expr::String {
-                            v: k.clone(), ty: Type::String, i: i.clone()
-                        }),
-                        ty: ty.clone(), i: i.clone()
-                    };
-                    let field = arg.get_item(k)?;
-                    add_scalar_constant(acc?, target, &field)
-                })
-        },
-        _ => Ok(acc)
+    let py = arg.py();
+    if arg.is_instance(&PyBool::type_object(py))? {
+        acc.insert(target, Expr::Bool {v: arg.extract::<bool>()?, ty, i});
+        Ok(acc)
+    } else if arg.is_instance(&PyInt::type_object(py))? {
+        acc.insert(target, Expr::Int {v: arg.extract::<i128>()?, ty, i});
+        Ok(acc)
+    } else if arg.is_instance(&PyFloat::type_object(py))? {
+        acc.insert(target, Expr::Float {v: arg.extract::<f64>()?, ty, i});
+        Ok(acc)
+    } else if arg.is_instance(&PyDict::type_object(py))? {
+        arg.downcast::<PyDict>()?
+            .items()
+            .into_iter()
+            .fold(Ok(acc), |acc, kv| {
+                let (k, v) = kv.extract::<(Bound<'py, PyAny>, Bound<'py, PyAny>)>()?;
+                let k = if let Ok(s) = k.extract::<String>() {
+                    Ok(s)
+                } else {
+                    py_runtime_error!(i, "Dictionaries with non-string keys are not supported")
+                }?;
+                let target = Expr::Subscript {
+                    target: Box::new(target.clone()),
+                    idx: Box::new(Expr::String {
+                        v: k.clone(), ty: Type::String, i: i.clone()
+                    }),
+                    ty: ty.clone(), i: i.clone()
+                };
+                add_scalar_constant(acc?, target, &v)
+            })
+    } else {
+        Ok(acc)
     }
 }
 
-pub fn inline_scalar_values<'py>(
-    ast: Ast,
-    args: &Vec<Bound<'py, PyAny>>
-) -> PyResult<Ast> {
-    let const_map = args.iter()
-        .zip(ast.main.params.iter())
+fn make_const_map<'py, 'a>(
+    args: &'a Vec<Bound<'py, PyAny>>,
+    params: &'a Vec<Param>
+) -> PyResult<BTreeMap<Expr, Expr>> {
+    args.iter()
+        .zip(params.iter())
         .fold(Ok(BTreeMap::new()), |acc, (arg, Param {id, ty, i})| {
             let target = Expr::Var {
                 id: id.clone(), ty: ty.clone(), i: i.clone()
             };
             add_scalar_constant(acc?, target, arg)
-        })?;
-    let main = replace_constants_def(&const_map, ast.main)?;
-    Ok(Ast {main, ..ast})
+        })
+}
+
+pub fn inline_scalar_values<'py>(
+    def: FunDef,
+    args: &Vec<Bound<'py, PyAny>>
+) -> PyResult<FunDef> {
+    let const_map = make_const_map(args, &def.params)?;
+    replace_constants_def(&const_map, def)
 }
 
 #[cfg(test)]
@@ -155,6 +148,7 @@ mod test {
     use super::*;
     use crate::test::*;
     use crate::py::ast_builder::*;
+    use crate::utils::ast::ExprType;
     use crate::utils::name::Name;
     use std::ffi::CString;
     use pyo3::types;

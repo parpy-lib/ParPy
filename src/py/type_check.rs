@@ -485,13 +485,14 @@ fn extract_type<'py>(
     } else if arg.is_instance(&PyFloat::type_object(py))? {
         Ok(Type::fixed_scalar(scalar_sizes.float.clone()))
     } else if arg.is_instance(&PyDict::type_object(py))? {
-        let fields = arg.call_method0("items")?
-            .try_iter()?
-            .map(|f| {
-                let f = f?;
-                let id = f.get_item(0)?.extract::<String>()?;
-                let ty = extract_type(&f.get_item(1)?, scalar_sizes, i)?;
-                Ok((id, ty))
+        let fields = arg.downcast::<PyDict>()?
+            .items()
+            .into_iter()
+            .map(|kv| {
+                let (k, v) = kv.extract::<(Bound<'py, PyAny>, Bound<'py, PyAny>)>()?;
+                let k = k.extract::<String>()?;
+                let ty = extract_type(&v, scalar_sizes, i)?;
+                Ok((k, ty))
             })
             .collect::<PyResult<BTreeMap<String, Type>>>()?;
         Ok(Type::Dict {fields})
@@ -897,6 +898,29 @@ impl TypeCheck for Expr {
             Expr::StaticFail {msg, ty: _, i} => {
                 py_internal_error!(i, "Type-checker reached fail node: {msg}")
             },
+            Expr::AllocShared {shape, sz, ty: _, i} => {
+                let (env, shape) = shape.type_check(env)?;
+                let sh = shape.clone()
+                    .into_iter()
+                    .map(|e| {
+                        // NOTE(larshum, 2025-12-02): We apply constant folding to allow using
+                        // constant offsets in the size (for avoiding bank conflicts).
+                        let e = constant_fold::fold_expr(e);
+                        match e {
+                            Expr::Int {v, ..} => Ok(TensorShape::Num {n: v as i64}),
+                            _ => py_type_error!(i, "Found statically unknown shape in shared memory allocation: {e}"),
+                        }
+                    })
+                    .collect::<PyResult<Vec<TensorShape>>>()?;
+                let sz = match sz {
+                    TensorElemSize::Fixed {..} => Ok(sz),
+                    TensorElemSize::Variable {..} => {
+                        py_internal_error!(i, "Found unresolved type variable")
+                    }
+                }?;
+                let ty = Type::Tensor {shape: sh, sz: sz.clone()};
+                Ok((env, Expr::AllocShared {shape, sz, ty, i}))
+            },
         }
     }
 }
@@ -988,11 +1012,15 @@ fn type_check_argument(
     i: Info
 ) -> PyResult<Expr> {
     let arg_type = arg.get_type().clone();
-    match coerce_type(arg, &ty) {
-        Ok(e) => Ok(e),
-        Err(_) => {
-            py_type_error!(i, "Parameter {id} was annotated with type {ty} \
-                               which is incompatible with argument type {arg_type}.")
+    if let Type::Unknown = ty {
+        Ok(arg)
+    } else {
+        match coerce_type(arg, &ty) {
+            Ok(e) => Ok(e),
+            Err(_) => {
+                py_type_error!(i, "Parameter {id} was annotated with type {ty} \
+                                   which is incompatible with argument type {arg_type}.")
+            }
         }
     }
 }

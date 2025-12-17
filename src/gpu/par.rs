@@ -106,7 +106,7 @@ fn find_parallel_structure_stmt_par(stmt: &Stmt) -> CompileResult<Par> {
     match stmt {
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Expr {..} |
         Stmt::Return {..} | Stmt::SyncPoint {..} | Stmt::Alloc {..} |
-        Stmt::Free {..} => {
+        Stmt::AllocShared {..} | Stmt::Free {..} => {
             let layer = stmt.sfold_result(Ok(None), find_parallel_structure_expr)?;
             let i = stmt.get_info().clone();
             match layer {
@@ -210,7 +210,7 @@ fn find_parallel_structure_stmt_seq(
         Stmt::For {body, ..} => find_parallel_structure_stmts_seq(acc, body),
         Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
         Stmt::While {..} | Stmt::If {..} | Stmt::Expr {..} | Stmt::Return {..} |
-        Stmt::Alloc {..} | Stmt::Free {..} => {
+        Stmt::Alloc {..} | Stmt::AllocShared {..} | Stmt::Free {..} => {
             stmt.sfold_result(Ok(acc), find_parallel_structure_stmt_seq)
         }
     }

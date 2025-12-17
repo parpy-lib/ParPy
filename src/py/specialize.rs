@@ -77,6 +77,11 @@ fn specialize_expr<'a>(
             let v = type_check::eq_tensor_elem_size(env.unify_env.clone(), &lhs, &rhs);
             Ok(Expr::Bool {v: v.is_some(), ty, i})
         },
+        Expr::AllocShared {shape, sz, ty, i} => {
+            let sz = specialize_tensor_elem_size(env, sz, &i)?;
+            let ty = specialize_type(env, ty, &i)?;
+            Ok(Expr::AllocShared {shape, sz, ty, i})
+        },
         _ => e.smap_result(|e| specialize_expr(env, e))
     }
 }

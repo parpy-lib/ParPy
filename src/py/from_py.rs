@@ -258,6 +258,41 @@ fn convert_inline_builtin<'py, 'a>(
     }
 }
 
+fn try_extract_literal_shape<'py, 'a>(
+    arg: Bound<'py, PyAny>,
+    env: &ConvertEnv<'py, 'a>,
+    i: &Info
+) -> PyResult<Vec<Expr>> {
+    match convert_expr(arg, env) {
+        Ok(Expr::Tuple {elems, ..}) => Ok(elems),
+        _ => py_runtime_error!(i, "First argument of the shared allocation \
+                                   builtin must be a tuple of dimensions \
+                                   defining its shape.")
+    }
+}
+
+fn convert_shared_alloc_builtin<'py, 'a>(
+    mut args: Vec<Bound<'py, PyAny>>,
+    env: &ConvertEnv<'py, 'a>,
+    i: Info
+) -> PyResult<Expr> {
+    let n = args.len();
+    // The first argument is the shape of the allocated memory, represented as a list/tuple of
+    // statically known integers corresponding to its dimensions. The second argument is the type
+    // of the elements in the array.
+    if n == 2 {
+        let sz = match try_extract_type_annotation(args.pop().unwrap(), env, &i) {
+            Ok(Type::Tensor {ref shape, sz}) if shape.is_empty() => Ok(sz),
+            _ => py_runtime_error!(i, "Second argument of the shared allocation \
+                                       builtin must be a scalar ParPy type.")
+        }?;
+        let lit_shape = try_extract_literal_shape(args.pop().unwrap(), env, &i)?;
+        Ok(Expr::AllocShared {shape: lit_shape, sz, ty: Type::Unknown, i})
+    } else {
+        py_runtime_error!(i, "Shared allocation builtin expects two arguments but found {n}")
+    }
+}
+
 fn convert_static_backend_equality<'py, 'a>(
     mut args: Vec<Bound<'py, PyAny>>,
     env: &ConvertEnv<'py, 'a>,
@@ -353,6 +388,10 @@ fn convert_builtin<'py, 'a>(
             // Inlining of calls (only usable as a statement)
             } else if e.eq(parpy_builtins.getattr("inline")?)? {
                 Some(convert_inline_builtin(args, env, i)?)
+
+            // Manual allocation of shared memory (only usable in an assignment statement)
+            } else if e.eq(parpy_builtins.getattr("alloc_shared")?)? {
+                Some(convert_shared_alloc_builtin(args, env, i)?)
 
             // Statically evaluated nodes used for compile-time specialization
             } else if e.eq(parpy_builtins.getattr("static_backend_eq")?)? {

@@ -9,6 +9,7 @@ impl PrettyPrint for MemSpace {
         let s = match self {
             MemSpace::Host => "",
             MemSpace::Device => "device",
+            MemSpace::Threadgroup => "threadgroup",
         };
         (env, s.to_string())
     }
@@ -19,7 +20,8 @@ fn memcopy_kind(src: &MemSpace, dst: &MemSpace) -> usize {
         (MemSpace::Host, MemSpace::Host) => 0,
         (MemSpace::Host, MemSpace::Device) => 1,
         (MemSpace::Device, MemSpace::Host) => 2,
-        (MemSpace::Device, MemSpace::Device) => 3
+        (MemSpace::Device, MemSpace::Device) => 3,
+        _ => 4
     }
 }
 
@@ -210,13 +212,13 @@ impl PrettyPrint for Expr {
                 };
                 (env, s)
             },
-            Expr::KernelLaunch {id, blocks, threads, args, ..} => {
+            Expr::KernelLaunch {id, blocks, threads, smem, args, ..} => {
                 let (env, id) = id.pprint(env);
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 let Dim3 {x: bx, y: by, z: bz} = blocks;
                 let Dim3 {x: tx, y: ty, z: tz} = threads;
                 (env, format!("parpy_metal::launch_kernel({id}, {{{args}}}, \
-                               {bx}, {by}, {bz}, {tx}, {ty}, {tz})"))
+                               {bx}, {by}, {bz}, {tx}, {ty}, {tz}, {smem})"))
             },
             Expr::AllocDevice {id, elem_ty, sz, ..} => {
                 let (env, id) = id.pprint(env);
@@ -365,6 +367,7 @@ impl PrettyPrint for ParamAttribute {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
             ParamAttribute::Buffer {idx} => format!("buffer({idx})"),
+            ParamAttribute::Threadgroup {idx} => format!("threadgroup({idx})"),
             ParamAttribute::ThreadIndex => format!("thread_position_in_threadgroup"),
             ParamAttribute::BlockIndex => format!("threadgroup_position_in_grid"),
         };
@@ -395,6 +398,9 @@ impl PrettyPrint for FunAttribute {
             },
             FunAttribute::ExternC => {
                 (env, format!("extern \"C\""))
+            },
+            FunAttribute::ThreadgroupMemory {..} => {
+                (env, format!(""))
             },
         }
     }

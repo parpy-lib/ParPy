@@ -165,7 +165,7 @@ mod test {
     fn mk_kernel_launch(id: Name) -> Stmt {
         Stmt::KernelLaunch {
             id, blocks: Dim3::default(), threads: Dim3::default(),
-            stream: Stream::Default, args: vec![]
+            smem: 0, stream: Stream::Default, args: vec![]
         }
     }
 

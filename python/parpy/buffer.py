@@ -91,7 +91,7 @@ def empty(shape, dtype, backend):
         base_buf = MetalBaseBuffer(buf, nbytes, None)
         return MetalBuffer(base_buf, shape, dtype)
     else:
-        raise ValueError(f"Cannot construct buffer of type {type(b)}")
+        raise ValueError(f"Cannot construct buffer of type {type(dtype)}")
 
 def empty_like(b):
     if isinstance(b, CudaBuffer):

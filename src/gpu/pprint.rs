@@ -44,6 +44,7 @@ impl PrettyPrint for MemSpace {
         let s = match self {
             MemSpace::Host => "host",
             MemSpace::Device => "device",
+            MemSpace::Shared => "shared",
         };
         (env, s.to_string())
     }
@@ -452,6 +453,10 @@ impl PrettyPrint for KernelAttribute {
                 let (env, dims) = dims.pprint(env);
                 (env, format!("cluster_dims({dims})"))
             },
+            KernelAttribute::SharedMemory {id, bytes} => {
+                let (env, id) = id.pprint(env);
+                (env, format!("shared_memory({id}, {bytes})"))
+            },
         }
     }
 }
@@ -758,6 +763,7 @@ mod test {
             id: Name::new(id.to_string()),
             args: vec![uvar("x"), uvar("y")],
             grid: LaunchArgs::default(),
+            smem: 0,
             i: i()
         };
         let grid_str = LaunchArgs::default().pprint_default();

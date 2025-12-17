@@ -233,6 +233,11 @@ impl PrettyPrint for Expr {
             Expr::StaticFail {msg, ..} => {
                 (env, format!("<static_fail({msg})>"))
             },
+            Expr::AllocShared {shape, sz, ..} => {
+                let (env, shape) = pprint_iter(shape.iter(), env, ", ");
+                let (env, sz) = sz.pprint(env);
+                (env, format!("<alloc_shared({sz}; [{shape}])>"))
+            },
         }
     }
 

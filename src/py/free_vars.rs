@@ -11,7 +11,7 @@ impl FreeVars<Type> for Expr {
             Expr::Subscript {..} | Expr::Slice {..} | Expr::Tuple {..} | Expr::List {..} |
             Expr::Call {..} | Expr::Callback {..} | Expr::Convert {..} | Expr::GpuContext {..} |
             Expr::Inline {..} | Expr::Label {..} | Expr::StaticBackendEq {..} |
-            Expr::StaticTypesEq {..} | Expr::StaticFail {..} => {
+            Expr::StaticTypesEq {..} | Expr::StaticFail {..} | Expr::AllocShared {..} => {
                 self.sfold(env, |env, e| e.fv(env))
             }
         }

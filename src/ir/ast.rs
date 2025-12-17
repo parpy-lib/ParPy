@@ -196,6 +196,7 @@ pub enum Stmt {
     Return {value: Expr, i: Info},
     Expr {e: Expr, i: Info},
     Alloc {id: Name, elem_ty: Type, sz: usize, i: Info},
+    AllocShared {id: Name, elem_ty: Type, sz: usize, i: Info},
     Free {id: Name, i: Info},
 }
 
@@ -211,6 +212,7 @@ impl InfoNode for Stmt {
             Stmt::Expr {i, ..} => i.clone(),
             Stmt::Return {i, ..} => i.clone(),
             Stmt::Alloc {i, ..} => i.clone(),
+            Stmt::AllocShared {i, ..} => i.clone(),
             Stmt::Free {i, ..} => i.clone()
         }
     }
@@ -253,7 +255,8 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, value) = f(acc?, value)?;
                 Ok((acc, Stmt::Return {value, i}))
             },
-            Stmt::SyncPoint {..} | Stmt::Alloc {..} | Stmt::Free {..} => {
+            Stmt::SyncPoint {..} | Stmt::Alloc {..} | Stmt::AllocShared {..} |
+            Stmt::Free {..} => {
                 Ok((acc?, self))
             },
         }
@@ -274,7 +277,8 @@ impl SFold<Expr> for Stmt {
             Stmt::While {cond, ..} => f(acc?, cond),
             Stmt::Expr {e, ..} => f(acc?, e),
             Stmt::Return {value, ..} => f(acc?, value),
-            Stmt::SyncPoint {..} | Stmt::Alloc {..} | Stmt::Free {..} => acc
+            Stmt::SyncPoint {..} | Stmt::Alloc {..} | Stmt::AllocShared {..} |
+            Stmt::Free {..} => acc
         }
     }
 }
@@ -301,7 +305,7 @@ impl SMapAccum<Stmt> for Stmt {
             },
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Expr {..} |
             Stmt::Return {..} | Stmt::SyncPoint {..} | Stmt::Alloc {..} |
-            Stmt::Free {..} => {
+            Stmt::AllocShared {..} | Stmt::Free {..} => {
                 Ok((acc?, self))
             }
         }
@@ -320,7 +324,7 @@ impl SFold<Stmt> for Stmt {
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::Expr {..} |
             Stmt::Return {..} | Stmt::SyncPoint {..} | Stmt::Alloc {..} |
-            Stmt::Free {..} => acc
+            Stmt::AllocShared {..} | Stmt::Free {..} => acc
         }
     }
 }
@@ -347,7 +351,7 @@ impl SFlatten<Stmt> for Stmt {
             },
             Stmt::Definition {..} | Stmt::Assign {..} | Stmt::SyncPoint {..} |
             Stmt::Expr {..} | Stmt::Return {..} | Stmt::Alloc {..} |
-            Stmt::Free {..} => {
+            Stmt::AllocShared {..} | Stmt::Free {..} => {
                 acc.push(self);
             },
         };
