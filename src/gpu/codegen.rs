@@ -509,8 +509,8 @@ fn from_ir_stmt(
             Ok(kernels)
         },
         ir_ast::Stmt::AllocShared {i, ..} => {
-            parpy_compile_error!(i, "Found shared memory allocation outside \
-                                     parallel code")
+            parpy_internal_error!(i, "Found shared memory allocation outside \
+                                      parallel code")
         },
         ir_ast::Stmt::Free {id, i} => {
             host_body.push(Stmt::FreeDevice {id, i});
