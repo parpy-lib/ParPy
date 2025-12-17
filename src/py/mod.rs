@@ -76,8 +76,8 @@ pub fn specialize_ast_on_arguments<'py>(
     // the compiler.
     let main = shape_symbol_labels::add_implicit_labels(&opts, main);
 
-    let main = inline_const::inline_scalar_values_def(main, &args)?;
-    debug_env.print("Python-like AST after first inlining", &main);
+    let main = inline_const::inline_scalar_values(main, &args)?;
+    debug_env.print("Python-like AST after scalar parameter inlining", &main);
 
     // Ensure the AST contains any degree of parallelism - otherwise, there is no point in using
     // this framework at all.
@@ -95,12 +95,6 @@ pub fn specialize_ast_on_arguments<'py>(
     // Adjusts indexing using negative literals to properly offset it with respect to the size of
     // the corresponding dimension, to achieve a similar behavior as in Python.
     let ast = adjust_negative_indices::apply(ast)?;
-
-    // Inline the values of any scalar arguments provided to the main function. This may
-    // significantly improve performance as it provides additional information to the underlying
-    // compiler, but results in the need to JIT when this value changes.
-    let ast = inline_const::inline_scalar_values(ast, &args)?;
-    debug_env.print("Python-like AST after inlining", &ast);
 
     // Transform slice statements into for-loops.
     let ast = slice_transformation::apply(ast, &scalar_sizes)?;

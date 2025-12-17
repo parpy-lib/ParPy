@@ -4,7 +4,6 @@
 
 use super::ast::*;
 use crate::py_runtime_error;
-use crate::py_type_error;
 use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -81,7 +80,7 @@ fn replace_constants_def(
     Ok(FunDef {body, ..def})
 }
 
-fn add_untyped_scalar_constant<'py>(
+fn add_scalar_constant<'py>(
     mut acc: BTreeMap<Expr, Expr>,
     target: Expr,
     arg: &Bound<'py, PyAny>
@@ -123,67 +122,9 @@ fn add_untyped_scalar_constant<'py>(
     }
 }
 
-fn extract_scalar_value<'py>(
-    arg: &Bound<'py, PyAny>,
-    i: &Info,
-    sz: ElemSize
-) -> PyResult<Expr> {
-    if sz == ElemSize::Bool {
-        let v = arg.extract::<bool>()?;
-        Ok(Expr::Bool {v, ty: Type::fixed_scalar(sz), i: i.clone()})
-    } else if sz.is_integer() {
-        let v = arg.extract::<i128>()?;
-        Ok(Expr::Int {v, ty: Type::fixed_scalar(sz), i: i.clone()})
-    } else if sz.is_floating_point() {
-        let v = arg.extract::<f64>()?;
-        Ok(Expr::Float {v, ty: Type::fixed_scalar(sz), i: i.clone()})
-    } else {
-        py_runtime_error!(i, "Invalid scalar of element type {sz}")
-    }
-}
-
-fn add_scalar_constant<'py>(
-    mut acc: BTreeMap<Expr, Expr>,
-    target: Expr,
-    arg: &Bound<'py, PyAny>
-) -> PyResult<BTreeMap<Expr, Expr>> {
-    let ty = target.get_type();
-    let i = target.get_info();
-    match ty {
-        Type::Tensor {sz: TensorElemSize::Fixed {sz}, shape} if shape.is_empty() => {
-            match extract_scalar_value(arg, &i, sz.clone()) {
-                Ok(value) => {
-                    acc.insert(target, value);
-                    Ok(acc)
-                },
-                Err(e) => {
-                    py_type_error!(i, "Extracting scalar value failed with error {e}")
-                }
-            }
-        },
-        Type::Dict {fields} => {
-            fields.iter()
-                .fold(Ok(acc), |acc, (k, ty)| {
-                    let i = target.get_info();
-                    let target = Expr::Subscript {
-                        target: Box::new(target.clone()),
-                        idx: Box::new(Expr::String {
-                            v: k.clone(), ty: Type::String, i: i.clone()
-                        }),
-                        ty: ty.clone(), i: i.clone()
-                    };
-                    let field = arg.get_item(k)?;
-                    add_scalar_constant(acc?, target, &field)
-                })
-        },
-        _ => Ok(acc)
-    }
-}
-
 fn make_const_map<'py, 'a>(
     args: &'a Vec<Bound<'py, PyAny>>,
-    params: &'a Vec<Param>,
-    typed: bool
+    params: &'a Vec<Param>
 ) -> PyResult<BTreeMap<Expr, Expr>> {
     args.iter()
         .zip(params.iter())
@@ -191,29 +132,16 @@ fn make_const_map<'py, 'a>(
             let target = Expr::Var {
                 id: id.clone(), ty: ty.clone(), i: i.clone()
             };
-            if typed {
-                add_scalar_constant(acc?, target, arg)
-            } else {
-                add_untyped_scalar_constant(acc?, target, arg)
-            }
+            add_scalar_constant(acc?, target, arg)
         })
 }
 
-pub fn inline_scalar_values_def<'py>(
+pub fn inline_scalar_values<'py>(
     def: FunDef,
     args: &Vec<Bound<'py, PyAny>>
 ) -> PyResult<FunDef> {
-    let const_map = make_const_map(args, &def.params, false)?;
+    let const_map = make_const_map(args, &def.params)?;
     replace_constants_def(&const_map, def)
-}
-
-pub fn inline_scalar_values<'py>(
-    ast: Ast,
-    args: &Vec<Bound<'py, PyAny>>
-) -> PyResult<Ast> {
-    let const_map = make_const_map(args, &ast.main.params, true)?;
-    let main = replace_constants_def(&const_map, ast.main)?;
-    Ok(Ast {main, ..ast})
 }
 
 #[cfg(test)]
