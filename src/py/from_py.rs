@@ -389,7 +389,7 @@ fn convert_builtin<'py, 'a>(
             } else if e.eq(parpy_builtins.getattr("inline")?)? {
                 Some(convert_inline_builtin(args, env, i)?)
 
-            // Manual allocation of shared memory (only usable as a statement)
+            // Manual allocation of shared memory (only usable in an assignment statement)
             } else if e.eq(parpy_builtins.getattr("alloc_shared")?)? {
                 Some(convert_shared_alloc_builtin(args, env, i)?)
 
