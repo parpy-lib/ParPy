@@ -113,3 +113,21 @@ def test_smem_oom(backend):
             arbitrary_smem_alloc(N, opts=par_opts(backend, {'block': parpy.threads(32)}))
         assert e_info.match(r"Insufficient shared memory\..*current device only supports up to .* bytes")
     run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_smem_invalid_shape(backend):
+    with pytest.raises(RuntimeError) as e_info:
+        @parpy.jit
+        def invalid_shape(N):
+            with parpy.gpu:
+                x = parpy.builtin.alloc_shared(N, parpy.types.I32)
+    assert e_info.match(r"First argument of .* must be a tuple of dimensions")
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_smem_invalid_type(backend):
+    with pytest.raises(RuntimeError) as e_info:
+        @parpy.jit
+        def invalid_type(N):
+            with parpy.gpu:
+                x = parpy.builtin.alloc_shared(N, torch.float32)
+    assert e_info.match(r"Second argument of .* must be a scalar ParPy type")
