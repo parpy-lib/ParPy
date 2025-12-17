@@ -20,7 +20,6 @@ fn insert_threadgroup_parameter(t: Top) -> Top {
             Top::VarDef {ty, id, init: Some(Expr::LoadLibrary {tops, ty: ty_expr, i})}
         },
         Top::FunDef {mut attrs, is_kernel, ret_ty, id, mut params, body} => {
-            println!("{id} {attrs:?}");
             let (attrs, params) = match attrs.iter().fold(None, collect_threadgroup_attribute) {
                 Some((mem_id, nbytes)) => {
                     let attr = FunAttribute::ThreadgroupMemory {
