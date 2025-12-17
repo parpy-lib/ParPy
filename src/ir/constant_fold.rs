@@ -252,6 +252,6 @@ mod test {
     #[test]
     fn div_identity() {
         test_identity(BinOp::Div, float(1.0, None), true);
-        test_identity(BinOp::Div, int(1, None), true);
+        test_identity(BinOp::FloorDiv, int(1, None), true);
     }
 }
