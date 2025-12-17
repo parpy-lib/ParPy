@@ -1012,11 +1012,15 @@ fn type_check_argument(
     i: Info
 ) -> PyResult<Expr> {
     let arg_type = arg.get_type().clone();
-    match coerce_type(arg, &ty) {
-        Ok(e) => Ok(e),
-        Err(_) => {
-            py_type_error!(i, "Parameter {id} was annotated with type {ty} \
-                               which is incompatible with argument type {arg_type}.")
+    if let Type::Unknown = ty {
+        Ok(arg)
+    } else {
+        match coerce_type(arg, &ty) {
+            Ok(e) => Ok(e),
+            Err(_) => {
+                py_type_error!(i, "Parameter {id} was annotated with type {ty} \
+                                   which is incompatible with argument type {arg_type}.")
+            }
         }
     }
 }
