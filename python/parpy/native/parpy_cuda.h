@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdio>
+#include <map>
 #include <sstream>
 #include <string>
 
@@ -25,21 +26,25 @@ extern "C" int32_t parpy_ensure_sufficient_shared_memory(int64_t);
 namespace parpy_cuda {
   std::string error_message;
 
-  bool fetched_device_properties = false;
-  cudaDeviceProp prop;
-
-  cudaDeviceProp get_device_properties() {
-    if (!fetched_device_properties) {
-      int dev;
-      cudaGetDevice(&dev);
+  // Maintain a cache of the properties per device. This ensures we do not
+  // repeatedly load device properties, as this API call seems to consistently
+  // take in the order of milliseconds. Also, it avoids potential bugs in code
+  // that run ParPy functions on GPUs with different properties.
+  std::map<int, cudaDeviceProp> device_properties;
+  cudaDeviceProp get_device_properties(int dev) {
+    auto it = device_properties.find(dev);
+    if (it == device_properties.end()) {
+      cudaDeviceProp prop;
       cudaGetDeviceProperties(&prop, dev);
-      fetched_device_properties = true;
+      device_properties[dev] = prop;
     }
-    return prop;
+    return it->second;
   }
 
   int32_t check_shared_memory_usage(uint64_t nbytes) {
-    cudaDeviceProp prop = get_device_properties();
+    int dev;
+    cudaGetDevice(&dev);
+    cudaDeviceProp prop = get_device_properties(dev);
     if (nbytes > prop.sharedMemPerBlock) {
       std::ostringstream ss;
       ss << "Insufficient shared memory. ";
