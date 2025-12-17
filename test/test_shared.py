@@ -111,10 +111,5 @@ def test_smem_oom(backend):
         N = 2**64-1
         with pytest.raises(RuntimeError) as e_info:
             arbitrary_smem_alloc(N, opts=par_opts(backend, {'block': parpy.threads(32)}))
-        if backend == parpy.CompileBackend.Cuda:
-            assert e_info.match(r"Insufficient shared memory\..*current device only supports up to .* bytes")
-        elif backend == parpy.CompileBackend.Metal:
-            assert e_info.match(r"shared memory")
-        else:
-            raise RuntimeError(f"Unsupported backend {backend}")
+        assert e_info.match(r"Insufficient shared memory\..*current device only supports up to .* bytes")
     run_if_backend_is_enabled(backend, helper)

@@ -29,6 +29,7 @@ extern "C" const char *parpy_get_error_message();
 // The below functions are to be used in the generated kernel code from C++. We
 // wrap these in a namespace to avoid risk of name conflicts.
 namespace parpy_metal {
+  char err_buf[1024];
   const char *error_message = nullptr;
 
   MTL::Library *load_library(const char*);
@@ -38,7 +39,7 @@ namespace parpy_metal {
   void copy(void*, void*, int64_t, int64_t);
   int32_t launch_kernel(
       MTL::Function*, std::vector<metal_buffer*>, int64_t, int64_t, int64_t,
-      int64_t, int64_t, int64_t, int64_t);
+      int64_t, int64_t, int64_t, uint64_t);
   void submit_work();
   void sync();
 }
