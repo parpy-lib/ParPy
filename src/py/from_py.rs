@@ -265,8 +265,9 @@ fn try_extract_literal_shape<'py, 'a>(
 ) -> PyResult<Vec<Expr>> {
     match convert_expr(arg, env) {
         Ok(Expr::Tuple {elems, ..}) => Ok(elems),
-        Ok(_) => py_runtime_error!(i, "Expected tuple of dimensions describing the shape"),
-        Err(e) => py_runtime_error!(i, "Failed to parse literal shape: {e}"),
+        _ => py_runtime_error!(i, "First argument of the shared allocation \
+                                   builtin must be a tuple of dimensions \
+                                   defining its shape.")
     }
 }
 
@@ -282,7 +283,7 @@ fn convert_shared_alloc_builtin<'py, 'a>(
     if n == 2 {
         let sz = match try_extract_type_annotation(args.pop().unwrap(), env, &i) {
             Ok(Type::Tensor {ref shape, sz}) if shape.is_empty() => Ok(sz),
-            _ => py_runtime_error!(i, "Second argument of shared allocation \
+            _ => py_runtime_error!(i, "Second argument of the shared allocation \
                                        builtin must be a scalar ParPy type.")
         }?;
         let lit_shape = try_extract_literal_shape(args.pop().unwrap(), env, &i)?;
