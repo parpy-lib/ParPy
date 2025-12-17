@@ -53,8 +53,8 @@ fn to_ir_elem_size(
     match sz {
         py_ast::TensorElemSize::Fixed {sz} => Ok(sz),
         py_ast::TensorElemSize::Variable {..} => {
-            parpy_compile_error!(i, "Encountered unresolved type variable \
-                                     when translating to IR AST")
+            parpy_internal_error!(i, "Encountered unresolved type variable \
+                                      when translating to IR AST")
         }
     }
 }
@@ -66,7 +66,7 @@ fn to_ir_type(
 ) -> CompileResult<Type> {
     match ty {
         py_ast::Type::String => {
-            parpy_compile_error!(i, "Encountered standalone string type when translating to IR AST")
+            parpy_internal_error!(i, "Encountered standalone string type when translating to IR AST")
         },
         py_ast::Type::Tensor {sz, shape} => {
             let shape = shape.into_iter()
@@ -75,23 +75,23 @@ fn to_ir_type(
             let sz = to_ir_elem_size(sz, &i)?;
             match shape {
                 Some(sh) => Ok(Type::Tensor {sz, shape: sh}),
-                None => parpy_compile_error!(i, "Encountered unresolved shape \
-                                                 symbol when translating to IR AST")
+                None => parpy_internal_error!(i, "Encountered unresolved shape \
+                                                  symbol when translating to IR AST")
             }
         },
         py_ast::Type::Tuple {..} => {
-            parpy_compile_error!(i, "Encountered standalone tuple type when translating to IR AST")
+            parpy_internal_error!(i, "Encountered standalone tuple type when translating to IR AST")
         },
         py_ast::Type::Dict {..} => {
             if let Some(id) = env.structs.get(&ty) {
                 Ok(Type::Struct {id: id.clone()})
             } else {
-                parpy_compile_error!(i, "Encountered unknown dictionary type when translating to IR AST")
+                parpy_internal_error!(i, "Encountered unknown dictionary type when translating to IR AST")
             }
         },
         py_ast::Type::Void => Ok(Type::Void),
         py_ast::Type::Unknown => {
-            parpy_compile_error!(i, "Encountered unknown type when translating to IR AST")
+            parpy_internal_error!(i, "Encountered unknown type when translating to IR AST")
         },
     }
 }
@@ -181,7 +181,7 @@ fn to_ir_expr(
             Ok(Expr::Var {id, ty, i})
         },
         py_ast::Expr::String {i, ..} => {
-            parpy_compile_error!(i, "String literal may only be used in dict lookups")
+            parpy_internal_error!(i, "String literal may only be used in dict lookups")
         },
         py_ast::Expr::Bool {v, ty, i} => {
             let ty = to_ir_type(env, &i, ty)?;
@@ -251,15 +251,15 @@ fn to_ir_expr(
                             })
                         }
                     } else {
-                        let msg = format!(
+                        parpy_compile_error!(
+                            i,
                             "Invalid dimensions. Indexing into tensor of shape \
-                             {shape:?} using {n} indices"
-                        );
-                        parpy_compile_error!(i, "{msg}")
+                             {shape:?} using {n} indices."
+                        )
                     }
                 } else {
-                    let msg = "Indexing into non-tensor target {target} is not supported";
-                    parpy_compile_error!(i, "{msg}")
+                    parpy_compile_error!(i, "Indexing into non-tensor target \
+                                             {target} is not supported")
                 }
             }
         },
@@ -309,8 +309,8 @@ fn to_ir_expr(
             parpy_internal_error!(i, "Found StaticFail expression node in IR translation")
         },
         py_ast::Expr::AllocShared {i, ..} => {
-            parpy_compile_error!(i, "The alloc_shared builtin must be used as \
-                                     the right-hand side of an assignment")
+            parpy_internal_error!(i, "The alloc_shared builtin must be used as \
+                                      the right-hand side of an assignment")
         },
     }
 }
