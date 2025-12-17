@@ -158,8 +158,7 @@ fn transform_scalars_to_buffers_top(t: Top) -> Top {
             let body = insert_temporary_buffers_host_body(body);
             Top::FunDef {ret_ty, id, params, body, target: Target::Host, i}
         },
-        Top::FunDef {target: Target::Device, ..} | Top::ExtDecl {..} |
-        Top::StructDef {..} => t,
+        Top::FunDef {target: Target::Device, ..} | Top::ExtDecl {..} => t,
     }
 }
 

@@ -40,8 +40,7 @@ fn produce_argument_list_entry<'py>(
                 .collect::<PyResult<Vec<Bound<'py, PyAny>>>>()
         },
         Top::ExtDecl {i, ..} |
-        Top::KernelFunDef {i, ..} |
-        Top::StructDef {i, ..} => {
+        Top::KernelFunDef {i, ..} => {
             py_internal_error!(i, "Found unexpected entry node in callback handling")
         },
     }

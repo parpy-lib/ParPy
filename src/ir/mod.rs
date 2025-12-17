@@ -6,7 +6,6 @@ mod from_py_ast;
 mod inter_block;
 mod par_tree;
 mod pprint;
-mod struct_types;
 mod target_constraints;
 mod tpb;
 
@@ -34,12 +33,8 @@ pub fn from_python(
     // is used in slicing involving reduction operations.
     let mut par = opts.parallelize.clone();
     par.insert(REDUCE_PAR_LABEL.to_string(), LoopPar::default().par_reduction());
-    let structs = struct_types::find_dict_types(&ast).to_named_structs();
-    let env = from_py_ast::IREnv::new(structs.clone(), par, &opts);
-    let structs = structs.into_iter()
-        .map(|(ty, id)| from_py_ast::to_struct_def(&env, id, ty))
-        .collect::<CompileResult<Vec<Top>>>()?;
-    let ast = from_py_ast::to_ir_ast(env, ast, structs)?;
+    let env = from_py_ast::IREnv::new(par, &opts);
+    let ast = from_py_ast::to_ir_ast(env, ast)?;
     debug_env.print("Initial IR AST", &ast);
 
     let ast = eliminate_gpu_context::apply(ast)?;

@@ -1,6 +1,7 @@
 mod adjust_negative_indices;
 pub mod ast;
 mod constant_fold;
+mod dict_elimination;
 mod eliminate_duplicate_functions;
 mod for_loops;
 mod free_vars;
@@ -91,6 +92,12 @@ pub fn specialize_ast_on_arguments<'py>(
     let ast = type_check::apply(main, &args, tops, &opts)?;
     let ast = eliminate_duplicate_functions::apply(ast)?;
     debug_env.print("Python-like AST after type-checking", &ast);
+
+    // Remove all uses of dictionaries in the AST, replacing dictionary arguments with a set of
+    // arguments corresponding to the fields of the original dictionary that are used in the
+    // function.
+    let ast = dict_elimination::apply(ast)?;
+    debug_env.print("Python-like AST after eliminating dictionaries", &ast);
 
     // Adjusts indexing using negative literals to properly offset it with respect to the size of
     // the corresponding dimension, to achieve a similar behavior as in Python.

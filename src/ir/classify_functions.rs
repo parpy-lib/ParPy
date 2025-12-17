@@ -156,7 +156,7 @@ fn classify_top<'a>(
     t: &Top
 ) -> CompileResult<ClassifyEnv<'a>> {
     match t {
-        Top::StructDef {..} | Top::ExtDecl {..} => Ok(env),
+        Top::ExtDecl {..} => Ok(env),
         Top::FunDef {v} => classify_fun_def(env, &v)
     }
 }

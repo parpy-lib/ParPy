@@ -16,9 +16,8 @@ impl FreeVars<py_ast::Type> for Expr {
             },
             Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
             Expr::UnOp {..} | Expr::BinOp {..} | Expr::Assign {..} |
-            Expr::IfExpr {..} | Expr::StructFieldAccess {..} |
-            Expr::ArrayAccess {..} | Expr::Call {..} | Expr::Convert {..} |
-            Expr::Struct {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => {
+            Expr::IfExpr {..} | Expr::ArrayAccess {..} | Expr::Call {..} |
+            Expr::Convert {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => {
                 self.sfold(env, |env, e| e.fv(env))
             }
         }
@@ -61,9 +60,8 @@ impl FreeVars<Type> for Expr {
             Expr::Var {id, ty, ..} => use_variable(env, &id, &ty),
             Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
             Expr::UnOp {..} | Expr::BinOp {..} | Expr::Assign {..} |
-            Expr::IfExpr {..} | Expr::StructFieldAccess {..} |
-            Expr::ArrayAccess {..} | Expr::Call {..} | Expr::PyCallback {..} |
-            Expr::Convert {..} | Expr::Struct {..} | Expr::ThreadIdx {..} |
+            Expr::IfExpr {..} | Expr::ArrayAccess {..} | Expr::Call {..} |
+            Expr::PyCallback {..} | Expr::Convert {..} | Expr::ThreadIdx {..} |
             Expr::BlockIdx {..} => {
                 self.sfold(env, |env, e| e.fv(env))
             }

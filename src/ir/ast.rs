@@ -14,7 +14,6 @@ pub use crate::utils::ast::Target;
 pub enum Type {
     Tensor {sz: ElemSize, shape: Vec<i64>},
     Pointer {ty: Box<Type>},
-    Struct {id: Name},
     Void,
 }
 
@@ -27,7 +26,6 @@ pub enum Expr {
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
-    StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     TensorAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Call {id: Name, args: Vec<Expr>, par: LoopPar, ty: Type, i: Info},
     PyCallback {id: Name, args: Vec<py_ast::Expr>, ty: Type, i: Info},
@@ -44,7 +42,6 @@ impl Expr {
             Expr::UnOp {ty, ..} => ty,
             Expr::BinOp {ty, ..} => ty,
             Expr::IfExpr {ty, ..} => ty,
-            Expr::StructFieldAccess {ty, ..} => ty,
             Expr::TensorAccess {ty, ..} => ty,
             Expr::Call {ty, ..} => ty,
             Expr::PyCallback {ty, ..} => ty,
@@ -63,7 +60,6 @@ impl InfoNode for Expr {
             Expr::UnOp {i, ..} => i.clone(),
             Expr::BinOp {i, ..} => i.clone(),
             Expr::IfExpr {i, ..} => i.clone(),
-            Expr::StructFieldAccess {i, ..} => i.clone(),
             Expr::TensorAccess {i, ..} => i.clone(),
             Expr::Call {i, ..} => i.clone(),
             Expr::PyCallback {i, ..} => i.clone(),
@@ -88,9 +84,6 @@ impl PartialEq for Expr {
             ( Expr::IfExpr {cond: lcond, thn: lthn, els: lels, ..}
             , Expr::IfExpr {cond: rcond, thn: rthn, els: rels, ..} ) =>
                 lcond.eq(rcond) && lthn.eq(rthn) && lels.eq(rels),
-            ( Expr::StructFieldAccess {target: ltarget, label: llabel, ..}
-            , Expr::StructFieldAccess {target: rtarget, label: rlabel, ..} ) =>
-                ltarget.eq(rtarget) && llabel.eq(rlabel),
             ( Expr::TensorAccess {target: ltarget, idx: lidx, ..}
             , Expr::TensorAccess {target: rtarget, idx: ridx, ..} ) =>
                 ltarget.eq(rtarget) && lidx.eq(ridx),
@@ -133,10 +126,6 @@ impl SMapAccum<Expr> for Expr {
                     cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
                 }))
             },
-            Expr::StructFieldAccess {target, label, ty, i} => {
-                let (acc, target) = f(acc?, *target)?;
-                Ok((acc, Expr::StructFieldAccess {target: Box::new(target), label, ty, i}))
-            },
             Expr::TensorAccess {target, idx, ty, i} => {
                 let (acc, target) = f(acc?, *target)?;
                 let (acc, idx) = f(acc, *idx)?;
@@ -166,7 +155,6 @@ impl SFold<Expr> for Expr {
             Expr::UnOp {arg, ..} => f(acc?, arg),
             Expr::BinOp {lhs, rhs, ..} => f(f(acc?, lhs)?, rhs),
             Expr::IfExpr {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
-            Expr::StructFieldAccess {target, ..} => f(acc?, target),
             Expr::TensorAccess {target, idx, ..} => f(f(acc?, target)?, idx),
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::PyCallback {..} => acc,
@@ -384,7 +372,6 @@ pub struct FunDef {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Top {
-    StructDef {id: Name, fields: Vec<Field>, i: Info},
     ExtDecl {
         id: Name, ext_id: String, params: Vec<Param>, res_ty: Type,
         header: Option<String>, target: Target, i: Info

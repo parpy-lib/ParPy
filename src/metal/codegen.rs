@@ -76,9 +76,6 @@ fn from_gpu_ir_type(env: &CodegenEnv, ty: gpu_ast::Type, i: &Info) -> CompileRes
                 Err(e) => Err(e)
             }
         },
-        gpu_ast::Type::Struct {id} => {
-            parpy_internal_error!(i, "Found struct type {id} in the Metal backend.")
-        },
         gpu_ast::Type::Function {result, args} => {
             let result = Box::new(from_gpu_ir_type(&env, *result, &i)?);
             let args = args.into_iter()
@@ -116,10 +113,6 @@ fn from_gpu_ir_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
             let els = Box::new(from_gpu_ir_expr(env, *els)?);
             Ok(Expr::Ternary {cond, thn, els, ty, i})
         },
-        gpu_ast::Expr::StructFieldAccess {i, ..} => {
-            parpy_internal_error!(i, "Found struct field access in the Metal backend,\
-                                      where structs are not supported.")
-        },
         gpu_ast::Expr::ArrayAccess {target, idx, i, ..} => {
             let target = Box::new(from_gpu_ir_expr(env, *target)?);
             let idx = Box::new(from_gpu_ir_expr(env, *idx)?);
@@ -141,10 +134,6 @@ fn from_gpu_ir_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
         gpu_ast::Expr::Convert {e, ..} => {
             let e = Box::new(from_gpu_ir_expr(env, *e)?);
             Ok(Expr::Convert {e, ty})
-        },
-        gpu_ast::Expr::Struct {id, i, ..} => {
-            parpy_internal_error!(i, "Found struct {id} in the Metal backend,\
-                                      where structs are not supported.")
         },
         gpu_ast::Expr::ThreadIdx {dim, i, ..} => Ok(Expr::ThreadIdx {dim, ty, i}),
         gpu_ast::Expr::BlockIdx {dim, i, ..} => Ok(Expr::BlockIdx {dim, ty, i}),
@@ -371,11 +360,6 @@ fn from_gpu_ir_top(mut acc: TopsAcc, top: gpu_ast::Top) -> CompileResult<TopsAcc
             };
             Ok(acc)
         },
-        gpu_ast::Top::StructDef {id, i, ..} => {
-            parpy_internal_error!(i, "Found struct definition {id} in the \
-                                      Metal codegen, which does not support \
-                                      struct types.")
-        }
     }
 }
 
@@ -562,13 +546,6 @@ mod test {
         let env = mk_device_env();
         let expected = pointer(scalar(ElemSize::F32), MemSpace::Device);
         assert_eq!(from_gpu_ir_type(&env, ty, &i()).unwrap(), expected);
-    }
-
-    #[test]
-    fn from_struct_type() {
-        let ty = gpu_ast::Type::Struct {id: id("x")};
-        let env = mk_device_env();
-        assert_error_matches(from_gpu_ir_type(&env, ty, &i()), "struct type");
     }
 
     #[test]

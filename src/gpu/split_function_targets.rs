@@ -140,7 +140,7 @@ fn split_functions_targeting_both_top(
     t: Top
 ) -> CompileResult<Vec<Top>> {
     match t {
-        Top::StructDef {..} | Top::ExtDecl {..} => tops.push(t),
+        Top::ExtDecl {..} => tops.push(t),
         Top::FunDef {v} => {
             let (ldef, opt_rdef) = split_functions_targeting_both_def(env, v)?;
             tops.push(Top::FunDef {v: ldef});

@@ -17,7 +17,6 @@ use std::collections::BTreeMap;
 struct CodegenEnv<'a> {
     classification: BTreeMap<Name, TargetClass>,
     gpu_mapping: BTreeMap<Name, GpuMapping>,
-    struct_fields: BTreeMap<Name, Vec<Field>>,
     opts: &'a CompileOptions
 }
 
@@ -30,7 +29,6 @@ fn from_ir_type(ty: ir_ast::Type) -> Type {
         ir_ast::Type::Pointer {ty, ..} => {
             Type::Pointer {ty: Box::new(from_ir_type(*ty)), mem: MemSpace::Device}
         },
-        ir_ast::Type::Struct {id} => Type::Struct {id},
         ir_ast::Type::Void => Type::Void,
     }
 }
@@ -56,10 +54,6 @@ fn from_ir_expr(e: ir_ast::Expr) -> CompileResult<Expr> {
             let thn = Box::new(from_ir_expr(*thn)?);
             let els = Box::new(from_ir_expr(*els)?);
             Ok(Expr::IfExpr {cond, thn, els, ty, i})
-        },
-        ir_ast::Expr::StructFieldAccess {target, label, i, ..} => {
-            let target = Box::new(from_ir_expr(*target)?);
-            Ok(Expr::StructFieldAccess {target, label, ty, i})
         },
         ir_ast::Expr::TensorAccess {target, idx, i, ..} => {
             let target = Box::new(from_ir_expr(*target)?);
@@ -534,50 +528,6 @@ fn from_ir_stmts(
         })
 }
 
-fn unwrap_params(
-    env: &CodegenEnv,
-    params: Vec<Param>
-) -> CompileResult<(Vec<Stmt>, Vec<Param>)> {
-    let mut params_init = vec![];
-    let mut unwrapped_params = vec![];
-    for p in params {
-        if let Type::Struct {id} = &p.ty {
-            if let Some(fields) = env.struct_fields.get(&id) {
-                let field_names = fields.iter()
-                    .map(|Field {id, ..}| Name::new(id.clone()).with_new_sym())
-                    .collect::<Vec<Name>>();
-
-                let field_exprs = fields.clone()
-                    .into_iter()
-                    .zip(field_names.clone().into_iter())
-                    .map(|(Field {ty, id: label, i}, id)| {
-                        (label, Expr::Var {id, ty, i})
-                    })
-                    .collect::<Vec<(String, Expr)>>();
-                let init_expr = Expr::Struct {
-                    id: id.clone(), fields: field_exprs, ty: p.ty.clone(),
-                    i: p.i.clone()
-                };
-                params_init.push(Stmt::Definition {
-                    ty: p.ty, id: p.id, expr: init_expr, i: p.i
-                });
-
-                let mut struct_params = fields.clone()
-                    .into_iter()
-                    .zip(field_names.into_iter())
-                    .map(|(Field {ty, i, ..}, id)| Param {id, ty, i})
-                    .collect::<Vec<Param>>();
-                unwrapped_params.append(&mut struct_params);
-            } else {
-                parpy_compile_error!(p.i, "Parameter refers to unknown struct type (internal compiler error)")?;
-            }
-        } else {
-            unwrapped_params.push(p);
-        }
-    }
-    Ok((params_init, unwrapped_params))
-}
-
 fn from_ir_param(p: ir_ast::Param) -> Param {
     let ir_ast::Param {id, ty, i} = p;
     Param {id, ty: from_ir_type(ty), i}
@@ -597,37 +547,23 @@ fn from_ir_main_def(
     let params = params.into_iter()
         .map(from_ir_param)
         .collect::<Vec<Param>>();
-    let (mut host_body, mut kernel_tops) = from_ir_stmts(env, &id, vec![], vec![], body)?;
-    let (mut body, unwrapped_params) = unwrap_params(env, params)?;
-    body.append(&mut host_body);
+    let (mut body, mut kernel_tops) = from_ir_stmts(env, &id, vec![], vec![], body)?;
     let ret_ty = Type::Scalar {sz: ElemSize::I32};
     body.push(Stmt::Return {
         value: Expr::Int {v: 0, ty: ret_ty.clone(), i: i.clone()},
         i: i.clone()
     });
     kernel_tops.push(Top::FunDef {
-        ret_ty, id, params: unwrapped_params, body, target: Target::Host, i
+        ret_ty, id, params, body, target: Target::Host, i
     });
     Ok(kernel_tops)
 }
 
-fn from_ir_field(f: ir_ast::Field) -> Field {
-    let ir_ast::Field {id, ty, i} = f;
-    Field {id, ty: from_ir_type(ty), i}
-}
-
 fn from_ir_top(
-    mut env: CodegenEnv,
+    env: CodegenEnv,
     t: ir_ast::Top
 ) -> CompileResult<(CodegenEnv, Top)> {
     match t {
-        ir_ast::Top::StructDef {id, fields, i} => {
-            let fields = fields.into_iter()
-                .map(from_ir_field)
-                .collect::<Vec<Field>>();
-            env.struct_fields.insert(id.clone(), fields.clone());
-            Ok((env, Top::StructDef {id, fields, i}))
-        },
         ir_ast::Top::ExtDecl {id, ext_id, params, res_ty, target, header, i} => {
             let params = from_ir_params(params);
             let ret_ty = from_ir_type(res_ty);
@@ -668,7 +604,6 @@ pub fn from_general_ir(
     let env = CodegenEnv {
         classification,
         gpu_mapping,
-        struct_fields: BTreeMap::new(),
         opts
     };
     let (env, mut tops) = ast.tops.into_iter()
@@ -695,7 +630,6 @@ mod test {
         CodegenEnv {
             classification: BTreeMap::new(),
             gpu_mapping: BTreeMap::new(),
-            struct_fields: BTreeMap::new(),
             opts
         }
     }
@@ -1050,58 +984,6 @@ mod test {
             i: i()
         };
         assert_eq!(snd, snd_expected);
-    }
-
-    #[test]
-    fn unwrap_empty_params() {
-        let opts = CompileOptions::default();
-        let env = mk_env(&opts);
-        let (init_stmts, params) = unwrap_params(&env, vec![]).unwrap();
-        assert!(init_stmts.is_empty());
-        assert!(params.is_empty());
-    }
-
-    #[test]
-    fn unwrap_known_struct_params() {
-        let opts = CompileOptions::default();
-        let mut env = mk_env(&opts);
-        let fields = vec![
-            Field {id: "a".to_string(), ty: scalar(ElemSize::F64), i: i()},
-            Field {id: "b".to_string(), ty: scalar(ElemSize::I32), i: i()},
-        ];
-        env.struct_fields = vec![(id("s"), fields)].into_iter()
-            .collect::<BTreeMap<Name, Vec<Field>>>();
-        let params = vec![
-            Param {id: id("x"), ty: Type::Struct {id: id("s")}, i: i()},
-            Param {id: id("y"), ty: scalar(ElemSize::F32), i: i()},
-        ];
-        let (init_stmts, params) = unwrap_params(&env, params).unwrap();
-
-        if let [Stmt::Definition {ty, id: id_def, expr, ..}] = &init_stmts[..] {
-            assert!(matches!(ty, Type::Struct {..}));
-            assert_eq!(id_def.clone(), id("x"));
-            assert!(matches!(expr, Expr::Struct {..}));
-        } else {
-            assert!(false)
-        };
-
-        let param_tys = params.into_iter()
-            .map(|Param {ty, ..}| ty)
-            .collect::<Vec<Type>>();
-        let expected_types = vec![
-            scalar(ElemSize::F64), scalar(ElemSize::I32), scalar(ElemSize::F32)
-        ];
-        assert_eq!(param_tys, expected_types);
-    }
-
-    #[test]
-    fn unwrap_unknown_struct_param() {
-        let opts = CompileOptions::default();
-        let env = mk_env(&opts);
-        let params = vec![
-            Param {id: id("x"), ty: Type::Struct {id: id("s")}, i: i()}
-        ];
-        assert_error_matches(unwrap_params(&env, params), r"unknown struct type");
     }
 
     #[test]

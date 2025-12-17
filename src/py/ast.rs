@@ -90,14 +90,6 @@ impl Type {
             None => false
         }
     }
-
-    pub fn get_dict_type_fields(&self) -> BTreeMap<String, Type> {
-        if let Type::Dict {fields} = self {
-            fields.clone()
-        } else {
-            panic!("Internal error: expected dictionary type, found {self:?}")
-        }
-    }
 }
 
 impl SMapAccum<Type> for Type {

@@ -14,7 +14,6 @@ use itertools::Itertools;
 use std::collections::BTreeMap;
 
 pub struct IREnv {
-    structs: BTreeMap<py_ast::Type, Name>,
     par_labels: BTreeMap<String, LoopPar>,
     par_exts: BTreeMap<Name, LoopPar>,
     scalar_sizes: ScalarSizes
@@ -22,28 +21,14 @@ pub struct IREnv {
 
 impl IREnv {
     pub fn new(
-        structs: BTreeMap<py_ast::Type, Name>,
         par_labels: BTreeMap<String, LoopPar>,
         opts: &CompileOptions
     ) -> Self {
         IREnv {
-            structs, par_labels, par_exts: BTreeMap::new(),
+            par_labels, par_exts: BTreeMap::new(),
             scalar_sizes: ScalarSizes::from_opts(opts)
         }
     }
-}
-
-pub fn to_struct_def(
-    env: &IREnv,
-    id: Name,
-    ty: py_ast::Type
-) -> CompileResult<Top> {
-    let i = Info::default();
-    let mut fields = ty.get_dict_type_fields().into_iter()
-        .map(|(id, ty)| Ok(Field {id, ty: to_ir_type(env, &i, ty)?, i: i.clone()}))
-        .collect::<CompileResult<Vec<Field>>>()?;
-    fields.sort_by(|Field {id: lid, ..}, Field {id: rid, ..}| lid.cmp(&rid));
-    Ok(Top::StructDef {id, fields, i: Info::default()})
 }
 
 fn to_ir_elem_size(
@@ -60,7 +45,6 @@ fn to_ir_elem_size(
 }
 
 fn to_ir_type(
-    env: &IREnv,
     i: &Info,
     ty: py_ast::Type
 ) -> CompileResult<Type> {
@@ -83,11 +67,7 @@ fn to_ir_type(
             parpy_internal_error!(i, "Encountered standalone tuple type when translating to IR AST")
         },
         py_ast::Type::Dict {..} => {
-            if let Some(id) = env.structs.get(&ty) {
-                Ok(Type::Struct {id: id.clone()})
-            } else {
-                parpy_internal_error!(i, "Encountered unknown dictionary type when translating to IR AST")
-            }
+            parpy_internal_error!(i, "Encountered dictionary type when translating to IR AST")
         },
         py_ast::Type::Void => Ok(Type::Void),
         py_ast::Type::Unknown => {
@@ -177,33 +157,33 @@ fn to_ir_expr(
 ) -> CompileResult<Expr> {
     match e {
         py_ast::Expr::Var {id, ty, i} => {
-            let ty = to_ir_type(env, &i, ty)?;
+            let ty = to_ir_type(&i, ty)?;
             Ok(Expr::Var {id, ty, i})
         },
         py_ast::Expr::String {i, ..} => {
             parpy_internal_error!(i, "String literal may only be used in dict lookups")
         },
         py_ast::Expr::Bool {v, ty, i} => {
-            let ty = to_ir_type(env, &i, ty)?;
+            let ty = to_ir_type(&i, ty)?;
             Ok(Expr::Bool {v, ty, i})
         },
         py_ast::Expr::Int {v, ty, i} => {
-            let ty = to_ir_type(env, &i, ty)?;
+            let ty = to_ir_type(&i, ty)?;
             Ok(Expr::Int {v, ty, i})
         },
         py_ast::Expr::Float {v, ty, i} => {
-            let ty = to_ir_type(env, &i, ty)?;
+            let ty = to_ir_type(&i, ty)?;
             Ok(Expr::Float {v, ty, i})
         },
         py_ast::Expr::UnOp {op, arg, ty, i} => {
             let arg = Box::new(to_ir_expr(env, *arg)?);
-            let ty = to_ir_type(env, &i, ty)?;
+            let ty = to_ir_type(&i, ty)?;
             Ok(Expr::UnOp {op, arg, ty, i})
         },
         py_ast::Expr::BinOp {lhs, op, rhs, ty, i} => {
             let lhs = Box::new(to_ir_expr(env, *lhs)?);
             let rhs = Box::new(to_ir_expr(env, *rhs)?);
-            let ty = to_ir_type(env, &i, ty)?;
+            let ty = to_ir_type(&i, ty)?;
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})
         },
         py_ast::Expr::ReduceOp {i, ..} => {
@@ -213,17 +193,14 @@ fn to_ir_expr(
             let cond = Box::new(to_ir_expr(env, *cond)?);
             let thn = Box::new(to_ir_expr(env, *thn)?);
             let els = Box::new(to_ir_expr(env, *els)?);
-            let ty = to_ir_type(env, &i, ty)?;
+            let ty = to_ir_type(&i, ty)?;
             Ok(Expr::IfExpr {cond, thn, els, ty, i})
         },
-        py_ast::Expr::Subscript {target, idx, ty, i} => {
-            let ty = to_ir_type(env, &i, ty)?;
-            // We can use a subscript to index in a dictionary using a string key, or we can use it
-            // as an integer index into a tensor. In the latter case, we collect nested uses of
-            // indexing, as "a[1,2]" should be considered equivalent to "a[1][2]".
-            if let py_ast::Expr::String {v: label, ..} = *idx {
-                let target = Box::new(to_ir_expr(env, *target)?);
-                Ok(Expr::StructFieldAccess {target, label, ty, i})
+        py_ast::Expr::Subscript {target, idx, ty: _, i} => {
+            // Dictionaries are eliminated at an earlier stage, so if we find a string index here
+            // that transformation has failed.
+            if let py_ast::Expr::String {..} = *idx {
+                parpy_internal_error!(i, "Found dictionary access in IR translation")
             } else {
                 let (target, indices) = unwrap_tensor_indices(env, *target, *idx)?;
                 if let Type::Tensor {sz, shape} = target.get_type() {
@@ -276,18 +253,18 @@ fn to_ir_expr(
             let args = args.into_iter()
                 .map(|e| to_ir_expr(env, e))
                 .collect::<CompileResult<Vec<Expr>>>()?;
-            let ty = to_ir_type(env, &i, ty)?;
+            let ty = to_ir_type(&i, ty)?;
             let par = lookup_external_parallelism(env, &id)
                 .unwrap_or(LoopPar::default());
             Ok(Expr::Call {id, args, par, ty, i})
         },
         py_ast::Expr::Callback {id, args, ty, i} => {
-            let ty = to_ir_type(env, &i, ty)?;
+            let ty = to_ir_type(&i, ty)?;
             Ok(Expr::PyCallback {id, args, ty, i})
         },
         py_ast::Expr::Convert {e, ty, i} => {
             let e = Box::new(to_ir_expr(env, *e)?);
-            let ty = to_ir_type(env, &i, ty)?;
+            let ty = to_ir_type(&i, ty)?;
             Ok(Expr::Convert {e, ty, i})
         },
         py_ast::Expr::GpuContext {i, ..} => {
@@ -372,7 +349,7 @@ fn to_ir_stmt(
             Ok(Stmt::AllocShared {id, elem_ty, sz: size, i})
         },
         py_ast::Stmt::Definition {ty, id, expr, i, ..} => {
-            let ty = to_ir_type(env, &i, ty)?;
+            let ty = to_ir_type(&i, ty)?;
             let expr = to_ir_expr(env, expr)?;
             Ok(Stmt::Definition {ty, id, expr, i})
         },
@@ -437,21 +414,15 @@ fn to_ir_stmts(
         .collect::<_>()
 }
 
-fn to_ir_param(
-    env: &IREnv,
-    p: py_ast::Param
-) -> CompileResult<Param> {
+fn to_ir_param(p: py_ast::Param) -> CompileResult<Param> {
     let py_ast::Param {id, ty, i} = p;
-    let ty = to_ir_type(env, &i, ty)?;
+    let ty = to_ir_type(&i, ty)?;
     Ok(Param {id, ty, i})
 }
 
-fn to_ir_params(
-    env: &IREnv,
-    params: Vec<py_ast::Param>
-) -> CompileResult<Vec<Param>> {
+fn to_ir_params(params: Vec<py_ast::Param>) -> CompileResult<Vec<Param>> {
     params.into_iter()
-        .map(|p| to_ir_param(env, p))
+        .map(|p| to_ir_param(p))
         .collect::<CompileResult<Vec<Param>>>()
 }
 
@@ -460,9 +431,9 @@ fn to_ir_def(
     def: py_ast::FunDef
 ) -> CompileResult<FunDef> {
     let py_ast::FunDef {id, params, body, res_ty, i} = def;
-    let params = to_ir_params(env, params)?;
+    let params = to_ir_params(params)?;
     let body = to_ir_stmts(env, body)?;
-    let res_ty = to_ir_type(env, &i, res_ty)?;
+    let res_ty = to_ir_type(&i, res_ty)?;
     Ok(FunDef {id, params, body, res_ty, i})
 }
 
@@ -475,8 +446,8 @@ fn to_ir_top(
             parpy_internal_error!(i, "Found callback declaration in IR translation")
         },
         py_ast::Top::ExtDecl {id, ext_id, params, res_ty, header, target, par: _, i} => {
-            let params = to_ir_params(env, params)?;
-            let res_ty = to_ir_type(env, &i, res_ty)?;
+            let params = to_ir_params(params)?;
+            let res_ty = to_ir_type(&i, res_ty)?;
             Ok(Top::ExtDecl {id, ext_id, params, res_ty, header, target, i})
         },
         py_ast::Top::FunDef {v} => Ok(Top::FunDef {v: to_ir_def(env, v)?}),
@@ -499,13 +470,11 @@ fn collect_external_parallelism(ast: &py_ast::Ast) -> BTreeMap<Name, LoopPar> {
 
 pub fn to_ir_ast(
     mut env: IREnv,
-    ast: py_ast::Ast,
-    structs: Vec<Top>
+    ast: py_ast::Ast
 ) -> CompileResult<Ast> {
     env.par_exts = collect_external_parallelism(&ast);
-    let tops = structs.into_iter()
-        .map(|t| Ok(t))
-        .chain(ast.tops.into_iter().map(|t| to_ir_top(&env, t)))
+    let tops = ast.tops.into_iter()
+        .map(|t| to_ir_top(&env, t))
         .collect::<CompileResult<Vec<Top>>>()?;
     let main = to_ir_def(&env, ast.main)?;
     Ok(Ast {tops, main})
@@ -521,31 +490,12 @@ mod test {
 
     use std::collections::BTreeMap;
 
-    fn mk_env(structs: BTreeMap<py_ast::Type, Name>) -> IREnv {
-        IREnv::new(structs, BTreeMap::new(), &CompileOptions::default())
-    }
-
-    fn ir_env() -> IREnv {
-        mk_env(BTreeMap::new())
+    fn mk_env() -> IREnv {
+        IREnv::new(BTreeMap::new(), &CompileOptions::default())
     }
 
     fn conv_ir_type(ty: py_ast::Type) -> CompileResult<Type> {
-        to_ir_type(&ir_env(), &i(), ty)
-    }
-
-    #[test]
-    fn convert_struct_def() {
-        let env = ir_env();
-        let id = id("x");
-        let ty = py::dict_ty(vec![("y", py::scalar(ElemSize::I32))]);
-        let expected = Top::StructDef {
-            id: id.clone(),
-            fields: vec![Field {
-                id: "y".to_string(), ty: scalar(ElemSize::I32), i: i()
-            }],
-            i: i()
-        };
-        assert_eq!(to_struct_def(&env, id, ty).unwrap(), expected);
+        to_ir_type(&i(), ty)
     }
 
     #[test]
@@ -573,19 +523,9 @@ mod test {
     }
 
     #[test]
-    fn unknown_dict_type() {
+    fn remaining_dict_type() {
         let r = conv_ir_type(py_ast::Type::Dict {fields: BTreeMap::new()});
-        assert_error_matches(r, r"unknown dictionary type");
-    }
-
-    #[test]
-    fn known_dict_type() {
-        let dty = py::dict_ty(vec![("x", py::scalar(ElemSize::I32))]);
-        let mut structs = BTreeMap::new();
-        let id = id("y");
-        structs.insert(dty.clone(), id.clone());
-        let env = mk_env(structs);
-        assert_eq!(to_ir_type(&env, &i(), dty).unwrap(), Type::Struct {id});
+        assert_error_matches(r, r"Internal error:.*dictionary type");
     }
 
     #[test]
@@ -603,7 +543,7 @@ mod test {
     fn flatten_1d_index() {
         let shape = vec![10];
         let indices = vec![int(2, None)];
-        let e = flatten_indices(&ir_env(), shape, indices, &i()).unwrap();
+        let e = flatten_indices(&mk_env(), shape, indices, &i()).unwrap();
         assert_eq!(e, binop(
             binop(int(2, None), BinOp::Mul, int(1, None), None),
             BinOp::Add,
@@ -616,7 +556,7 @@ mod test {
     fn flatten_2d_index() {
         let shape = vec![10, 10];
         let indices = vec![int(1, None), int(2, None)];
-        let e = flatten_indices(&ir_env(), shape, indices, &i()).unwrap();
+        let e = flatten_indices(&mk_env(), shape, indices, &i()).unwrap();
         assert_eq!(constant_fold::fold_expr(e), int(12, None));
     }
 
@@ -624,20 +564,20 @@ mod test {
     fn flatten_3d_index() {
         let shape = vec![10, 20, 30];
         let indices = vec![int(3, None), int(2, None), int(1, None)];
-        let e = flatten_indices(&ir_env(), shape, indices, &i()).unwrap();
+        let e = flatten_indices(&mk_env(), shape, indices, &i()).unwrap();
         assert_eq!(constant_fold::fold_expr(e), int(1861, None));
     }
 
     #[test]
     fn var_expr_to_ir() {
-        let r = to_ir_expr(&ir_env(), py::var("x", py::scalar(ElemSize::I32)));
+        let r = to_ir_expr(&mk_env(), py::var("x", py::scalar(ElemSize::I32)));
         assert_eq!(r.unwrap(), var("x", scalar(ElemSize::I32)));
     }
 
     #[test]
     fn string_expr_to_ir() {
         let s = py_ast::Expr::String {v: "x".to_string(), ty: py_ast::Type::String, i: i()};
-        assert_error_matches(to_ir_expr(&ir_env(), s), r"literal may only be used in");
+        assert_error_matches(to_ir_expr(&mk_env(), s), r"literal may only be used in");
     }
 
     #[test]
@@ -654,40 +594,27 @@ mod test {
             int(2, Some(ElemSize::I64)),
             None
         );
-        assert_eq!(to_ir_expr(&ir_env(), e).unwrap(), expected);
-    }
-
-    #[test]
-    fn dict_subscript_expr_to_ir() {
-        let dty = py::dict_ty(vec![("y", py::scalar(ElemSize::I64))]);
-        let mut structs = BTreeMap::new();
-        let id = id("z");
-        structs.insert(dty.clone(), id.clone());
-        let env = mk_env(structs);
-        let subscript = py::subscript(
-            py::var("x", dty), py::string("y"), py::scalar(ElemSize::I64)
-        );
-        let expected = Expr::StructFieldAccess {
-            target: Box::new(var("x", Type::Struct {id})),
-            label: "y".to_string(),
-            ty: scalar(ElemSize::I64),
-            i: i()
-        };
-        assert_eq!(to_ir_expr(&env, subscript).unwrap(), expected);
+        assert_eq!(to_ir_expr(&mk_env(), e).unwrap(), expected);
     }
 
     #[test]
     fn tensor_subscript_non_tensor_target() {
-        let dty = py::dict_ty(vec![]);
         let e = py::subscript(
-            py::var("x", dty.clone()),
+            py::var("x", py_ast::Type::Void),
             py::int(1, Some(ElemSize::I32)),
             py::scalar(ElemSize::I32)
         );
-        let mut structs = BTreeMap::new();
-        structs.insert(dty, id("?"));
-        let env = mk_env(structs);
-        assert_error_matches(to_ir_expr(&env, e), r"non-tensor target.*not supported");
+        assert_error_matches(to_ir_expr(&mk_env(), e), r"non-tensor target.*not supported");
+    }
+
+    #[test]
+    fn tensor_subscript_scalar_tensor_target() {
+        let e = py::subscript(
+            py::var("x", py::scalar(ElemSize::I32)),
+            py::int(1, Some(ElemSize::I32)),
+            py::scalar(ElemSize::I32)
+        );
+        assert_error_matches(to_ir_expr(&mk_env(), e), r"Invalid dimensions");
     }
 
     #[test]
@@ -698,7 +625,7 @@ mod test {
             py::scalar(ElemSize::I32)
         );
         let pat = r"Indexing into tensor of shape \[\] using 1 indices";
-        assert_error_matches(to_ir_expr(&ir_env(), e), pat);
+        assert_error_matches(to_ir_expr(&mk_env(), e), pat);
     }
 
     #[test]
@@ -708,7 +635,7 @@ mod test {
             py::tuple(vec![py::int(1, Some(ElemSize::I64)), py::int(2, Some(ElemSize::I64))]),
             py::scalar(ElemSize::I64)
         );
-        let r = to_ir_expr(&ir_env(), e);
+        let r = to_ir_expr(&mk_env(), e);
         let expected = tensor_access(
             var("x", shape(vec![200])),
             int(22, None),
@@ -719,13 +646,13 @@ mod test {
 
     #[test]
     fn slice_expr_to_ir() {
-        let r = to_ir_expr(&ir_env(), py::slice(None, None));
+        let r = to_ir_expr(&mk_env(), py::slice(None, None));
         assert_error_matches(r, r"compile error.*Slices are not allowed outside");
     }
 
     #[test]
     fn tuple_expr_to_ir() {
-        let r = to_ir_expr(&ir_env(), py::tuple(vec![]));
+        let r = to_ir_expr(&mk_env(), py::tuple(vec![]));
         assert_error_matches(r, r"compile error.*Tuples are not allowed outside");
     }
 
@@ -779,7 +706,7 @@ mod test {
     #[test]
     fn with_gpu_context_stmt_to_ir() {
         let s = py_ast::Stmt::WithGpuContext {body: vec![], i: i()};
-        let s = to_ir_stmt(&ir_env(), s).unwrap();
+        let s = to_ir_stmt(&mk_env(), s).unwrap();
         assert!(matches!(s, Stmt::For {..}));
     }
 }

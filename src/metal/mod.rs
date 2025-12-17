@@ -10,14 +10,9 @@ mod ast_builder;
 
 use ast::*;
 use crate::gpu::ast as gpu_ast;
-use crate::gpu::flatten_structs;
 use crate::utils::err::*;
 
 pub fn codegen(gpu_ast: gpu_ast::Ast) -> CompileResult<Ast> {
-    // Flatten struct types by replacing them by the individual fields, as the Metal backend does
-    // not support the use of structs.
-    let gpu_ast = flatten_structs::flatten_structs(gpu_ast)?;
-
     // Transforms the code such that scalar parameters of kernels are passed via temporary buffers
     // and treated as pointers inside kernel code.
     let gpu_ast = buffers::transform_scalars_to_buffers(gpu_ast);

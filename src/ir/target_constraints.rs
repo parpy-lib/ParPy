@@ -107,7 +107,6 @@ fn collect_top(
     t: &Top
 ) -> CompileResult<TargetConstraintEnv> {
     match t {
-        Top::StructDef {..} => Ok(env),
         Top::ExtDecl {id, target, ..} => {
             let c = TargetConstraint::from_target(target);
             env.mapping.insert(id.clone(), c);

@@ -79,10 +79,6 @@ fn pprint_type(decl: String, ty: &Type, env: PrettyPrintEnv) -> (PrettyPrintEnv,
             let (env, mem) = mem.pprint(env);
             pprint_type(format!("{mem} (*{decl})"), ty, env)
         },
-        Type::Struct {id, ..} => {
-            let (env, id) = id.pprint(env);
-            join_space(id, decl, env)
-        },
         Type::Function {result, args} => {
             let (env, args) = args.iter()
                 .fold((env, vec![]), |(env, mut acc), ty| {
@@ -202,10 +198,6 @@ impl PrettyPrint for Expr {
                 let (env, els) = els.pprint(env);
                 (env, format!("({cond} ? {thn} : {els})"))
             },
-            Expr::StructFieldAccess {target, label, ..} => {
-                let (env, target) = target.pprint(env);
-                (env, format!("{target}.{label}"))
-            },
             Expr::ArrayAccess {target, idx, ..} => {
                 let (env, target) = target.pprint(env);
                 let (env, idx) = idx.pprint(env);
@@ -230,21 +222,6 @@ impl PrettyPrint for Expr {
                     format!("({ty})({e_str})")
                 };
                 (env, s)
-            },
-            Expr::Struct {id, fields, ..} => {
-                let (env, id) = id.pprint(env);
-                let (env, fields) = fields.iter()
-                    .fold((env, vec![]), |(env, mut strs), (id, e)| {
-                        let (env, e) = e.pprint(env);
-                        strs.push(format!(".{id}: {e}"));
-                        (env, strs)
-                    });
-                let outer_indent = env.print_indent();
-                let env = env.incr_indent();
-                let indent = env.print_indent();
-                let fields = fields.into_iter().join(&format!(",\n{indent}"));
-                let env = env.decr_indent();
-                (env, format!("{id} {{\n{indent}{fields}\n{outer_indent}}}"))
             },
             Expr::ThreadIdx {dim, ..} => {
                 let (env, dim) = dim.pprint(env);
@@ -491,13 +468,6 @@ impl PrettyPrint for Top {
                 let env = env.decr_indent();
                 let (env, target) = target.pprint(env);
                 (env, format!("[{target}] {ret_ty} {id}({params}) {{\n{body}\n}}"))
-            },
-            Top::StructDef {id, fields, i: _} => {
-                let (env, id) = id.pprint(env);
-                let env = env.incr_indent();
-                let (env, fields) = pprint_iter(fields.iter(), env, "\n");
-                let env = env.decr_indent();
-                (env, format!("struct {id} {{\n{fields}\n}};"))
             },
         }
     }
