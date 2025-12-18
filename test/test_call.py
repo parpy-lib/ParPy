@@ -321,8 +321,8 @@ def test_call_host_and_device_codegen(backend):
     x = torch.zeros((N, M), dtype=torch.float32)
     opts = par_opts(backend, {'N': parpy.threads(N), 'M': parpy.threads(M)})
 
-    N = parpy.types.symbol()
-    M = parpy.types.symbol()
+    N = parpy.types.shape_var()
+    M = parpy.types.shape_var()
 
     # Invalid call, we use a function that involves both host and device code...
     @parpy.jit

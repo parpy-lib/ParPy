@@ -30,7 +30,7 @@ def test_backend_set_value(backend):
     run_if_backend_is_enabled(backend, helper)
 
 sz = parpy.types.type_var()
-N = parpy.types.symbol()
+N = parpy.types.shape_var()
 
 @parpy.jit
 def parpy_type_set_value(x: parpy.types.buffer(sz, [N])):

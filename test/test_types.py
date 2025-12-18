@@ -61,7 +61,7 @@ def test_buffer_argument_wrong_element_type(backend):
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_buffer_parameter_annotation(backend):
     def helper():
-        N = parpy.types.symbol()
+        N = parpy.types.shape_var()
         @parpy.jit
         def annot_buffer_param(x: parpy.types.buffer(parpy.types.F32, (N,))):
             with parpy.gpu:
@@ -73,7 +73,7 @@ def test_buffer_parameter_annotation(backend):
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_buffer_annotation_shape_equality(backend):
     def helper():
-        N = parpy.types.symbol()
+        N = parpy.types.shape_var()
         @parpy.jit
         def annot_add_elemwise_inplace(
             x: parpy.types.buffer(parpy.types.F32, [N]),
@@ -93,7 +93,7 @@ def test_buffer_annotation_shape_equality(backend):
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_called_function_annotation_shape_constraint(backend):
-    N = parpy.types.symbol()
+    N = parpy.types.shape_var()
 
     @parpy.jit
     def annot_add_elemwise_inplace_helper(
@@ -136,7 +136,7 @@ def test_called_function_scalar_coercion(backend):
 def test_shape_implicit_labeling(backend):
     def helper():
         import parpy.types as pt
-        N = pt.symbol()
+        N = pt.shape_var()
 
         @parpy.jit
         def implicit_labels_add_elemwise(x: pt.buffer(pt.F32, [N]), y: pt.buffer(pt.F32, [N])):
@@ -216,7 +216,7 @@ def test_type_variable_multiple_instantiations(backend):
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_type_variable_in_buffer(backend):
-    N = parpy.types.symbol()
+    N = parpy.types.shape_var()
     sz = parpy.types.type_var()
 
     @parpy.jit
@@ -235,7 +235,7 @@ def test_type_variable_in_buffer(backend):
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_type_variable_in_buffer_contradiction(backend):
-    N = parpy.types.symbol()
+    N = parpy.types.shape_var()
     sz = parpy.types.type_var()
 
     @parpy.jit

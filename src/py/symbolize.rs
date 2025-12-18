@@ -1,6 +1,6 @@
 use super::ast::*;
 use crate::py_name_error;
-use crate::ext::types::Symbol;
+use crate::ext::types::ShapeVar;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct SymbolizeEnv {
     vars: BTreeMap<String, Name>,
     shape_vars: BTreeSet<Name>,
-    symbols: BTreeMap<String, Symbol>,
+    symbols: BTreeMap<String, ShapeVar>,
     i: Info
 }
 
@@ -206,11 +206,11 @@ fn extract_top_name<'py>(t: Bound<'py, PyCapsule>) -> Name {
 }
 
 fn try_extract_symbol<'py>(
-    mut acc: BTreeMap<String, Symbol>,
+    mut acc: BTreeMap<String, ShapeVar>,
     entry: (Bound<'py, PyAny>, Bound<'py, PyAny>)
-) -> BTreeMap<String, Symbol> {
+) -> BTreeMap<String, ShapeVar> {
     let (key, value) = entry;
-    match value.extract::<Symbol>() {
+    match value.extract::<ShapeVar>() {
         Ok(v) => {
             acc.insert(key.extract::<String>().unwrap(), v);
             acc
@@ -221,7 +221,7 @@ fn try_extract_symbol<'py>(
 
 fn extract_symbols<'py>(
     vars: &(Bound<'py, PyDict>, Bound<'py, PyDict>)
-) -> BTreeMap<String, Symbol> {
+) -> BTreeMap<String, ShapeVar> {
     let (globals, locals) = vars;
     globals.iter()
         .chain(locals.iter())
@@ -425,7 +425,7 @@ mod test {
             i: i()
         };
         let mut env = sym_env(vec![]);
-        env.symbols.insert("N".to_string(), types::Symbol {id: n});
+        env.symbols.insert("N".to_string(), types::ShapeVar {id: n});
         let (_, FunDef {id, mut params, mut body, ..}) = def.symbolize(env).unwrap();
         assert!(id.has_sym());
         let Param {id, ty, ..} = params.pop().unwrap();
@@ -454,7 +454,7 @@ mod test {
     fn symbolize_undefined_shape_variable() {
         let n = Name::sym_str("");
         let mut env = sym_env(vec![]);
-        env.symbols.insert("N".to_string(), types::Symbol {id: n.clone()});
+        env.symbols.insert("N".to_string(), types::ShapeVar {id: n.clone()});
         let e = Expr::Var {id: id("N"), ty: tyuk(), i: i()};
         assert_py_error_matches(e.symbolize(env), "Found reference to unused shape variable N");
     }

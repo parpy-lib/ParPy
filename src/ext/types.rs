@@ -5,15 +5,15 @@ use pyo3::prelude::*;
 
 #[pyclass(eq, frozen)]
 #[derive(Clone, Debug, PartialEq)]
-pub struct Symbol {
+pub struct ShapeVar {
     pub id: Name
 }
 
 #[pymethods]
-impl Symbol {
+impl ShapeVar {
     #[new]
-    fn new() -> Symbol {
-        Symbol {id: Name::sym_str("")}
+    fn new() -> ShapeVar {
+        ShapeVar {id: Name::sym_str("")}
     }
 }
 
@@ -34,6 +34,6 @@ impl TypeVar {
 #[pyclass(eq, frozen)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExtType {
-    Buffer(ElemSize, Vec<Symbol>),
-    VarBuffer(TypeVar, Vec<Symbol>),
+    Buffer(ElemSize, Vec<ShapeVar>),
+    VarBuffer(TypeVar, Vec<ShapeVar>),
 }
