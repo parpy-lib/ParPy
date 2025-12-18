@@ -121,7 +121,11 @@ fn classify_stmt<'a>(
             let env = body.sfold_result(Ok(env), classify_stmt)?;
             let (env, _) = env.with_target(old_target);
             Ok(env)
-        }
+        },
+        Stmt::AllocShared {..} => {
+            let (env, _) = env.with_target(Target::Device);
+            Ok(env)
+        },
         _ => {
             let env = s.sfold_result(Ok(env), classify_stmt);
             s.sfold_result(env, classify_expr)

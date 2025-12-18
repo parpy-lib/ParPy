@@ -131,3 +131,43 @@ def test_smem_invalid_type(backend):
             with parpy.gpu:
                 x = parpy.builtin.alloc_shared(N, torch.float32)
     assert e_info.match(r"Second argument of .* must be a scalar ParPy type")
+
+@parpy.jit
+def transpose_called(
+        x: parpy.types.buffer(T, [M, N]),
+        y: parpy.types.buffer(T, [N, M]),
+        i, j, BM, BN):
+    smem = parpy.builtin.alloc_shared((BM, BN+1), T)
+    parpy.label('block')
+    for m, n in parpy.builtin.ranges(BM, BN):
+        smem[m, n] = x[i+m, j+n] if i+m < M and j+n < N else 0.0
+    parpy.label('block')
+    for n, m in parpy.builtin.ranges(BN, BM):
+        if i+m < M and j+n < N:
+            y[j+n, i+m] = smem[m, n]
+
+@parpy.jit
+def transpose_blocked_call(
+        x: parpy.types.buffer(T, [M, N]),
+        y: parpy.types.buffer(T, [N, M]),
+        BM, BN):
+    parpy.label('grid')
+    for i, j in parpy.builtin.ranges((0, M, BM), (0, N, BN)):
+        transpose_called(x, y, i, j, BM, BN)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_smem_alloc_in_called_function(backend):
+    def helper():
+        N = 123
+        M = 44
+        x = torch.randn(N, M, dtype=torch.float32)
+        y = torch.zeros(M, N, dtype=torch.float32)
+        BM, BN = 32, 32
+        p = {
+            'grid': parpy.threads((N + BN - 1) // BN * (M + BM - 1) // BM),
+            'block': parpy.threads(128),
+        }
+        with pytest.raises(RuntimeError) as e_info:
+            transpose_blocked_call(x, y, BM, BN, opts=par_opts(backend, p))
+        assert e_info.match(r"Shared memory allocations.*not supported outside the entry point")
+    run_if_backend_is_enabled(backend, helper)
