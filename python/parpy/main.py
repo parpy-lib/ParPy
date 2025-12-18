@@ -152,6 +152,20 @@ def clear_cache():
     clear_cache()
     _fun_cache = {}
 
+def default_backend():
+    """
+    Returns the default backend used by the compiler. If no backends are
+    available, or more than one is available, this function returns 'None'.
+    """
+    from .backend import _resolve_backend
+    opts = CompileOptions()
+    opts.verbose_backend_resolution = False
+    try:
+        opts = _resolve_backend(opts, False)
+        return opts.backend
+    except:
+        return None
+
 def compile_string(fun_name, code, opts=CompileOptions()):
     """
     Compiles the code provided as a string and returns a wrapper to the

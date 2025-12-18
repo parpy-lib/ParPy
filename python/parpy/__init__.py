@@ -8,7 +8,7 @@ from . import math
 
 from .parpy import par, CompileBackend, CompileOptions, ElemSize, Target
 from .buffer import sync
-from .main import threads, par_reduction, unroll, clear_cache, compile_string, print_compiled, callback, external, jit
+from .main import threads, par_reduction, unroll, clear_cache, default_backend, compile_string, print_compiled, callback, external, jit
 from .builtin import gpu, label
 
 __version__ = "0.4.0"
