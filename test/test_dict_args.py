@@ -37,3 +37,23 @@ def test_nested_dict(backend):
             dummy(x, y, opts=par_opts(backend, {}))
         assert e_info.match(r".*nested dictionary.*")
     run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_dict_nested_calls_inlining(backend):
+    def helper():
+        @parpy.jit
+        def update_fun(x, i, v):
+            x[i:] = v
+
+        @parpy.jit
+        def update_gpu(arg_dict):
+            with parpy.gpu:
+                update_fun(arg_dict["x"], arg_dict["i"], arg_dict["v"])
+
+        x = torch.randn(10, dtype=torch.float32)
+        x2 = x.detach().clone()
+        arg = {'x': x, 'i': 2, 'v': 2.5}
+        update_gpu(arg, opts=par_opts(backend, {}))
+        x2[2:] = 2.5
+        assert torch.allclose(x, x2, atol=1e-5)
+    run_if_backend_is_enabled(backend, helper)
