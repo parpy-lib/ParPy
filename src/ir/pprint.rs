@@ -20,10 +20,6 @@ impl PrettyPrint for Type {
                 let (env, ty) = ty.pprint(env);
                 (env, format!("ptr<{ty}>"))
             },
-            Type::Struct {id} => {
-                let (env, id) = id.pprint(env);
-                (env, format!("struct {id}"))
-            },
             Type::Void => (env, format!("void"))
         }
     }
@@ -52,10 +48,6 @@ impl PrettyPrint for Expr {
                 let (env, thn) = thn.pprint(env);
                 let (env, els) = els.pprint(env);
                 (env, format!("({thn} if {cond} else {els})"))
-            },
-            Expr::StructFieldAccess {target, label, ..} => {
-                let (env, target) = target.pprint(env);
-                (env, format!("{target}.{label}"))
             },
             Expr::TensorAccess {target, idx, ..} => {
                 let (env, target) = target.pprint(env);
@@ -200,13 +192,6 @@ impl PrettyPrint for FunDef {
 impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
-            Top::StructDef {id, fields, ..} => {
-                let (env, id) = id.pprint(env);
-                let env = env.incr_indent();
-                let (env, fields) = pprint_iter(fields.iter(), env, "\n");
-                let env = env.decr_indent();
-                (env, format!("struct {id} {{\n{fields}\n}};"))
-            },
             Top::ExtDecl {id, ext_id, params, res_ty, header, target, i: _} => {
                 let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
@@ -274,12 +259,6 @@ mod test {
     }
 
     #[test]
-    fn print_struct_type() {
-        let sty = Type::Struct {id: id("x")};
-        assert_eq!(sty.pprint_default(), "struct x");
-    }
-
-    #[test]
     fn print_void_type() {
         assert_eq!(Type::Void.pprint_default(), "void");
     }
@@ -322,18 +301,6 @@ mod test {
     fn print_inter_block_sync_point_stmt() {
         let sp = Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i: Info::default()};
         assert_eq!(sp.pprint_default(), "sync(inter_block);");
-    }
-
-    #[test]
-    fn print_struct_def() {
-        let fields = vec![
-            Field {id: "x".to_string(), ty: scalar(ElemSize::F64), i: Info::default()},
-            Field {id: "y".to_string(), ty: scalar(ElemSize::F32), i: Info::default()},
-        ];
-        let def = Top::StructDef {id: id("point"), fields, i: Info::default()};
-        let indent = PrettyPrintEnv::new().incr_indent().print_indent();
-        let s = format!("struct point {{\n{0}double x;\n{0}float y;\n}};", indent);
-        assert_eq!(def.pprint_default(), s);
     }
 
     #[test]

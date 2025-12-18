@@ -33,7 +33,6 @@ pub enum Type {
     Void,
     Scalar {sz: ElemSize},
     Pointer {ty: Box<Type>, mem: MemSpace},
-    Struct {id: Name},
     Function {result: Box<Type>, args: Vec<Type>},
 }
 
@@ -60,14 +59,10 @@ pub enum Expr {
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     Assign {lhs: Box<Expr>, rhs: Box<Expr>, ty: Type, i: Info},
     IfExpr {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
-    StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
     Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
     PyCallback {id: Name, args: Vec<py_ast::Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
-
-    // High-level representation of a struct literal value.
-    Struct {id: Name, fields: Vec<(String, Expr)>, ty: Type, i: Info},
 
     // Expressions referring to the thread index and thread block index of an executing thread, in
     // either of the three dimensions.
@@ -86,14 +81,12 @@ impl Expr {
             Expr::BinOp {..} => 5,
             Expr::Assign {..} => 6,
             Expr::IfExpr {..} => 7,
-            Expr::StructFieldAccess {..} => 8,
-            Expr::ArrayAccess {..} => 9,
-            Expr::Call {..} => 10,
-            Expr::PyCallback {..} => 11,
-            Expr::Convert {..} => 12,
-            Expr::Struct {..} => 13,
-            Expr::ThreadIdx {..} => 14,
-            Expr::BlockIdx {..} => 15,
+            Expr::ArrayAccess {..} => 8,
+            Expr::Call {..} => 9,
+            Expr::PyCallback {..} => 10,
+            Expr::Convert {..} => 11,
+            Expr::ThreadIdx {..} => 12,
+            Expr::BlockIdx {..} => 13,
         }
     }
 }
@@ -109,12 +102,10 @@ impl ExprType<Type> for Expr {
             Expr::BinOp {ty, ..} => ty,
             Expr::Assign {ty, ..} => ty,
             Expr::IfExpr {ty, ..} => ty,
-            Expr::StructFieldAccess {ty, ..} => ty,
             Expr::ArrayAccess {ty, ..} => ty,
             Expr::Call {ty, ..} => ty,
             Expr::PyCallback {ty, ..} => ty,
             Expr::Convert {ty, ..} => ty,
-            Expr::Struct {ty, ..} => ty,
             Expr::ThreadIdx {ty, ..} => ty,
             Expr::BlockIdx {ty, ..} => ty,
         }
@@ -124,7 +115,7 @@ impl ExprType<Type> for Expr {
         match self {
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::Call {..} | Expr::PyCallback {..} |
-            Expr::Struct {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => true,
+            Expr::ThreadIdx {..} | Expr::BlockIdx {..} => true,
             _ => false
         }
     }
@@ -141,12 +132,10 @@ impl InfoNode for Expr {
             Expr::BinOp {i, ..} => i.clone(),
             Expr::Assign {i, ..} => i.clone(),
             Expr::IfExpr {i, ..} => i.clone(),
-            Expr::StructFieldAccess {i, ..} => i.clone(),
             Expr::ArrayAccess {i, ..} => i.clone(),
             Expr::Call {i, ..} => i.clone(),
             Expr::PyCallback {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
-            Expr::Struct {i, ..} => i.clone(),
             Expr::ThreadIdx {i, ..} => i.clone(),
             Expr::BlockIdx {i, ..} => i.clone(),
         }
@@ -179,9 +168,6 @@ impl Ord for Expr {
                     .then(lthn.cmp(rthn))
                     .then(lels.cmp(rels))
             },
-            ( Expr::StructFieldAccess {target: ltarget, label: llabel, ..}
-            , Expr::StructFieldAccess {target: rtarget, label: rlabel, ..} ) =>
-                ltarget.cmp(rtarget).then(llabel.cmp(rlabel)),
             ( Expr::ArrayAccess {target: ltarget, idx: lidx, ..}
             , Expr::ArrayAccess {target: rtarget, idx: ridx, ..} ) =>
                 ltarget.cmp(rtarget).then(lidx.cmp(ridx)),
@@ -192,9 +178,6 @@ impl Ord for Expr {
             , Expr::PyCallback {id: rid, args: rargs, ..} ) =>
                 lid.cmp(rid).then(largs.cmp(rargs)),
             (Expr::Convert {e: le, ..}, Expr::Convert {e: re, ..}) => le.cmp(re),
-            ( Expr::Struct {id: lid, fields: lfields, ..}
-            , Expr::Struct {id: rid, fields: rfields, ..} ) =>
-                lid.cmp(rid).then(lfields.cmp(rfields)),
             (Expr::ThreadIdx {dim: ldim, ..}, Expr::ThreadIdx {dim: rdim, ..}) =>
                 ldim.cmp(rdim),
             (Expr::BlockIdx {dim: ldim, ..}, Expr::BlockIdx {dim: rdim, ..}) =>
@@ -249,12 +232,6 @@ impl SMapAccum<Expr> for Expr {
                     cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
                 }))
             },
-            Expr::StructFieldAccess {target, label, ty, i} => {
-                let (acc, target) = f(acc?, *target)?;
-                Ok((acc, Expr::StructFieldAccess {
-                    target: Box::new(target), label, ty, i
-                }))
-            },
             Expr::ArrayAccess {target, idx, ty, i} => {
                 let (acc, target) = f(acc?, *target)?;
                 let (acc, idx) = f(acc, *idx)?;
@@ -269,10 +246,6 @@ impl SMapAccum<Expr> for Expr {
             Expr::Convert {e, ty} => {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
-            },
-            Expr::Struct {id, fields, ty, i} => {
-                let (acc, fields) = fields.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Expr::Struct {id, fields, ty, i}))
             },
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
             Expr::PyCallback {..} | Expr::ThreadIdx {..} | Expr::BlockIdx {..} => {
@@ -293,11 +266,9 @@ impl SFold<Expr> for Expr {
             Expr::BinOp {lhs, rhs, ..} => f(f(acc?, lhs)?, rhs),
             Expr::Assign {lhs, rhs, ..} => f(f(acc?, lhs)?, rhs),
             Expr::IfExpr {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
-            Expr::StructFieldAccess {target, ..} => f(acc?, target),
             Expr::ArrayAccess {target, idx, ..} => f(f(acc?, target)?, idx),
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
-            Expr::Struct {fields, ..} => fields.sfold_result(acc, &f),
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::PyCallback {..} | Expr::ThreadIdx {..} |
             Expr::BlockIdx {..} => acc,
@@ -671,7 +642,6 @@ pub enum Top {
         ret_ty: Type, id: Name, params: Vec<Param>, body: Vec<Stmt>, target: Target,
         i: Info
     },
-    StructDef {id: Name, fields: Vec<Field>, i: Info},
 }
 
 impl SMapAccum<Stmt> for Top {
@@ -689,9 +659,7 @@ impl SMapAccum<Stmt> for Top {
                 let (acc, body) = body.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Top::FunDef {ret_ty, id, params, body, target, i}))
             },
-            Top::ExtDecl {..} | Top::StructDef {..} => {
-                Ok((acc?, self))
-            }
+            Top::ExtDecl {..} => Ok((acc?, self))
         }
     }
 }

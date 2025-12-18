@@ -15,7 +15,6 @@ pub enum Type {
     Void,
     Scalar {sz: ElemSize},
     Pointer {ty: Box<Type>},
-    Struct {id: Name},
     Function {result: Box<Type>, args: Vec<Type>},
 
     // CUDA-specific types
@@ -56,9 +55,7 @@ pub enum Expr {
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     Assign {lhs: Box<Expr>, rhs: Box<Expr>, ty: Type, i: Info},
     Ternary {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
-    StructFieldAccess {target: Box<Expr>, label: String, ty: Type, i: Info},
     ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
-    Struct {id: Name, fields: Vec<(String, Expr)>, ty: Type, i: Info},
     Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
     Convert {e: Box<Expr>, ty: Type},
 
@@ -100,9 +97,7 @@ impl ExprType<Type> for Expr {
             Expr::BinOp {ty, ..} => ty,
             Expr::Assign {ty, ..} => ty,
             Expr::Ternary {ty, ..} => ty,
-            Expr::StructFieldAccess {ty, ..} => ty,
             Expr::ArrayAccess {ty, ..} => ty,
-            Expr::Struct {ty, ..} => ty,
             Expr::Call {ty, ..} => ty,
             Expr::Convert {ty, ..} => ty,
             Expr::ThreadIdx {ty, ..} => ty,
@@ -148,9 +143,7 @@ impl InfoNode for Expr {
             Expr::BinOp {i, ..} => i.clone(),
             Expr::Assign {i, ..} => i.clone(),
             Expr::Ternary {i, ..} => i.clone(),
-            Expr::StructFieldAccess {i, ..} => i.clone(),
             Expr::ArrayAccess {i, ..} => i.clone(),
-            Expr::Struct {i, ..} => i.clone(),
             Expr::Call {i, ..} => i.clone(),
             Expr::Convert {e, ..} => e.get_info(),
             Expr::ThreadIdx {i, ..} => i.clone(),
@@ -206,22 +199,12 @@ impl SMapAccum<Expr> for Expr {
                     cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
                 }))
             },
-            Expr::StructFieldAccess {target, label, ty, i} => {
-                let (acc, target) = f(acc?, *target)?;
-                Ok((acc, Expr::StructFieldAccess {
-                    target: Box::new(target), label, ty, i
-                }))
-            },
             Expr::ArrayAccess {target, idx, ty, i} => {
                 let (acc, target) = f(acc?, *target)?;
                 let (acc, idx) = f(acc, *idx)?;
                 Ok((acc, Expr::ArrayAccess {
                     target: Box::new(target), idx: Box::new(idx), ty, i
                 }))
-            },
-            Expr::Struct {id, fields, ty, i} => {
-                let (acc, fields) = fields.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Expr::Struct {id, fields, ty, i}))
             },
             Expr::Call {id, args, ty, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
@@ -262,9 +245,7 @@ impl SFold<Expr> for Expr {
             Expr::BinOp {lhs, rhs, ..} => f(f(acc?, lhs)?, rhs),
             Expr::Assign {lhs, rhs, ..} => f(f(acc?, lhs)?, rhs),
             Expr::Ternary {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
-            Expr::StructFieldAccess {target, ..} => f(acc?, target),
             Expr::ArrayAccess {target, idx, ..} => f(f(acc?, target)?, idx),
-            Expr::Struct {fields, ..} => fields.sfold_result(acc, &f),
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
             Expr::FuncSetAttribute {value, ..} => f(acc?, value),
@@ -484,7 +465,6 @@ pub enum Top {
     Include {header: String},
     Namespace {ns: String, alias: Option<String>},
     ExtDecl {ret_ty: Type, id: Name, ext_id: String, params: Vec<Param>},
-    StructDef {id: Name, fields: Vec<Field>},
     VarDef {ty: Type, id: Name, init: Option<Expr>},
     FunDef {
         dev_attr: Attribute, ret_ty: Type, attrs: Vec<KernelAttribute>,
@@ -504,7 +484,7 @@ impl SMapAccum<Stmt> for Top {
                 Ok((acc, Top::FunDef {dev_attr, ret_ty, attrs, id, params, body}))
             },
             Top::Include {..} | Top::Namespace {..} | Top::ExtDecl {..} |
-            Top::StructDef {..} | Top::VarDef {..} => {
+            Top::VarDef {..} => {
                 Ok((acc?, self))
             },
         }

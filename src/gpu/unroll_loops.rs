@@ -273,7 +273,7 @@ fn unroll_loops_stmt(mut acc: Vec<Stmt>, s: Stmt, opts: &CompileOptions) -> Vec<
 
 fn unroll_loops_top(t: Top, opts: &CompileOptions) -> Top {
     match t {
-        Top::ExtDecl {..} | Top::FunDef {..} | Top::StructDef {..} => t,
+        Top::ExtDecl {..} | Top::FunDef {..} => t,
         Top::KernelFunDef {attrs, id, params, body, i} => {
             let body = body.sflatten(vec![], |acc, s| unroll_loops_stmt(acc, s, &opts));
             Top::KernelFunDef {attrs, id, params, body, i}

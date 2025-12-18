@@ -37,7 +37,7 @@ fn apply_fun_def(f: FunDef) -> CompileResult<FunDef> {
 fn apply_top(t: Top) -> CompileResult<Top> {
     match t {
         Top::FunDef {v} => Ok(Top::FunDef {v: apply_fun_def(v)?}),
-        Top::StructDef {..} | Top::ExtDecl {..} => Ok(t)
+        Top::ExtDecl {..} => Ok(t)
     }
 }
 

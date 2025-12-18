@@ -17,7 +17,6 @@ fn from_gpu_ir_type(ty: gpu_ast::Type) -> Type {
         gpu_ast::Type::Pointer {ty, ..} => {
             Type::Pointer {ty: Box::new(from_gpu_ir_type(*ty))}
         },
-        gpu_ast::Type::Struct {id} => Type::Struct {id},
         gpu_ast::Type::Function {result, args} => {
             let result = Box::new(from_gpu_ir_type(*result));
             let args = args.into_iter()
@@ -94,10 +93,6 @@ fn from_gpu_ir_expr(e: gpu_ast::Expr) -> CompileResult<Expr> {
                 cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
             })
         },
-        gpu_ast::Expr::StructFieldAccess {target, label, i, ..} => {
-            let target = from_gpu_ir_expr(*target)?;
-            Ok(Expr::StructFieldAccess {target: Box::new(target), label, ty, i})
-        },
         gpu_ast::Expr::ArrayAccess {target, idx, i, ..} => {
             let target = from_gpu_ir_expr(*target)?;
             let idx = from_gpu_ir_expr(*idx)?;
@@ -119,12 +114,6 @@ fn from_gpu_ir_expr(e: gpu_ast::Expr) -> CompileResult<Expr> {
         gpu_ast::Expr::Convert {e, ..} => {
             let e = from_gpu_ir_expr(*e)?;
             Ok(Expr::Convert {e: Box::new(e), ty})
-        },
-        gpu_ast::Expr::Struct {id, fields, i, ..} => {
-            let fields = fields.into_iter()
-                .map(|(s, e)| Ok((s, from_gpu_ir_expr(e)?)))
-                .collect::<CompileResult<Vec<(String, Expr)>>>()?;
-            Ok(Expr::Struct {id, fields, ty, i})
         },
         gpu_ast::Expr::ThreadIdx {dim, i, ..} => Ok(Expr::ThreadIdx {dim, ty, i}),
         gpu_ast::Expr::BlockIdx {dim, i, ..} => Ok(Expr::BlockIdx {dim, ty, i}),
@@ -236,11 +225,6 @@ fn from_gpu_ir_params(params: Vec<gpu_ast::Param>) -> Vec<Param> {
         .collect::<Vec<Param>>()
 }
 
-fn from_gpu_ir_field(f: gpu_ast::Field) -> Field {
-    let gpu_ast::Field {id, ty, ..} = f;
-    Field {id, ty: from_gpu_ir_type(ty)}
-}
-
 fn from_gpu_ir_attr(attr: gpu_ast::KernelAttribute) -> KernelAttribute {
     match attr {
         gpu_ast::KernelAttribute::LaunchBounds {threads} => {
@@ -295,12 +279,6 @@ fn from_gpu_ir_top(
                 id, params, body
             });
         },
-        gpu_ast::Top::StructDef {id, fields, i: _} => {
-            let fields = fields.into_iter()
-                .map(from_gpu_ir_field)
-                .collect::<Vec<Field>>();
-            tops.push(Top::StructDef {id, fields});
-        },
     };
     Ok((includes, tops))
 }
@@ -313,9 +291,7 @@ fn type_contains_16_bit_floats(acc: bool, ty: &gpu_ast::Type) -> bool {
             let acc = type_contains_16_bit_floats(acc, result);
             args.sfold(acc, type_contains_16_bit_floats)
         },
-        gpu_ast::Type::Void |
-        gpu_ast::Type::Scalar {..} |
-        gpu_ast::Type::Struct {..} => acc,
+        gpu_ast::Type::Void | gpu_ast::Type::Scalar {..} => acc,
     }
 }
 

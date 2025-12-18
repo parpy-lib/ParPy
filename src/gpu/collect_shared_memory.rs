@@ -268,7 +268,7 @@ fn apply_top(
     t: Top
 ) -> CompileResult<(BTreeMap<Name, MemoryUse>, Top)> {
     match t {
-        Top::ExtDecl {..} | Top::StructDef {..} => Ok((acc, t)),
+        Top::ExtDecl {..} => Ok((acc, t)),
         Top::KernelFunDef {mut attrs, id, params, body, i} => {
             let (env, body) = determine_shared_memory_use(acc, body)?;
             let SharedMemoryEnv {local_state, mut func_smem_use} = env;

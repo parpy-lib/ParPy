@@ -1,5 +1,6 @@
 use super::ast::*;
 use super::constant_fold;
+use super::inline_const;
 use super::specialize;
 use crate::py_internal_error;
 use crate::py_type_error;
@@ -344,13 +345,16 @@ fn unify_parameter_type(
 
 fn unify_parameter_types(
     params: Vec<Param>,
-    arg_types: Vec<Type>,
+    args: &Vec<Expr>,
     id: &Name,
     i: &Info
 ) -> PyResult<(UnifyEnv, Vec<Param>)> {
     let pn = params.len();
-    let an = arg_types.len();
+    let an = args.len();
     if pn == an {
+        let arg_types = args.iter()
+            .map(|arg| arg.get_type().clone())
+            .collect::<Vec<Type>>();
         params.into_iter()
             .zip(arg_types.into_iter())
             .fold(Ok((UnifyEnv::new(Some(id)), vec![])), |acc, (param, arg_type)| {
@@ -1047,10 +1051,7 @@ fn type_check_call<'py>(
                 Some(annot) => type_check_arguments(args, annot),
                 None => Ok(args)
             }?;
-            let arg_types = args.iter()
-                .map(|arg| arg.get_type().clone())
-                .collect::<Vec<Type>>();
-            let (env, t) = type_check_top(env, t, arg_types)?;
+            let (env, t) = type_check_top(env, t, args.clone())?;
             let (new_id, ret_ty) = match t {
                 Top::CallbackDecl {id, ..} => (id.clone(), Type::Void),
                 Top::ExtDecl {id, res_ty, ..} |
@@ -1067,11 +1068,11 @@ fn type_check_call<'py>(
 fn type_check_fun_def<'py>(
     env: TypeCheckEnv<'py>,
     def: FunDef,
-    arg_types: Vec<Type>
+    args: Vec<Expr>
 ) -> PyResult<(TypeCheckEnv<'py>, FunDef, bool)> {
-    // 1. Produce environment for the function by unifying the parameter declarations with the
-    //    types of the provided arguments.
-    let (unify_env, params) = unify_parameter_types(def.params, arg_types, &def.id, &def.i)?;
+    // Produce environment for the function by unifying the parameter declarations with the
+    // types of the provided arguments.
+    let (unify_env, params) = unify_parameter_types(def.params.clone(), &args, &def.id, &def.i)?;
 
     // If this particular function has already been specialized, we immediately return.
     match env.specs.get(&unify_env).cloned() {
@@ -1079,19 +1080,23 @@ fn type_check_fun_def<'py>(
         None => {
             let env = env.enter_function(params.clone());
 
-            // 2. Specialize the function body by replacing expressions according to the
-            //    environment.
+            // Inline the values of any scalar arguments, as determined by inspecting the AST
+            // nodes of the provided arguments.
+            let def = inline_const::inline_scalar_values_ast_args(def, &args)?;
+
+            // Specialize the function body by replacing expressions according to the
+            // environment.
             let body = specialize::apply(&unify_env, &env.opts, def.body)?;
 
-            // 3. Apply constant folding to the function body, to ensure that slice bounds can be
-            //    determined given the shapes.
+            // Apply constant folding to the function body, to ensure that slice bounds can be
+            // determined given the shapes.
             let body = constant_fold::fold(body);
 
-            // 4. Perform an extended type-check of the body. In addition to normal type-checking,
-            //    this will:
-            //    - Insert the bounds of slices based on derived type information.
-            //    - Recursively run these steps on any called function, or retrieving it from the
-            //      cache immediately.
+            // Perform an extended type-check of the body. In addition to normal type-checking,
+            // this will:
+            // - Insert the bounds of slices based on derived type information.
+            // - Recursively run these steps on any called function, or retrieve it from the cache
+            //   immediately.
             let (env, body) = body.type_check(env)?;
 
             let id = def.id.with_new_sym();
@@ -1107,23 +1112,23 @@ fn type_check_fun_def<'py>(
 fn type_check_top<'py>(
     mut env: TypeCheckEnv<'py>,
     t: Top,
-    arg_types: Vec<Type>
+    args: Vec<Expr>
 ) -> TypeCheckResult<'py, Top> {
     match t {
         Top::CallbackDecl {id, params, i} => {
-            let (_, params) = unify_parameter_types(params, arg_types, &id, &i)?;
+            let (_, params) = unify_parameter_types(params, &args, &id, &i)?;
             let t = Top::CallbackDecl {id, params, i};
             env.spec_list.push(t.clone());
             Ok((env, t))
         },
         Top::ExtDecl {id, ext_id, params, res_ty, target, header, par, i} => {
-            let (_, params) = unify_parameter_types(params, arg_types, &id, &i)?;
+            let (_, params) = unify_parameter_types(params, &args, &id, &i)?;
             let t = Top::ExtDecl {id, ext_id, params, res_ty, target, header, par, i};
             env.spec_list.push(t.clone());
             Ok((env, t))
         },
         Top::FunDef {v} => {
-            let (mut env, v, new_spec) = type_check_fun_def(env, v, arg_types)?;
+            let (mut env, v, new_spec) = type_check_fun_def(env, v, args)?;
             let t = Top::FunDef {v};
             if new_spec {
                 env.spec_list.push(t.clone());
@@ -1136,9 +1141,9 @@ fn type_check_top<'py>(
 fn type_check_main<'py>(
     env: TypeCheckEnv<'py>,
     main: FunDef,
-    arg_types: Vec<Type>
+    args: Vec<Expr>
 ) -> PyResult<Ast> {
-    let (env, main, _) = type_check_fun_def(env, main, arg_types)?;
+    let (env, main, _) = type_check_fun_def(env, main, args)?;
     let FunDef {ref res_ty, ref id, ref i, ..} = main;
     match res_ty {
         Type::Void => Ok(Ast {tops: env.spec_list, main}),
@@ -1154,8 +1159,14 @@ pub fn apply<'py>(
 ) -> PyResult<Ast> {
     let i = main.i.clone();
     let env = TypeCheckEnv::new(tops, opts.clone());
+    // NOTE(larshum, 2025-12-17): To represent the arguments provided to the entry point function,
+    // we extract the types of the actual Python values and put these in variable nodes to prevent
+    // any attempt to inline their contents further.
     let arg_types = extract_argument_types(args, &env.scalar_sizes, &i)?;
-    type_check_main(env, main, arg_types)
+    let args = arg_types.into_iter()
+        .map(|ty| Expr::Var {id: Name::sym_str(""), ty, i: Info::default()})
+        .collect::<Vec<Expr>>();
+    type_check_main(env, main, args)
 }
 
 #[cfg(test)]
@@ -1474,11 +1485,11 @@ mod test {
             Param {id: id("x"), ty: Type::Unknown, i: i()},
             Param {id: id("y"), ty: Type::Unknown, i: i()}
         ];
-        let arg_types = vec![
-            scalar(ElemSize::F32),
-            Type::Tensor {sz: fixed_elem_sz(ElemSize::F32), shape: vec![ts_num(10)]}
+        let args = vec![
+            var("", scalar(ElemSize::F32)),
+            var("", Type::Tensor {sz: fixed_elem_sz(ElemSize::F32), shape: vec![ts_num(10)]})
         ];
-        let (_, r) = unify_parameter_types(params, arg_types, &id("f"), &i()).unwrap();
+        let (_, r) = unify_parameter_types(params, &args, &id("f"), &i()).unwrap();
         let expected = vec![
             Param {id: id("x"), ty: scalar(ElemSize::F32), i: i()},
             Param {
@@ -1503,11 +1514,11 @@ mod test {
             Param {id: id("a"), ty: ty.clone(), i: i()},
             Param {id: id("b"), ty: ty.clone(), i: i()},
         ];
-        let arg_types = vec![
-            Type::Tensor {sz: fixed_elem_sz(ElemSize::I64), shape: vec![ts_num(10)]},
-            Type::Tensor {sz: fixed_elem_sz(ElemSize::I64), shape: vec![ts_num(20)]},
+        let args = vec![
+            var("", Type::Tensor {sz: fixed_elem_sz(ElemSize::I64), shape: vec![ts_num(10)]}),
+            var("", Type::Tensor {sz: fixed_elem_sz(ElemSize::I64), shape: vec![ts_num(20)]}),
         ];
-        let r = unify_parameter_types(params, arg_types, &id("f"), &i());
+        let r = unify_parameter_types(params, &args, &id("f"), &i());
         assert_py_error_matches(r, "Parameter b was annotated with type .* \
                                     which is incompatible with argument type .*");
     }
@@ -1515,8 +1526,8 @@ mod test {
     #[test]
     fn unify_parameters_invalid_number_of_arguments_fails() {
         let params = vec![];
-        let arg_types = vec![Type::Unknown];
-        let r = unify_parameter_types(params, arg_types, &id("f"), &i());
+        let args = vec![var("", Type::Unknown)];
+        let r = unify_parameter_types(params, &args, &id("f"), &i());
         assert_py_error_matches(r, r"Function f expects 0 parameters.*called with 1 argument.*");
     }
 

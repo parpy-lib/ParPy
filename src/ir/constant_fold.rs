@@ -91,8 +91,7 @@ pub fn fold_expr(e: Expr) -> Expr {
                 }
             }
         },
-        Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
-        Expr::IfExpr {..} | Expr::StructFieldAccess {..} |
+        Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} | Expr::IfExpr {..} |
         Expr::TensorAccess {..} | Expr::Call {..} | Expr::PyCallback {..} => {
             e.smap(fold_expr)
         }
@@ -111,7 +110,7 @@ fn fold_def(def: FunDef) -> FunDef {
 fn fold_top(t: Top) -> Top {
     match t {
         Top::FunDef {v} => Top::FunDef {v: fold_def(v)},
-        Top::StructDef {..} | Top::ExtDecl {..} => t,
+        Top::ExtDecl {..} => t,
     }
 }
 
@@ -253,6 +252,6 @@ mod test {
     #[test]
     fn div_identity() {
         test_identity(BinOp::Div, float(1.0, None), true);
-        test_identity(BinOp::Div, int(1, None), true);
+        test_identity(BinOp::FloorDiv, int(1, None), true);
     }
 }

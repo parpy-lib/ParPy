@@ -2,7 +2,6 @@ pub mod ast;
 mod codegen;
 mod collect_shared_memory;
 mod constant_fold;
-pub mod flatten_structs;
 mod free_vars;
 mod fuse_memory;
 mod global_mem;

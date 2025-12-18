@@ -22,7 +22,7 @@ fn replace_constants_expr(
         Expr::Var {ref i, ..} => {
             match consts.get(&e) {
                 Some(e) => e.clone().with_info(i.clone()),
-                None => e.clone(),
+                None => e,
             }
         },
         Expr::Subscript {ref target, ref idx, ref ty, ref i} => {
@@ -53,10 +53,6 @@ fn replace_constants_stmt(
         Stmt::Assign {dst: dst @ Expr::Var {..}, i, ..} if consts.contains_key(&dst) => {
             py_runtime_error!(i, "Assigning to a scalar parameter is not allowed")
         },
-        Stmt::Assign {dst, expr, labels, i} => {
-            let expr = replace_constants_expr(consts, expr);
-            Ok(Stmt::Assign {dst, expr, labels, i})
-        },
         _ => {
             Ok(s.smap_result(|s| replace_constants_stmt(consts, s))?
                 .smap(|e| replace_constants_expr(consts, e)))
@@ -79,7 +75,7 @@ fn replace_constants_def(
     Ok(FunDef {body, ..def})
 }
 
-fn add_scalar_constant<'py>(
+fn add_scalar_constant_py<'py>(
     mut acc: BTreeMap<Expr, Expr>,
     target: Expr,
     arg: &Bound<'py, PyAny>
@@ -114,7 +110,7 @@ fn add_scalar_constant<'py>(
                     }),
                     ty: ty.clone(), i: i.clone()
                 };
-                add_scalar_constant(acc?, target, &v)
+                add_scalar_constant_py(acc?, target, &v)
             })
     } else {
         Ok(acc)
@@ -131,7 +127,7 @@ fn make_const_map<'py, 'a>(
             let target = Expr::Var {
                 id: id.clone(), ty: ty.clone(), i: i.clone()
             };
-            add_scalar_constant(acc?, target, arg)
+            add_scalar_constant_py(acc?, target, arg)
         })
 }
 
@@ -140,6 +136,31 @@ pub fn inline_scalar_values<'py>(
     args: &Vec<Bound<'py, PyAny>>
 ) -> PyResult<FunDef> {
     let const_map = make_const_map(args, &def.params)?;
+    replace_constants_def(&const_map, def)
+}
+
+fn is_literal_value(arg: &Expr) -> bool {
+    match arg {
+        Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} => true,
+        _ => false
+    }
+}
+
+pub fn inline_scalar_values_ast_args(
+    def: FunDef,
+    args: &Vec<Expr>
+) -> PyResult<FunDef> {
+    let const_map = args.iter()
+        .zip(def.params.iter())
+        .fold(BTreeMap::new(), |mut acc, (arg, Param {id, ty, i})| {
+            let target = Expr::Var {
+                id: id.clone(), ty: ty.clone(), i: i.clone()
+            };
+            if is_literal_value(arg) {
+                acc.insert(target, arg.clone());
+            }
+            acc
+        });
     replace_constants_def(&const_map, def)
 }
 
@@ -164,7 +185,7 @@ mod test {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
             let arg = eval_str(py, s).unwrap();
-            add_scalar_constant(BTreeMap::new(), target.clone(), &arg).unwrap()
+            add_scalar_constant_py(BTreeMap::new(), target.clone(), &arg).unwrap()
         })
     }
 

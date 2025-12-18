@@ -121,7 +121,7 @@ fn is_int_neutral_elem<T, E: CFExpr<T>>(op: &BinOp, e: &E, is_rhs: bool) -> bool
         BinOp::Add => v == 0,
         BinOp::Sub if is_rhs => v == 0,
         BinOp::Mul => v == 1,
-        BinOp::Div if is_rhs => v == 1,
+        BinOp::FloorDiv if is_rhs => v == 1,
         BinOp::Max => v == i128::MIN,
         BinOp::Min => v == i128::MAX,
         _ => false
@@ -436,6 +436,22 @@ mod test {
         assert_eq!(
             apply_int_int_binop_h(int_lit(3), BinOp::Div, int_lit(2)),
             binop(int_lit(3), BinOp::Div, int_lit(2), scalar(ElemSize::I64))
+        );
+    }
+
+    #[test]
+    fn apply_int_int_floor_div_one() {
+        assert_eq!(
+            apply_int_int_binop_h(int_lit(4), BinOp::FloorDiv, int_lit(1)),
+            int_lit(4)
+        );
+    }
+
+    #[test]
+    fn apply_int_int_floor_div() {
+        assert_eq!(
+            apply_int_int_binop_h(int_lit(3), BinOp::FloorDiv, int_lit(2)),
+            int_lit(1)
         );
     }
 

@@ -19,10 +19,6 @@ fn pprint_type(decl: String, ty: &Type, env: PrettyPrintEnv) -> (PrettyPrintEnv,
             join_space(sz, decl, env)
         },
         Type::Pointer {ty} => pprint_type(format!("(*{decl})"), ty, env),
-        Type::Struct {id, ..} => {
-            let (env, id) = id.pprint(env);
-            join_space(id, decl, env)
-        },
         Type::Function {result, args} => {
             let (env, args) = args.iter()
                 .fold((env, vec![]), |(env, mut acc), ty| {
@@ -213,29 +209,10 @@ impl PrettyPrint for Expr {
                 let (env, els) = els.pprint(env);
                 (env, format!("({cond} ? {thn} : {els})"))
             },
-            Expr::StructFieldAccess {target, label, ..} => {
-                let (env, target) = target.pprint(env);
-                (env, format!("{target}.{label}"))
-            },
             Expr::ArrayAccess {target, idx, ..} => {
                 let (env, target) = target.pprint(env);
                 let (env, idx) = idx.pprint(env);
                 (env, format!("{target}[{idx}]"))
-            },
-            Expr::Struct {id, fields, ..} => {
-                let (env, id) = id.pprint(env);
-                let (env, fields) = fields.iter()
-                    .fold((env, vec![]), |(env, mut strs), (id, e)| {
-                        let (env, e) = e.pprint(env);
-                        strs.push(format!("{id}: {e}"));
-                        (env, strs)
-                    });
-                let outer_indent = env.print_indent();
-                let env = env.incr_indent();
-                let indent = env.print_indent();
-                let fields = fields.into_iter().join(&format!(",\n{indent}"));
-                let env = env.decr_indent();
-                (env, format!("{id} {{\n{indent}{fields}\n{outer_indent}}}"))
             },
             Expr::Call {id, args, ..} => {
                 let (env, id) = id.pprint(env);
@@ -537,13 +514,6 @@ impl PrettyPrint for Top {
                     .join(", ");
                 (env, format!("#define {id}({0}) {ext_id}({0})", param_ids))
             },
-            Top::StructDef {id, fields} => {
-                let (env, id) = id.pprint(env);
-                let env = env.incr_indent();
-                let (env, fields) = pprint_iter(fields.iter(), env, "\n");
-                let env = env.decr_indent();
-                (env, format!("struct {id} {{\n{fields}\n}};"))
-            },
             Top::VarDef {ty, id, init} => {
                 let (env, ty) = ty.pprint(env);
                 let (env, id) = id.pprint(env);
@@ -719,21 +689,6 @@ mod test {
         assert_eq!(&s, "max(x, y)");
     }
 
-    #[test]
-    fn pprint_struct_literal() {
-        let s = Expr::Struct {
-            id: Name::sym_str("id"),
-            fields: vec![
-                ("x".to_string(), int(5, ElemSize::I64)),
-                ("y".to_string(), int(25, ElemSize::I64)),
-                ("z".to_string(), uvar("q"))
-            ],
-            ty: Type::Struct {id: Name::sym_str("ty")},
-            i: Info::default()
-        };
-        assert_eq!(&s.pprint_default(), "id {\n  x: 5,\n  y: 25,\n  z: q\n}");
-    }
-
     fn convert(e: Expr, ty: Type) -> Expr {
         Expr::Convert {e: Box::new(e), ty}
     }
@@ -874,22 +829,6 @@ mod test {
         };
         let expected = format!("{id}<<<dim3(4, 1, 2), dim3(1, 6, 7), 0, 0>>>(x, y);");
         assert_eq!(kernel.pprint_default(), expected);
-    }
-
-    #[test]
-    fn pprint_struct_def() {
-        let def = Top::StructDef {
-            id: Name::new("point".to_string()),
-            fields: vec![
-                Field {id: "x".to_string(), ty: scalar(ElemSize::F32)},
-                Field {id: "y".to_string(), ty: scalar(ElemSize::F32)},
-            ]
-        };
-        let indent = " ".repeat(pprint::DEFAULT_INDENT);
-        let expected = format!(
-            "struct point {{\n{0}float x;\n{0}float y;\n}};", indent
-        );
-        assert_eq!(def.pprint_default(), expected)
     }
 
     #[test]
