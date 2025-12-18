@@ -27,9 +27,8 @@ extern "C" int32_t parpy_memcpy(void *dst, void *src, int64_t nbytes, int64_t k)
   } else if (k == 3) {
     err = cudaMemcpyAsync(dst, src, nbytes, cudaMemcpyDeviceToDevice, 0);
   } else {
-    std::ostringstream ss;
-    ss << "Invalid value k = " << k << " provided to parpy_memcpy().";
-    parpy_cuda::error_message = ss.str();
+    snprintf(parpy_cuda::err_buf, 1024, "Invalid value k = %lld provided to parpy_memcpy().");
+    parpy_cuda::error_message = parpy_cuda::err_buf;
     return 1;
   }
   return (int32_t)err;
