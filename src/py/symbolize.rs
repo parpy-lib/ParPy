@@ -1,6 +1,6 @@
 use super::ast::*;
 use crate::py_name_error;
-use crate::ext::types::ShapeVar;
+use crate::ext::types::{Shape, ShapeVar};
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
@@ -210,12 +210,12 @@ fn try_extract_symbol<'py>(
     entry: (Bound<'py, PyAny>, Bound<'py, PyAny>)
 ) -> BTreeMap<String, ShapeVar> {
     let (key, value) = entry;
-    match value.extract::<ShapeVar>() {
-        Ok(v) => {
+    match value.extract::<Shape>() {
+        Ok(Shape::Var(v)) => {
             acc.insert(key.extract::<String>().unwrap(), v);
             acc
         },
-        Err(_) => acc
+        _ => acc
     }
 }
 

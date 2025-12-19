@@ -9,11 +9,23 @@ pub struct ShapeVar {
     pub id: Name
 }
 
+#[pyclass(eq, frozen)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Shape {
+    Var(ShapeVar),
+    Literal(i64),
+}
+
 #[pymethods]
-impl ShapeVar {
-    #[new]
-    fn new() -> ShapeVar {
-        ShapeVar {id: Name::sym_str("")}
+impl Shape {
+    #[staticmethod]
+    fn make_var() -> Shape {
+        Shape::Var(ShapeVar {id: Name::sym_str("")})
+    }
+
+    #[staticmethod]
+    fn make_literal(n: i64) -> Shape {
+        Shape::Literal(n)
     }
 }
 
@@ -34,6 +46,6 @@ impl TypeVar {
 #[pyclass(eq, frozen)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExtType {
-    Buffer(ElemSize, Vec<ShapeVar>),
-    VarBuffer(TypeVar, Vec<ShapeVar>),
+    Buffer(ElemSize, Vec<Shape>),
+    VarBuffer(TypeVar, Vec<Shape>),
 }
