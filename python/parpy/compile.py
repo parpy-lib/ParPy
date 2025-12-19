@@ -8,6 +8,12 @@ def _get_library_path(key):
     return cache_path / f"{key}-lib.so"
 
 def _is_cached(key):
+    # NOTE(larshum, 2025-12-19): Library files generated from strings should
+    # never be considered cached. This resolves an odd bug in the Metal
+    # backend, where loading a cached library built from a string causes a
+    # segmentation fault, for unknown reason.
+    if key.startswith("string_"):
+        return False
     libpath = _get_library_path(key)
     return os.path.isfile(libpath)
 
