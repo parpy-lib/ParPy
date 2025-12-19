@@ -42,8 +42,4 @@ fn = parpy.compile_string("sum_rows", code, opts)
 fn(x, y, N)
 assert np.allclose(y, np.sum(x, axis=1), atol=1e-3)
 
-# Remove the temporary file
-import os
-os.remove("out.txt")
-
 print("Test OK")
