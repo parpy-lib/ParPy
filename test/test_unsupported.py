@@ -107,8 +107,8 @@ def test_call_without_compiler_options():
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_unbound_shape_variable(backend):
-    N = parpy.types.symbol()
-    M = parpy.types.symbol()
+    N = parpy.types.shape_var()
+    M = parpy.types.shape_var()
     with pytest.raises(NameError) as e_info:
         @parpy.jit
         def shape_var_in_loop_bound_zero_init(x: parpy.types.buffer(parpy.types.F32, [M])):
@@ -120,7 +120,7 @@ def test_unbound_shape_variable(backend):
 def test_unbound_type_variable(backend):
     ty1 = parpy.types.type_var()
     ty2 = parpy.types.type_var()
-    N = parpy.types.symbol()
+    N = parpy.types.shape_var()
 
     @parpy.jit
     def unbound_type_var_conversion(x: parpy.types.buffer(ty1, [N])):

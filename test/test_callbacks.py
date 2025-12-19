@@ -6,10 +6,10 @@ import torch
 from common import *
 
 T = type_var()
-M = symbol()
-N = symbol()
-K = symbol()
-R = symbol()
+M = shape_var()
+N = shape_var()
+K = shape_var()
+R = shape_var()
 
 @parpy.callback
 def gemm(alpha, beta, A, B, C):

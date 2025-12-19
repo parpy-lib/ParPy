@@ -20,9 +20,13 @@ def buffer(sz, shape):
     else:
         return ExtType.VarBuffer(sz, shape)
 
-def symbol():
-    from .parpy import Symbol
-    return Symbol()
+def shape_var():
+    from .parpy import Shape
+    return Shape.make_var()
+
+def literal(n):
+    from .parpy import Shape
+    return Shape.make_literal(n)
 
 def type_var():
     from .parpy import TypeVar

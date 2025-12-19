@@ -2,7 +2,7 @@ use super::ast::*;
 use super::for_loops;
 use crate::py_runtime_error;
 use crate::py_internal_error;
-use crate::ext::types::{ExtType, TypeVar};
+use crate::ext::types::{ExtType, Shape, ShapeVar, TypeVar};
 use crate::option::CompileBackend;
 use crate::utils::err::*;
 use crate::utils::info::*;
@@ -409,6 +409,13 @@ fn convert_builtin<'py, 'a>(
     }
 }
 
+fn ext_shape_to_tensor_shape(sh: Shape) -> TensorShape {
+    match sh {
+        Shape::Literal(n) => TensorShape::Num {n},
+        Shape::Var(ShapeVar {id}) => TensorShape::Symbol {id},
+    }
+}
+
 fn try_extract_type_annotation<'py, 'a>(
     annot: Bound<'py, PyAny>,
     env: &ConvertEnv<'py, 'a>,
@@ -428,14 +435,14 @@ fn try_extract_type_annotation<'py, 'a>(
                     Ok(ExtType::Buffer(sz, syms)) => {
                         let sz = TensorElemSize::Fixed {sz};
                         let shape = syms.into_iter()
-                            .map(|sym| TensorShape::Symbol {id: sym.id})
+                            .map(ext_shape_to_tensor_shape)
                             .collect::<Vec<TensorShape>>();
                         Ok(Type::Tensor {sz, shape})
                     },
                     Ok(ExtType::VarBuffer(tyvar, syms)) => {
                         let sz = TensorElemSize::Variable {id: tyvar.id};
                         let shape = syms.into_iter()
-                            .map(|sym| TensorShape::Symbol {id: sym.id})
+                            .map(ext_shape_to_tensor_shape)
                             .collect::<Vec<TensorShape>>();
                         Ok(Type::Tensor {sz, shape})
                     },

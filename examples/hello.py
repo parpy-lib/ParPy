@@ -1,19 +1,18 @@
-# Implementation of row-wise summation in Python, including a ParPy label
 import parpy
 
 @parpy.jit
-def sum_rows(x, out, N):
+def elemwise_add(x, y, out, N):
     parpy.label('outer')
     for i in range(N):
-        out[i] = parpy.reduce.sum(x[i,:])
+        out[i] = x[i] + y[i]
 
 # Generate input data using NumPy
 import numpy as np
 
-N = 100
-M = 1024
-x = np.random.randn(N, M).astype(np.float32)
-y = np.empty((N,), dtype=np.float32)
+N = 1024
+x = np.random.randn(N).astype(np.float32)
+y = np.random.randn(N).astype(np.float32)
+out = np.empty_like(x)
 
 # Use a Python dictionary to specify how to parallelize the code, and construct
 # a default compile options object based on the parallel specification 'p'.
@@ -22,6 +21,6 @@ opts = parpy.par(p)
 
 # Call the function with the defined arguments and the compile options, and
 # verify that the result is correct with respect to NumPy after the call.
-sum_rows(x, y, N, opts=opts)
-assert np.allclose(y, np.sum(x, axis=1), atol=1e-3)
+elemwise_add(x, y, out, N, opts=opts)
+assert np.allclose(out, x + y, atol=1e-5)
 print("Test OK")

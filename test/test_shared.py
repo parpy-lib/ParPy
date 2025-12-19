@@ -10,8 +10,8 @@ from common import *
 np.random.seed(1234)
 
 T = parpy.types.type_var()
-M = parpy.types.symbol()
-N = parpy.types.symbol()
+M = parpy.types.shape_var()
+N = parpy.types.shape_var()
 
 @parpy.jit
 def transpose_blocked(

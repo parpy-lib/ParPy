@@ -28,9 +28,9 @@ def mv_numpy(A, b, out, N):
 
 N = 2
 M = 2
-A = np.array([[2.5, 3.5], [1.5, 0.5]])
-b = np.array([2.0, 1.0])
-out = np.zeros((N,))
+A = np.array([[2.5, 3.5], [1.5, 0.5]]).astype(np.float32)
+b = np.array([2.0, 1.0]).astype(np.float32)
+out = np.zeros((N,), dtype=np.float32)
 mv_numpy(A, b, out, N)
 print("NumPy v2", out)
 
@@ -44,16 +44,16 @@ def mv_parpy(A, b, out, N):
         parpy.label('M')
         out[row] = parpy.reduce.sum(A[row,:] * b[:])
 
-out = np.zeros((N,))
+out = np.zeros((N,), dtype=np.float32)
 opts = parpy.par({'N': parpy.threads(N)})
 mv_parpy(A, b, out, N, opts=opts)
 print("ParPy", out)
 
 # ParPy with pre-allocated data
-backend = parpy.CompileBackend.Cuda
+backend = parpy.default_backend()
 A = parpy.buffer.from_array(A, backend)
 b = parpy.buffer.from_array(b, backend)
-out = parpy.buffer.from_array(out, backend)
+out = parpy.buffer.zeros((N,), parpy.types.F32, backend)
 
 import time
 t1 = time.time_ns()

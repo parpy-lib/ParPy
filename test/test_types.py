@@ -61,7 +61,7 @@ def test_buffer_argument_wrong_element_type(backend):
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_buffer_parameter_annotation(backend):
     def helper():
-        N = parpy.types.symbol()
+        N = parpy.types.shape_var()
         @parpy.jit
         def annot_buffer_param(x: parpy.types.buffer(parpy.types.F32, (N,))):
             with parpy.gpu:
@@ -73,7 +73,7 @@ def test_buffer_parameter_annotation(backend):
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_buffer_annotation_shape_equality(backend):
     def helper():
-        N = parpy.types.symbol()
+        N = parpy.types.shape_var()
         @parpy.jit
         def annot_add_elemwise_inplace(
             x: parpy.types.buffer(parpy.types.F32, [N]),
@@ -93,7 +93,7 @@ def test_buffer_annotation_shape_equality(backend):
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_called_function_annotation_shape_constraint(backend):
-    N = parpy.types.symbol()
+    N = parpy.types.shape_var()
 
     @parpy.jit
     def annot_add_elemwise_inplace_helper(
@@ -136,7 +136,7 @@ def test_called_function_scalar_coercion(backend):
 def test_shape_implicit_labeling(backend):
     def helper():
         import parpy.types as pt
-        N = pt.symbol()
+        N = pt.shape_var()
 
         @parpy.jit
         def implicit_labels_add_elemwise(x: pt.buffer(pt.F32, [N]), y: pt.buffer(pt.F32, [N])):
@@ -216,7 +216,7 @@ def test_type_variable_multiple_instantiations(backend):
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_type_variable_in_buffer(backend):
-    N = parpy.types.symbol()
+    N = parpy.types.shape_var()
     sz = parpy.types.type_var()
 
     @parpy.jit
@@ -235,7 +235,7 @@ def test_type_variable_in_buffer(backend):
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_type_variable_in_buffer_contradiction(backend):
-    N = parpy.types.symbol()
+    N = parpy.types.shape_var()
     sz = parpy.types.type_var()
 
     @parpy.jit
@@ -251,4 +251,59 @@ def test_type_variable_in_buffer_contradiction(backend):
     opts = par_opts(backend, {'N': parpy.threads(32)})
     with pytest.raises(TypeError) as e_info:
         parpy.print_compiled(add_elemwise_type_variables2, [x, y], opts)
-    assert e_info.match("Parameter y was annotated with type .* incompatible with.*")
+    assert e_info.match(r"Parameter y was annotated with type .* incompatible with.*")
+
+T = parpy.types.type_var()
+N = parpy.types.shape_var()
+
+@parpy.jit
+def elemwise_add_inplace(
+        x: parpy.types.buffer(T, [N]),
+        y: parpy.types.buffer(T, [parpy.types.literal(10)])):
+    x[:N] = x[:N] + y[:N]
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_literal_shape_variable(backend):
+    def helper():
+        T = parpy.types.type_var()
+        N = parpy.types.shape_var()
+
+        # OK if x and y contains 10 elements each
+        p = {'N': parpy.threads(32)}
+        x = torch.zeros(10, dtype=torch.float32)
+        y = torch.randn_like(x)
+        elemwise_add_inplace(x, y, opts=par_opts(backend, p))
+        assert torch.allclose(x, y)
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_literal_shape_variable_contradictory_arguments(backend):
+    # If y contains 20 elements, we have a contradiction in the types
+    with pytest.raises(TypeError) as e_info:
+        x = torch.zeros(20, dtype=torch.float32)
+        y = torch.randn_like(x)
+        opts = par_opts(backend, {'N': parpy.threads(32)})
+        parpy.print_compiled(elemwise_add_inplace, [x, y], opts)
+    assert e_info.match(r"incompatible with argument type")
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_literal_shape_variable_contradiction(backend):
+    T = parpy.types.type_var()
+    N = parpy.types.shape_var()
+
+    # Contradictory use of shape literals - this will fail for any shapes of
+    # the arguments A and B.
+    @parpy.jit
+    def matrix_elemwise_add(
+            a: parpy.types.buffer(T, [N, parpy.types.literal(12)]),
+            b: parpy.types.buffer(T, [parpy.types.literal(7), N]),
+            c: parpy.types.buffer(T, [N, N])):
+        c[:N,:N] = a[:,:] + b[:,:]
+
+    with pytest.raises(TypeError) as e_info:
+        a = torch.randn(12, 12, dtype=torch.float32)
+        b = torch.randn_like(a)
+        c = torch.zeros_like(a)
+        opts = par_opts(backend, {'N': parpy.threads(32)})
+        parpy.print_compiled(matrix_elemwise_add, [a, b, c], opts)
+    assert e_info.match(r"incompatible with argument type")

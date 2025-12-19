@@ -154,7 +154,7 @@ def test_call_invalid_decl_external_cuda():
 
 def test_call_external_array_op_cuda():
     def helper():
-        N = types.symbol()
+        N = types.shape_var()
         @parpy.external("sum_row_ext", backend, parpy.Target.Device, header="<cuda_utils.h>")
         def sum_row(x: types.buffer(types.F64, [N]), n: types.I64) -> types.F64:
             s = 0.0
@@ -177,7 +177,7 @@ def test_call_external_array_op_cuda():
 
 def test_call_external_distinct_shapes_cuda():
     def helper():
-        N = types.symbol()
+        N = types.shape_var()
         @parpy.external("sum_row_ext", backend, parpy.Target.Device, header="<cuda_utils.h>")
         def sum_row(x: types.buffer(types.F64, [N]), n: types.I64) -> types.F64:
             s = 0.0
@@ -199,7 +199,7 @@ def test_call_external_distinct_shapes_cuda():
 
 def test_block_parallel_external_cuda():
     def helper():
-        N = types.symbol()
+        N = types.shape_var()
         @parpy.external(
                 "warp_sum", backend, parpy.Target.Device,
                 header="<cuda_utils.h>", parallelize=parpy.threads(32))
@@ -221,7 +221,7 @@ def test_block_parallel_external_cuda():
 
 def test_call_matmul_external_cuda():
     def helper():
-        N, M, K = types.symbol(), types.symbol(), types.symbol()
+        N, M, K = types.shape_var(), types.shape_var(), types.shape_var()
         float_sz = types.type_var()
 
         @parpy.external(

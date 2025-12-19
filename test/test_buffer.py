@@ -227,7 +227,7 @@ def test_buffer_indexing_out_of_bounds(backend):
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_buffer_call_with_indexed_argument(backend):
     def helper():
-        N = parpy.types.symbol()
+        N = parpy.types.shape_var()
         @parpy.jit
         def elemwise_add_one(x: parpy.types.buffer(parpy.types.F32, [N])):
             for i in range(N):
