@@ -22,6 +22,7 @@ opts = parpy.par(p)
 
 # Print the generated code for the CUDA backend
 opts.backend = parpy.CompileBackend.Cuda
+#opts.print_debug = True  # uncomment to print the AST after each pass
 code = parpy.print_compiled(sum_rows, [x, y, N], opts)
 print("Generated code for CUDA C++:")
 print(code)
@@ -34,20 +35,9 @@ print("Generated code for Metal:")
 print(code)
 print("=====")
 
-# Use the automatically selected backend to avoid trouble
-opts.backend = parpy.CompileBackend.Auto
+# Use the default backend to compile and run the code
+opts.backend = parpy.default_backend()
 code = parpy.print_compiled(sum_rows, [x, y, N], opts)
-
-# Write the generated code to a file 'out.txt'
-with open("out.txt", "w+") as f:
-    f.write(code)
-
-# Wait for the user to press enter before we read back the updated code
-input("Press enter when finished updating 'out.txt' ")
-
-# Read
-with open("out.txt", "r") as f:
-    code = f.read()
 fn = parpy.compile_string("sum_rows", code, opts)
 fn(x, y, N)
 assert np.allclose(y, np.sum(x, axis=1), atol=1e-3)
