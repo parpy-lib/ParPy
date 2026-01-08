@@ -7,6 +7,7 @@ mod graphs;
 mod insert_stream_argument;
 mod memory;
 mod pprint;
+mod power;
 mod reduce;
 mod shared_memory;
 
@@ -42,6 +43,11 @@ pub fn codegen(
     // Inserts a stream argument to all entry points, and uses this stream in place of the default
     // stream.
     let cuda_ast = insert_stream_argument::apply(cuda_ast);
+
+    // Replaces applicable uses of the power operator (pow) in CUDA with other operators. We do
+    // this specifically for CUDA because its compiler does not optimize for special cases of the
+    // operator, such as translating 'pow(x, 2.0)' to 'x * x' or 'pow(x, 0.5)' to 'sqrt(x)'.
+    let cuda_ast = power::simplify_power_operator(cuda_ast);
 
     // Update all kernel entry points to make use of CUDA graphs.
     let cuda_ast = graphs::use_if_enabled(cuda_ast, opts);

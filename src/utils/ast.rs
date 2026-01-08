@@ -111,7 +111,7 @@ impl ScalarSizes {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum UnOp {
-    #[default] Sub, Not, BitNeg, Addressof
+    #[default] Sub, Not, BitNeg, Addressof, Sqrt
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, EnumIter)]

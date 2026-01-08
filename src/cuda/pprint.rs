@@ -78,15 +78,22 @@ impl PrettyPrintUnOp<Type> for Expr {
     fn is_function(op: &UnOp) -> bool {
         match op {
             UnOp::Sub | UnOp::Not | UnOp::BitNeg | UnOp::Addressof => false,
+            UnOp::Sqrt => true,
         }
     }
 
-    fn print_unop(op: &UnOp, _argty: &Type) -> Option<String> {
+    fn print_unop(op: &UnOp, argty: &Type) -> Option<String> {
         let o = match op {
             UnOp::Sub => Some("-"),
             UnOp::Not => Some("!"),
             UnOp::BitNeg => Some("~"),
             UnOp::Addressof => Some("&"),
+            UnOp::Sqrt => match argty {
+                Type::Scalar {sz: ElemSize::F16} => Some("hsqrt"),
+                Type::Scalar {sz: ElemSize::F32} => Some("sqrtf"),
+                Type::Scalar {sz: ElemSize::F64} => Some("sqrt"),
+                _ => Some("sqrt")
+            },
         };
         o.map(|s| s.to_string())
     }
