@@ -65,7 +65,7 @@ impl PrettyPrintUnOp<Type> for Expr {
     fn is_function(op: &UnOp) -> bool {
         match op {
             UnOp::Sub | UnOp::Not | UnOp::BitNeg => false,
-            UnOp::Addressof => true,
+            UnOp::Addressof | UnOp::Sqrt => true,
         }
     }
 
@@ -74,7 +74,8 @@ impl PrettyPrintUnOp<Type> for Expr {
             UnOp::Sub => "-",
             UnOp::Not => "!",
             UnOp::BitNeg => "~",
-            UnOp::Addressof => "addressof"
+            UnOp::Addressof => "addressof",
+            UnOp::Sqrt => "sqrt",
         };
         Some(s.to_string())
     }

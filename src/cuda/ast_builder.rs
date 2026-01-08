@@ -1,6 +1,6 @@
 use super::ast::*;
+use crate::test::*;
 use crate::utils::ast::ExprType;
-use crate::utils::info::*;
 use crate::utils::name::Name;
 
 pub fn scalar(sz: ElemSize) -> Type {
@@ -16,15 +16,23 @@ pub fn id(x: &str) -> Name {
 }
 
 pub fn var(v: &str, ty: Type) -> Expr {
-    Expr::Var {id: id(v), ty, i: Info::default()}
+    Expr::Var {id: id(v), ty, i: i()}
 }
 
 pub fn int(v: i64, sz: ElemSize) -> Expr {
-    Expr::Int {v: v as i128, ty: scalar(sz), i: Info::default()}
+    Expr::Int {v: v as i128, ty: scalar(sz), i: i()}
+}
+
+pub fn float(v: f64, sz: ElemSize) -> Expr {
+    Expr::Float {v: v, ty: scalar(sz), i: i()}
+}
+
+pub fn unop(op: UnOp, arg: Expr, ty: Type) -> Expr {
+    Expr::UnOp {op, arg: Box::new(arg), ty, i: i()}
 }
 
 pub fn binop(lhs: Expr, op: BinOp, rhs: Expr, ty: Type) -> Expr {
-    Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i: Info::default()}
+    Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i: i()}
 }
 
 pub fn add(lhs: Expr, rhs: Expr, ty: Type) -> Expr {
@@ -54,7 +62,7 @@ pub fn assign(dst: Expr, expr: Expr) -> Stmt {
             lhs: Box::new(dst),
             rhs: Box::new(expr),
             ty,
-            i: Info::default()
+            i: i()
         }
     }
 }
