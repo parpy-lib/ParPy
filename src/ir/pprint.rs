@@ -84,6 +84,11 @@ impl PrettyPrint for SyncPointKind {
     }
 }
 
+fn print_par_one_line(env: PrettyPrintEnv, par: &LoopPar) -> (PrettyPrintEnv, String) {
+    let (env, s) = par.pprint(env);
+    (env, s.split_whitespace().join(" "))
+}
+
 impl PrettyPrint for Stmt {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let indent = env.print_indent();
@@ -110,9 +115,9 @@ impl PrettyPrint for Stmt {
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                let (env, par) = par.pprint(env);
+                let (env, par) = print_par_one_line(env, par);
                 let s = format!(
-                    "{0}for (int64_t {1} = {2}..{3}..{4}) {{ // {5}\n{6}\n{0}}}",
+                    "{0}// {5}\n{0}for (int64_t {1} = {2}..{3}..{4}) {{\n{6}\n{0}}}",
                     indent, var, lo, hi, step, par, body
                 );
                 (env, s)
