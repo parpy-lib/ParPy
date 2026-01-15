@@ -4,6 +4,7 @@ use super::target_constraints::TargetConstraint;
 use crate::option;
 use crate::par;
 use crate::parpy_compile_error;
+use crate::parpy_internal_error;
 use crate::option::CompileOptions;
 use crate::utils::ast::ScalarSizes;
 use crate::utils::err::*;
@@ -496,9 +497,7 @@ fn contains_inter_block_sync_point(acc: bool, s: &Stmt) -> bool {
     s.sfold(acc || is_inter_block_sync_point(s), contains_inter_block_sync_point)
 }
 
-// Determines if the statement is a sequential for-loop containing an inter-block synchronization
-// point.
-fn is_seq_loop_with_inter_block_sync_point(s: &Stmt) -> bool {
+fn is_seq_loop_containing_inter_block_sync_point(s: &Stmt) -> bool {
     match s {
         Stmt::For {body, par, ..} if !par.is_parallel() => {
             body.sfold(false, contains_inter_block_sync_point)
@@ -516,75 +515,53 @@ fn hoist_chunk(
     i: Info,
     chunk: &[Stmt]
 ) -> CompileResult<Vec<Stmt>> {
-    // As we perform an inclusive split, each part of the split will always contain at
-    // least one element, so it is safe to unwrap this.
+    // The input chunk is a result of the 'split_inclusive' function, which never produces empty
+    // chunks. Therefore, accessing the last element is safe.
     let last_stmt = chunk.last().unwrap();
 
-    if is_seq_loop_with_inter_block_sync_point(last_stmt) {
-        // If the last statement of the chunk is a sequential loop with an inter-block
-        // synchronization point, we extract the pre-statements and then process the
-        // sequential loop afterward.
-        let pre_stmts = hoist_inner_seq_loops_par_stmts(chunk[..chunk.len()-1].to_vec())?;
-        let pre_stmt = Stmt::For {
-            var: var.clone(),
-            lo: lo.clone(),
-            hi: hi.clone(),
-            step,
-            body: pre_stmts,
-            par: par.clone(),
-            i: i.clone()
-        };
-        let seq_loop_stmt = match last_stmt.clone() {
+    // If the last statement satisfies the predicate, we want to perform hoisting on it. Otherwise,
+    // we simply return the parallel for-loop as is.
+    if is_seq_loop_containing_inter_block_sync_point(last_stmt) {
+        let mut stmts = vec![];
+
+        // We insert all statements of the chunk preceding the final statement, the sequential
+        // for-loop, into a separate parallel for-loop nest.
+        if chunk.len() > 1 {
+            let pre_stmts = chunk[..chunk.len()-1].to_vec();
+            stmts.push(Stmt::For {
+                var: var.clone(),
+                lo: lo.clone(),
+                hi: hi.clone(),
+                step,
+                body: pre_stmts,
+                par: par.clone(),
+                i: i.clone()
+            });
+        }
+        // The last statement of a chunk must always be a sequential for-loop, or we would not have
+        // taken this branch.
+        match last_stmt.clone() {
             Stmt::For {var: seq_var, lo: seq_lo, hi: seq_hi, step: seq_step,
                        body: seq_body, par: seq_par, i: seq_i} => {
-                // Split up the body of the sequential for-loop such that each inter-block
-                // synchronization point is at the end of a chunk. We place each chunk inside the
-                // outer parallel for-loop.
-                let inner_stmts = seq_body.split_inclusive(is_inter_block_sync_point)
-                    .map(|chunk| {
-                        let s = Stmt::For {
-                            var: var.clone(),
-                            lo: lo.clone(),
-                            hi: hi.clone(),
-                            step,
-                            body: chunk.to_vec(),
-                            par: par.clone(),
-                            i: i.clone()
-                        };
-                        // If a parallel for-loop ends with a synchronization point, we include
-                        // this after it as well so that it is properly split up.
-                        match chunk.last() {
-                            Some(sync_point @ Stmt::SyncPoint {..}) => {
-                                vec![s, sync_point.clone()]
-                            },
-                            _ => vec![s]
-                        }
-                    })
-                    .map(hoist_inner_seq_loops_par_stmts)
-                    .collect::<CompileResult<Vec<Vec<Stmt>>>>()?
-                    .concat();
-                // Reconstruct the sequential for-loop outside of the parallel for-loops.
-                Ok(Stmt::For {
-                    var: seq_var, lo: seq_lo, hi: seq_hi, step: seq_step,
-                    body: inner_stmts, par: seq_par, i: seq_i
-                })
+                // We put the sequential loop body in the parallel loop, and recursively apply
+                // hoisting on it. The result is the new body of the sequential for-loop, which now
+                // ends up outside the parallel for-loop (after hoisting).
+                let inner_body = hoist_seq_loops(
+                    var.clone(), lo.clone(), hi.clone(), step, seq_body,
+                    par.clone(), i.clone()
+                )?;
+                if !inner_body.is_empty() {
+                    stmts.push(Stmt::For {
+                        var: seq_var, lo: seq_lo, hi: seq_hi, step: seq_step,
+                        body: inner_body, par: seq_par, i: seq_i
+                    });
+                }
+                Ok(stmts)
             },
-            _ => parpy_compile_error!(&i, "Internal error when hoisting \
-                                           sequential loop")
-        }?;
-        Ok(vec![pre_stmt, seq_loop_stmt])
-    } else {
-        // Otherwise, if the chunk does not contain any applicable sequential loops, we recurse
-        // into the body to produce the resulting body of the parallel for-loop.
-        let body = hoist_inner_seq_loops_par_stmts(chunk.to_vec())?;
-
-        // If the body contains an applicable loop after recursing down, we run the outer
-        // transformation again to hoist it outside of this loop as well.
-        if body.iter().any(is_seq_loop_with_inter_block_sync_point) {
-            hoist_seq_loops(var, lo, hi, step, body, par, i)
-        } else {
-            Ok(vec![Stmt::For { var, lo, hi, step, body, par, i }])
+            _ => parpy_internal_error!(&i, "Failed to hoist sequential loop")
         }
+    } else {
+        Ok(vec![Stmt::For { var, lo, hi, step, body: chunk.to_vec(), par, i }])
     }
 }
 
@@ -597,7 +574,10 @@ fn hoist_seq_loops(
     par: LoopPar,
     i: Info
 ) -> CompileResult<Vec<Stmt>> {
-    Ok(body.split_inclusive(is_seq_loop_with_inter_block_sync_point)
+    // We start by recursively invoking the hoisting function on the for-loop body. This may expose
+    // sequential loops that were not accessible immediately.
+    let body = hoist_inner_seq_loops_par_stmts(body)?;
+    Ok(body.split_inclusive(is_seq_loop_containing_inter_block_sync_point)
         .map(|chunk| {
             hoist_chunk(var.clone(), lo.clone(), hi.clone(), step, par.clone(),
                         i.clone(), chunk)
@@ -1463,56 +1443,6 @@ mod test {
     }
 
     #[test]
-    fn par_seq_par_loops_local_sync_hoisting() {
-        let body = vec![
-            for_("x", 10, vec![
-                for_("y", 0, vec![
-                    for_("z", 15, vec![assign(uvar("q"), int(3, None))]),
-                    sync_point(SyncPointKind::BlockLocal),
-                ])
-            ])
-        ];
-        let expected = vec![
-            for_("x", 10, vec![
-                for_("y", 0, vec![
-                    for_("z", 15, vec![assign(uvar("q"), int(3, None))]),
-                    sync_point(SyncPointKind::BlockLocal)
-                ])
-            ])
-        ];
-        assert_hoist(body, expected)
-    }
-
-    #[test]
-    fn par_seq_par_loops_inter_block_sync_hoisting() {
-        let body = vec![
-            for_("x", 10, vec![
-                assign(uvar("a"), int(4, None)),
-                for_("y", 0, vec![
-                    assign(uvar("b"), int(0, None)),
-                    for_("z", 2048, vec![assign(uvar("c"), int(3, None))]),
-                    sync_point(SyncPointKind::InterBlock),
-                    assign(uvar("d"), int(1, None))
-                ]),
-                assign(uvar("e"), int(2, None))
-            ])
-        ];
-        let expected = vec![
-            for_("x", 10, vec![assign(uvar("a"), int(4, None))]),
-            for_("y", 0, vec![
-                for_("x", 10, vec![
-                    assign(uvar("b"), int(0, None)),
-                    for_("z", 2048, vec![assign(uvar("c"), int(3, None))]),
-                    sync_point(SyncPointKind::InterBlock),
-                ]),
-                for_("x", 10, vec![assign(uvar("d"), int(1, None))])
-            ]),
-            for_("x", 10, vec![assign(uvar("e"), int(2, None))])
-        ];
-        assert_hoist(body, expected)
-    }
-
-    #[test]
     fn par_in_cond_sync_point() {
         let body = vec![
             for_("x", 10, vec![
@@ -1704,6 +1634,56 @@ mod test {
     }
 
     #[test]
+    fn par_seq_par_loops_local_sync_hoisting() {
+        let body = vec![
+            for_("x", 10, vec![
+                for_("y", 0, vec![
+                    for_("z", 15, vec![assign(uvar("q"), int(3, None))]),
+                    sync_point(SyncPointKind::BlockLocal),
+                ])
+            ])
+        ];
+        let expected = vec![
+            for_("x", 10, vec![
+                for_("y", 0, vec![
+                    for_("z", 15, vec![assign(uvar("q"), int(3, None))]),
+                    sync_point(SyncPointKind::BlockLocal)
+                ])
+            ])
+        ];
+        assert_hoist(body, expected)
+    }
+
+    #[test]
+    fn par_seq_par_loops_inter_block_sync_hoisting() {
+        let body = vec![
+            for_("x", 10, vec![
+                assign(uvar("a"), int(4, None)),
+                for_("y", 0, vec![
+                    assign(uvar("b"), int(0, None)),
+                    for_("z", 2048, vec![assign(uvar("c"), int(3, None))]),
+                    sync_point(SyncPointKind::InterBlock),
+                    assign(uvar("d"), int(1, None))
+                ]),
+                assign(uvar("e"), int(2, None))
+            ])
+        ];
+        let expected = vec![
+            for_("x", 10, vec![assign(uvar("a"), int(4, None))]),
+            for_("y", 0, vec![
+                for_("x", 10, vec![
+                    assign(uvar("b"), int(0, None)),
+                    for_("z", 2048, vec![assign(uvar("c"), int(3, None))]),
+                    sync_point(SyncPointKind::InterBlock),
+                    assign(uvar("d"), int(1, None))
+                ]),
+            ]),
+            for_("x", 10, vec![assign(uvar("e"), int(2, None))])
+        ];
+        assert_hoist(body, expected)
+    }
+
+    #[test]
     fn par_seq_par_seq_par_hoisting() {
         let body = vec![
             for_("x", 10, vec![
@@ -1771,21 +1751,16 @@ mod test {
                         for_("z", 10, vec![
                             assign(uvar("d"), int(4, None)),
                             for_("v", 2048, vec![assign(uvar("e"), int(5, None))]),
-                            sync_point(SyncPointKind::InterBlock)
+                            sync_point(SyncPointKind::InterBlock),
+                            assign(uvar("f"), int(6, None))
                         ]),
-                        sync_point(SyncPointKind::InterBlock)
-                    ]),
-                    for_("x", 10, vec![
-                        for_("z", 10, vec![assign(uvar("f"), int(6, None))]),
                     ]),
                 ]),
                 for_("x", 10, vec![
                     for_("z", 10, vec![assign(uvar("g"), int(7, None))]),
-                    sync_point(SyncPointKind::InterBlock)
-                ]),
-                for_("x", 10, vec![
+                    sync_point(SyncPointKind::InterBlock),
                     assign(uvar("h"), int(8, None))
-                ]),
+                ])
             ]),
             for_("x", 10, vec![assign(uvar("i"), int(9, None))])
         ];
