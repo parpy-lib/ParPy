@@ -673,20 +673,17 @@ fn split_inter_block_synchronization_kernel(
             // require a significantly more complicated approach to make it correct and efficient.
             if par.is_parallel() && body.iter().any(is_inter_block_sync_point) {
                 let mut bodies = body.split(is_inter_block_sync_point)
+                    .filter(|chunk| !chunk.is_empty())
                     .map(|chunk| {
-                        if chunk.is_empty() {
-                            vec![]
-                        } else {
-                            vec![
-                                Stmt::For {
-                                    var: var.clone(), lo: lo.clone(), hi: hi.clone(), step,
-                                    body: chunk.to_vec(), par: par.clone(), i: i.clone()
-                                },
-                                Stmt::SyncPoint {
-                                    kind: SyncPointKind::InterBlock, i: i.clone()
-                                }
-                            ]
-                        }
+                        vec![
+                            Stmt::For {
+                                var: var.clone(), lo: lo.clone(), hi: hi.clone(), step,
+                                body: chunk.to_vec(), par: par.clone(), i: i.clone()
+                            },
+                            Stmt::SyncPoint {
+                                kind: SyncPointKind::InterBlock, i: i.clone()
+                            }
+                        ]
                     })
                     .flatten()
                     .collect::<Vec<Stmt>>();
