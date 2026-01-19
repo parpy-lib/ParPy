@@ -196,9 +196,7 @@ def forward_parpy(hmm, seqs, nthreads):
         'inst': parpy.threads(seqs["num_instances"]),
         'state': parpy.threads(nthreads),
     }
-    opts = parpy.par(p)
-    opts.force_int_size = pt.I64
-    forward_kernel(hmm, seqs, result, alpha1, alpha2, opts=opts)
+    forward_kernel(hmm, seqs, result, alpha1, alpha2, opts=parpy.par(p))
     return result
 
 class ParPyTuned:

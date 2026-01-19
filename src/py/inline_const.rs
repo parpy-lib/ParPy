@@ -113,7 +113,20 @@ fn add_scalar_constant_py<'py>(
                 add_scalar_constant_py(acc?, target, &v)
             })
     } else {
-        Ok(acc)
+        let parpy = py.import("parpy")?;
+        let parpy_buffer = parpy.getattr("buffer")?;
+        if arg.is_instance(&parpy_buffer.getattr("Buffer")?)? {
+            let sh = arg.getattr("shape")?.extract::<Vec<i64>>()?;
+            if sh.len() == 0 {
+                let v = arg.getattr("numpy")?.call0()?
+                    .getattr("item")?.call0()?;
+                add_scalar_constant_py(acc, target, &v)
+            } else {
+                Ok(acc)
+            }
+        } else {
+            Ok(acc)
+        }
     }
 }
 
