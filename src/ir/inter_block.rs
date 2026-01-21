@@ -2,7 +2,6 @@ use super::ast::*;
 use super::par_tree;
 use super::target_constraints::TargetConstraint;
 use crate::option;
-use crate::par;
 use crate::parpy_compile_error;
 use crate::parpy_internal_error;
 use crate::option::CompileOptions;
@@ -320,11 +319,10 @@ fn single_block_reduce_loop(
         },
         i: i.clone()
     };
-    // For this reduction, we use one block with at most as many threads as in the default number
-    // of threads per block. Note that we ignore the user-configured threads per block in this part
-    // because more threads should be beneficial performance-wise.
+    // For this reduction, we launch one block using up to the maximum number of threads that we
+    // may use in one block.
     let par = LoopPar {
-        nthreads: i64::min(nblocks as i64, par::DEFAULT_TPB),
+        nthreads: i64::min(nblocks as i64, tpb),
         reduction: true,
         tpb,
         unroll: false
