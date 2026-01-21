@@ -504,7 +504,7 @@ fn is_seq_loop_containing_inter_block_sync_point(s: &Stmt) -> bool {
     }
 }
 
-fn hoist_chunk(
+fn lift_chunk(
     var: Name,
     lo: Expr,
     hi: Expr,
@@ -517,7 +517,7 @@ fn hoist_chunk(
     // chunks. Therefore, accessing the last element is safe.
     let last_stmt = chunk.last().unwrap();
 
-    // If the last statement satisfies the predicate, we want to perform hoisting on it. Otherwise,
+    // If the last statement satisfies the predicate, we want to perform lifting on it. Otherwise,
     // we simply return the parallel for-loop as is.
     if is_seq_loop_containing_inter_block_sync_point(last_stmt) {
         let mut stmts = vec![];
@@ -542,9 +542,9 @@ fn hoist_chunk(
             Stmt::For {var: seq_var, lo: seq_lo, hi: seq_hi, step: seq_step,
                        body: seq_body, par: seq_par, i: seq_i} => {
                 // We put the sequential loop body in the parallel loop, and recursively apply
-                // hoisting on it. The result is the new body of the sequential for-loop, which now
-                // ends up outside the parallel for-loop (after hoisting).
-                let inner_body = hoist_seq_loops(
+                // lifting on it. The result is the new body of the sequential for-loop, which now
+                // ends up outside the parallel for-loop (after lifting).
+                let inner_body = lift_seq_loops(
                     var.clone(), lo.clone(), hi.clone(), step, seq_body,
                     par.clone(), i.clone()
                 )?;
@@ -556,14 +556,14 @@ fn hoist_chunk(
                 }
                 Ok(stmts)
             },
-            _ => parpy_internal_error!(&i, "Failed to hoist sequential loop")
+            _ => parpy_internal_error!(&i, "Failed to lift sequential loop")
         }
     } else {
         Ok(vec![Stmt::For { var, lo, hi, step, body: chunk.to_vec(), par, i }])
     }
 }
 
-fn hoist_seq_loops(
+fn lift_seq_loops(
     var: Name,
     lo: Expr,
     hi: Expr,
@@ -572,19 +572,19 @@ fn hoist_seq_loops(
     par: LoopPar,
     i: Info
 ) -> CompileResult<Vec<Stmt>> {
-    // We start by recursively invoking the hoisting function on the for-loop body. This may expose
+    // We start by recursively invoking the lifting function on the for-loop body. This may expose
     // sequential loops that were not accessible immediately.
-    let body = hoist_inner_seq_loops_par_stmts(body)?;
+    let body = lift_inner_seq_loops_par_stmts(body)?;
     Ok(body.split_inclusive(is_seq_loop_containing_inter_block_sync_point)
         .map(|chunk| {
-            hoist_chunk(var.clone(), lo.clone(), hi.clone(), step, par.clone(),
+            lift_chunk(var.clone(), lo.clone(), hi.clone(), step, par.clone(),
                         i.clone(), chunk)
         })
         .collect::<CompileResult<Vec<Vec<Stmt>>>>()?
         .concat())
 }
 
-fn hoist_inner_seq_loops_par_stmt(
+fn lift_inner_seq_loops_par_stmt(
     acc: CompileResult<Vec<Stmt>>,
     s: Stmt
 ) -> CompileResult<Vec<Stmt>> {
@@ -596,31 +596,31 @@ fn hoist_inner_seq_loops_par_stmt(
             acc.push(s);
         },
         Stmt::For {var, lo, hi, step, body, par, i} if par.is_parallel() => {
-            acc.append(&mut hoist_seq_loops(var, lo, hi, step, body, par, i)?);
+            acc.append(&mut lift_seq_loops(var, lo, hi, step, body, par, i)?);
         },
         Stmt::For {var, lo, hi, step, body, par, i} => {
-            let body = hoist_inner_seq_loops_par_stmts(body)?;
+            let body = lift_inner_seq_loops_par_stmts(body)?;
             acc.push(Stmt::For {var, lo, hi, step, body, par, i});
         },
         Stmt::While {cond, body, i} => {
-            let body = hoist_inner_seq_loops_par_stmts(body)?;
+            let body = lift_inner_seq_loops_par_stmts(body)?;
             acc.push(Stmt::While {cond, body, i});
         },
         Stmt::If {cond, thn, els, i} => {
-            let thn = hoist_inner_seq_loops_par_stmts(thn)?;
-            let els = hoist_inner_seq_loops_par_stmts(els)?;
+            let thn = lift_inner_seq_loops_par_stmts(thn)?;
+            let els = lift_inner_seq_loops_par_stmts(els)?;
             acc.push(Stmt::If {cond, thn, els, i});
         }
     };
     Ok(acc)
 }
 
-fn hoist_inner_seq_loops_par_stmts(stmts: Vec<Stmt>) -> CompileResult<Vec<Stmt>> {
+fn lift_inner_seq_loops_par_stmts(stmts: Vec<Stmt>) -> CompileResult<Vec<Stmt>> {
     stmts.into_iter()
-        .fold(Ok(vec![]), hoist_inner_seq_loops_par_stmt)
+        .fold(Ok(vec![]), lift_inner_seq_loops_par_stmt)
 }
 
-fn hoist_inner_sequential_loops_stmt(
+fn lift_inner_sequential_loops_stmt(
     t: &par_tree::ParTree,
     mut acc: Vec<Stmt>,
     s: Stmt
@@ -632,32 +632,32 @@ fn hoist_inner_sequential_loops_stmt(
             acc.push(s);
         },
         Stmt::For {ref var, ..} if t.roots.contains_key(&var) => {
-            let mut stmts = hoist_inner_seq_loops_par_stmt(Ok(vec![]), s)?;
+            let mut stmts = lift_inner_seq_loops_par_stmt(Ok(vec![]), s)?;
             acc.append(&mut stmts);
         },
         Stmt::For {var, lo, hi, step, body, par, i} => {
-            let body = hoist_inner_sequential_loops(t, body)?;
+            let body = lift_inner_sequential_loops(t, body)?;
             acc.push(Stmt::For {var, lo, hi, step, body, par, i});
         },
         Stmt::While {cond, body, i} => {
-            let body = hoist_inner_sequential_loops(t, body)?;
+            let body = lift_inner_sequential_loops(t, body)?;
             acc.push(Stmt::While {cond, body, i});
         },
         Stmt::If {cond, thn, els, i} => {
-            let thn = hoist_inner_sequential_loops(t, thn)?;
-            let els = hoist_inner_sequential_loops(t, els)?;
+            let thn = lift_inner_sequential_loops(t, thn)?;
+            let els = lift_inner_sequential_loops(t, els)?;
             acc.push(Stmt::If {cond, thn, els, i});
         },
     }
     Ok(acc)
 }
 
-fn hoist_inner_sequential_loops(
+fn lift_inner_sequential_loops(
     t: &par_tree::ParTree,
     body: Vec<Stmt>
 ) -> CompileResult<Vec<Stmt>> {
     body.into_iter()
-        .fold(Ok(vec![]), |acc, s| hoist_inner_sequential_loops_stmt(t, acc?, s))
+        .fold(Ok(vec![]), |acc, s| lift_inner_sequential_loops_stmt(t, acc?, s))
 }
 
 fn split_inter_block_synchronization_kernel(
@@ -998,7 +998,7 @@ fn generate_dealloc_stmt(id: &Name) -> Stmt {
 }
 
 /// Allocate temporary data for local variables that end up being defined and used in separate
-/// kernels after hoisting sequential loops.
+/// kernels after lifting sequential loops.
 fn allocate_temporary_data(
     opts: &CompileOptions,
     params: &Vec<Param>,
@@ -1104,7 +1104,7 @@ fn remove_parallelism_of_host_loop_nests(
 /// blocks, and a second part that runs within a block.
 ///
 /// When we have inter-block synchronization points inside a sequential loop, where the iteration
-/// order matters, the code is transformed by hoisting the sequential loop outside of the parallel
+/// order matters, the code is transformed by lifting the sequential loop outside of the parallel
 /// code. The code is updated such that statements execute in a correct order with respect to the
 /// original program.
 ///
@@ -1140,7 +1140,7 @@ pub fn restructure_inter_block_synchronization(
     // Hoist sequential loops inside parallel code containing inter-block synchronization points
     // such that they occur outside of the parallel code, and restructure the code to ensure the
     // execution order remains valid.
-    let body = hoist_inner_sequential_loops(&par, body)?;
+    let body = lift_inner_sequential_loops(&par, body)?;
 
     // Split parallel code on any remaining inter-block synchronization points, to ensure these are
     // only found at the end of a parallel for-loop.
@@ -1150,7 +1150,7 @@ pub fn restructure_inter_block_synchronization(
     // synchronization is not required as such code runs sequentially on the host (CPU).
     let body = remove_unused_synchronization_points(body);
 
-    // After hoisting, the code may be restructured such that the definition and the use(s) of a
+    // After lifting, the code may be restructured such that the definition and the use(s) of a
     // local variable end up in separate parallel kernels. First, we promote assignments to
     // definitions, to properly handle repeated assignments to a local variable ending up in
     // separate kernels. Second, we allocate temporary data for storing local variables, when
@@ -1352,9 +1352,9 @@ mod test {
         assert_eq!(body, expected);
     }
 
-    fn assert_hoist(body: Vec<Stmt>, expected: Vec<Stmt>) {
+    fn assert_lift(body: Vec<Stmt>, expected: Vec<Stmt>) {
         let par = par_tree::build_tree(&body);
-        let body = hoist_inner_sequential_loops(&par, body).unwrap();
+        let body = lift_inner_sequential_loops(&par, body).unwrap();
         let body = remove_unused_synchronization_points(body);
         print_stmts(&body, &expected);
         assert_eq!(body, expected);
@@ -1629,7 +1629,7 @@ mod test {
     }
 
     #[test]
-    fn par_seq_par_loops_local_sync_hoisting() {
+    fn par_seq_par_loops_local_sync_lifting() {
         let body = vec![
             for_("x", 10, vec![
                 for_("y", 0, vec![
@@ -1646,11 +1646,11 @@ mod test {
                 ])
             ])
         ];
-        assert_hoist(body, expected)
+        assert_lift(body, expected)
     }
 
     #[test]
-    fn par_seq_par_loops_inter_block_sync_hoisting() {
+    fn par_seq_par_loops_inter_block_sync_lifting() {
         let body = vec![
             for_("x", 10, vec![
                 assign(uvar("a"), int(4, None)),
@@ -1675,11 +1675,11 @@ mod test {
             ]),
             for_("x", 10, vec![assign(uvar("e"), int(2, None))])
         ];
-        assert_hoist(body, expected)
+        assert_lift(body, expected)
     }
 
     #[test]
-    fn par_seq_par_seq_par_hoisting() {
+    fn par_seq_par_seq_par_lifting() {
         let body = vec![
             for_("x", 10, vec![
                 assign(uvar("a"), int(1, None)),
@@ -1708,11 +1708,11 @@ mod test {
                 ])
             ])
         ];
-        assert_hoist(body, expected)
+        assert_lift(body, expected)
     }
 
     #[test]
-    fn par_seq_par_seq_par_double_inter_block_hoisting() {
+    fn par_seq_par_seq_par_double_inter_block_lifting() {
         let body = vec![
             for_("x", 10, vec![
                 assign(uvar("a"), int(1, None)),
@@ -1759,6 +1759,6 @@ mod test {
             ]),
             for_("x", 10, vec![assign(uvar("i"), int(9, None))])
         ];
-        assert_hoist(body, expected)
+        assert_lift(body, expected)
     }
 }
