@@ -15,6 +15,7 @@ use crate::utils::smap::{SFlatten, SFold, SMapAccum};
 use crate::utils::substitute::SubVars;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 
 fn collect_host_functions(
     mapping: &BTreeMap<Name, TargetConstraint>
@@ -495,10 +496,26 @@ fn contains_inter_block_sync_point(acc: bool, s: &Stmt) -> bool {
     s.sfold(acc || is_inter_block_sync_point(s), contains_inter_block_sync_point)
 }
 
-fn is_seq_loop_containing_inter_block_sync_point(s: &Stmt) -> bool {
+fn contains_id(acc: bool, e: &Expr, id: &Name) -> bool {
+    match e {
+        Expr::Var {id: x, ..} => acc || x == id,
+        _ => e.sfold(acc, |acc, e| contains_id(acc, e, &id))
+    }
+}
+
+// A sequential for-loop is considered liftable if it is independent of the variable of the outer
+// for-loop, and if it contains an inter-block synchronization point. The latter requirement is
+// added to avoid lifting sequential for-loops where it is not required, as it may degrade
+// performance in such cases.
+fn is_liftable_seq_loop(s: &Stmt, var: &Name) -> bool {
     match s {
-        Stmt::For {body, par, ..} if !par.is_parallel() => {
-            body.sfold(false, contains_inter_block_sync_point)
+        Stmt::For {lo, hi, body, par, ..} if !par.is_parallel() => {
+            let is_dependent = {
+                let acc = lo.sfold(false, |acc, e| contains_id(acc, e, &var));
+                hi.sfold(acc, |acc, e| contains_id(acc, e, &var))
+            };
+            let contains_sync = body.sfold(false, contains_inter_block_sync_point);
+            !is_dependent && contains_sync
         },
         _ => false
     }
@@ -519,7 +536,7 @@ fn lift_chunk(
 
     // If the last statement satisfies the predicate, we want to perform lifting on it. Otherwise,
     // we simply return the parallel for-loop as is.
-    if is_seq_loop_containing_inter_block_sync_point(last_stmt) {
+    if is_liftable_seq_loop(last_stmt, &var) {
         let mut stmts = vec![];
 
         // We insert all statements of the chunk preceding the final statement, the sequential
@@ -575,7 +592,7 @@ fn lift_seq_loops(
     // We start by recursively invoking the lifting function on the for-loop body. This may expose
     // sequential loops that were not accessible immediately.
     let body = lift_inner_seq_loops_par_stmts(body)?;
-    Ok(body.split_inclusive(is_seq_loop_containing_inter_block_sync_point)
+    Ok(body.split_inclusive(|s| is_liftable_seq_loop(&s, &var))
         .map(|chunk| {
             lift_chunk(var.clone(), lo.clone(), hi.clone(), step, par.clone(),
                         i.clone(), chunk)
@@ -1097,6 +1114,55 @@ fn remove_parallelism_of_host_loop_nests(
     body.smap(|s| remove_parallelism_of_host_loop_nests_stmt(s, &host_functions))
 }
 
+fn assert_contains_no_inter_block_sync_points_stmt(s: Stmt, i: &Info) -> CompileResult<Stmt> {
+    match s {
+        Stmt::For {var, lo, hi, step, body, par, i} => {
+            let body = assert_contains_no_inter_block_sync_points(body, &i)?;
+            Ok(Stmt::For {var, lo, hi, step, body, par, i})
+        },
+        Stmt::While {cond, body, i} => {
+            let body = assert_contains_no_inter_block_sync_points(body, &i)?;
+            Ok(Stmt::While {cond, body, i})
+        },
+        Stmt::If {cond, thn, els, i} => {
+            let thn = assert_contains_no_inter_block_sync_points(thn, &i)?;
+            let els = assert_contains_no_inter_block_sync_points(els, &i)?;
+            Ok(Stmt::If {cond, thn, els, i})
+        },
+        Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i: ib_info} => {
+            let msg = {
+                let base_msg = "The inter-block synchronization failed to split at a synchronization point.";
+                if let Ok(code) = fs::read_to_string(&ib_info.filename) {
+                    let (sel1, err1) = ib_info.extract_lines(code.clone());
+                    let (sel2, err2) = i.extract_lines(code);
+                    format!(
+                        "{base_msg}\n\
+                         An inter-block synchronization point is required due to the following \
+                         parallel statement on {0} (in {2}):\n{sel1}\n{err1}\n\
+                         However, the splitting fails to propagate past the following \
+                         container on {1}:\n{sel2}\n{err2}\n\
+                         To resolve this, you have to move the container statement outside the \
+                         parallel for-loop nest. Alternatively, you can reduce the amount of \
+                         parallelism to eliminate the need to synchronize across several blocks.",
+                         ib_info.line_str(), i.line_str(), ib_info.filename
+                    )
+                } else {
+                    base_msg.to_string()
+                }
+            };
+            Err(CompileError::compile_err(msg))
+        },
+        _ => s.smap_result(|s| assert_contains_no_inter_block_sync_points_stmt(s, &i))
+    }
+}
+
+fn assert_contains_no_inter_block_sync_points(
+    body: Vec<Stmt>,
+    i: &Info
+) -> CompileResult<Vec<Stmt>> {
+    body.smap_result(|s| assert_contains_no_inter_block_sync_points_stmt(s, &i))
+}
+
 /// Restructure the code such that inter-block synchronizations are eliminated from the code. In
 /// particular, we identify the synchronization points within parallel code and classify them based
 /// on whether they require inter-block synchronization. Parallel reductions requiring inter-block
@@ -1137,7 +1203,7 @@ pub fn restructure_inter_block_synchronization(
     // original location.
     let body = split_inter_block_parallel_reductions(opts, body)?;
 
-    // Hoist sequential loops inside parallel code containing inter-block synchronization points
+    // Lift sequential loops inside parallel code containing inter-block synchronization points
     // such that they occur outside of the parallel code, and restructure the code to ensure the
     // execution order remains valid.
     let body = lift_inner_sequential_loops(&par, body)?;
@@ -1164,6 +1230,12 @@ pub fn restructure_inter_block_synchronization(
     // Removes the parallelism of loop nests that contain calls to host code. This includes a call
     // to a host external or a callback function.
     let body = remove_parallelism_of_host_loop_nests(body, &host_functions);
+
+    // Ensures that the resulting body contains no inter-block synchronization points. If it does,
+    // it means the splitting failed due to a construct we could not lift past (such as a
+    // while-loop or a dependent sequential for-loop). In this case, we report a compiler error
+    // referring to the point where the compiler failed.
+    let body = assert_contains_no_inter_block_sync_points(body, &Info::default())?;
 
     Ok(Ast {main: FunDef {id, params, body, res_ty, i}, ..ast})
 }
