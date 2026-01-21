@@ -47,9 +47,9 @@ impl Default for FilePos {
 // from.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Info {
-    filename: String,
-    start: FilePos,
-    end: FilePos
+    pub filename: String,
+    pub start: FilePos,
+    pub end: FilePos
 }
 
 impl Info {
@@ -87,37 +87,42 @@ impl Info {
         }
     }
 
+    pub fn line_str(&self) -> String {
+        if self.start.line == self.end.line {
+            format!("line {0}", self.start.line)
+        } else {
+            format!("lines {0}-{1}", self.start.line, self.end.line)
+        }
+    }
+
     pub fn error_msg(&self, msg: String) -> String {
         if let Ok(code) = fs::read_to_string(&self.filename) {
-            self.extract_lines(code, msg)
+            let (selected_lines, err_markers) = self.extract_lines(code);
+            let lines = self.line_str();
+            format!(
+                "{0}\n\nOn {1} of file {2}:\n{3}\n{4}\n",
+                msg, lines, self.filename, selected_lines, err_markers
+            )
         } else {
             msg
         }
     }
 
-    fn extract_lines(&self, code: String, msg: String) -> String {
+    pub fn extract_lines(&self, code: String) -> (String, String) {
         let start = &self.start;
         let end = &self.end;
-        let select_lines = code.lines()
+        let selected_lines = code.lines()
             .skip(start.line - 1)
             .take(end.line - start.line + 1)
             .join("\n");
         let max_col = start.col.max(end.col);
         let min_col = start.col.min(end.col);
         let err_markers = format!(
-            "{0}{1}\n",
+            "{0}{1}",
             " ".repeat(start.col),
             "^".repeat(max_col - min_col)
         );
-        let lines_msg = if start.line == end.line {
-            format!("line {0}", start.line)
-        } else {
-            format!("lines {0}-{1}", start.line, end.line)
-        };
-        format!(
-            "{msg}\n\nOn {lines_msg} of file {0}:\n{select_lines}\n{err_markers}",
-            self.filename
-        )
+        (selected_lines, err_markers)
     }
 }
 
