@@ -1131,7 +1131,7 @@ fn assert_contains_no_inter_block_sync_points_stmt(s: Stmt, i: &Info) -> Compile
         },
         Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i: ib_info} => {
             let msg = {
-                let base_msg = "The inter-block synchronization failed to split at a synchronization point.";
+                let base_msg = "The inter-block transformation failed to split at a synchronization point.";
                 if let Ok(code) = fs::read_to_string(&ib_info.filename) {
                     let (sel1, err1) = ib_info.extract_lines(code.clone());
                     let (sel2, err2) = i.extract_lines(code);
