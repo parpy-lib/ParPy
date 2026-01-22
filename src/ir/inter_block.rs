@@ -2,7 +2,6 @@ use super::ast::*;
 use super::par_tree;
 use super::target_constraints::TargetConstraint;
 use crate::option;
-use crate::par;
 use crate::parpy_compile_error;
 use crate::parpy_internal_error;
 use crate::option::CompileOptions;
@@ -16,6 +15,7 @@ use crate::utils::smap::{SFlatten, SFold, SMapAccum};
 use crate::utils::substitute::SubVars;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 
 fn collect_host_functions(
     mapping: &BTreeMap<Name, TargetConstraint>
@@ -320,11 +320,10 @@ fn single_block_reduce_loop(
         },
         i: i.clone()
     };
-    // For this reduction, we use one block with at most as many threads as in the default number
-    // of threads per block. Note that we ignore the user-configured threads per block in this part
-    // because more threads should be beneficial performance-wise.
+    // For this reduction, we launch one block using up to the maximum number of threads that we
+    // may use in one block.
     let par = LoopPar {
-        nthreads: i64::min(nblocks as i64, par::DEFAULT_TPB),
+        nthreads: i64::min(nblocks as i64, tpb),
         reduction: true,
         tpb,
         unroll: false
@@ -497,16 +496,32 @@ fn contains_inter_block_sync_point(acc: bool, s: &Stmt) -> bool {
     s.sfold(acc || is_inter_block_sync_point(s), contains_inter_block_sync_point)
 }
 
-fn is_seq_loop_containing_inter_block_sync_point(s: &Stmt) -> bool {
+fn contains_id(acc: bool, e: &Expr, id: &Name) -> bool {
+    match e {
+        Expr::Var {id: x, ..} => acc || x == id,
+        _ => e.sfold(acc, |acc, e| contains_id(acc, e, &id))
+    }
+}
+
+// A sequential for-loop is considered liftable if it is independent of the variable of the outer
+// for-loop, and if it contains an inter-block synchronization point. The latter requirement is
+// added to avoid lifting sequential for-loops where it is not required, as it may degrade
+// performance in such cases.
+fn is_liftable_seq_loop(s: &Stmt, var: &Name) -> bool {
     match s {
-        Stmt::For {body, par, ..} if !par.is_parallel() => {
-            body.sfold(false, contains_inter_block_sync_point)
+        Stmt::For {lo, hi, body, par, ..} if !par.is_parallel() => {
+            let is_dependent = {
+                let acc = lo.sfold(false, |acc, e| contains_id(acc, e, &var));
+                hi.sfold(acc, |acc, e| contains_id(acc, e, &var))
+            };
+            let contains_sync = body.sfold(false, contains_inter_block_sync_point);
+            !is_dependent && contains_sync
         },
         _ => false
     }
 }
 
-fn hoist_chunk(
+fn lift_chunk(
     var: Name,
     lo: Expr,
     hi: Expr,
@@ -519,9 +534,9 @@ fn hoist_chunk(
     // chunks. Therefore, accessing the last element is safe.
     let last_stmt = chunk.last().unwrap();
 
-    // If the last statement satisfies the predicate, we want to perform hoisting on it. Otherwise,
+    // If the last statement satisfies the predicate, we want to perform lifting on it. Otherwise,
     // we simply return the parallel for-loop as is.
-    if is_seq_loop_containing_inter_block_sync_point(last_stmt) {
+    if is_liftable_seq_loop(last_stmt, &var) {
         let mut stmts = vec![];
 
         // We insert all statements of the chunk preceding the final statement, the sequential
@@ -544,9 +559,9 @@ fn hoist_chunk(
             Stmt::For {var: seq_var, lo: seq_lo, hi: seq_hi, step: seq_step,
                        body: seq_body, par: seq_par, i: seq_i} => {
                 // We put the sequential loop body in the parallel loop, and recursively apply
-                // hoisting on it. The result is the new body of the sequential for-loop, which now
-                // ends up outside the parallel for-loop (after hoisting).
-                let inner_body = hoist_seq_loops(
+                // lifting on it. The result is the new body of the sequential for-loop, which now
+                // ends up outside the parallel for-loop (after lifting).
+                let inner_body = lift_seq_loops(
                     var.clone(), lo.clone(), hi.clone(), step, seq_body,
                     par.clone(), i.clone()
                 )?;
@@ -558,14 +573,14 @@ fn hoist_chunk(
                 }
                 Ok(stmts)
             },
-            _ => parpy_internal_error!(&i, "Failed to hoist sequential loop")
+            _ => parpy_internal_error!(&i, "Failed to lift sequential loop")
         }
     } else {
         Ok(vec![Stmt::For { var, lo, hi, step, body: chunk.to_vec(), par, i }])
     }
 }
 
-fn hoist_seq_loops(
+fn lift_seq_loops(
     var: Name,
     lo: Expr,
     hi: Expr,
@@ -574,19 +589,19 @@ fn hoist_seq_loops(
     par: LoopPar,
     i: Info
 ) -> CompileResult<Vec<Stmt>> {
-    // We start by recursively invoking the hoisting function on the for-loop body. This may expose
+    // We start by recursively invoking the lifting function on the for-loop body. This may expose
     // sequential loops that were not accessible immediately.
-    let body = hoist_inner_seq_loops_par_stmts(body)?;
-    Ok(body.split_inclusive(is_seq_loop_containing_inter_block_sync_point)
+    let body = lift_inner_seq_loops_par_stmts(body)?;
+    Ok(body.split_inclusive(|s| is_liftable_seq_loop(&s, &var))
         .map(|chunk| {
-            hoist_chunk(var.clone(), lo.clone(), hi.clone(), step, par.clone(),
+            lift_chunk(var.clone(), lo.clone(), hi.clone(), step, par.clone(),
                         i.clone(), chunk)
         })
         .collect::<CompileResult<Vec<Vec<Stmt>>>>()?
         .concat())
 }
 
-fn hoist_inner_seq_loops_par_stmt(
+fn lift_inner_seq_loops_par_stmt(
     acc: CompileResult<Vec<Stmt>>,
     s: Stmt
 ) -> CompileResult<Vec<Stmt>> {
@@ -598,31 +613,31 @@ fn hoist_inner_seq_loops_par_stmt(
             acc.push(s);
         },
         Stmt::For {var, lo, hi, step, body, par, i} if par.is_parallel() => {
-            acc.append(&mut hoist_seq_loops(var, lo, hi, step, body, par, i)?);
+            acc.append(&mut lift_seq_loops(var, lo, hi, step, body, par, i)?);
         },
         Stmt::For {var, lo, hi, step, body, par, i} => {
-            let body = hoist_inner_seq_loops_par_stmts(body)?;
+            let body = lift_inner_seq_loops_par_stmts(body)?;
             acc.push(Stmt::For {var, lo, hi, step, body, par, i});
         },
         Stmt::While {cond, body, i} => {
-            let body = hoist_inner_seq_loops_par_stmts(body)?;
+            let body = lift_inner_seq_loops_par_stmts(body)?;
             acc.push(Stmt::While {cond, body, i});
         },
         Stmt::If {cond, thn, els, i} => {
-            let thn = hoist_inner_seq_loops_par_stmts(thn)?;
-            let els = hoist_inner_seq_loops_par_stmts(els)?;
+            let thn = lift_inner_seq_loops_par_stmts(thn)?;
+            let els = lift_inner_seq_loops_par_stmts(els)?;
             acc.push(Stmt::If {cond, thn, els, i});
         }
     };
     Ok(acc)
 }
 
-fn hoist_inner_seq_loops_par_stmts(stmts: Vec<Stmt>) -> CompileResult<Vec<Stmt>> {
+fn lift_inner_seq_loops_par_stmts(stmts: Vec<Stmt>) -> CompileResult<Vec<Stmt>> {
     stmts.into_iter()
-        .fold(Ok(vec![]), hoist_inner_seq_loops_par_stmt)
+        .fold(Ok(vec![]), lift_inner_seq_loops_par_stmt)
 }
 
-fn hoist_inner_sequential_loops_stmt(
+fn lift_inner_sequential_loops_stmt(
     t: &par_tree::ParTree,
     mut acc: Vec<Stmt>,
     s: Stmt
@@ -634,32 +649,32 @@ fn hoist_inner_sequential_loops_stmt(
             acc.push(s);
         },
         Stmt::For {ref var, ..} if t.roots.contains_key(&var) => {
-            let mut stmts = hoist_inner_seq_loops_par_stmt(Ok(vec![]), s)?;
+            let mut stmts = lift_inner_seq_loops_par_stmt(Ok(vec![]), s)?;
             acc.append(&mut stmts);
         },
         Stmt::For {var, lo, hi, step, body, par, i} => {
-            let body = hoist_inner_sequential_loops(t, body)?;
+            let body = lift_inner_sequential_loops(t, body)?;
             acc.push(Stmt::For {var, lo, hi, step, body, par, i});
         },
         Stmt::While {cond, body, i} => {
-            let body = hoist_inner_sequential_loops(t, body)?;
+            let body = lift_inner_sequential_loops(t, body)?;
             acc.push(Stmt::While {cond, body, i});
         },
         Stmt::If {cond, thn, els, i} => {
-            let thn = hoist_inner_sequential_loops(t, thn)?;
-            let els = hoist_inner_sequential_loops(t, els)?;
+            let thn = lift_inner_sequential_loops(t, thn)?;
+            let els = lift_inner_sequential_loops(t, els)?;
             acc.push(Stmt::If {cond, thn, els, i});
         },
     }
     Ok(acc)
 }
 
-fn hoist_inner_sequential_loops(
+fn lift_inner_sequential_loops(
     t: &par_tree::ParTree,
     body: Vec<Stmt>
 ) -> CompileResult<Vec<Stmt>> {
     body.into_iter()
-        .fold(Ok(vec![]), |acc, s| hoist_inner_sequential_loops_stmt(t, acc?, s))
+        .fold(Ok(vec![]), |acc, s| lift_inner_sequential_loops_stmt(t, acc?, s))
 }
 
 fn split_inter_block_synchronization_kernel(
@@ -1000,7 +1015,7 @@ fn generate_dealloc_stmt(id: &Name) -> Stmt {
 }
 
 /// Allocate temporary data for local variables that end up being defined and used in separate
-/// kernels after hoisting sequential loops.
+/// kernels after lifting sequential loops.
 fn allocate_temporary_data(
     opts: &CompileOptions,
     params: &Vec<Param>,
@@ -1099,6 +1114,55 @@ fn remove_parallelism_of_host_loop_nests(
     body.smap(|s| remove_parallelism_of_host_loop_nests_stmt(s, &host_functions))
 }
 
+fn assert_contains_no_inter_block_sync_points_stmt(s: Stmt, i: &Info) -> CompileResult<Stmt> {
+    match s {
+        Stmt::For {var, lo, hi, step, body, par, i} => {
+            let body = assert_contains_no_inter_block_sync_points(body, &i)?;
+            Ok(Stmt::For {var, lo, hi, step, body, par, i})
+        },
+        Stmt::While {cond, body, i} => {
+            let body = assert_contains_no_inter_block_sync_points(body, &i)?;
+            Ok(Stmt::While {cond, body, i})
+        },
+        Stmt::If {cond, thn, els, i} => {
+            let thn = assert_contains_no_inter_block_sync_points(thn, &i)?;
+            let els = assert_contains_no_inter_block_sync_points(els, &i)?;
+            Ok(Stmt::If {cond, thn, els, i})
+        },
+        Stmt::SyncPoint {kind: SyncPointKind::InterBlock, i: ib_info} => {
+            let msg = {
+                let base_msg = "The inter-block transformation failed to split at a synchronization point.";
+                if let Ok(code) = fs::read_to_string(&ib_info.filename) {
+                    let (sel1, err1) = ib_info.extract_lines(code.clone());
+                    let (sel2, err2) = i.extract_lines(code);
+                    format!(
+                        "{base_msg}\n\
+                         An inter-block synchronization point is required due to the following \
+                         parallel statement on {0} (in {2}):\n{sel1}\n{err1}\n\
+                         However, the splitting fails to propagate past the following \
+                         container on {1}:\n{sel2}\n{err2}\n\
+                         To resolve this, you have to move the container statement outside the \
+                         parallel for-loop nest. Alternatively, you can reduce the amount of \
+                         parallelism to eliminate the need to synchronize across several blocks.",
+                         ib_info.line_str(), i.line_str(), ib_info.filename
+                    )
+                } else {
+                    base_msg.to_string()
+                }
+            };
+            Err(CompileError::compile_err(msg))
+        },
+        _ => s.smap_result(|s| assert_contains_no_inter_block_sync_points_stmt(s, &i))
+    }
+}
+
+fn assert_contains_no_inter_block_sync_points(
+    body: Vec<Stmt>,
+    i: &Info
+) -> CompileResult<Vec<Stmt>> {
+    body.smap_result(|s| assert_contains_no_inter_block_sync_points_stmt(s, &i))
+}
+
 /// Restructure the code such that inter-block synchronizations are eliminated from the code. In
 /// particular, we identify the synchronization points within parallel code and classify them based
 /// on whether they require inter-block synchronization. Parallel reductions requiring inter-block
@@ -1106,7 +1170,7 @@ fn remove_parallelism_of_host_loop_nests(
 /// blocks, and a second part that runs within a block.
 ///
 /// When we have inter-block synchronization points inside a sequential loop, where the iteration
-/// order matters, the code is transformed by hoisting the sequential loop outside of the parallel
+/// order matters, the code is transformed by lifting the sequential loop outside of the parallel
 /// code. The code is updated such that statements execute in a correct order with respect to the
 /// original program.
 ///
@@ -1139,10 +1203,10 @@ pub fn restructure_inter_block_synchronization(
     // original location.
     let body = split_inter_block_parallel_reductions(opts, body)?;
 
-    // Hoist sequential loops inside parallel code containing inter-block synchronization points
+    // Lift sequential loops inside parallel code containing inter-block synchronization points
     // such that they occur outside of the parallel code, and restructure the code to ensure the
     // execution order remains valid.
-    let body = hoist_inner_sequential_loops(&par, body)?;
+    let body = lift_inner_sequential_loops(&par, body)?;
 
     // Split parallel code on any remaining inter-block synchronization points, to ensure these are
     // only found at the end of a parallel for-loop.
@@ -1152,7 +1216,7 @@ pub fn restructure_inter_block_synchronization(
     // synchronization is not required as such code runs sequentially on the host (CPU).
     let body = remove_unused_synchronization_points(body);
 
-    // After hoisting, the code may be restructured such that the definition and the use(s) of a
+    // After lifting, the code may be restructured such that the definition and the use(s) of a
     // local variable end up in separate parallel kernels. First, we promote assignments to
     // definitions, to properly handle repeated assignments to a local variable ending up in
     // separate kernels. Second, we allocate temporary data for storing local variables, when
@@ -1166,6 +1230,12 @@ pub fn restructure_inter_block_synchronization(
     // Removes the parallelism of loop nests that contain calls to host code. This includes a call
     // to a host external or a callback function.
     let body = remove_parallelism_of_host_loop_nests(body, &host_functions);
+
+    // Ensures that the resulting body contains no inter-block synchronization points. If it does,
+    // it means the splitting failed due to a construct we could not lift past (such as a
+    // while-loop or a dependent sequential for-loop). In this case, we report a compiler error
+    // referring to the point where the compiler failed.
+    let body = assert_contains_no_inter_block_sync_points(body, &Info::default())?;
 
     Ok(Ast {main: FunDef {id, params, body, res_ty, i}, ..ast})
 }
@@ -1354,9 +1424,9 @@ mod test {
         assert_eq!(body, expected);
     }
 
-    fn assert_hoist(body: Vec<Stmt>, expected: Vec<Stmt>) {
+    fn assert_lift(body: Vec<Stmt>, expected: Vec<Stmt>) {
         let par = par_tree::build_tree(&body);
-        let body = hoist_inner_sequential_loops(&par, body).unwrap();
+        let body = lift_inner_sequential_loops(&par, body).unwrap();
         let body = remove_unused_synchronization_points(body);
         print_stmts(&body, &expected);
         assert_eq!(body, expected);
@@ -1631,7 +1701,7 @@ mod test {
     }
 
     #[test]
-    fn par_seq_par_loops_local_sync_hoisting() {
+    fn par_seq_par_loops_local_sync_lifting() {
         let body = vec![
             for_("x", 10, vec![
                 for_("y", 0, vec![
@@ -1648,11 +1718,11 @@ mod test {
                 ])
             ])
         ];
-        assert_hoist(body, expected)
+        assert_lift(body, expected)
     }
 
     #[test]
-    fn par_seq_par_loops_inter_block_sync_hoisting() {
+    fn par_seq_par_loops_inter_block_sync_lifting() {
         let body = vec![
             for_("x", 10, vec![
                 assign(uvar("a"), int(4, None)),
@@ -1677,11 +1747,11 @@ mod test {
             ]),
             for_("x", 10, vec![assign(uvar("e"), int(2, None))])
         ];
-        assert_hoist(body, expected)
+        assert_lift(body, expected)
     }
 
     #[test]
-    fn par_seq_par_seq_par_hoisting() {
+    fn par_seq_par_seq_par_lifting() {
         let body = vec![
             for_("x", 10, vec![
                 assign(uvar("a"), int(1, None)),
@@ -1710,11 +1780,11 @@ mod test {
                 ])
             ])
         ];
-        assert_hoist(body, expected)
+        assert_lift(body, expected)
     }
 
     #[test]
-    fn par_seq_par_seq_par_double_inter_block_hoisting() {
+    fn par_seq_par_seq_par_double_inter_block_lifting() {
         let body = vec![
             for_("x", 10, vec![
                 assign(uvar("a"), int(1, None)),
@@ -1761,6 +1831,6 @@ mod test {
             ]),
             for_("x", 10, vec![assign(uvar("i"), int(9, None))])
         ];
-        assert_hoist(body, expected)
+        assert_lift(body, expected)
     }
 }
