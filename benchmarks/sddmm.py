@@ -59,6 +59,7 @@ def parpy_sddmm_csr(A, B, C):
     }
     opts = parpy.par(p)
     opts.force_int_size = I64
+    opts.max_unroll_count = 0
     parpy_sddmm_csr_kernel(A, B, C_dict, D.values(), N, alpha, beta, opts=opts)
     return D
 
@@ -83,6 +84,7 @@ def parpy_sddmm_coo(A, B, C, C_rows):
     }
     opts = parpy.par({"nnz": parpy.threads(nnz)})
     opts.force_int_size = I64
+    opts.max_unroll_count = 0
     parpy_sddmm_coo_kernel(A, B, C_dict, D.values(), alpha, beta, opts=opts)
     return D
 
@@ -113,7 +115,9 @@ def csr_rows(csr_matrix):
     rows = torch.empty_like(csr_matrix.col_indices())
     N = len(crows)-1
     p = {"N": parpy.threads(N), "M": parpy.threads(32)}
-    parpy_sddmm_decompress_csr(crows, rows, N, opts=parpy.par(p))
+    opts = parpy.par(p)
+    opts.max_unroll_count = 0
+    parpy_sddmm_decompress_csr(crows, rows, N, opts=opts)
     return rows
 
 def run_sddmm(framework, matrix_id, k):
