@@ -196,7 +196,9 @@ def forward_parpy(hmm, seqs, nthreads):
         'inst': parpy.threads(seqs["num_instances"]),
         'state': parpy.threads(nthreads),
     }
-    forward_kernel(hmm, seqs, result, alpha1, alpha2, opts=parpy.par(p))
+    opts = parpy.par(p)
+    opts.max_unroll_count = 0
+    forward_kernel(hmm, seqs, result, alpha1, alpha2, opts=opts)
     return result
 
 class ParPyTuned:
