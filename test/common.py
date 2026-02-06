@@ -1,9 +1,10 @@
-import json
 import os
 import parpy
 import pathlib
 import pytest
+import re
 import shutil
+import subprocess
 import torch
 import warnings
 
@@ -50,16 +51,17 @@ def run_if_clusters_are_enabled(backend, fn):
         pytest.skip(f"Thread block clusters are not supported in the {backend} backend")
     run_if_backend_is_enabled(backend, fn)
 
-def get_cuda_backend():
+def get_cuda_version():
     nvcc_path = shutil.which('nvcc')
     if nvcc_path is not None:
-        p = pathlib.Path(f"{shutil.which('nvcc')}/../../version.json").resolve()
-        try:
-            with open(p) as f:
-                content = f.read()
-            return json.loads(content)["cuda"]["version"]
-        except:
-            raise RuntimeError("Failed to extract CUDA version")
+        r = subprocess.run(["nvcc", "--version"], capture_output=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"Failed to extract CUDA version from nvcc")
+        r = re.search(r"release (\d+)\.(\d+)", r.stdout.decode('utf-8'), re.MULTILINE)
+        if r:
+            return int(r.group(1)), int(r.group(2))
+        else:
+            raise RuntimeError("Failed to parse CUDA version output from nvcc")
     else:
         raise RuntimeError("Could not find nvcc, needed to determine CUDA backend")
 
