@@ -25,7 +25,7 @@ def check_arg(arg, i, in_dict, opts, execute):
             return from_array(arg, CompileBackend.Cuda)
         else:
             raise RuntimeError(f"Argument {i} is a CUDA array, which is not "
-                                "supported in {opts.backend}.")
+                               f"supported in {opts.backend}.")
     elif hasattr(arg, "__array_interface__") or hasattr(arg, "__array__"):
         # Copy data to memory accessible from the GPU. If the resulting code
         # will not be executed, we do not copy data so we can generate code for
