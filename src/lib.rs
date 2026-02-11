@@ -7,6 +7,7 @@ mod metal;
 mod option;
 mod par;
 mod py;
+mod triton;
 mod utils;
 
 use crate::utils::pprint::PrettyPrint;
@@ -136,6 +137,16 @@ fn compile_ir<'py>(
         option::CompileBackend::Metal => {
             let ast = metal::codegen(gpu_ast)?;
             debug_env.print("Metal AST", &ast);
+            Ok((
+                argtypes,
+                callback_asts,
+                ast.pprint_default(),
+                ast.pprint_ignore_symbols()
+            ))
+        },
+        option::CompileBackend::Triton => {
+            let ast = triton::codegen(gpu_ast)?;
+            debug_env.print("Triton AST", &ast);
             Ok((
                 argtypes,
                 callback_asts,

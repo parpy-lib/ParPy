@@ -78,13 +78,13 @@ pub struct ScalarSizes {
 fn select_int_size(backend: &CompileBackend) -> ElemSize {
     match backend {
         CompileBackend::Metal | CompileBackend::Cuda |
-        CompileBackend::Auto => ElemSize::I32,
+        CompileBackend::Triton | CompileBackend::Auto => ElemSize::I32,
     }
 }
 
 fn select_float_size(backend: &CompileBackend) -> ElemSize {
     match backend {
-        CompileBackend::Metal => ElemSize::F32,
+        CompileBackend::Metal | CompileBackend::Triton => ElemSize::F32,
         CompileBackend::Cuda | CompileBackend::Auto => ElemSize::F64,
     }
 }
