@@ -6,6 +6,7 @@ import torch
 backends = [
     CompileBackend.Cuda,
     CompileBackend.Metal,
+    CompileBackend.Triton,
 ]
 
 def _assert_cuda_is_enabled():
@@ -24,6 +25,12 @@ def _assert_metal_is_enabled():
                            "is specified using the 'METAL_CPP_HEADER_PATH' " +
                            "environment variable.")
 
+def _assert_triton_is_enabled():
+    try:
+        import triton
+    except:
+        raise RuntimeError(f"Failed to import Triton")
+
 def is_enabled(backend, verbose=False):
     """
     Determines whether the specified backend is enabled or not on the current
@@ -34,6 +41,8 @@ def is_enabled(backend, verbose=False):
             _assert_cuda_is_enabled()
         elif backend == CompileBackend.Metal:
             _assert_metal_is_enabled()
+        elif backend == CompileBackend.Triton:
+            _assert_triton_is_enabled()
         else:
             raise RuntimeError(f"Unsupported backend {backend}")
         return True
@@ -56,19 +65,14 @@ def _resolve_backend(opts, strict):
     if opts.verbose_backend_resolution:
         [b for b in backends if is_enabled(b, True)]
     if opts.backend == CompileBackend.Auto:
-        if len(available) == 1:
-            opts.backend = available[0]
-            return opts
-        elif len(available) == 0:
+        if len(available) == 0:
             raise RuntimeError("Found no enabled GPU backends. For detailed " +
                                "information on why this is, enable the " +
                                "'verbose_backend_resolution' flag in the " +
                                "compiler options.")
         else:
-            raise RuntimeError(f"Found multiple supported GPU backends: {available}. " +
-                                "Please explicitly specify which backend to use " +
-                                "by setting the 'backend' field of the 'opts' + "
-                                "argument to the desired backend.")
+            opts.backend = available[0]
+            return opts
     elif strict and opts.backend not in available:
         raise RuntimeError(f"Specified backend {opts.backend} is not available. For " +
                             "more information, enable the 'verbose_backend_resolution' " +
