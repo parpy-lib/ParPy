@@ -144,8 +144,8 @@ impl PrettyPrint for Expr {
                 (env, format!("{id}({args})"))
             },
             Expr::ProgramId {dim: Dim::X, ty: _, i: _} => (env, format!("tl.program_id(0)")),
-            Expr::ProgramId {dim: Dim::Y, ty: _, i: _} => (env, format!("tl.program_id(0)")),
-            Expr::ProgramId {dim: Dim::Z, ty: _, i: _} => (env, format!("tl.program_id(0)")),
+            Expr::ProgramId {dim: Dim::Y, ty: _, i: _} => (env, format!("tl.program_id(1)")),
+            Expr::ProgramId {dim: Dim::Z, ty: _, i: _} => (env, format!("tl.program_id(2)")),
             Expr::Arange {lo, hi, ty: _, i: _} => (env, format!("tl.arange({lo}, {hi})")),
             Expr::Load {ptr, mask, ty: _, i: _} => {
                 let (env, ptr) = ptr.pprint(env);
@@ -198,27 +198,24 @@ impl PrettyPrint for Stmt {
                 let (env, lo) = lo.pprint(env);
                 let (env, hi) = hi.pprint(env);
                 let env = env.incr_indent();
-                let ii = env.print_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("{0}for {var} in range({lo}, {hi}, {step}):\n{ii}{body}", indent))
+                (env, format!("{0}for {var} in range({lo}, {hi}, {step}):\n{body}", indent))
             },
             Stmt::While {cond, body, i: _} => {
                 let (env, cond) = cond.pprint(env);
                 let env = env.incr_indent();
-                let ii = env.print_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("{0}while {cond}:\n{ii}{body}", indent))
+                (env, format!("{0}while {cond}:\n{body}", indent))
             },
             Stmt::If {cond, thn, els, i: _} => {
                 let (env, cond) = cond.pprint(env);
                 let env = env.incr_indent();
-                let ii = env.print_indent();
                 let (env, thn) = pprint_iter(thn.iter(), env, "\n");
                 let (env, els) = pprint_iter(els.iter(), env, "\n");
                 let env = env.decr_indent();
-                (env, format!("{0}if {cond}:\n{1}{thn}\n{0}else:\n{1}{els}", indent, ii))
+                (env, format!("{0}if {cond}:\n{thn}\n{0}else:\n{els}", indent))
             },
             Stmt::Return {value, i: _} => {
                 let (env, value) = value.pprint(env);
