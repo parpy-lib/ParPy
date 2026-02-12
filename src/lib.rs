@@ -106,7 +106,8 @@ fn compile_ir<'py>(
     // AST distinguishes between code running on the host (CPU) and on the device (GPU). Further,
     // it includes constructs exclusive to GPU programming, such as thread and block indexing and
     // statements representing the allocation of shared memory.
-    let gpu_ast = gpu::from_general_ir(ir_ast, classification, &opts, &debug_env)?;
+    let gpu_ast = gpu::from_general_ir(ir_ast, classification, &opts)?;
+    debug_env.print("GPU AST", &gpu_ast);
 
     // Extracts the callback functions used in the GPU AST and produces separate ASTs for these.
     // The result consists of three parts:
@@ -125,6 +126,7 @@ fn compile_ir<'py>(
     // symbols differ between two ASTs, they should be considered equivalent.
     match opts.backend {
         option::CompileBackend::Cuda => {
+            let gpu_ast = gpu::transform(gpu_ast, &opts, &debug_env)?;
             let ast = cuda::codegen(gpu_ast, &opts)?;
             debug_env.print("CUDA AST", &ast);
             Ok((
@@ -135,6 +137,7 @@ fn compile_ir<'py>(
             ))
         },
         option::CompileBackend::Metal => {
+            let gpu_ast = gpu::transform(gpu_ast, &opts, &debug_env)?;
             let ast = metal::codegen(gpu_ast)?;
             debug_env.print("Metal AST", &ast);
             Ok((
@@ -147,6 +150,7 @@ fn compile_ir<'py>(
         option::CompileBackend::Triton => {
             let ast = triton::codegen(gpu_ast)?;
             debug_env.print("Triton AST", &ast);
+            panic!("Codegen succeeded as far as expected")
             Ok((
                 argtypes,
                 callback_asts,

@@ -67,11 +67,42 @@ impl PrettyPrintBinOp<Type> for Expr {
     }
 
     fn is_infix(op: &BinOp, _argty: &Type) -> bool {
-        false
+        match op {
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::FloorDiv | BinOp::Div |
+            BinOp::Rem | BinOp::Pow | BinOp::And | BinOp::Or | BinOp::BitAnd |
+            BinOp::BitOr | BinOp::BitShl | BinOp::BitShr | BinOp::BitXor |
+            BinOp::Eq | BinOp::Neq | BinOp::Leq | BinOp::Geq | BinOp::Lt |
+            BinOp::Gt => true,
+            BinOp::Max | BinOp::Min => false
+        }
     }
 
     fn print_binop(op: &BinOp, _argty: &Type, _ty: &Type) -> Option<String> {
-        todo!()
+        let s = match op {
+            BinOp::Add => Some("+"),
+            BinOp::Sub => Some("-"),
+            BinOp::Mul => Some("*"),
+            BinOp::FloorDiv => Some("//"),
+            BinOp::Div => Some("/"),
+            BinOp::Rem => Some("%"),
+            BinOp::Pow => Some("**"),
+            BinOp::And => Some(" and "),
+            BinOp::Or => Some(" or "),
+            BinOp::BitAnd => Some("&"),
+            BinOp::BitOr => Some("|"),
+            BinOp::BitXor => Some("^"),
+            BinOp::BitShl => Some("<<"),
+            BinOp::BitShr => Some(">>"),
+            BinOp::Eq => Some("=="),
+            BinOp::Neq => Some("!="),
+            BinOp::Leq => Some("<="),
+            BinOp::Geq => Some(">="),
+            BinOp::Lt => Some("<"),
+            BinOp::Gt => Some(">"),
+            BinOp::Max => Some("tl.maximum"),
+            BinOp::Min => Some("tl.minimum"),
+        }?;
+        Some(s.to_string())
     }
 
     fn associativity(op: &BinOp) -> Assoc {
@@ -82,14 +113,14 @@ impl PrettyPrintBinOp<Type> for Expr {
     }
 }
 
-impl PrettyPrint for Dim {
+impl PrettyPrint for ReduceOp {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let n = match self {
-            Dim::X => 0,
-            Dim::Y => 1,
-            Dim::Z => 2,
+        let s = match self {
+            ReduceOp::Min => "tl.min",
+            ReduceOp::Max => "tl.max",
+            ReduceOp::Sum => "tl.sum",
         };
-        (env, format!("{n}"))
+        (env, s.to_string())
     }
 }
 
@@ -100,21 +131,21 @@ impl PrettyPrint for Expr {
             Expr::Bool {v, ty: _, i: _} => (env, format!("{v}")),
             Expr::Int {v, ty: _, i: _} => (env, format!("{v}")),
             Expr::Float {v, ty: _, i: _} => (env, format!("{v:?}")),
-            Expr::UnOp {op, arg, ty, i: _} => {
-                (env, Expr::print_unop(op, ty).unwrap())
-            },
-            Expr::BinOp {lhs, op, rhs, ty, i: _} => {
-                (env, Expr::print_binop(op, &ty, &ty).unwrap())
+            Expr::UnOp {..} => self.print_parenthesized_unop(env),
+            Expr::BinOp {..} => self.print_parenthesized_binop(env),
+            Expr::Reduce {op, arg, ty: _, i: _} => {
+                let (env, op) = op.pprint(env);
+                let (env, arg) = arg.pprint(env);
+                (env, format!("{op}({arg})"))
             },
             Expr::Call {id, args, ty: _, i: _} => {
                 let (env, id) = id.pprint(env);
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{id}({args})"))
             },
-            Expr::ProgramId {dim, ty: _, i: _} => {
-                let (env, dim) = dim.pprint(env);
-                (env, format!("tl.program_id({dim})"))
-            }
+            Expr::ProgramId {dim: Dim::X, ty: _, i: _} => (env, format!("tl.program_id(0)")),
+            Expr::ProgramId {dim: Dim::Y, ty: _, i: _} => (env, format!("tl.program_id(0)")),
+            Expr::ProgramId {dim: Dim::Z, ty: _, i: _} => (env, format!("tl.program_id(0)")),
             Expr::Arange {lo, hi, ty: _, i: _} => (env, format!("tl.arange({lo}, {hi})")),
             Expr::Load {ptr, mask, ty: _, i: _} => {
                 let (env, ptr) = ptr.pprint(env);
@@ -166,7 +197,6 @@ impl PrettyPrint for Stmt {
                 let (env, var) = var.pprint(env);
                 let (env, lo) = lo.pprint(env);
                 let (env, hi) = hi.pprint(env);
-                let (env, step) = step.pprint(env);
                 let env = env.incr_indent();
                 let ii = env.print_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
@@ -183,7 +213,6 @@ impl PrettyPrint for Stmt {
             },
             Stmt::If {cond, thn, els, i: _} => {
                 let (env, cond) = cond.pprint(env);
-                let outer_indent = env.print_indent();
                 let env = env.incr_indent();
                 let ii = env.print_indent();
                 let (env, thn) = pprint_iter(thn.iter(), env, "\n");
@@ -204,25 +233,12 @@ impl PrettyPrint for Stmt {
     }
 }
 
-impl PrettyPrint for TypeAnnot {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let s = match self {
-            TypeAnnot::Scalar {sz} => pprint_elem_size(sz),
-            TypeAnnot::Constexpr => "tl.constexpr".to_string(),
-        };
-        (env, s)
-    }
-}
-
 impl PrettyPrint for Param {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let Param {id, ty} = self;
         let (env, id) = id.pprint(env);
         match ty {
-            Some(ty) => {
-                let (env, ty) = ty.pprint(env);
-                (env, format!("{id} : {ty}"))
-            },
+            Some(sz) => (env, format!("{id} : {0}", pprint_elem_size(sz))),
             None => (env, id)
         }
     }
@@ -264,13 +280,6 @@ mod test {
     use crate::test::*;
     use crate::triton::ast_builder::*;
     use crate::utils::name::Name;
-
-    #[test]
-    fn print_dim() {
-        assert_eq!(Dim::X.pprint_default(), "0");
-        assert_eq!(Dim::Y.pprint_default(), "1");
-        assert_eq!(Dim::Z.pprint_default(), "2");
-    }
 
     #[test]
     fn print_variable() {
@@ -401,14 +410,13 @@ mod test {
             id: Name::sym_str("f"),
             params: vec![
                 Param {id: Name::sym_str("x"), ty: None},
-                Param {id: Name::sym_str("y"), ty: Some(TypeAnnot::Scalar {sz: ElemSize::F32})},
-                Param {id: Name::sym_str("z"), ty: Some(TypeAnnot::Constexpr)},
+                Param {id: Name::sym_str("y"), ty: Some(ElemSize::F32)},
             ],
             body: vec![
                 Stmt::Assign {dst: Name::sym_str("w"), expr: var("k"), i: i()}
             ],
             i: i()
         };
-        assert_eq!(t.pprint_default(), "@triton.jit\ndef f(x, y : tl.float32, z : tl.constexpr):\n  w = k");
+        assert_eq!(t.pprint_default(), "@triton.jit\ndef f(x, y : tl.float32):\n  w = k");
     }
 }
