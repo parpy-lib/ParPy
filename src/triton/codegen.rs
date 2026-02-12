@@ -450,7 +450,13 @@ fn from_gpu_ast_stmts(
 
 fn from_gpu_ast_top(t: gpu_ast::Top) -> CompileResult<Top> {
     match t {
-        gpu_ast::Top::ExtDecl {..} => todo!(),
+        gpu_ast::Top::ExtDecl {i, ..} => {
+            Ok(Top::Import {
+                package: "TODO".to_string(),
+                as_str: None,
+                i
+            })
+        },
         gpu_ast::Top::KernelFunDef {attrs, id, params, body, i} => {
             let nthreads = validate_attrs(attrs, &i)?;
             if nthreads == 0 {
@@ -461,7 +467,13 @@ fn from_gpu_ast_top(t: gpu_ast::Top) -> CompileResult<Top> {
             let body = from_gpu_ast_stmts(&ctx, body)?;
             Ok(Top::TritonFunDef {id, params, body, i})
         },
-        gpu_ast::Top::FunDef {..} => todo!()
+        gpu_ast::Top::FunDef {i, ..} => {
+            Ok(Top::Import {
+                package: "TODO".to_string(),
+                as_str: None,
+                i
+            })
+        }
     }
 }
 
