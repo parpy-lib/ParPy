@@ -42,6 +42,19 @@ pub trait CFType {
     fn is_float(&self) -> bool;
 }
 
+fn apply_bool_unop<T, E: CFExpr<T>>(
+    op: UnOp,
+    arg: E,
+    ty: T,
+    i: Info
+) -> E {
+    let v = arg.get_bool_value().unwrap();
+    match op {
+        UnOp::Not => CFExpr::bool_expr(!v, ty, i),
+        _ => CFExpr::mk_unop(op, arg, ty, i)
+    }
+}
+
 fn apply_int_unop<T, E: CFExpr<T>>(
     op: UnOp,
     arg: E,
@@ -84,6 +97,7 @@ pub fn constant_fold_unop<T, E: CFExpr<T>>(
     i: Info
 ) -> E {
     match arg.literal_kind() {
+        Some(LitKind::Bool) => apply_bool_unop(op, arg, ty, i),
         Some(LitKind::Int) => apply_int_unop(op, arg, ty, i),
         Some(LitKind::Float) => apply_float_unop(op, arg, ty, i),
         _ => CFExpr::mk_unop(op, arg, ty, i)
