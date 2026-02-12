@@ -150,7 +150,7 @@ fn compile_ir<'py>(
         option::CompileBackend::Triton => {
             let ast = triton::codegen(gpu_ast)?;
             debug_env.print("Triton AST", &ast);
-            panic!("Codegen succeeded as far as expected")
+            panic!("Codegen succeeded as far as expected");
             Ok((
                 argtypes,
                 callback_asts,
