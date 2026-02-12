@@ -275,7 +275,7 @@ class TritonBaseBuffer(BaseBuffer):
         else:
             buf.copy_(torch.tensor(t), non_blocking=True)
         nbytes = _size(shape, dtype)
-        return TritonBaseBuffer(buf, nbytes, is_raw=True)
+        return TritonBaseBuffer(buf, nbytes, src=t)
 
     def from_raw(ptr, shape, dtype):
         class dummy(object):
