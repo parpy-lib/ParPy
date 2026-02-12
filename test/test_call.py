@@ -272,8 +272,13 @@ def test_call_host_external(backend):
             header = "<cuda_utils.h>"
         elif backend == parpy.CompileBackend.Metal:
             header = "<metal_utils.h>"
+        elif backend == parpy.CompileBackend.Triton:
+            # TODO: When producing native code, we could allow references to
+            # host-externals, but this does not work when generating pure
+            # Python code, which is what we will do as a first step.
+            return
         else:
-            print(f"Unsupported backend {backend}")
+            raise RuntimeError(f"Unsupported backend {backend}")
 
         @parpy.external("add_host", backend, parpy.Target.Host, header=header)
         def add_host(x: parpy.types.F32, y: parpy.types.F32) -> parpy.types.F32:

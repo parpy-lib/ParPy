@@ -69,6 +69,8 @@ def unop_should_fail(backend, fn, dtype, running):
             return False
         elif backend == parpy.CompileBackend.Metal:
             return dtype == parpy.types.F64
+        elif backend == parpy.CompileBackend.Triton:
+            return False
     elif running and fn == parpy_tanh and backend == parpy.CompileBackend.Cuda:
         # The tanh operation for half-precision numbers seems to have been
         # added in CUDA 12.8. Therefore, if we are running the generated code,
@@ -78,11 +80,15 @@ def unop_should_fail(backend, fn, dtype, running):
             return not dtype in [parpy.types.F16, parpy.types.F32, parpy.types.F64]
         else:
             return not dtype in [parpy.types.F32, parpy.types.F64]
+    elif fn == parpy_tanh and backend == parpy.CompileBackend.Triton:
+        return True
     else:
         if backend == parpy.CompileBackend.Cuda:
             return not dtype in [parpy.types.F16, parpy.types.F32, parpy.types.F64]
         elif backend == parpy.CompileBackend.Metal:
             return not dtype in [parpy.types.F16, parpy.types.F32]
+        elif backend == parpy.CompileBackend.Triton:
+            return not dtype in [parpy.types.F16, parpy.types.F32, parpy.types.F64]
 
 @pytest.mark.parametrize('backend', compiler_backends)
 @pytest.mark.parametrize('test_data', unary_tests)
@@ -134,11 +140,15 @@ def binop_should_fail(backend, fn, dtype):
             return not dtype in [parpy.types.F32, parpy.types.F64]
         elif backend == parpy.CompileBackend.Metal:
             return not dtype in [parpy.types.F16, parpy.types.F32]
+        elif backend == parpy.CompileBackend.Triton:
+            return True
     else:
         if backend == parpy.CompileBackend.Cuda:
             return False
         elif backend == parpy.CompileBackend.Metal:
             return dtype == parpy.types.F64
+        elif backend == parpy.CompileBackend.Triton:
+            return False
 
 @pytest.mark.parametrize('backend', compiler_backends)
 @pytest.mark.parametrize('test_data', binary_tests)
