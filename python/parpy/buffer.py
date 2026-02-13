@@ -247,8 +247,11 @@ class TritonBaseBuffer(BaseBuffer):
     def __init__(self, buf, nbytes, src=None, is_raw=False):
         super().__init__(buf, nbytes, src, is_raw)
 
-    def _deconstruct(self, src_ptr):
-        pass
+    def _deconstruct(self, _src_ptr):
+        # Copy data back to the CPU container
+        if self.src is not None:
+            nelems = self.nbytes // self.buf.dtype.itemsize
+            self.src[:] = self.buf.detach().cpu().flatten()[:nelems]
 
     def _get_runtime_lib(self):
         return None
