@@ -3,6 +3,7 @@ use crate::utils::info::{Info, InfoNode};
 use crate::utils::name::Name;
 
 pub use crate::gpu::ast::Dim;
+pub use crate::gpu::ast::Dim3;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
@@ -12,7 +13,7 @@ pub enum Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ReduceOp {
-    Min, Max, Sum
+    Min, Max, Sum, Prod
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25,6 +26,8 @@ pub enum Expr {
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     Reduce {op: ReduceOp, arg: Box<Expr>, ty: Type, i: Info},
     Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
+    ExtCall {id: String, args: Vec<Expr>, ty: Type, i: Info},
+    ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
 
     // Triton-specific nodes
     ProgramId {dim: Dim, ty: Type, i: Info},
@@ -38,11 +41,22 @@ pub enum Expr {
 impl InfoNode for Expr {
     fn get_info(&self) -> Info {
         match self {
-            Expr::Var {i, ..} | Expr::Bool {i, ..} | Expr::Int {i, ..} |
-            Expr::Float {i, ..} | Expr::UnOp {i, ..} | Expr::BinOp {i, ..} |
-            Expr::Reduce {i, ..} | Expr::Call {i, ..} | Expr::ProgramId {i, ..} |
-            Expr::Arange {i, ..} | Expr::Load {i, ..} | Expr::Store {i, ..} |
-            Expr::Full {i, ..} | Expr::Where {i, ..} => i.clone(),
+            Expr::Var {i, ..} |
+            Expr::Bool {i, ..} |
+            Expr::Int {i, ..} |
+            Expr::Float {i, ..} |
+            Expr::UnOp {i, ..} |
+            Expr::BinOp {i, ..} |
+            Expr::Reduce {i, ..} |
+            Expr::Call {i, ..} |
+            Expr::ExtCall {i, ..} |
+            Expr::ArrayAccess {i, ..} |
+            Expr::ProgramId {i, ..} |
+            Expr::Arange {i, ..} |
+            Expr::Load {i, ..} |
+            Expr::Store {i, ..} |
+            Expr::Full {i, ..} |
+            Expr::Where {i, ..} => i.clone(),
         }
     }
 }
@@ -50,11 +64,22 @@ impl InfoNode for Expr {
 impl ExprType<Type> for Expr {
     fn get_type<'a>(&'a self) -> &'a Type {
         match self {
-            Expr::Var {ty, ..} | Expr::Bool {ty, ..} | Expr::Int {ty, ..} |
-            Expr::Float {ty, ..} | Expr::UnOp {ty, ..} | Expr::BinOp {ty, ..} |
-            Expr::Reduce {ty, ..} | Expr::Call {ty, ..} | Expr::ProgramId {ty, ..} |
-            Expr::Arange {ty, ..} | Expr::Load {ty, ..} | Expr::Store {ty, ..} |
-            Expr::Full {ty, ..} | Expr::Where {ty, ..} => ty,
+            Expr::Var {ty, ..} |
+            Expr::Bool {ty, ..} |
+            Expr::Int {ty, ..} |
+            Expr::Float {ty, ..} |
+            Expr::UnOp {ty, ..} |
+            Expr::BinOp {ty, ..} |
+            Expr::Reduce {ty, ..} |
+            Expr::Call {ty, ..} |
+            Expr::ExtCall {ty, ..} |
+            Expr::ArrayAccess {ty, ..} |
+            Expr::ProgramId {ty, ..} |
+            Expr::Arange {ty, ..} |
+            Expr::Load {ty, ..} |
+            Expr::Store {ty, ..} |
+            Expr::Full {ty, ..} |
+            Expr::Where {ty, ..} => ty,
         }
     }
 
@@ -63,8 +88,9 @@ impl ExprType<Type> for Expr {
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::ProgramId {..} => true,
             Expr::UnOp {..} | Expr::BinOp {..} | Expr::Reduce {..} |
-            Expr::Call {..} | Expr::Arange {..} | Expr::Load {..} |
-            Expr::Store {..} | Expr::Full {..} | Expr::Where {..} => false,
+            Expr::Call {..} | Expr::ExtCall {..} | Expr::ArrayAccess {..} |
+            Expr::Arange {..} | Expr::Load {..} | Expr::Store {..} |
+            Expr::Full {..} | Expr::Where {..} => false,
         }
     }
 }
@@ -80,6 +106,7 @@ pub enum Stmt {
 
     // Triton-specific nodes
     Barrier {i: Info},
+    KernelLaunch {id: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info},
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -91,10 +118,10 @@ pub struct Param {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Top {
     Import {package: String, as_str: Option<String>, i: Info},
-    TritonFunDef {id: Name, params: Vec<Param>, body: Vec<Stmt>, i: Info},
+    FunDef {triton_jit: bool, id: Name, params: Vec<Param>, body: Vec<Stmt>, i: Info},
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ast {
-    pub tops: Vec<Top>,
+    pub tops: Vec<Top>
 }

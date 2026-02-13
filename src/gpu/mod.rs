@@ -30,7 +30,8 @@ use std::collections::BTreeMap;
 pub fn from_general_ir(
     ast: ir_ast::Ast,
     classification: BTreeMap<Name, TargetClass>,
-    opts: &CompileOptions
+    opts: &CompileOptions,
+    debug_env: &DebugEnv
 ) -> CompileResult<Ast> {
     // Identify the parallel structure in the IR AST and use this to determine how to map each
     // outermost parallel for-loop to the blocks and threads of a GPU kernel.
@@ -40,10 +41,14 @@ pub fn from_general_ir(
     // Functions assigned TargetClass::Both are split into two separate versions, depending on
     // whether they are called from the host or from the device.
     let (ast, classification) = split_function_targets::apply(ast, classification)?;
+    debug_env.print("IR AST after splitting on classification", &ast);
 
     // Translate the general IR AST to a representation used for all GPU targets.
     let ast = codegen::from_general_ir(ast, classification, gpu_mapping, opts)?;
+    debug_env.print("Initial GPU AST", &ast);
+
     let ast = constant_fold::fold(ast);
+    debug_env.print("GPU AST after constant folding", &ast);
 
     // Eliminate redundant uses of synchronization. This includes repeated uses of synchronization
     // on the same scope and trailing synchronization at the end of a kernel.

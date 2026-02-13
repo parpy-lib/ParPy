@@ -53,7 +53,7 @@ impl CFType for Type {
 
     fn is_int(&self) -> bool {
         match self {
-            Type::Scalar {sz} => true,
+            Type::Scalar {..} => true,
             _ => false
         }
     }

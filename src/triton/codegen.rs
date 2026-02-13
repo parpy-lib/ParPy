@@ -9,31 +9,42 @@ use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::smap::*;
 
+use std::collections::BTreeMap;
+
 #[derive(Clone, Debug)]
-struct CodegenCtx {
+struct CodegenEnv {
+    pub ext_map: BTreeMap<Name, String>,
     pub nthreads: i64,
-    pub mask: Option<Box<Expr>>,
 }
 
-impl CodegenCtx {
-    fn new(nthreads: i64) -> Self {
-        CodegenCtx {nthreads, mask: None}
+impl Default for CodegenEnv {
+    fn default() -> Self {
+        CodegenEnv {ext_map: BTreeMap::new(), nthreads: 0}
+    }
+}
+
+impl CodegenEnv {
+    fn add_ext(mut self, ext_id: Name, ext_str: String) -> Self {
+        self.ext_map.insert(ext_id, ext_str);
+        self
     }
 
-    fn add_mask(&self, mask: Expr) -> Self {
-        let mut ctx = self.clone();
-        ctx.mask = match ctx.mask {
-            Some(m) => Some(Box::new(Expr::BinOp {
-                lhs: m,
-                op: BinOp::And,
-                rhs: Box::new(mask.clone()),
-                ty: Type::Tensor {shape: vec![], sz: ElemSize::Bool},
-                i: mask.get_info()
-            })),
-            None => Some(Box::new(mask))
-        };
-        ctx
+    fn with_nthreads(mut self, nthreads: i64) -> Self {
+        self.nthreads = nthreads;
+        self
     }
+}
+
+fn generate_default_imports() -> Vec<Top> {
+    let mk_import = |package_str: &str| Top::Import {
+        package: package_str.to_string(),
+        as_str: None,
+        i: Info::default()
+    };
+    vec![
+        mk_import("triton"),
+        mk_import("triton.language"),
+    ]
 }
 
 fn validate_attr(attr: gpu_ast::KernelAttribute, i: &Info) -> CompileResult<i64> {
@@ -97,7 +108,14 @@ fn from_gpu_ast_type(ty: gpu_ast::Type, i: &Info) -> CompileResult<Type> {
     }
 }
 
-fn from_gpu_ast_expr(mask: &Option<Box<Expr>>, e: gpu_ast::Expr) -> CompileResult<Expr> {
+fn validate_bin_op(op: &BinOp, i: &Info) -> CompileResult<()> {
+    match op {
+        BinOp::Pow => parpy_compile_error!(i, "The power operator is not supported in Triton"),
+        _ => Ok(())
+    }
+}
+
+fn from_gpu_ast_kernel_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
     let ty = from_gpu_ast_type(e.get_type().clone(), &e.get_info())?;
     match e {
         gpu_ast::Expr::Var {id, ty: _, i} => Ok(Expr::Var {id, ty, i}),
@@ -105,44 +123,48 @@ fn from_gpu_ast_expr(mask: &Option<Box<Expr>>, e: gpu_ast::Expr) -> CompileResul
         gpu_ast::Expr::Int {v, ty: _, i} => Ok(Expr::Int {v, ty, i}),
         gpu_ast::Expr::Float {v, ty: _, i} => Ok(Expr::Float {v, ty, i}),
         gpu_ast::Expr::UnOp {op, arg, ty: _, i} => {
-            let arg = Box::new(from_gpu_ast_expr(mask, *arg)?);
+            let arg = Box::new(from_gpu_ast_kernel_expr(env, *arg)?);
             Ok(Expr::UnOp {op, arg, ty, i})
         },
         gpu_ast::Expr::BinOp {lhs, op, rhs, ty: _, i} => {
-            let lhs = Box::new(from_gpu_ast_expr(mask, *lhs)?);
-            let rhs = Box::new(from_gpu_ast_expr(mask, *rhs)?);
+            let lhs = Box::new(from_gpu_ast_kernel_expr(env, *lhs)?);
+            let rhs = Box::new(from_gpu_ast_kernel_expr(env, *rhs)?);
+            validate_bin_op(&op, &i)?;
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})
         },
         gpu_ast::Expr::Assign {i, ..} => {
             parpy_internal_error!(i, "Assignments as subexpressions are not supported in Triton")
         },
         gpu_ast::Expr::IfExpr {cond, thn, els, ty: _, i} => {
-            let cond = Box::new(from_gpu_ast_expr(mask, *cond)?);
-            let thn = Box::new(from_gpu_ast_expr(mask, *thn)?);
-            let els = Box::new(from_gpu_ast_expr(mask, *els)?);
+            let cond = Box::new(from_gpu_ast_kernel_expr(env, *cond)?);
+            let thn = Box::new(from_gpu_ast_kernel_expr(env, *thn)?);
+            let els = Box::new(from_gpu_ast_kernel_expr(env, *els)?);
             Ok(Expr::Where {cond, thn, els, ty, i})
         },
         gpu_ast::Expr::ArrayAccess {target, idx, ty: _, i} => {
-            let target = Box::new(from_gpu_ast_expr(mask, *target)?);
-            let idx = Box::new(from_gpu_ast_expr(mask, *idx)?);
+            let target = Box::new(from_gpu_ast_kernel_expr(env, *target)?);
+            let idx = Box::new(from_gpu_ast_kernel_expr(env, *idx)?);
             let target_ty = target.get_type().clone();
             let ptr = Box::new(Expr::BinOp {
                 lhs: target, op: BinOp::Add, rhs: idx, ty: target_ty, i: i.clone()
             });
-            Ok(Expr::Load {ptr, mask: mask.clone(), ty, i})
+            Ok(Expr::Load {ptr, mask: None, ty, i})
         },
         gpu_ast::Expr::Call {id, args, ty: _, i} => {
             let args = args.into_iter()
-                .map(|e| from_gpu_ast_expr(&mask, e))
+                .map(|e| from_gpu_ast_kernel_expr(env, e))
                 .collect::<CompileResult<Vec<Expr>>>()?;
-            Ok(Expr::Call {id, args, ty, i})
+            match env.ext_map.get(&id) {
+                Some(ext_str) => Ok(Expr::ExtCall {id: ext_str.clone(), args, ty, i}),
+                None => Ok(Expr::Call {id, args, ty, i})
+            }
         },
         gpu_ast::Expr::PyCallback {i, ..} => {
-            parpy_internal_error!(i, "Found Python callback in GPU code which is not allowed")
+            parpy_internal_error!(i, "Found Python callback in Triton codegen")
         },
         gpu_ast::Expr::Convert {e, ty: gpu_ast::Type::Scalar {sz: elem_sz}} => {
             let i = e.get_info();
-            let value = Box::new(from_gpu_ast_expr(mask, *e)?);
+            let value = Box::new(from_gpu_ast_kernel_expr(env, *e)?);
             Ok(Expr::Full {shape: vec![], value, elem_sz, ty, i})
         },
         gpu_ast::Expr::Convert {e, ..} => {
@@ -166,7 +188,7 @@ fn remove_thread_idx(removed: bool, e: gpu_ast::Expr) -> (bool, gpu_ast::Expr) {
 }
 
 fn extract_upper_bound(
-    ctx: &CodegenCtx,
+    env: &CodegenEnv,
     var: &Name,
     cond: gpu_ast::Expr
 ) -> CompileResult<Expr> {
@@ -176,7 +198,7 @@ fn extract_upper_bound(
     if let gpu_ast::Expr::BinOp {lhs, op, rhs, ty: _, i} = cond {
         match (*lhs, op) {
             (gpu_ast::Expr::Var {id, ..}, BinOp::Lt) if id == *var => {
-                from_gpu_ast_expr(&ctx.mask, *rhs)
+                from_gpu_ast_kernel_expr(env, *rhs)
             },
             _ => fail(i)
         }
@@ -186,7 +208,7 @@ fn extract_upper_bound(
 }
 
 fn extract_step(
-    ctx: &CodegenCtx,
+    env: &CodegenEnv,
     var: &Name,
     incr: gpu_ast::Expr
 ) -> CompileResult<i64> {
@@ -196,7 +218,7 @@ fn extract_step(
     if let gpu_ast::Expr::BinOp {lhs, op, rhs, ty: _, i} = incr {
         match (*lhs, op) {
             (gpu_ast::Expr::Var {id, ..}, BinOp::Add) if id == *var => {
-                match from_gpu_ast_expr(&ctx.mask, *rhs)? {
+                match from_gpu_ast_kernel_expr(env, *rhs)? {
                     Expr::Int {v, ..} => Ok(v as i64),
                     _ => parpy_compile_error!(i, "Found non-literal step size in Triton codegen")
                 }
@@ -209,7 +231,7 @@ fn extract_step(
 }
 
 fn extract_loop_bounds(
-    ctx: &CodegenCtx,
+    env: &CodegenEnv,
     var_ty: Type,
     var: Name,
     init: gpu_ast::Expr,
@@ -218,9 +240,9 @@ fn extract_loop_bounds(
     i: &Info
 ) -> CompileResult<(Name, Expr, Expr, i64, Option<Stmt>)> {
     let (removed_thread, init) = remove_thread_idx(false, init);
-    let lo = from_gpu_ast_expr(&ctx.mask, init)?;
-    let hi = extract_upper_bound(ctx, &var, cond)?;
-    let step = extract_step(ctx, &var, incr)?;
+    let lo = from_gpu_ast_kernel_expr(env, init)?;
+    let hi = extract_upper_bound(env, &var, cond)?;
+    let step = extract_step(env, &var, incr)?;
     // NOTE(larshum, 2026-02-11): If we removed the use of a thread index, we know this for-loop
     // runs in parallel over threads, in which case we have to restructure it.
     if removed_thread {
@@ -237,13 +259,13 @@ fn extract_loop_bounds(
                 rhs: Box::new(Expr::BinOp {
                     lhs: Box::new(Expr::Arange {
                         lo: 0,
-                        hi: ctx.nthreads as usize,
+                        hi: env.nthreads as usize,
                         ty: var_ty.clone(),
                         i: i.clone()
                     }),
                     op: BinOp::Mul,
                     rhs: Box::new(Expr::Int {
-                        v: (step / ctx.nthreads) as i128,
+                        v: (step / env.nthreads) as i128,
                         ty: var_ty.clone(),
                         i: i.clone()
                     }),
@@ -266,75 +288,63 @@ fn get_reduction_operator(op: &BinOp, i: &Info) -> CompileResult<ReduceOp> {
         BinOp::Add => Ok(ReduceOp::Sum),
         BinOp::Min => Ok(ReduceOp::Min),
         BinOp::Max => Ok(ReduceOp::Max),
-        BinOp::Mul => parpy_compile_error!(i, "Multiplication reductions are \
-                                               not supported in Triton codegen"),
+        BinOp::Mul => Ok(ReduceOp::Prod),
         _ => parpy_compile_error!(i, "Unsupported reduction operation")
     }
 }
 
-fn from_gpu_ast_stmt(
-    ctx: &CodegenCtx,
+fn from_gpu_ast_kernel_stmt(
+    env: &CodegenEnv,
     mut acc: Vec<Stmt>,
     s: gpu_ast::Stmt
 ) -> CompileResult<Vec<Stmt>> {
     match s {
         gpu_ast::Stmt::Definition {ty: _, id, expr, i} => {
-            let expr = from_gpu_ast_expr(&ctx.mask, expr)?;
+            let expr = from_gpu_ast_kernel_expr(env, expr)?;
             acc.push(Stmt::Assign {dst: id, expr, i});
             Ok(acc)
         },
         gpu_ast::Stmt::For {var_ty, var, init, cond, incr, body, i, ..} => {
             let var_ty = from_gpu_ast_type(var_ty, &i)?;
-            let (var, lo, hi, step, init_body) = extract_loop_bounds(ctx, var_ty.clone(), var, init, cond, incr, &i)?;
+            let (var, lo, hi, step, init_body) = extract_loop_bounds(env, var_ty.clone(), var, init, cond, incr, &i)?;
             let body = match init_body {
                 Some(var_assign) => {
-                    let inner_ctx = ctx.add_mask(Expr::BinOp {
-                        lhs: Box::new(Expr::Var {
-                            id: var.clone(),
-                            ty: var_ty.clone(),
-                            i: i.clone()
-                        }),
-                        op: BinOp::Lt,
-                        rhs: Box::new(hi.clone()),
-                        ty: var_ty.clone(),
-                        i: i.clone()
-                    });
-                    let mut body = from_gpu_ast_stmts(&inner_ctx, body)?;
+                    let mut body = from_gpu_ast_kernel_stmts(&env, body)?;
                     body.insert(0, var_assign);
                     Ok(body)
                 },
-                None => from_gpu_ast_stmts(ctx, body)
+                None => from_gpu_ast_kernel_stmts(env, body)
             }?;
             acc.push(Stmt::For {var, lo, hi, step, body, i});
             Ok(acc)
         },
         gpu_ast::Stmt::If {cond, thn, els, i} => {
             acc.push(Stmt::If {
-                cond: from_gpu_ast_expr(&ctx.mask, cond)?,
-                thn: from_gpu_ast_stmts(ctx, thn)?,
-                els: from_gpu_ast_stmts(ctx, els)?,
+                cond: from_gpu_ast_kernel_expr(env, cond)?,
+                thn: from_gpu_ast_kernel_stmts(env, thn)?,
+                els: from_gpu_ast_kernel_stmts(env, els)?,
                 i
             });
             Ok(acc)
         },
         gpu_ast::Stmt::While {cond, body, i} => {
-            let cond = from_gpu_ast_expr(&ctx.mask, cond)?;
-            let body = from_gpu_ast_stmts(ctx, body)?;
+            let cond = from_gpu_ast_kernel_expr(env, cond)?;
+            let body = from_gpu_ast_kernel_stmts(env, body)?;
             acc.push(Stmt::While {cond, body, i});
             Ok(acc)
         },
         gpu_ast::Stmt::Return {value, i} => {
-            let value = from_gpu_ast_expr(&ctx.mask, value)?;
+            let value = from_gpu_ast_kernel_expr(env, value)?;
             acc.push(Stmt::Return {value, i});
             Ok(acc)
         },
         gpu_ast::Stmt::Scope {body, i: _} => {
-            acc.append(&mut from_gpu_ast_stmts(ctx, body)?);
+            acc.append(&mut from_gpu_ast_kernel_stmts(env, body)?);
             Ok(acc)
         },
         gpu_ast::Stmt::Expr {e: gpu_ast::Expr::Assign {lhs, rhs, ty, i: _}, i} => {
             let ty = from_gpu_ast_type(ty, &i)?;
-            let rhs = from_gpu_ast_expr(&ctx.mask, *rhs)?;
+            let rhs = from_gpu_ast_kernel_expr(env, *rhs)?;
             match *lhs {
                 gpu_ast::Expr::Var {id, ty: _, i: _} => {
                     acc.push(Stmt::Assign {
@@ -345,8 +355,8 @@ fn from_gpu_ast_stmt(
                     Ok(acc)
                 },
                 gpu_ast::Expr::ArrayAccess {target, idx, ty: _, i: _} => {
-                    let target = from_gpu_ast_expr(&ctx.mask, *target)?;
-                    let idx = from_gpu_ast_expr(&ctx.mask, *idx)?;
+                    let target = from_gpu_ast_kernel_expr(env, *target)?;
+                    let idx = from_gpu_ast_kernel_expr(env, *idx)?;
                     acc.push(Stmt::Expr {
                         e: Expr::Store {
                             ptr: Box::new(Expr::BinOp {
@@ -357,7 +367,7 @@ fn from_gpu_ast_stmt(
                                 i: i.clone()
                             }),
                             value: Box::new(rhs),
-                            mask: ctx.mask.clone(),
+                            mask: None,
                             ty: Type::Void,
                             i: i.clone()
                         },
@@ -369,32 +379,21 @@ fn from_gpu_ast_stmt(
             }
         },
         gpu_ast::Stmt::Expr {e, i} => {
-            let e = from_gpu_ast_expr(&ctx.mask, e)?;
+            let e = from_gpu_ast_kernel_expr(env, e)?;
             acc.push(Stmt::Expr {e, i});
             Ok(acc)
         },
         gpu_ast::Stmt::ParallelReduction {var_ty, var, init, cond, incr, body, i, ..} => {
             let var_ty = from_gpu_ast_type(var_ty, &i)?;
             let (var, lo, hi, step, init_stmt) = extract_loop_bounds(
-                ctx, var_ty.clone(), var, init, cond, incr, &i
+                env, var_ty.clone(), var, init, cond, incr, &i
             )?;
-            let inner_ctx = ctx.add_mask(Expr::BinOp {
-                lhs: Box::new(Expr::Var {
-                    id: var.clone(),
-                    ty: var_ty.clone(),
-                    i: i.clone()
-                }),
-                op: BinOp::Lt,
-                rhs: Box::new(hi.clone()),
-                ty: var_ty.clone(),
-                i: i.clone()
-            });
             let (l, op, r, sz, i) = reduce::extract_reduction_operands(body, &i)?;
-            let l = from_gpu_ast_expr(&inner_ctx.mask, l)?;
+            let l = from_gpu_ast_kernel_expr(&env, l)?;
             let reduce_op = get_reduction_operator(&op, &i)?;
             if let Expr::Var {ref id, ..} = l {
                 let ty = Type::Tensor {shape: vec![], sz};
-                let r = from_gpu_ast_expr(&inner_ctx.mask, r)?;
+                let r = from_gpu_ast_kernel_expr(&env, r)?;
                 let reduce_stmt = Stmt::Assign {
                     dst: id.clone(),
                     expr: Expr::BinOp {
@@ -440,22 +439,216 @@ fn from_gpu_ast_stmt(
     }
 }
 
-fn from_gpu_ast_stmts(
-    ctx: &CodegenCtx,
+fn from_gpu_ast_kernel_stmts(
+    env: &CodegenEnv,
     stmts: Vec<gpu_ast::Stmt>
 ) -> CompileResult<Vec<Stmt>> {
     stmts.into_iter()
-        .fold(Ok(vec![]), |acc, s| from_gpu_ast_stmt(&ctx, acc?, s))
+        .fold(Ok(vec![]), |acc, s| from_gpu_ast_kernel_stmt(&env, acc?, s))
 }
 
-fn from_gpu_ast_top(t: gpu_ast::Top) -> CompileResult<Top> {
-    match t {
-        gpu_ast::Top::ExtDecl {i, ..} => {
-            Ok(Top::Import {
-                package: "TODO".to_string(),
-                as_str: None,
+fn from_gpu_ast_host_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
+    let ty = from_gpu_ast_type(e.get_type().clone(), &e.get_info())?;
+    match e {
+        gpu_ast::Expr::Var {id, ty: _, i} => Ok(Expr::Var {id, ty, i}),
+        gpu_ast::Expr::Bool {v, ty: _, i} => Ok(Expr::Bool {v, ty, i}),
+        gpu_ast::Expr::Int {v, ty: _, i} => Ok(Expr::Int {v, ty, i}),
+        gpu_ast::Expr::Float {v, ty: _, i} => Ok(Expr::Float {v, ty, i}),
+        gpu_ast::Expr::UnOp {op, arg, ty: _, i} => {
+            let arg = Box::new(from_gpu_ast_host_expr(env, *arg)?);
+            Ok(Expr::UnOp {op, arg, ty, i})
+        },
+        gpu_ast::Expr::BinOp {lhs, op, rhs, ty: _, i} => {
+            let lhs = Box::new(from_gpu_ast_host_expr(env, *lhs)?);
+            let rhs = Box::new(from_gpu_ast_host_expr(env, *rhs)?);
+            Ok(Expr::BinOp {lhs, op, rhs, ty, i})
+        },
+        gpu_ast::Expr::Assign {i, ..} => {
+            parpy_internal_error!(i, "Assignments as subexpressions are not supported in Triton")
+        },
+        gpu_ast::Expr::IfExpr {cond, thn, els, ty: _, i} => {
+            let cond = Box::new(from_gpu_ast_host_expr(env, *cond)?);
+            let thn = Box::new(from_gpu_ast_host_expr(env, *thn)?);
+            let els = Box::new(from_gpu_ast_host_expr(env, *els)?);
+            Ok(Expr::Where {cond, thn, els, ty, i})
+        },
+        gpu_ast::Expr::ArrayAccess {target, idx, ty: _, i} => {
+            let target = Box::new(from_gpu_ast_host_expr(env, *target)?);
+            let idx = Box::new(from_gpu_ast_host_expr(env, *idx)?);
+            Ok(Expr::ArrayAccess {target, idx, ty, i})
+        },
+        gpu_ast::Expr::Call {id, args, ty: _, i} => {
+            let args = args.into_iter()
+                .map(|e| from_gpu_ast_host_expr(env, e))
+                .collect::<CompileResult<Vec<Expr>>>()?;
+            match env.ext_map.get(&id) {
+                Some(ext_str) => Ok(Expr::ExtCall {id: ext_str.clone(), args, ty, i}),
+                None => Ok(Expr::Call {id, args, ty, i})
+            }
+        },
+        gpu_ast::Expr::PyCallback {i, ..} => {
+            parpy_internal_error!(i, "Found Python callback in Triton codegen")
+        },
+        gpu_ast::Expr::Convert {e, ty: gpu_ast::Type::Scalar {sz: elem_sz}} => {
+            let i = e.get_info();
+            let value = Box::new(from_gpu_ast_host_expr(env, *e)?);
+            Ok(Expr::Full {shape: vec![], value, elem_sz, ty, i})
+        },
+        gpu_ast::Expr::Convert {e, ..} => {
+            let i = e.get_info();
+            parpy_internal_error!(i, "Unsupported conversion in Triton codegen")
+        },
+        gpu_ast::Expr::ThreadIdx {i, ..} => {
+            parpy_internal_error!(i, "Thread indices are not supported")
+        },
+        gpu_ast::Expr::BlockIdx {dim, ty: _, i} => {
+            Ok(Expr::ProgramId {dim, ty, i})
+        },
+    }
+}
+
+fn convert_tensors_to_torch(e: Expr) -> Expr {
+    let ty = e.get_type().clone();
+    match ty {
+        Type::Tensor {ref shape, ..} if !shape.is_empty() => {
+            let i = e.get_info();
+            Expr::ExtCall {
+                id: "_parpy_builtin_to_torch".to_string(),
+                args: vec![e],
+                ty,
                 i
-            })
+            }
+        },
+        _ => e
+    }
+}
+
+fn from_gpu_ast_host_stmt(
+    env: &CodegenEnv,
+    mut acc: Vec<Stmt>,
+    s: gpu_ast::Stmt
+) -> CompileResult<Vec<Stmt>> {
+    match s {
+        gpu_ast::Stmt::Definition {ty: _, id, expr, i} => {
+            let expr = from_gpu_ast_host_expr(env, expr)?;
+            acc.push(Stmt::Assign {dst: id, expr, i});
+            Ok(acc)
+        },
+        gpu_ast::Stmt::For {var_ty, var, init, cond, incr, body, unroll: _, i} => {
+            let var_ty = from_gpu_ast_type(var_ty, &i)?;
+            let (var, lo, hi, step, init_body) = extract_loop_bounds(
+                env, var_ty.clone(), var, init, cond, incr, &i
+            )?;
+            let body = match init_body {
+                Some(_) => {
+                    parpy_internal_error!(i, "Found parallel for-loop in host \
+                                              code when compiling to Triton")
+                },
+                None => from_gpu_ast_kernel_stmts(env, body)
+            }?;
+            acc.push(Stmt::For {var, lo, hi, step, body, i});
+            Ok(acc)
+        },
+        gpu_ast::Stmt::If {cond, thn, els, i} => {
+            let cond = from_gpu_ast_host_expr(env, cond)?;
+            let thn = from_gpu_ast_host_stmts(env, thn)?;
+            let els = from_gpu_ast_host_stmts(env, els)?;
+            acc.push(Stmt::If {cond, thn, els, i});
+            Ok(acc)
+        },
+        gpu_ast::Stmt::While {cond, body, i} => {
+            let cond = from_gpu_ast_host_expr(env, cond)?;
+            let body = from_gpu_ast_host_stmts(env, body)?;
+            acc.push(Stmt::While {cond, body, i});
+            Ok(acc)
+        },
+        gpu_ast::Stmt::Return {value, i} => {
+            let value = from_gpu_ast_host_expr(env, value)?;
+            acc.push(Stmt::Return {value, i});
+            Ok(acc)
+        },
+        gpu_ast::Stmt::Scope {body, i: _} => {
+            acc.append(&mut from_gpu_ast_host_stmts(env, body)?);
+            Ok(acc)
+        },
+        gpu_ast::Stmt::Expr {e, i} => {
+            let e = from_gpu_ast_host_expr(env, e)?;
+            acc.push(Stmt::Expr {e, i});
+            Ok(acc)
+        },
+        gpu_ast::Stmt::ParallelReduction {i, ..} => {
+            parpy_internal_error!(i, "Found parallel reduction in host code when compiling to Triton")
+        },
+        gpu_ast::Stmt::Synchronize {i, ..} => {
+            parpy_internal_error!(i, "Found synchronization in host code when compiling to Triton")
+        },
+        gpu_ast::Stmt::WarpReduce {i, ..} => {
+            parpy_internal_error!(i, "Found warp reduction in host code when compiling to Triton")
+        },
+        gpu_ast::Stmt::ClusterReduce {i, ..} => {
+            parpy_internal_error!(i, "Found cluster reduction in host code when compiling to Triton")
+        },
+        gpu_ast::Stmt::KernelLaunch {id, args, grid, smem, i} => {
+            if smem != 0 {
+                parpy_compile_error!(i, "Found kernel launch with non-zero shared memory usage in Triton codegen")?
+            }
+            let args = args.into_iter()
+                .map(|arg| from_gpu_ast_host_expr(env, arg))
+                .collect::<CompileResult<Vec<Expr>>>()?;
+            let args = args.smap(convert_tensors_to_torch);
+            let nwarps = (grid.threads.prod() / 32) as usize;
+            acc.push(Stmt::KernelLaunch {
+                id,
+                block_dims: grid.blocks,
+                args,
+                nwarps,
+                i
+            });
+            Ok(acc)
+        },
+        gpu_ast::Stmt::AllocDevice {i, ..} => {
+            parpy_internal_error!(i, "Unsupported node AllocDevice in Triton codegen")
+        },
+        gpu_ast::Stmt::AllocShared {i, ..} => {
+            parpy_internal_error!(i, "Found shared memory allocation in host code when compiling to Triton")
+        },
+        gpu_ast::Stmt::FreeDevice {i, ..} => {
+            parpy_internal_error!(i, "Unsupported node FreeDevice in Triton codegen")
+        },
+        gpu_ast::Stmt::CopyMemory {i, ..} => {
+            parpy_internal_error!(i, "Unsupported node CopyMemory in Triton codegen")
+        },
+    }
+}
+
+fn from_gpu_ast_host_stmts(
+    env: &CodegenEnv,
+    stmts: Vec<gpu_ast::Stmt>
+) -> CompileResult<Vec<Stmt>> {
+    stmts.into_iter()
+        .fold(Ok(vec![]), |acc, s| from_gpu_ast_host_stmt(&env, acc?, s))
+}
+
+fn from_gpu_ast_top(
+    env: CodegenEnv,
+    mut tops: Vec<Top>,
+    t: gpu_ast::Top
+) -> CompileResult<(CodegenEnv, Vec<Top>)> {
+    match t {
+        gpu_ast::Top::ExtDecl {id, ext_id, target, header, i, ..} => {
+            if let Some(h) = header {
+                tops.push(Top::Import {
+                    package: h,
+                    as_str: None,
+                    i: i.clone()
+                });
+            }
+            if let Target::Device = target {
+                let env = env.add_ext(id, ext_id);
+                Ok((env, tops))
+            } else {
+                parpy_compile_error!(i, "Host externals are not supported in Triton")
+            }
         },
         gpu_ast::Top::KernelFunDef {attrs, id, params, body, i} => {
             let nthreads = validate_attrs(attrs, &i)?;
@@ -463,23 +656,35 @@ fn from_gpu_ast_top(t: gpu_ast::Top) -> CompileResult<Top> {
                 parpy_internal_error!(i, "Found kernel parallelized over zero threads")?
             }
             let params = from_gpu_ast_params(params);
-            let ctx = CodegenCtx::new(nthreads);
-            let body = from_gpu_ast_stmts(&ctx, body)?;
-            Ok(Top::TritonFunDef {id, params, body, i})
+            let env = env.with_nthreads(nthreads);
+            let body = from_gpu_ast_kernel_stmts(&env, body)?;
+            tops.push(Top::FunDef {triton_jit: true, id, params, body, i});
+            Ok((env, tops))
         },
-        gpu_ast::Top::FunDef {i, ..} => {
-            Ok(Top::Import {
-                package: "TODO".to_string(),
-                as_str: None,
-                i
-            })
-        }
+        gpu_ast::Top::FunDef {ret_ty: _, id, params, body, target: Target::Device, i} => {
+            let params = from_gpu_ast_params(params);
+            let env = env.with_nthreads(1);
+            let body = from_gpu_ast_kernel_stmts(&env, body)?;
+            tops.push(Top::FunDef {triton_jit: true, id, params, body, i});
+            Ok((env, tops))
+        },
+        gpu_ast::Top::FunDef {ret_ty: _, id, params, body, target: Target::Host, i} => {
+            let params = from_gpu_ast_params(params);
+            let body = from_gpu_ast_host_stmts(&env, body)?;
+            tops.push(Top::FunDef {triton_jit: false, id, params, body, i});
+            Ok((env, tops))
+        },
     }
 }
 
 pub fn from_gpu_ast(ast: gpu_ast::Ast) -> CompileResult<Ast> {
-    let tops = ast.into_iter()
-        .map(from_gpu_ast_top)
-        .collect::<CompileResult<Vec<Top>>>()?;
+    let env = CodegenEnv::default();
+    let mut tops = generate_default_imports();
+    let (_, mut gen_tops) = ast.into_iter()
+        .fold(Ok((env, vec![])), |acc, t| {
+            let (env, tops) = acc?;
+            from_gpu_ast_top(env, tops, t)
+        })?;
+    tops.append(&mut gen_tops);
     Ok(Ast {tops})
 }
