@@ -379,7 +379,7 @@ mod test {
     #[test]
     fn print_assign() {
         let s = Stmt::Assign {
-            dst: Name::sym_str("x"),
+            dst: var("x"),
             expr: var("y"),
             i: i()
         };
@@ -422,7 +422,7 @@ mod test {
                 Param {id: Name::sym_str("y"), ty: Some(ElemSize::F32)},
             ],
             body: vec![
-                Stmt::Assign {dst: Name::sym_str("w"), expr: var("k"), i: i()}
+                Stmt::Assign {dst: var("w"), expr: var("k"), i: i()}
             ],
             i: i()
         };
