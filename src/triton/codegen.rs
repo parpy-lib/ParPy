@@ -478,7 +478,7 @@ fn from_gpu_ast_host_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<E
             let els = Box::new(from_gpu_ast_host_expr(env, *els)?);
             Ok(Expr::Where {cond, thn, els, ty, i})
         },
-        gpu_ast::Expr::ArrayAccess {target, idx, ty: _, i} => {
+        gpu_ast::Expr::ArrayAccess {i, ..} => {
             parpy_compile_error!(i, "Data cannot be accessed outside parallel \
                                      code in the Triton backend")
         },
