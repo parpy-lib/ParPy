@@ -214,7 +214,7 @@ def set_cuda_stream(args, opts):
         return args + [stream.cuda_stream]
     return args
 
-def get_triton_wrapper(name, key, argtypes, vars, callbacks, opts):
+def get_triton_wrapper(name, key, opts):
     import importlib.util
     import sys
     module_path = _get_native_path(key, opts)
@@ -230,6 +230,8 @@ def get_triton_wrapper(name, key, argtypes, vars, callbacks, opts):
 def get_string_wrapper(name, key, opts):
     import ctypes
     from .parpy import CompileBackend, ScalarSizes
+    if opts.backend == CompileBackend.Triton:
+        return get_triton_wrapper(name, key, opts)
     libpath = _get_native_path(key, opts)
     lib = ctypes.cdll.LoadLibrary(libpath)
     getattr(lib, name).restype = ctypes.c_int32
@@ -250,7 +252,7 @@ def get_wrapper(name, key, argtypes, vars, callbacks, opts):
     from .parpy import CompileBackend
     import ctypes
     if opts.backend == CompileBackend.Triton:
-        return get_triton_wrapper(name, key, argtypes, vars, callbacks, opts)
+        return get_triton_wrapper(name, key, opts)
     libpath = _get_native_path(key, opts)
     lib = ctypes.cdll.LoadLibrary(libpath)
     getattr(lib, name).restype = ctypes.c_int32
