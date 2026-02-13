@@ -14,7 +14,7 @@ fn print_tuple_shape(sh: &Vec<i64>) -> String {
 
 fn pprint_elem_size(sz: &ElemSize) -> String {
     match sz {
-        ElemSize::Bool => "triton.language.bool",
+        ElemSize::Bool => "triton.language.int1",
         ElemSize::I8 => "triton.language.int8",
         ElemSize::I16 => "triton.language.int16",
         ElemSize::I32 => "triton.language.int32",
