@@ -148,11 +148,6 @@ impl PrettyPrint for Expr {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{id}({args})"))
             },
-            Expr::ArrayAccess {target, idx, ty: _, i: _} => {
-                let (env, target) = target.pprint(env);
-                let (env, idx) = idx.pprint(env);
-                (env, format!("{target}[{idx}]"))
-            },
             Expr::ProgramId {dim: Dim::X, ty: _, i: _} => (env, format!("triton.language.program_id(0)")),
             Expr::ProgramId {dim: Dim::Y, ty: _, i: _} => (env, format!("triton.language.program_id(1)")),
             Expr::ProgramId {dim: Dim::Z, ty: _, i: _} => (env, format!("triton.language.program_id(2)")),

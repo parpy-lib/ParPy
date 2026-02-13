@@ -27,7 +27,6 @@ pub enum Expr {
     Reduce {op: ReduceOp, arg: Box<Expr>, ty: Type, i: Info},
     Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
     ExtCall {id: String, args: Vec<Expr>, ty: Type, i: Info},
-    ArrayAccess {target: Box<Expr>, idx: Box<Expr>, ty: Type, i: Info},
 
     // Triton-specific nodes
     ProgramId {dim: Dim, ty: Type, i: Info},
@@ -50,7 +49,6 @@ impl InfoNode for Expr {
             Expr::Reduce {i, ..} |
             Expr::Call {i, ..} |
             Expr::ExtCall {i, ..} |
-            Expr::ArrayAccess {i, ..} |
             Expr::ProgramId {i, ..} |
             Expr::Arange {i, ..} |
             Expr::Load {i, ..} |
@@ -73,7 +71,6 @@ impl ExprType<Type> for Expr {
             Expr::Reduce {ty, ..} |
             Expr::Call {ty, ..} |
             Expr::ExtCall {ty, ..} |
-            Expr::ArrayAccess {ty, ..} |
             Expr::ProgramId {ty, ..} |
             Expr::Arange {ty, ..} |
             Expr::Load {ty, ..} |
@@ -88,7 +85,7 @@ impl ExprType<Type> for Expr {
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
             Expr::Float {..} | Expr::ProgramId {..} => true,
             Expr::UnOp {..} | Expr::BinOp {..} | Expr::Reduce {..} |
-            Expr::Call {..} | Expr::ExtCall {..} | Expr::ArrayAccess {..} |
+            Expr::Call {..} | Expr::ExtCall {..} |
             Expr::Arange {..} | Expr::Load {..} | Expr::Store {..} |
             Expr::Full {..} | Expr::Where {..} => false,
         }
@@ -97,7 +94,7 @@ impl ExprType<Type> for Expr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
-    Assign {dst: Name, expr: Expr, i: Info},
+    Assign {dst: Expr, expr: Expr, i: Info},
     For {var: Name, lo: Expr, hi: Expr, step: i64, body: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},

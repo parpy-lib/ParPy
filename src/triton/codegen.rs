@@ -248,7 +248,7 @@ fn extract_loop_bounds(
     if removed_thread {
         let new_var = Name::new(format!("{0}_chunk", var.get_str())).with_new_sym();
         let var_assign = Stmt::Assign {
-            dst: var,
+            dst: Expr::Var {id: var, ty: var_ty.clone(), i: i.clone()},
             expr: Expr::BinOp {
                 lhs: Box::new(Expr::Var {
                     id: new_var.clone(),
@@ -299,9 +299,14 @@ fn from_gpu_ast_kernel_stmt(
     s: gpu_ast::Stmt
 ) -> CompileResult<Vec<Stmt>> {
     match s {
-        gpu_ast::Stmt::Definition {ty: _, id, expr, i} => {
+        gpu_ast::Stmt::Definition {ty, id, expr, i} => {
+            let ty = from_gpu_ast_type(ty, &i)?;
             let expr = from_gpu_ast_kernel_expr(env, expr)?;
-            acc.push(Stmt::Assign {dst: id, expr, i});
+            acc.push(Stmt::Assign {
+                dst: Expr::Var {id, ty, i: i.clone()},
+                expr,
+                i
+            });
             Ok(acc)
         },
         gpu_ast::Stmt::For {var_ty, var, init, cond, incr, body, i, ..} => {
@@ -346,9 +351,10 @@ fn from_gpu_ast_kernel_stmt(
             let ty = from_gpu_ast_type(ty, &i)?;
             let rhs = from_gpu_ast_kernel_expr(env, *rhs)?;
             match *lhs {
-                gpu_ast::Expr::Var {id, ty: _, i: _} => {
+                gpu_ast::Expr::Var {id, ty: var_ty, i: var_i} => {
+                    let var_ty = from_gpu_ast_type(var_ty, &var_i)?;
                     acc.push(Stmt::Assign {
-                        dst: id,
+                        dst: Expr::Var {id, ty: var_ty, i: var_i},
                         expr: rhs,
                         i
                     });
@@ -391,11 +397,11 @@ fn from_gpu_ast_kernel_stmt(
             let (l, op, r, sz, i) = reduce::extract_reduction_operands(body, &i)?;
             let l = from_gpu_ast_kernel_expr(&env, l)?;
             let reduce_op = get_reduction_operator(&op, &i)?;
-            if let Expr::Var {ref id, ..} = l {
+            if let Expr::Var {ref id, ty: ref lty, i: ref li} = l {
                 let ty = Type::Tensor {shape: vec![], sz};
                 let r = from_gpu_ast_kernel_expr(&env, r)?;
                 let reduce_stmt = Stmt::Assign {
-                    dst: id.clone(),
+                    dst: Expr::Var {id: id.clone(), ty: lty.clone(), i: li.clone()},
                     expr: Expr::BinOp {
                         lhs: Box::new(l),
                         op,
@@ -473,9 +479,8 @@ fn from_gpu_ast_host_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<E
             Ok(Expr::Where {cond, thn, els, ty, i})
         },
         gpu_ast::Expr::ArrayAccess {target, idx, ty: _, i} => {
-            let target = Box::new(from_gpu_ast_host_expr(env, *target)?);
-            let idx = Box::new(from_gpu_ast_host_expr(env, *idx)?);
-            Ok(Expr::ArrayAccess {target, idx, ty, i})
+            parpy_compile_error!(i, "Data cannot be accessed outside parallel \
+                                     code in the Triton backend")
         },
         gpu_ast::Expr::Call {id, args, ty: _, i} => {
             let args = args.into_iter()
@@ -529,9 +534,14 @@ fn from_gpu_ast_host_stmt(
     s: gpu_ast::Stmt
 ) -> CompileResult<Vec<Stmt>> {
     match s {
-        gpu_ast::Stmt::Definition {ty: _, id, expr, i} => {
+        gpu_ast::Stmt::Definition {ty, id, expr, i} => {
+            let ty = from_gpu_ast_type(ty, &i)?;
             let expr = from_gpu_ast_host_expr(env, expr)?;
-            acc.push(Stmt::Assign {dst: id, expr, i});
+            acc.push(Stmt::Assign {
+                dst: Expr::Var {id, ty, i: i.clone()},
+                expr,
+                i
+            });
             Ok(acc)
         },
         gpu_ast::Stmt::For {var_ty, var, init, cond, incr, body, unroll: _, i} => {
@@ -544,7 +554,7 @@ fn from_gpu_ast_host_stmt(
                     parpy_internal_error!(i, "Found parallel for-loop in host \
                                               code when compiling to Triton")
                 },
-                None => from_gpu_ast_kernel_stmts(env, body)
+                None => from_gpu_ast_host_stmts(env, body)
             }?;
             acc.push(Stmt::For {var, lo, hi, step, body, i});
             Ok(acc)
@@ -569,6 +579,12 @@ fn from_gpu_ast_host_stmt(
         },
         gpu_ast::Stmt::Scope {body, i: _} => {
             acc.append(&mut from_gpu_ast_host_stmts(env, body)?);
+            Ok(acc)
+        },
+        gpu_ast::Stmt::Expr {e: gpu_ast::Expr::Assign {lhs, rhs, ..}, i} => {
+            let dst = from_gpu_ast_host_expr(env, *lhs)?;
+            let expr = from_gpu_ast_host_expr(env, *rhs)?;
+            acc.push(Stmt::Assign {dst, expr, i});
             Ok(acc)
         },
         gpu_ast::Stmt::Expr {e, i} => {
