@@ -174,10 +174,6 @@ def cos_metal_f32(x: F32) -> F32:
     return math.cos(x)
 
 @external("triton.language.cos", CompileBackend.Triton, Target.Device)
-def cos_triton_f16(x: F16) -> F16:
-    return math.cos(x)
-
-@external("triton.language.cos", CompileBackend.Triton, Target.Device)
 def cos_triton_f32(x: F32) -> F32:
     return math.cos(x)
 
@@ -208,7 +204,7 @@ def cos(x: T) -> T:
             static_fail("The cos function only supports float scalars")
     elif static_backend_eq(CompileBackend.Triton):
         if static_types_eq(T, F16):
-            return cos_triton_f16(x)
+            static_fail("The cos function does not support 16-bit floats in Triton")
         elif static_types_eq(T, F32):
             return cos_triton_f32(x)
         elif static_types_eq(T, F64):
@@ -236,10 +232,6 @@ def exp_metal_f16(x: F16) -> F16:
 
 @external("metal::exp", CompileBackend.Metal, Target.Device)
 def exp_metal_f32(x: F32) -> F32:
-    return math.exp(x)
-
-@external("triton.language.exp", CompileBackend.Triton, Target.Device)
-def exp_triton_f16(x: F16) -> F16:
     return math.exp(x)
 
 @external("triton.language.exp", CompileBackend.Triton, Target.Device)
@@ -273,7 +265,7 @@ def exp(x: T) -> T:
             static_fail("The exp function only supports float scalars")
     elif static_backend_eq(CompileBackend.Triton):
         if static_types_eq(T, F16):
-            return exp_triton_f16(x)
+            static_fail("The exp function does not support 16-bit floats in Triton")
         elif static_types_eq(T, F32):
             return exp_triton_f32(x)
         elif static_types_eq(T, F64):
@@ -301,10 +293,6 @@ def log_metal_f16(x: F16) -> F16:
 
 @external("metal::log", CompileBackend.Metal, Target.Device)
 def log_metal_f32(x: F32) -> F32:
-    return math.log(x)
-
-@external("triton.language.log", CompileBackend.Triton, Target.Device)
-def log_triton_f16(x: F16) -> F16:
     return math.log(x)
 
 @external("triton.language.log", CompileBackend.Triton, Target.Device)
@@ -338,7 +326,7 @@ def log(x: T) -> T:
             static_fail("The log function only supports float scalars")
     elif static_backend_eq(CompileBackend.Triton):
         if static_types_eq(T, F16):
-            return log_triton_f16(x)
+            static_fail("The log function does not support 16-bit floats in Triton")
         elif static_types_eq(T, F32):
             return log_triton_f32(x)
         elif static_types_eq(T, F64):
@@ -366,10 +354,6 @@ def sin_metal_f16(x: F16) -> F16:
 
 @external("metal::sin", CompileBackend.Metal, Target.Device)
 def sin_metal_f32(x: F32) -> F32:
-    return math.sin(x)
-
-@external("triton.language.sin", CompileBackend.Triton, Target.Device)
-def sin_triton_f16(x: F16) -> F16:
     return math.sin(x)
 
 @external("triton.language.sin", CompileBackend.Triton, Target.Device)
@@ -403,7 +387,7 @@ def sin(x: T) -> T:
             static_fail("The sin function only supports float scalars")
     elif static_backend_eq(CompileBackend.Triton):
         if static_types_eq(T, F16):
-            return sin_triton_f16(x)
+            static_fail("The sin function does not support 16-bit floats in Triton")
         elif static_types_eq(T, F32):
             return sin_triton_f32(x)
         elif static_types_eq(T, F64):
@@ -431,10 +415,6 @@ def sqrt_metal_f16(x: F16) -> F16:
 
 @external("metal::sqrt", CompileBackend.Metal, Target.Device)
 def sqrt_metal_f32(x: F32) -> F32:
-    return math.sqrt(x)
-
-@external("triton.language.sqrt", CompileBackend.Triton, Target.Device)
-def sqrt_triton_f16(x: F16) -> F16:
     return math.sqrt(x)
 
 @external("triton.language.sqrt", CompileBackend.Triton, Target.Device)
@@ -468,7 +448,7 @@ def sqrt(x: T) -> T:
             static_fail("The sqrt function only supports float scalars")
     elif static_backend_eq(CompileBackend.Triton):
         if static_types_eq(T, F16):
-            return sqrt_triton_f16(x)
+            static_fail("The sqrt function does not support 16-bit floats in Triton")
         elif static_types_eq(T, F32):
             return sqrt_triton_f32(x)
         elif static_types_eq(T, F64):
