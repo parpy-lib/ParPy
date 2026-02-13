@@ -1,3 +1,4 @@
+import ctypes
 import numpy as np
 import pathlib
 import sys
@@ -173,6 +174,10 @@ class BaseBuffer:
         self.is_raw = is_raw
 
     def __del__(self):
+        # When the system is about to exit, we skip the deinitialization to
+        # avoid raising extra errors.
+        if sys.is_finalizing():
+            return
         # We skip running the deconstructor for a buffer constructed from raw
         # data, as this will be handled in the original buffer.
         if not self.is_raw:
@@ -194,13 +199,6 @@ class CudaBaseBuffer(BaseBuffer):
 
     def _deconstruct(self, src_ptr):
         if src_ptr is not None:
-            # NOTE(larshum, 2025-11-04): If the interpreter is about to shut
-            # down, PyTorch may raise exceptions if we interact with the
-            # underlying tensor. To avoid such ugly errors, we skip running the
-            # deconstructor, which is fine since the data is freed by the OS
-            # anyway.
-            if sys.is_finalizing():
-                return
             buf_ptr, _, _ = _extract_array_interface(self.buf, allow_cuda=True)
             lib = self._get_runtime_lib()
             _check_errors(lib, lib.parpy_memcpy(src_ptr, buf_ptr, self.nbytes, 2))
@@ -246,12 +244,15 @@ class CudaBaseBuffer(BaseBuffer):
 class TritonBaseBuffer(BaseBuffer):
     def __init__(self, buf, nbytes, src=None, is_raw=False):
         super().__init__(buf, nbytes, src, is_raw)
+        self.libc = ctypes.cdll.LoadLibrary("libc.so.6")
+        self.libc.memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
 
-    def _deconstruct(self, _src_ptr):
+    def _deconstruct(self, src_ptr):
         # Copy data back to the CPU container
-        if self.src is not None:
-            nelems = self.nbytes // self.buf.dtype.itemsize
-            self.src[:] = self.buf.detach().cpu().flatten()[:nelems]
+        if src_ptr is not None:
+            cpu_buf = self.buf.cpu()
+            cpu_buf_ptr, _, _ = _extract_array_interface(cpu_buf, allow_cuda=False)
+            self.libc.memcpy(src_ptr, cpu_buf_ptr, self.nbytes)
 
     def _get_runtime_lib(self):
         return None
