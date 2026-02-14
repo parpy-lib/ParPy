@@ -69,18 +69,8 @@ fn validate_attrs(attrs: Vec<gpu_ast::KernelAttribute>, i: &Info) -> CompileResu
     attrs.into_iter().fold(Ok(0), valid_fn)
 }
 
-fn to_type_annot(ty: gpu_ast::Type) -> Option<ElemSize> {
-    match ty {
-        gpu_ast::Type::Scalar {sz} => Some(sz),
-        _ => None
-    }
-}
-
 fn from_gpu_ast_param(p: gpu_ast::Param) -> Param {
-    Param {
-        id: p.id,
-        ty: to_type_annot(p.ty),
-    }
+    Param { id: p.id }
 }
 
 fn from_gpu_ast_params(params: Vec<gpu_ast::Param>) -> Vec<Param> {
@@ -92,10 +82,10 @@ fn from_gpu_ast_params(params: Vec<gpu_ast::Param>) -> Vec<Param> {
 fn from_gpu_ast_type(ty: gpu_ast::Type, i: &Info) -> CompileResult<Type> {
     match ty {
         gpu_ast::Type::Void => Ok(Type::Void),
-        gpu_ast::Type::Scalar {sz} => Ok(Type::Tensor {shape: vec![], sz}),
+        gpu_ast::Type::Scalar {sz} => Ok(Type::Tensor {shape: 0, sz}),
         gpu_ast::Type::Pointer {ty, mem: gpu_ast::MemSpace::Device} => {
             match from_gpu_ast_type(*ty, &i) {
-                Ok(Type::Tensor {shape, sz}) if shape.is_empty() => Ok(Type::Tensor {shape: vec![1], sz}),
+                Ok(Type::Tensor {shape, sz}) if shape == 0 => Ok(Type::Tensor {shape: 1, sz}),
                 _ => parpy_internal_error!(i, "Failed to convert pointer to a valid Triton type")
             }
         },
@@ -165,7 +155,7 @@ fn from_gpu_ast_kernel_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult
         gpu_ast::Expr::Convert {e, ty: gpu_ast::Type::Scalar {sz: elem_sz}} => {
             let i = e.get_info();
             let value = Box::new(from_gpu_ast_kernel_expr(env, *e)?);
-            Ok(Expr::Full {shape: vec![], value, elem_sz, ty, i})
+            Ok(Expr::Full {shape: 0, value, elem_sz, ty, i})
         },
         gpu_ast::Expr::Convert {e, ..} => {
             let i = e.get_info();
@@ -248,7 +238,7 @@ fn extract_loop_bounds(
     if removed_thread {
         let new_var = Name::new(format!("{0}_chunk", var.get_str())).with_new_sym();
         let var_assign = Stmt::Assign {
-            dst: Expr::Var {id: var, ty: var_ty.clone(), i: i.clone()},
+            dst: var,
             expr: Expr::BinOp {
                 lhs: Box::new(Expr::Var {
                     id: new_var.clone(),
@@ -299,14 +289,9 @@ fn from_gpu_ast_kernel_stmt(
     s: gpu_ast::Stmt
 ) -> CompileResult<Vec<Stmt>> {
     match s {
-        gpu_ast::Stmt::Definition {ty, id, expr, i} => {
-            let ty = from_gpu_ast_type(ty, &i)?;
+        gpu_ast::Stmt::Definition {ty: _, id, expr, i} => {
             let expr = from_gpu_ast_kernel_expr(env, expr)?;
-            acc.push(Stmt::Assign {
-                dst: Expr::Var {id, ty, i: i.clone()},
-                expr,
-                i
-            });
+            acc.push(Stmt::Assign {dst: id, expr, i});
             Ok(acc)
         },
         gpu_ast::Stmt::For {var_ty, var, init, cond, incr, body, i, ..} => {
@@ -351,13 +336,8 @@ fn from_gpu_ast_kernel_stmt(
             let ty = from_gpu_ast_type(ty, &i)?;
             let rhs = from_gpu_ast_kernel_expr(env, *rhs)?;
             match *lhs {
-                gpu_ast::Expr::Var {id, ty: var_ty, i: var_i} => {
-                    let var_ty = from_gpu_ast_type(var_ty, &var_i)?;
-                    acc.push(Stmt::Assign {
-                        dst: Expr::Var {id, ty: var_ty, i: var_i},
-                        expr: rhs,
-                        i
-                    });
+                gpu_ast::Expr::Var {id, ty: _, i: _} => {
+                    acc.push(Stmt::Assign {dst: id, expr: rhs, i});
                     Ok(acc)
                 },
                 gpu_ast::Expr::ArrayAccess {target, idx, ty: _, i: _} => {
@@ -397,11 +377,11 @@ fn from_gpu_ast_kernel_stmt(
             let (l, op, r, sz, i) = reduce::extract_reduction_operands(body, &i)?;
             let l = from_gpu_ast_kernel_expr(&env, l)?;
             let reduce_op = get_reduction_operator(&op, &i)?;
-            if let Expr::Var {ref id, ty: ref lty, i: ref li} = l {
-                let ty = Type::Tensor {shape: vec![], sz};
+            if let Expr::Var {ref id, ..} = l {
+                let ty = Type::Tensor {shape: 0, sz};
                 let r = from_gpu_ast_kernel_expr(&env, r)?;
                 let reduce_stmt = Stmt::Assign {
-                    dst: Expr::Var {id: id.clone(), ty: lty.clone(), i: li.clone()},
+                    dst: id.clone(),
                     expr: Expr::BinOp {
                         lhs: Box::new(l),
                         op,
@@ -497,7 +477,7 @@ fn from_gpu_ast_host_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<E
         gpu_ast::Expr::Convert {e, ty: gpu_ast::Type::Scalar {sz: elem_sz}} => {
             let i = e.get_info();
             let value = Box::new(from_gpu_ast_host_expr(env, *e)?);
-            Ok(Expr::Full {shape: vec![], value, elem_sz, ty, i})
+            Ok(Expr::Full {shape: 0, value, elem_sz, ty, i})
         },
         gpu_ast::Expr::Convert {e, ..} => {
             let i = e.get_info();
@@ -515,7 +495,7 @@ fn from_gpu_ast_host_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<E
 fn convert_tensors_to_torch(e: Expr) -> Expr {
     let ty = e.get_type().clone();
     match ty {
-        Type::Tensor {ref shape, ..} if !shape.is_empty() => {
+        Type::Tensor {ref shape, ..} if *shape != 0 => {
             let i = e.get_info();
             Expr::ExtCall {
                 id: "_parpy_builtin_to_torch".to_string(),
@@ -534,14 +514,9 @@ fn from_gpu_ast_host_stmt(
     s: gpu_ast::Stmt
 ) -> CompileResult<Vec<Stmt>> {
     match s {
-        gpu_ast::Stmt::Definition {ty, id, expr, i} => {
-            let ty = from_gpu_ast_type(ty, &i)?;
+        gpu_ast::Stmt::Definition {ty: _, id, expr, i} => {
             let expr = from_gpu_ast_host_expr(env, expr)?;
-            acc.push(Stmt::Assign {
-                dst: Expr::Var {id, ty, i: i.clone()},
-                expr,
-                i
-            });
+            acc.push(Stmt::Assign {dst: id, expr, i});
             Ok(acc)
         },
         gpu_ast::Stmt::For {var_ty, var, init, cond, incr, body, unroll: _, i} => {
@@ -582,10 +557,18 @@ fn from_gpu_ast_host_stmt(
             Ok(acc)
         },
         gpu_ast::Stmt::Expr {e: gpu_ast::Expr::Assign {lhs, rhs, ..}, i} => {
-            let dst = from_gpu_ast_host_expr(env, *lhs)?;
-            let expr = from_gpu_ast_host_expr(env, *rhs)?;
-            acc.push(Stmt::Assign {dst, expr, i});
-            Ok(acc)
+            match *lhs {
+                gpu_ast::Expr::Var {id: dst, ..} => {
+                    let expr = from_gpu_ast_host_expr(env, *rhs)?;
+                    acc.push(Stmt::Assign {dst, expr, i});
+                    Ok(acc)
+                },
+                gpu_ast::Expr::ArrayAccess {..} => {
+                    parpy_compile_error!(i, "Arrays cannot be accessed outside parallel code")
+                },
+                _ => parpy_internal_error!(i, "Invalid form of assignment encountered \
+                                               in Triton codegen")
+            }
         },
         gpu_ast::Stmt::Expr {e, i} => {
             let e = from_gpu_ast_host_expr(env, e)?;

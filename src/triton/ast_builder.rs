@@ -9,3 +9,7 @@ pub fn var(id: &str) -> Expr {
 pub fn int(v: i128) -> Expr {
     Expr::Int {v, ty: Type::Void, i: i()}
 }
+
+pub fn float(v: f64) -> Expr {
+    Expr::Float {v, ty: Type::Void, i: i()}
+}

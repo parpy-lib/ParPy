@@ -2,13 +2,11 @@ use super::ast::*;
 use crate::utils::ast::*;
 use crate::utils::pprint::*;
 
-use itertools::Itertools;
-
-fn print_tuple_shape(sh: &Vec<i64>) -> String {
-    match &sh[..] {
-        [] => "()".to_string(),
-        [n] => format!("({n},)"),
-        _ => format!("({0})", sh.iter().join(", "))
+fn print_tuple_shape(sh: &i64) -> String {
+    if *sh == 0 {
+        "()".to_string()
+    } else {
+        format!("({sh},)")
     }
 }
 
@@ -260,12 +258,7 @@ impl PrettyPrint for Stmt {
 
 impl PrettyPrint for Param {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Param {id, ty} = self;
-        let (env, id) = id.pprint(env);
-        match ty {
-            Some(sz) => (env, format!("{id} : {0}", pprint_elem_size(sz))),
-            None => (env, id)
-        }
+        self.id.pprint(env)
     }
 }
 
@@ -372,13 +365,25 @@ mod test {
     #[test]
     fn print_full() {
         let e = Expr::Full {
-            shape: vec![32],
+            shape: 32,
             value: Box::new(int(1)),
             elem_sz: ElemSize::I32,
             ty: Type::Void,
             i: i()
         };
         assert_eq!(e.pprint_default(), "triton.language.full((32,), 1, triton.language.int32)");
+    }
+
+    #[test]
+    fn print_full_singleton() {
+        let e = Expr::Full {
+            shape: 0,
+            value: Box::new(float(1.0)),
+            elem_sz: ElemSize::F32,
+            ty: Type::Void,
+            i: i()
+        };
+        assert_eq!(e.pprint_default(), "triton.language.full((), 1.0, triton.language.float32)");
     }
 
     #[test]
@@ -396,7 +401,7 @@ mod test {
     #[test]
     fn print_assign() {
         let s = Stmt::Assign {
-            dst: var("x"),
+            dst: Name::sym_str("x"),
             expr: var("y"),
             i: i()
         };
@@ -435,14 +440,14 @@ mod test {
             triton_jit: true,
             id: Name::sym_str("f"),
             params: vec![
-                Param {id: Name::sym_str("x"), ty: None},
-                Param {id: Name::sym_str("y"), ty: Some(ElemSize::F32)},
+                Param {id: Name::sym_str("x")},
+                Param {id: Name::sym_str("y")},
             ],
             body: vec![
-                Stmt::Assign {dst: var("w"), expr: var("k"), i: i()}
+                Stmt::Assign {dst: Name::sym_str("w"), expr: var("k"), i: i()}
             ],
             i: i()
         };
-        assert_eq!(t.pprint_default(), "@triton.jit\ndef f(x, y : triton.language.float32):\n  w = k");
+        assert_eq!(t.pprint_default(), "@triton.jit\ndef f(x, y):\n  w = k");
     }
 }
