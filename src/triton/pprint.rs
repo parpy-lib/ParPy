@@ -191,6 +191,28 @@ impl PrettyPrint for Expr {
     }
 }
 
+impl PrettyPrintCond<Expr> for Stmt {
+    fn extract_if<'a>(&'a self) -> Option<(&'a Expr, &'a Vec<Stmt>, &'a Vec<Stmt>)> {
+        if let Stmt::If {cond, thn, els, ..} = self {
+            Some((cond, thn, els))
+        } else {
+            None
+        }
+    }
+
+    fn extract_elseif<'a>(&'a self) -> Option<(&'a Expr, &'a Vec<Stmt>, &'a Vec<Stmt>)> {
+        if let Stmt::If {els: outer_els, ..} = self {
+            if let [Stmt::If {cond, thn, els, ..}] = &outer_els[..] {
+                Some((cond, thn, els))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
 impl PrettyPrint for Stmt {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let indent = env.print_indent();
@@ -216,14 +238,7 @@ impl PrettyPrint for Stmt {
                 let env = env.decr_indent();
                 (env, format!("{0}while {cond}:\n{body}", indent))
             },
-            Stmt::If {cond, thn, els, i: _} => {
-                let (env, cond) = cond.pprint(env);
-                let env = env.incr_indent();
-                let (env, thn) = pprint_iter(thn.iter(), env, "\n");
-                let (env, els) = pprint_iter(els.iter(), env, "\n");
-                let env = env.decr_indent();
-                (env, format!("{0}if {cond}:\n{thn}\n{0}else:\n{els}", indent))
-            },
+            Stmt::If {..} => self.print_cond_pythonic(env),
             Stmt::Return {value, i: _} => {
                 let (env, value) = value.pprint(env);
                 (env, format!("{0}return {value}", indent))

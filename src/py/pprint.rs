@@ -241,7 +241,28 @@ impl PrettyPrint for Expr {
             },
         }
     }
+}
 
+impl PrettyPrintCond<Expr> for Stmt {
+    fn extract_if<'a>(&'a self) -> Option<(&'a Expr, &'a Vec<Stmt>, &'a Vec<Stmt>)> {
+        if let Stmt::If {cond, thn, els, ..} = self {
+            Some((cond, thn, els))
+        } else {
+            None
+        }
+    }
+
+    fn extract_elseif<'a>(&'a self) -> Option<(&'a Expr, &'a Vec<Stmt>, &'a Vec<Stmt>)> {
+        if let Stmt::If {els: outer_els, ..} = self {
+            if let [Stmt::If {cond, thn, els, ..}] = &outer_els[..] {
+                Some((cond, thn, els))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
 }
 
 impl PrettyPrint for Stmt {
@@ -272,21 +293,7 @@ impl PrettyPrint for Stmt {
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 (env, format!("{indent}while {cond}:\n{body}"))
             },
-            Stmt::If {cond, thn, els, ..} => {
-                let (env, cond) = cond.pprint(env);
-                let env = env.incr_indent();
-                let (env, thn_str) = pprint_iter(thn.iter(), env, "\n");
-                let (env, els_str) = pprint_iter(els.iter(), env, "\n");
-                let env = env.decr_indent();
-                if els.is_empty() {
-                    (env, format!("{indent}if {cond}:\n{thn_str}"))
-                } else {
-                    (env, format!(
-                        "{0}if {cond}:\n{thn_str}\n{0}else:\n{els_str}",
-                        indent
-                    ))
-                }
-            },
+            Stmt::If {..} => self.print_cond_pythonic(env),
             Stmt::Return {value, ..} => {
                 let (env, value) = value.pprint(env);
                 (env, format!("{indent}return {value}"))
