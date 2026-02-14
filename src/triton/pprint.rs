@@ -129,7 +129,9 @@ impl PrettyPrint for Expr {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
             Expr::Var {id, ty: _, i: _} => id.pprint(env),
-            Expr::Bool {v, ty: _, i: _} => (env, format!("{v}")),
+            Expr::Bool {v, ty: _, i: _} => {
+                (env, if *v { "True" } else { "False" }.to_string())
+            },
             Expr::Int {v, ty: _, i: _} => (env, format!("{v}")),
             Expr::Float {v, ty: _, i: _} => (env, format!("{v:?}")),
             Expr::UnOp {..} => self.print_parenthesized_unop(env),
