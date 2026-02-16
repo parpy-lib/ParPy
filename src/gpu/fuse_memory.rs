@@ -447,24 +447,20 @@ mod test {
     use super::*;
     use crate::test::*;
     use crate::gpu::ast_builder::*;
-    use crate::gpu::unsymbolize::Unsymbolize;
+    use crate::utils::normalize_symbols::NormalizeSym;
     use crate::utils::pprint::*;
 
-    fn strip_symbols(body: Vec<Stmt>) -> Vec<Stmt> {
-        body.into_iter()
-            .map(|s| s.unsymbolize())
-            .collect::<_>()
+    fn pprint_body(body: Vec<Stmt>) -> String {
+        pprint_iter(body.iter(), PrettyPrintEnv::default(), "\n").1
     }
 
     fn assert_eq_bodies(l: Vec<Stmt>, r: Vec<Stmt>) {
-        let l = strip_symbols(l);
-        let r = strip_symbols(r);
+        let lstr = pprint_body(l.clone());
+        let rstr = pprint_body(r.clone());
         assert_eq!(
-            l,
-            r,
-            "LHS:\n{}\nRHS:\n{}",
-            pprint_iter(l.iter(), PrettyPrintEnv::default(), "\n").1,
-            pprint_iter(r.iter(), PrettyPrintEnv::default(), "\n").1,
+            l.normalize_symbols(),
+            r.normalize_symbols(),
+            "LHS:\n{lstr}\nRHS:\n{rstr}",
         );
     }
 

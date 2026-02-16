@@ -14,8 +14,6 @@ mod unroll_loops;
 
 #[cfg(test)]
 pub mod ast_builder;
-#[cfg(test)]
-pub mod unsymbolize;
 
 use ast::*;
 use crate::option::CompileOptions;
