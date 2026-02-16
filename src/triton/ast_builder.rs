@@ -2,8 +2,13 @@ use super::ast::*;
 use crate::test::*;
 use crate::utils::name::Name;
 
-pub fn var(id: &str) -> Expr {
-    Expr::Var {id: Name::sym_str(id), ty: Type::Void, i: i()}
+pub fn id(s: &str) -> Name {
+    Name::new(s.to_string())
+}
+
+pub fn var(s: &str, ty: Option<Type>) -> Expr {
+    let ty = ty.unwrap_or(Type::Void);
+    Expr::Var {id: id(s), ty, i: i()}
 }
 
 pub fn int(v: i128) -> Expr {

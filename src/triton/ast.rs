@@ -11,7 +11,8 @@ pub use crate::gpu::ast::Dim3;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
-    Tensor {shape: i64, sz: ElemSize},
+    Pointer {sz: ElemSize},
+    Tensor {sz: ElemSize},
     Void,
 }
 
@@ -124,6 +125,71 @@ impl SFold<Expr> for Expr {
     }
 }
 
+impl SMapAccum<Expr> for Expr {
+    fn smap_accum_l_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, Expr) -> Result<(A, Expr), E>
+    ) -> Result<(A, Self), E> {
+        match self {
+            Expr::UnOp {op, arg, ty, i} => {
+                let (acc, arg) = f(acc?, *arg)?;
+                Ok((acc, Expr::UnOp {op, arg: Box::new(arg), ty, i}))
+            },
+            Expr::BinOp {lhs, op, rhs, ty, i} => {
+                let (acc, lhs) = f(acc?, *lhs)?;
+                let (acc, rhs) = f(acc, *rhs)?;
+                Ok((acc, Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i}))
+            },
+            Expr::Reduce {op, arg, ty, i} => {
+                let (acc, arg) = f(acc?, *arg)?;
+                Ok((acc, Expr::Reduce {op, arg: Box::new(arg), ty, i}))
+            },
+            Expr::Call {id, args, ty, i} => {
+                let (acc, args) = args.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::Call {id, args, ty, i}))
+            },
+            Expr::ExtCall {id, args, ty, i} => {
+                let (acc, args) = args.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::ExtCall {id, args, ty, i}))
+            },
+            Expr::Load {ptr, mask, ty, i} => {
+                let (acc, ptr) = f(acc?, *ptr)?;
+                let (acc, mask) = mask.smap_accum_l_result(Ok(acc), &f)?;
+                Ok((acc, Expr::Load {ptr: Box::new(ptr), mask, ty, i}))
+            },
+            Expr::Store {ptr, value, mask, ty, i} => {
+                let (acc, ptr) = f(acc?, *ptr)?;
+                let (acc, value) = f(acc, *value)?;
+                let (acc, mask) = mask.smap_accum_l_result(Ok(acc), &f)?;
+                Ok((acc, Expr::Store {ptr: Box::new(ptr), value: Box::new(value), mask, ty, i}))
+            },
+            Expr::Full {shape, value, elem_sz, ty, i} => {
+                let (acc, value) = f(acc?, *value)?;
+                Ok((acc, Expr::Full {shape, value: Box::new(value), elem_sz, ty, i}))
+            },
+            Expr::Where {cond, thn, els, ty, i} => {
+                let (acc, cond) = f(acc?, *cond)?;
+                let (acc, thn) = f(acc, *thn)?;
+                let (acc, els) = f(acc, *els)?;
+                Ok((acc, Expr::Where {
+                    cond: Box::new(cond),
+                    thn: Box::new(thn),
+                    els: Box::new(els),
+                    ty,
+                    i
+                }))
+            },
+            Expr::Var {..} |
+            Expr::Bool {..} |
+            Expr::Int {..} |
+            Expr::Float {..} |
+            Expr::ProgramId {..} |
+            Expr::Arange {..} => Ok((acc?, self))
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Assign {dst: Name, expr: Expr, i: Info},
@@ -136,6 +202,66 @@ pub enum Stmt {
     // Triton-specific nodes
     Barrier {i: Info},
     KernelLaunch {id: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info},
+}
+
+impl SFold<Stmt> for Stmt {
+    fn sfold_result<A, E>(
+        &self,
+        acc: Result<A, E>,
+        f: impl Fn(A, &Stmt) -> Result<A, E>
+    ) -> Result<A, E> {
+        match self {
+            Stmt::For {body, ..} => body.sfold_result(acc, &f),
+            Stmt::While {body, ..} => body.sfold_result(acc, &f),
+            Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
+            Stmt::Assign {..} |
+            Stmt::Return {..} |
+            Stmt::Expr {..} |
+            Stmt::Barrier {..} |
+            Stmt::KernelLaunch {..} => acc,
+        }
+    }
+}
+
+impl SMapAccum<Expr> for Stmt {
+    fn smap_accum_l_result<A, E>(
+        self,
+        acc: Result<A, E>,
+        f: impl Fn(A, Expr) -> Result<(A, Expr), E>
+    ) -> Result<(A, Self), E> {
+        match self {
+            Stmt::Assign {dst, expr, i} => {
+                let (acc, expr) = f(acc?, expr)?;
+                Ok((acc, Stmt::Assign {dst, expr, i}))
+            },
+            Stmt::For {var, lo, hi, step, body, i} => {
+                let (acc, lo) = f(acc?, lo)?;
+                let (acc, hi) = f(acc, hi)?;
+                Ok((acc, Stmt::For {var, lo, hi, step, body, i}))
+            },
+            Stmt::While {cond, body, i} => {
+                let (acc, cond) = f(acc?, cond)?;
+                Ok((acc, Stmt::While {cond, body, i}))
+            },
+            Stmt::If {cond, thn, els, i} => {
+                let (acc, cond) = f(acc?, cond)?;
+                Ok((acc, Stmt::If {cond, thn, els, i}))
+            },
+            Stmt::Return {value, i} => {
+                let (acc, value) = f(acc?, value)?;
+                Ok((acc, Stmt::Return {value, i}))
+            },
+            Stmt::Expr {e, i} => {
+                let (acc, e) = f(acc?, e)?;
+                Ok((acc, Stmt::Expr {e, i}))
+            },
+            Stmt::Barrier {..} => Ok((acc?, self)),
+            Stmt::KernelLaunch {id, block_dims, args, nwarps, i} => {
+                let (acc, args) = args.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Stmt::KernelLaunch {id, block_dims, args, nwarps, i}))
+            },
+        }
+    }
 }
 
 impl SMapAccum<Stmt> for Stmt {
@@ -169,15 +295,48 @@ impl SMapAccum<Stmt> for Stmt {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Param {
-    pub id: Name
+impl SFlatten<Stmt> for Stmt {
+    fn sflatten_result<E>(
+        self,
+        mut acc: Vec<Stmt>,
+        f: impl Fn(Vec<Stmt>, Stmt) -> Result<Vec<Stmt>, E>
+    ) -> Result<Vec<Stmt>, E> {
+        match self {
+            Stmt::For {var, lo, hi, step, body, i} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::For {var, lo, hi, step, body, i});
+            },
+            Stmt::While {cond, body, i} => {
+                let body = body.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::While {cond, body, i});
+            },
+            Stmt::If {cond, thn, els, i} => {
+                let thn = thn.sflatten_result(vec![], &f)?;
+                let els = els.sflatten_result(vec![], &f)?;
+                acc.push(Stmt::If {cond, thn, els, i});
+            },
+            Stmt::Assign {..} |
+            Stmt::Return {..} |
+            Stmt::Expr {..} |
+            Stmt::Barrier {..} |
+            Stmt::KernelLaunch {..} => {
+                acc.push(self);
+            },
+        };
+        Ok(acc)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Top {
     Import {package: String, as_str: Option<String>, i: Info},
-    FunDef {triton_jit: bool, id: Name, params: Vec<Param>, body: Vec<Stmt>, i: Info},
+    FunDef {
+        triton_jit: bool,
+        id: Name,
+        params: Vec<Name>,
+        body: Vec<Stmt>,
+        i: Info
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]

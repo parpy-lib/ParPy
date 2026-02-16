@@ -3,7 +3,7 @@ use crate::utils::ast::*;
 use crate::utils::pprint::*;
 
 fn print_tuple_shape(sh: &i64) -> String {
-    if *sh == 0 {
+    if *sh == 1 {
         "()".to_string()
     } else {
         format!("({sh},)")
@@ -84,8 +84,8 @@ impl PrettyPrintBinOp<Type> for Expr {
             BinOp::Div => Some("/"),
             BinOp::Rem => Some("%"),
             BinOp::Pow => Some("**"),
-            BinOp::And => Some(" and "),
-            BinOp::Or => Some(" or "),
+            BinOp::And => Some("and"),
+            BinOp::Or => Some("or"),
             BinOp::BitAnd => Some("&"),
             BinOp::BitOr => Some("|"),
             BinOp::BitXor => Some("^"),
@@ -256,12 +256,6 @@ impl PrettyPrint for Stmt {
     }
 }
 
-impl PrettyPrint for Param {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        self.id.pprint(env)
-    }
-}
-
 impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
@@ -301,7 +295,7 @@ mod test {
 
     #[test]
     fn print_variable() {
-        assert_eq!(var("x").pprint_default(), "x");
+        assert_eq!(var("x", None).pprint_default(), "x");
     }
 
     #[test]
@@ -319,7 +313,7 @@ mod test {
     #[test]
     fn print_load() {
         let e = Expr::Load {
-            ptr: Box::new(var("x")),
+            ptr: Box::new(var("x", None)),
             mask: None,
             ty: Type::Void,
             i: i()
@@ -330,8 +324,8 @@ mod test {
     #[test]
     fn print_load_with_mask() {
         let e = Expr::Load {
-            ptr: Box::new(var("x")),
-            mask: Some(Box::new(var("y"))),
+            ptr: Box::new(var("x", None)),
+            mask: Some(Box::new(var("y", None))),
             ty: Type::Void,
             i: i()
         };
@@ -341,8 +335,8 @@ mod test {
     #[test]
     fn print_store() {
         let e = Expr::Store {
-            ptr: Box::new(var("x")),
-            value: Box::new(var("y")),
+            ptr: Box::new(var("x", None)),
+            value: Box::new(var("y", None)),
             mask: None,
             ty: Type::Void,
             i: i()
@@ -353,9 +347,9 @@ mod test {
     #[test]
     fn print_store_with_mask() {
         let e = Expr::Store {
-            ptr: Box::new(var("x")),
-            value: Box::new(var("y")),
-            mask: Some(Box::new(var("z"))),
+            ptr: Box::new(var("x", None)),
+            value: Box::new(var("y", None)),
+            mask: Some(Box::new(var("z", None))),
             ty: Type::Void,
             i: i()
         };
@@ -377,7 +371,7 @@ mod test {
     #[test]
     fn print_full_singleton() {
         let e = Expr::Full {
-            shape: 0,
+            shape: 1,
             value: Box::new(float(1.0)),
             elem_sz: ElemSize::F32,
             ty: Type::Void,
@@ -389,9 +383,9 @@ mod test {
     #[test]
     fn print_where() {
         let e = Expr::Where {
-            cond: Box::new(var("x")),
-            thn: Box::new(var("y")),
-            els: Box::new(var("z")),
+            cond: Box::new(var("x", None)),
+            thn: Box::new(var("y", None)),
+            els: Box::new(var("z", None)),
             ty: Type::Void,
             i: i()
         };
@@ -402,7 +396,7 @@ mod test {
     fn print_assign() {
         let s = Stmt::Assign {
             dst: Name::sym_str("x"),
-            expr: var("y"),
+            expr: var("y", None),
             i: i()
         };
         assert_eq!(s.pprint_default(), "x = y");
@@ -440,11 +434,11 @@ mod test {
             triton_jit: true,
             id: Name::sym_str("f"),
             params: vec![
-                Param {id: Name::sym_str("x")},
-                Param {id: Name::sym_str("y")},
+                Name::sym_str("x"),
+                Name::sym_str("y"),
             ],
             body: vec![
-                Stmt::Assign {dst: Name::sym_str("w"), expr: var("k"), i: i()}
+                Stmt::Assign {dst: Name::sym_str("w"), expr: var("k", None), i: i()}
             ],
             i: i()
         };

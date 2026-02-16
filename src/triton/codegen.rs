@@ -69,23 +69,19 @@ fn validate_attrs(attrs: Vec<gpu_ast::KernelAttribute>, i: &Info) -> CompileResu
     attrs.into_iter().fold(Ok(0), valid_fn)
 }
 
-fn from_gpu_ast_param(p: gpu_ast::Param) -> Param {
-    Param { id: p.id }
-}
-
-fn from_gpu_ast_params(params: Vec<gpu_ast::Param>) -> Vec<Param> {
+fn from_gpu_ast_params(params: Vec<gpu_ast::Param>) -> Vec<Name> {
     params.into_iter()
-        .map(from_gpu_ast_param)
-        .collect::<Vec<Param>>()
+        .map(|p| p.id)
+        .collect::<Vec<Name>>()
 }
 
 fn from_gpu_ast_type(ty: gpu_ast::Type, i: &Info) -> CompileResult<Type> {
     match ty {
         gpu_ast::Type::Void => Ok(Type::Void),
-        gpu_ast::Type::Scalar {sz} => Ok(Type::Tensor {shape: 0, sz}),
+        gpu_ast::Type::Scalar {sz} => Ok(Type::Tensor {sz}),
         gpu_ast::Type::Pointer {ty, mem: gpu_ast::MemSpace::Device} => {
             match from_gpu_ast_type(*ty, &i) {
-                Ok(Type::Tensor {shape, sz}) if shape == 0 => Ok(Type::Tensor {shape: 1, sz}),
+                Ok(Type::Tensor {sz}) => Ok(Type::Pointer {sz}),
                 _ => parpy_internal_error!(i, "Failed to convert pointer to a valid Triton type")
             }
         },
@@ -155,7 +151,7 @@ fn from_gpu_ast_kernel_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult
         gpu_ast::Expr::Convert {e, ty: gpu_ast::Type::Scalar {sz: elem_sz}} => {
             let i = e.get_info();
             let value = Box::new(from_gpu_ast_kernel_expr(env, *e)?);
-            Ok(Expr::Full {shape: 0, value, elem_sz, ty, i})
+            Ok(Expr::Full {shape: 1, value, elem_sz, ty, i})
         },
         gpu_ast::Expr::Convert {e, ..} => {
             let i = e.get_info();
@@ -378,7 +374,7 @@ fn from_gpu_ast_kernel_stmt(
             let l = from_gpu_ast_kernel_expr(&env, l)?;
             let reduce_op = get_reduction_operator(&op, &i)?;
             if let Expr::Var {ref id, ..} = l {
-                let ty = Type::Tensor {shape: 0, sz};
+                let ty = Type::Tensor {sz};
                 let r = from_gpu_ast_kernel_expr(&env, r)?;
                 let reduce_stmt = Stmt::Assign {
                     dst: id.clone(),
@@ -477,7 +473,7 @@ fn from_gpu_ast_host_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<E
         gpu_ast::Expr::Convert {e, ty: gpu_ast::Type::Scalar {sz: elem_sz}} => {
             let i = e.get_info();
             let value = Box::new(from_gpu_ast_host_expr(env, *e)?);
-            Ok(Expr::Full {shape: 0, value, elem_sz, ty, i})
+            Ok(Expr::Full {shape: 1, value, elem_sz, ty, i})
         },
         gpu_ast::Expr::Convert {e, ..} => {
             let i = e.get_info();
@@ -492,19 +488,24 @@ fn from_gpu_ast_host_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<E
     }
 }
 
-fn convert_tensors_to_torch(e: Expr) -> Expr {
-    let ty = e.get_type().clone();
-    match ty {
-        Type::Tensor {ref shape, ..} if *shape != 0 => {
-            let i = e.get_info();
-            Expr::ExtCall {
-                id: "_parpy_builtin_to_torch".to_string(),
-                args: vec![e],
-                ty,
-                i
-            }
-        },
-        _ => e
+fn from_gpu_ast_kernel_arg(
+    env: &CodegenEnv,
+    arg: gpu_ast::Expr
+) -> CompileResult<Expr> {
+    let is_pointer_type = match arg.get_type() {
+        gpu_ast::Type::Pointer {..} => true,
+        _ => false
+    };
+    let arg = from_gpu_ast_host_expr(env, arg)?;
+    if is_pointer_type {
+        let ty = arg.get_type().clone();
+        let i = arg.get_info();
+        Ok(Expr::ExtCall {
+            id: "_parpy_builtin_to_torch".to_string(),
+            args: vec![arg], ty, i
+        })
+    } else {
+        Ok(arg)
     }
 }
 
@@ -592,9 +593,8 @@ fn from_gpu_ast_host_stmt(
                 parpy_compile_error!(i, "Found kernel launch with non-zero shared memory usage in Triton codegen")?
             }
             let args = args.into_iter()
-                .map(|arg| from_gpu_ast_host_expr(env, arg))
+                .map(|arg| from_gpu_ast_kernel_arg(env, arg))
                 .collect::<CompileResult<Vec<Expr>>>()?;
-            let args = args.smap(convert_tensors_to_torch);
             let nwarps = (grid.threads.prod() / 32) as usize;
             acc.push(Stmt::KernelLaunch {
                 id,
