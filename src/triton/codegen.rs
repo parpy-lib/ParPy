@@ -101,13 +101,44 @@ fn validate_bin_op(op: &BinOp, i: &Info) -> CompileResult<()> {
     }
 }
 
+fn extract_element_size(ty: &Type, i: &Info) -> CompileResult<ElemSize> {
+    match ty {
+        Type::Tensor {sz} => Ok(sz.clone()),
+        _ => parpy_compile_error!(i, "Invalid type of scalar value")
+    }
+}
+
 fn from_gpu_ast_kernel_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
     let ty = from_gpu_ast_type(e.get_type().clone(), &e.get_info())?;
     match e {
         gpu_ast::Expr::Var {id, ty: _, i} => Ok(Expr::Var {id, ty, i}),
-        gpu_ast::Expr::Bool {v, ty: _, i} => Ok(Expr::Bool {v, ty, i}),
-        gpu_ast::Expr::Int {v, ty: _, i} => Ok(Expr::Int {v, ty, i}),
-        gpu_ast::Expr::Float {v, ty: _, i} => Ok(Expr::Float {v, ty, i}),
+        gpu_ast::Expr::Bool {v, ty: _, i} => {
+            Ok(Expr::Full {
+                shape: 1,
+                value: Box::new(Expr::Bool {v, ty: ty.clone(), i: i.clone()}),
+                elem_sz: ElemSize::Bool,
+                ty,
+                i
+            })
+        },
+        gpu_ast::Expr::Int {v, ty: _, i} => {
+            Ok(Expr::Full {
+                shape: 1,
+                value: Box::new(Expr::Int {v, ty: ty.clone(), i: i.clone()}),
+                elem_sz: extract_element_size(&ty, &i)?,
+                ty,
+                i
+            })
+        },
+        gpu_ast::Expr::Float {v, ty: _, i} => {
+            Ok(Expr::Full {
+                shape: 1,
+                value: Box::new(Expr::Float {v, ty: ty.clone(), i: i.clone()}),
+                elem_sz: extract_element_size(&ty, &i)?,
+                ty,
+                i
+            })
+        },
         gpu_ast::Expr::UnOp {op, arg, ty: _, i} => {
             let arg = Box::new(from_gpu_ast_kernel_expr(env, *arg)?);
             Ok(Expr::UnOp {op, arg, ty, i})
