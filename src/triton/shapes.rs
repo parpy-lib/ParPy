@@ -205,7 +205,7 @@ fn unify_shapes_expr(env: ShapeEnv, e: &Expr) -> CompileResult<ShapeEnv> {
         },
         Expr::Reduce {arg, ty, i, ..} => {
             let env = unify_shapes_expr(env, arg)?;
-            unify_shapes_type(env, arg.get_type(), &ty, &i)
+            set_fixed_shape(env, ty, 1, &i)
         },
         Expr::Arange {lo, hi, ty, i} => {
             let sh = hi - lo;
