@@ -27,6 +27,23 @@ fn pprint_elem_size(sz: &ElemSize) -> String {
     }.to_string()
 }
 
+fn print_dtype(sz: &ElemSize) -> String {
+    match sz {
+        ElemSize::Bool => "parpy.types.Bool",
+        ElemSize::I8 => "parpy.types.I8",
+        ElemSize::I16 => "parpy.types.I16",
+        ElemSize::I32 => "parpy.types.I32",
+        ElemSize::I64 => "parpy.types.I64",
+        ElemSize::U8 => "parpy.types.U8",
+        ElemSize::U16 => "parpy.types.U16",
+        ElemSize::U32 => "parpy.types.U32",
+        ElemSize::U64 => "parpy.types.U64",
+        ElemSize::F16 => "parpy.types.F16",
+        ElemSize::F32 => "parpy.types.F32",
+        ElemSize::F64 => "parpy.types.F64",
+    }.to_string()
+}
+
 impl PrettyPrintUnOp<Type> for Expr {
     fn extract_unop<'a>(&'a self) -> Option<(&'a UnOp, &'a Expr)> {
         if let Expr::UnOp {op, arg, ..} = self {
@@ -191,6 +208,10 @@ impl PrettyPrint for Expr {
                 let (env, thn) = thn.pprint(env);
                 let (env, els) = els.pprint(env);
                 (env, format!("triton.language.where({cond}, {thn}, {els})"))
+            },
+            Expr::AllocBuffer {nelems, elem_sz, ty: _, i: _} => {
+                let dtype = print_dtype(elem_sz);
+                (env, format!("_parpy_builtin_alloc({nelems}, {dtype})"))
             },
         }
     }

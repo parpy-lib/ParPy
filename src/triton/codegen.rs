@@ -631,14 +631,25 @@ fn from_gpu_ast_host_stmt(
             });
             Ok(acc)
         },
-        gpu_ast::Stmt::AllocDevice {i, ..} => {
-            parpy_internal_error!(i, "Unsupported node AllocDevice in Triton codegen")
+        gpu_ast::Stmt::AllocDevice {elem_ty, id, sz: nelems, i} => {
+            let elem_ty = from_gpu_ast_type(elem_ty, &i)?;
+            let elem_sz = match elem_ty.get_elem_size() {
+                Some(sz) => Ok(sz.clone()),
+                None => {
+                    parpy_internal_error!(i, "Found allocation statement of non-scalar \
+                                              element type in Triton codegen")
+                }
+            }?;
+            acc.push(Stmt::Assign {
+                dst: id,
+                expr: Expr::AllocBuffer {nelems, elem_sz, ty: elem_ty, i: i.clone()},
+                i
+            });
+            Ok(acc)
         },
+        gpu_ast::Stmt::FreeDevice {..} => Ok(acc),
         gpu_ast::Stmt::AllocShared {i, ..} => {
             parpy_internal_error!(i, "Found shared memory allocation in host code when compiling to Triton")
-        },
-        gpu_ast::Stmt::FreeDevice {i, ..} => {
-            parpy_internal_error!(i, "Unsupported node FreeDevice in Triton codegen")
         },
         gpu_ast::Stmt::CopyMemory {i, ..} => {
             parpy_internal_error!(i, "Unsupported node CopyMemory in Triton codegen")

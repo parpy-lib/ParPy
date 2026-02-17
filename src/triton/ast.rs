@@ -64,6 +64,7 @@ pub enum Expr {
     Store {ptr: Box<Expr>, value: Box<Expr>, mask: Option<Box<Expr>>, ty: Type, i: Info},
     Full {shape: usize, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
     Where {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
+    AllocBuffer {nelems: usize, elem_sz: ElemSize, ty: Type, i: Info},
 }
 
 impl Expr {
@@ -87,6 +88,8 @@ impl Expr {
                 Expr::Full {shape, value, elem_sz, ty, i},
             Expr::Where {cond, thn, els, ty: _, i} =>
                 Expr::Where {cond, thn, els, ty, i},
+            Expr::AllocBuffer {nelems, elem_sz, ty: _, i} =>
+                Expr::AllocBuffer {nelems, elem_sz, ty, i}
         }
     }
 }
@@ -108,7 +111,8 @@ impl InfoNode for Expr {
             Expr::Load {i, ..} |
             Expr::Store {i, ..} |
             Expr::Full {i, ..} |
-            Expr::Where {i, ..} => i.clone(),
+            Expr::Where {i, ..} |
+            Expr::AllocBuffer {i, ..} => i.clone(),
         }
     }
 }
@@ -130,18 +134,29 @@ impl ExprType<Type> for Expr {
             Expr::Load {ty, ..} |
             Expr::Store {ty, ..} |
             Expr::Full {ty, ..} |
-            Expr::Where {ty, ..} => ty,
+            Expr::Where {ty, ..} |
+            Expr::AllocBuffer {ty, ..} => ty,
         }
     }
 
     fn is_leaf_node(&self) -> bool {
         match self {
-            Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} |
-            Expr::Float {..} | Expr::ProgramId {..} => true,
-            Expr::UnOp {..} | Expr::BinOp {..} | Expr::Reduce {..} |
-            Expr::Call {..} | Expr::ExtCall {..} |
-            Expr::Arange {..} | Expr::Load {..} | Expr::Store {..} |
-            Expr::Full {..} | Expr::Where {..} => false,
+            Expr::Var {..} |
+            Expr::Bool {..} |
+            Expr::Int {..} |
+            Expr::Float {..} |
+            Expr::ProgramId {..} |
+            Expr::Arange {..} |
+            Expr::AllocBuffer {..} => true,
+            Expr::UnOp {..} |
+            Expr::BinOp {..} |
+            Expr::Reduce {..} |
+            Expr::Call {..} |
+            Expr::ExtCall {..} |
+            Expr::Load {..} |
+            Expr::Store {..} |
+            Expr::Full {..} |
+            Expr::Where {..} => false,
         }
     }
 }
@@ -169,7 +184,8 @@ impl SFold<Expr> for Expr {
             Expr::Int {..} |
             Expr::Float {..} |
             Expr::ProgramId {..} |
-            Expr::Arange {..} => acc
+            Expr::Arange {..} |
+            Expr::AllocBuffer {..} => acc
         }
     }
 }
@@ -234,7 +250,8 @@ impl SMapAccum<Expr> for Expr {
             Expr::Int {..} |
             Expr::Float {..} |
             Expr::ProgramId {..} |
-            Expr::Arange {..} => Ok((acc?, self))
+            Expr::Arange {..} |
+            Expr::AllocBuffer {..} => Ok((acc?, self))
         }
     }
 }
