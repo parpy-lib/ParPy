@@ -78,10 +78,10 @@ fn from_gpu_ast_params(params: Vec<gpu_ast::Param>) -> Vec<Name> {
 fn from_gpu_ast_type(ty: gpu_ast::Type, i: &Info) -> CompileResult<Type> {
     match ty {
         gpu_ast::Type::Void => Ok(Type::Void),
-        gpu_ast::Type::Scalar {sz} => Ok(Type::Tensor {sz}),
+        gpu_ast::Type::Scalar {sz} => Ok(Type::Tensor {sz, shape: Shape::Num(1)}),
         gpu_ast::Type::Pointer {ty, mem: gpu_ast::MemSpace::Device} => {
             match from_gpu_ast_type(*ty, &i) {
-                Ok(Type::Tensor {sz}) => Ok(Type::Pointer {sz}),
+                Ok(Type::Tensor {sz, shape}) => Ok(Type::Pointer {sz, shape}),
                 _ => parpy_internal_error!(i, "Failed to convert pointer to a valid Triton type")
             }
         },
@@ -102,9 +102,9 @@ fn validate_bin_op(op: &BinOp, i: &Info) -> CompileResult<()> {
 }
 
 fn extract_element_size(ty: &Type, i: &Info) -> CompileResult<ElemSize> {
-    match ty {
-        Type::Tensor {sz} => Ok(sz.clone()),
-        _ => parpy_compile_error!(i, "Invalid type of scalar value")
+    match ty.get_elem_size() {
+        Some(sz) => Ok(sz.clone()),
+        None => parpy_compile_error!(i, "Invalid type of scalar value")
     }
 }
 
@@ -228,7 +228,7 @@ fn extract_step(
     env: &CodegenEnv,
     var: &Name,
     incr: gpu_ast::Expr
-) -> CompileResult<i64> {
+) -> CompileResult<usize> {
     let fail = |i: Info| {
         parpy_compile_error!(i, "Failed to extract step size of for-loop in Triton codegen")
     };
@@ -236,8 +236,11 @@ fn extract_step(
         match (*lhs, op) {
             (gpu_ast::Expr::Var {id, ..}, BinOp::Add) if id == *var => {
                 match from_gpu_ast_kernel_expr(env, *rhs)? {
-                    Expr::Int {v, ..} => Ok(v as i64),
-                    _ => parpy_compile_error!(i, "Found non-literal step size in Triton codegen")
+                    Expr::Full {value, ..} => match *value {
+                        Expr::Int {v, ..} => Ok(v as usize),
+                        _ => fail(i)
+                    },
+                    _ => fail(i)
                 }
             },
             _ => fail(i)
@@ -255,7 +258,7 @@ fn extract_loop_bounds(
     cond: gpu_ast::Expr,
     incr: gpu_ast::Expr,
     i: &Info
-) -> CompileResult<(Name, Expr, Expr, i64, Option<Stmt>)> {
+) -> CompileResult<(Name, Expr, Expr, usize, Option<Stmt>)> {
     let (removed_thread, init) = remove_thread_idx(false, init);
     let lo = from_gpu_ast_kernel_expr(env, init)?;
     let hi = extract_upper_bound(env, &var, cond)?;
@@ -282,7 +285,7 @@ fn extract_loop_bounds(
                     }),
                     op: BinOp::Mul,
                     rhs: Box::new(Expr::Int {
-                        v: (step / env.nthreads) as i128,
+                        v: (step / env.nthreads as usize) as i128,
                         ty: var_ty.clone(),
                         i: i.clone()
                     }),
@@ -361,6 +364,8 @@ fn from_gpu_ast_kernel_stmt(
         },
         gpu_ast::Stmt::Expr {e: gpu_ast::Expr::Assign {lhs, rhs, ty, i: _}, i} => {
             let ty = from_gpu_ast_type(ty, &i)?;
+            let sz = extract_element_size(&ty, &i)?;
+            let ptr_ty = Type::Pointer {sz, shape: Shape::Num(1)};
             let rhs = from_gpu_ast_kernel_expr(env, *rhs)?;
             match *lhs {
                 gpu_ast::Expr::Var {id, ty: _, i: _} => {
@@ -375,8 +380,8 @@ fn from_gpu_ast_kernel_stmt(
                             ptr: Box::new(Expr::BinOp {
                                 lhs: Box::new(target),
                                 op: BinOp::Add,
-                                rhs: Box::new(idx),
-                                ty: ty.clone(),
+                                rhs: Box::new(idx.with_type(ptr_ty.clone())),
+                                ty: ptr_ty,
                                 i: i.clone()
                             }),
                             value: Box::new(rhs),
@@ -405,7 +410,7 @@ fn from_gpu_ast_kernel_stmt(
             let l = from_gpu_ast_kernel_expr(&env, l)?;
             let reduce_op = get_reduction_operator(&op, &i)?;
             if let Expr::Var {ref id, ..} = l {
-                let ty = Type::Tensor {sz};
+                let ty = Type::Tensor {sz, shape: Shape::Num(1)};
                 let r = from_gpu_ast_kernel_expr(&env, r)?;
                 let reduce_stmt = Stmt::Assign {
                     dst: id.clone(),

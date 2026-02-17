@@ -2,7 +2,7 @@ use super::ast::*;
 use crate::utils::ast::*;
 use crate::utils::pprint::*;
 
-fn print_tuple_shape(sh: &i64) -> String {
+fn print_tuple_shape(sh: &usize) -> String {
     if *sh == 1 {
         "()".to_string()
     } else {

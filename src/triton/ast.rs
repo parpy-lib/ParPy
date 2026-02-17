@@ -10,10 +10,34 @@ pub use crate::gpu::ast::Dim;
 pub use crate::gpu::ast::Dim3;
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum Shape {
+    Var(usize),
+    Num(usize),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Type {
-    Pointer {sz: ElemSize},
-    Tensor {sz: ElemSize},
+    Pointer {sz: ElemSize, shape: Shape},
+    Tensor {sz: ElemSize, shape: Shape},
     Void,
+}
+
+impl Type {
+    pub fn get_elem_size<'a>(&'a self) -> Option<&'a ElemSize> {
+        match self {
+            Type::Pointer {sz, ..} => Some(sz),
+            Type::Tensor {sz, ..} => Some(sz),
+            Type::Void => None,
+        }
+    }
+
+    pub fn get_shape<'a>(&'a self) -> Option<&'a Shape> {
+        match self {
+            Type::Pointer {shape, ..} => Some(shape),
+            Type::Tensor {shape, ..} => Some(shape),
+            Type::Void => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -38,8 +62,33 @@ pub enum Expr {
     Arange {lo: usize, hi: usize, ty: Type, i: Info},
     Load {ptr: Box<Expr>, mask: Option<Box<Expr>>, ty: Type, i: Info},
     Store {ptr: Box<Expr>, value: Box<Expr>, mask: Option<Box<Expr>>, ty: Type, i: Info},
-    Full {shape: i64, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
+    Full {shape: usize, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
     Where {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
+}
+
+impl Expr {
+    pub fn with_type(self, ty: Type) -> Self {
+        match self {
+            Expr::Var {id, ty: _, i} => Expr::Var {id, ty, i},
+            Expr::Bool {v, ty: _, i} => Expr::Bool {v, ty, i},
+            Expr::Int {v, ty: _, i} => Expr::Int {v, ty, i},
+            Expr::Float {v, ty: _, i} => Expr::Float {v, ty, i},
+            Expr::UnOp {op, arg, ty: _, i} => Expr::UnOp {op, arg, ty, i},
+            Expr::BinOp {lhs, op, rhs, ty: _, i} => Expr::BinOp {lhs, op, rhs, ty, i},
+            Expr::Reduce {op, arg, ty: _, i} => Expr::Reduce {op, arg, ty, i},
+            Expr::Call {id, args, ty: _, i} => Expr::Call {id, args, ty, i},
+            Expr::ExtCall {id, args, ty: _, i} => Expr::ExtCall {id, args, ty, i},
+            Expr::ProgramId {dim, ty: _, i} => Expr::ProgramId {dim, ty, i},
+            Expr::Arange {lo, hi, ty: _, i} => Expr::Arange {lo, hi, ty, i},
+            Expr::Load {ptr, mask, ty: _, i} => Expr::Load {ptr, mask, ty, i},
+            Expr::Store {ptr, value, mask, ty: _, i} =>
+                Expr::Store {ptr, value, mask, ty, i},
+            Expr::Full {shape, value, elem_sz, ty: _, i} =>
+                Expr::Full {shape, value, elem_sz, ty, i},
+            Expr::Where {cond, thn, els, ty: _, i} =>
+                Expr::Where {cond, thn, els, ty, i},
+        }
+    }
 }
 
 impl InfoNode for Expr {
@@ -193,7 +242,7 @@ impl SMapAccum<Expr> for Expr {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Assign {dst: Name, expr: Expr, i: Info},
-    For {var: Name, lo: Expr, hi: Expr, step: i64, body: Vec<Stmt>, i: Info},
+    For {var: Name, lo: Expr, hi: Expr, step: usize, body: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     Return {value: Expr, i: Info},
@@ -202,6 +251,25 @@ pub enum Stmt {
     // Triton-specific nodes
     Barrier {i: Info},
     KernelLaunch {id: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info},
+}
+
+impl SFold<Expr> for Stmt {
+    fn sfold_result<A, E>(
+        &self,
+        acc: Result<A, E>,
+        f: impl Fn(A, &Expr) -> Result<A, E>
+    ) -> Result<A, E> {
+        match self {
+            Stmt::Assign {expr, ..} => f(acc?, expr),
+            Stmt::For {lo, hi, ..} => f(f(acc?, hi)?, lo),
+            Stmt::While {cond, ..} => f(acc?, cond),
+            Stmt::If {cond, ..} => f(acc?, cond),
+            Stmt::Return {value, ..} => f(acc?, value),
+            Stmt::Expr {e, ..} => f(acc?, e),
+            Stmt::Barrier {..} => acc,
+            Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
+        }
+    }
 }
 
 impl SFold<Stmt> for Stmt {

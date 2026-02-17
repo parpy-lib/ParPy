@@ -2,7 +2,7 @@ pub mod ast;
 mod codegen;
 mod inline;
 mod pprint;
-//mod shapes;
+mod shapes;
 mod rewrite_reductions;
 
 #[cfg(test)]
@@ -23,6 +23,10 @@ pub fn codegen(gpu_ast: gpu_ast::Ast) -> CompileResult<Ast> {
     // Performs inlining within the GPU code such that all GPU kernels consist of one function
     // without performing any function calls.
     let ast = inline::apply(ast)?;
+
+    // Attempts to unify the block-wide shapes of all expressions in each GPU kernel, to ensure
+    // proper tracking of block-wide operations.
+    let ast = shapes::unify(ast)?;
 
     Ok(ast)
 }
