@@ -49,7 +49,22 @@ fn wrap_blocked_literals_in_full_expr(e: Expr) -> CompileResult<Expr> {
 fn wrap_blocked_literals_in_full_stmt(s: Stmt) -> CompileResult<Stmt> {
     s.smap_result(wrap_blocked_literals_in_full_stmt)?
         .smap_result(wrap_blocked_literals_in_full_expr)
+}
 
+fn contains_arange(acc: bool, e: &Expr) -> bool {
+    match e {
+        Expr::Arange {..} => true,
+        _ => e.sfold(acc, contains_arange)
+    }
+}
+
+fn try_extract_blocked_var(s: &Stmt) -> Option<Name> {
+    match s {
+        Stmt::Assign {dst, expr, ..} if contains_arange(false, &expr) => {
+            Some(dst.clone())
+        },
+        _ => None
+    }
 }
 
 fn make_mask(mask: Option<Box<Expr>>, masks: &Vec<Expr>) -> Expr {
@@ -81,6 +96,69 @@ fn get_neutral_element(op: &ReduceOp, ty: &Type, i: &Info) -> CompileResult<Expr
         ReduceOp::Sum => Ok(Expr::generate_literal(0.0, sz, i)),
         ReduceOp::Prod => Ok(Expr::generate_literal(1.0, sz, i)),
         ReduceOp::Any => parpy_internal_error!(i, "Invalid reduction operation in Triton codegen")
+    }
+}
+
+fn mask_memory_accesses_expr(cond: &Expr, e: Expr) -> CompileResult<Expr> {
+    match e {
+        Expr::Reduce {op, arg, ty, i} if is_blocked_type(arg.get_type()) => {
+            let arg = Box::new(mask_memory_accesses_expr(&cond, *arg)?);
+            let ne = get_neutral_element(&op, &ty, &i)?;
+            let arg = Expr::Where {
+                cond: Box::new(cond.clone()),
+                thn: arg,
+                els: Box::new(ne),
+                ty: ty.clone(),
+                i: i.clone()
+            };
+            Ok(Expr::Reduce {op, arg: Box::new(arg), ty, i})
+        },
+        Expr::Load {ptr, mask, ty, i} if is_blocked_type(ptr.get_type()) => {
+            let ptr = Box::new(mask_memory_accesses_expr(&cond, *ptr)?);
+            let mask = Some(Box::new(make_mask(mask, &vec![cond.clone()])));
+            Ok(Expr::Load {ptr, mask, ty, i})
+        },
+        Expr::Store {ptr, value, mask, ty, i} if is_blocked_type(ptr.get_type()) => {
+            let ptr = Box::new(mask_memory_accesses_expr(&cond, *ptr)?);
+            let value = Box::new(mask_memory_accesses_expr(&cond, *value)?);
+            let mask = Some(Box::new(make_mask(mask, &vec![cond.clone()])));
+            Ok(Expr::Store {ptr, value, mask, ty, i})
+        },
+        _ => e.smap_result(|e| mask_memory_accesses_expr(&cond, e))
+    }
+}
+
+fn mask_memory_accesses_stmt(cond: &Expr, s: Stmt) -> CompileResult<Stmt> {
+    s.smap_result(|s| mask_memory_accesses_stmt(&cond, s))?
+        .smap_result(|e| mask_memory_accesses_expr(&cond, e))
+}
+
+fn mask_memory_accesses_in_parallel_for(s: Stmt) -> CompileResult<Stmt> {
+    match s {
+        Stmt::For {var, lo, hi, step, body, i} => {
+            let body = if !body.is_empty() {
+                match try_extract_blocked_var(&body[0]) {
+                    Some(id) => {
+                        let ty = hi.get_type().clone();
+                        let shape = Shape::Num(get_shape_from_type(&ty));
+                        let boundary_cond = Expr::BinOp {
+                            lhs: Box::new(Expr::Var {id, ty: ty.clone(), i: i.clone()}),
+                            op: BinOp::Lt,
+                            rhs: Box::new(hi.clone()),
+                            ty: Type::Tensor {sz: ElemSize::Bool, shape},
+                            i: i.clone()
+                        };
+                        body.smap_result(|s| mask_memory_accesses_stmt(&boundary_cond, s))
+                    },
+                    None => Ok(body)
+                }
+            } else {
+                Ok(body)
+            }?;
+            let body = body.smap_result(mask_memory_accesses_in_parallel_for)?;
+            Ok(Stmt::For {var, lo, hi, step, body, i})
+        },
+        _ => s.smap_result(mask_memory_accesses_in_parallel_for)
     }
 }
 
@@ -235,6 +313,11 @@ fn transform_top(t: Top) -> CompileResult<Top> {
             // If a literal has been assigned a non-unit shape, we rewrite it to use tl.full to
             // specify an explicit shape.
             let body = body.smap_result(wrap_blocked_literals_in_full_stmt)?;
+
+            // Adds masking of memory operations (tl.load and tl.store) when the pointers are
+            // blocked, by checking that the loop variable on which the index is (presumably) based
+            // is within range of the for-loop that introduced it.
+            let body = body.smap_result(mask_memory_accesses_in_parallel_for)?;
 
             // Rewrite if-statements and while-loops containing block-wide conditions to perform
             // masked operations based on the individual values of a condition. Specifically, we
