@@ -237,7 +237,7 @@ mod test {
 
     #[test]
     fn function_calls_rewrite_anf() {
-        let ty = Type::Tensor {sz: ElemSize::F32};
+        let ty = Type::Tensor {sz: ElemSize::F32, shape: Shape::Num(1)};
         let mk_call = |s| Expr::Call {
             id: id(s), args: vec![], ty: ty.clone(), i: i()
         };
@@ -274,7 +274,7 @@ mod test {
 
     #[test]
     fn nested_function_call_rewrite_anf() {
-        let ty = Type::Tensor {sz: ElemSize::F32};
+        let ty = Type::Tensor {sz: ElemSize::F32, shape: Shape::Num(1)};
         let g_call = Expr::Call {
             id: id("g"),
             args: vec![],
@@ -315,7 +315,7 @@ mod test {
 
     #[test]
     fn while_loop_cond_rewrite_anf() {
-        let ty = Type::Tensor {sz: ElemSize::F32};
+        let ty = Type::Tensor {sz: ElemSize::F32, shape: Shape::Num(1)};
         let f_call = Expr::Call {
             id: id("f"),
             args: vec![],
