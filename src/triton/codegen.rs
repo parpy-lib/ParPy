@@ -113,31 +113,13 @@ fn from_gpu_ast_kernel_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult
     match e {
         gpu_ast::Expr::Var {id, ty: _, i} => Ok(Expr::Var {id, ty, i}),
         gpu_ast::Expr::Bool {v, ty: _, i} => {
-            Ok(Expr::Full {
-                shape: 1,
-                value: Box::new(Expr::Bool {v, ty: ty.clone(), i: i.clone()}),
-                elem_sz: ElemSize::Bool,
-                ty,
-                i
-            })
+            Ok(Expr::Bool {v, ty: ty.clone(), i: i.clone()})
         },
         gpu_ast::Expr::Int {v, ty: _, i} => {
-            Ok(Expr::Full {
-                shape: 1,
-                value: Box::new(Expr::Int {v, ty: ty.clone(), i: i.clone()}),
-                elem_sz: extract_element_size(&ty, &i)?,
-                ty,
-                i
-            })
+            Ok(Expr::Int {v, ty: ty.clone(), i: i.clone()})
         },
         gpu_ast::Expr::Float {v, ty: _, i} => {
-            Ok(Expr::Full {
-                shape: 1,
-                value: Box::new(Expr::Float {v, ty: ty.clone(), i: i.clone()}),
-                elem_sz: extract_element_size(&ty, &i)?,
-                ty,
-                i
-            })
+            Ok(Expr::Float {v, ty: ty.clone(), i: i.clone()})
         },
         gpu_ast::Expr::UnOp {op, arg, ty: _, i} => {
             let arg = Box::new(from_gpu_ast_kernel_expr(env, *arg)?);
@@ -200,6 +182,17 @@ fn from_gpu_ast_kernel_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult
 fn remove_thread_idx(removed: bool, e: gpu_ast::Expr) -> (bool, gpu_ast::Expr) {
     match e {
         gpu_ast::Expr::ThreadIdx {dim: _, ty, i} => (true, gpu_ast::Expr::Int {v: 0, ty, i}),
+        gpu_ast::Expr::Convert {e, ty} => {
+            match *e {
+                gpu_ast::Expr::ThreadIdx {dim: _, ty: ety, i} => {
+                    (true, gpu_ast::Expr::Int {v: 0, ty: ety, i})
+                },
+                _ => {
+                    let (removed, e) = remove_thread_idx(removed, *e);
+                    (removed, gpu_ast::Expr::Convert {e: Box::new(e), ty})
+                }
+            }
+        },
         _ => e.smap_accum_l(removed, remove_thread_idx)
     }
 }
@@ -236,10 +229,7 @@ fn extract_step(
         match (*lhs, op) {
             (gpu_ast::Expr::Var {id, ..}, BinOp::Add) if id == *var => {
                 match from_gpu_ast_kernel_expr(env, *rhs)? {
-                    Expr::Full {value, ..} => match *value {
-                        Expr::Int {v, ..} => Ok(v as usize),
-                        _ => fail(i)
-                    },
+                    Expr::Int {v, ..} => Ok(v as usize),
                     _ => fail(i)
                 }
             },

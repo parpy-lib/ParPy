@@ -161,7 +161,6 @@ fn unify_shapes(
 ) -> CompileResult<ShapeEnv> {
     let lid = extract_shape_var(lsh, i)?;
     let rid = extract_shape_var(rsh, i)?;
-    println!("union {lid} = {rid}");
     env.uf.union(lid, rid);
     Ok(env)
 }
@@ -239,7 +238,6 @@ fn unify_shapes_stmt(env: ShapeEnv, s: &Stmt) -> CompileResult<ShapeEnv> {
             let env = unify_shapes_expr(env, expr)?;
             let (env, lsh) = env.get_shape_var(Some(&dst));
             let rsh = extract_shape_type(expr.get_type(), &i)?;
-            println!("assign on line {0}: unify {lsh:?} {rsh:?}", i.start.line);
             unify_shapes(env, &lsh, rsh, &i)
         },
         _ => {
@@ -269,19 +267,20 @@ fn determine_shapes_type(env: ShapeEnv, ty: Type) -> (ShapeEnv, Type) {
     }
 }
 
+fn extract_type_shape(ty: &Type, i: &Info) -> CompileResult<usize> {
+    match ty.get_shape() {
+        Some(Shape::Num(n)) => Ok(*n),
+        _ => parpy_compile_error!(i, "Failed to determine shape of expression")
+    }
+}
+
 fn determine_shapes_expr(env: ShapeEnv, e: Expr) -> CompileResult<(ShapeEnv, Expr)> {
     let (env, ty) = determine_shapes_type(env, e.get_type().clone());
     match e {
-        Expr::Var {ref id, ..} => {
-            println!("{id}: {ty:?}");
-            Ok((env, e.with_type(ty)))
-        },
+        Expr::Var {..} => Ok((env, e.with_type(ty))),
         Expr::Full {shape: _, value, elem_sz, ty: _, i} => {
             let (env, value) = determine_shapes_expr(env, *value)?;
-            let shape = match ty.get_shape() {
-                Some(Shape::Num(n)) => Ok(*n),
-                _ => parpy_compile_error!(i, "Failed to determine shape of expression")
-            }?;
+            let shape = extract_type_shape(&ty, &i)?;
             Ok((env, Expr::Full {shape, value: Box::new(value), elem_sz, ty, i}))
         },
         _ => {
@@ -300,7 +299,7 @@ fn unify_top(t: Top) -> CompileResult<Top> {
     match t {
         Top::FunDef {triton_jit: true, id, params, body, i} => {
             let (env, body) = body.smap_accum_l(ShapeEnv::default(), add_shape_variables);
-            let mut env = unify_shapes_body(env, &body)?;
+            let env = unify_shapes_body(env, &body)?;
             let (_, body) = body.smap_accum_l_result(Ok(env), determine_shapes_stmt)?;
             Ok(Top::FunDef {triton_jit: true, id, params, body, i})
         },

@@ -1,5 +1,6 @@
 pub mod ast;
 mod codegen;
+mod constant_fold;
 mod inline;
 mod pprint;
 mod shapes;
@@ -19,6 +20,9 @@ pub fn codegen(gpu_ast: gpu_ast::Ast) -> CompileResult<Ast> {
 
     // Convert the GPU AST to an AST representing the Triton code.
     let ast = codegen::from_gpu_ast(gpu_ast)?;
+
+    // Apply constant folding to eliminate unnecessary expressions.
+    let ast = constant_fold::apply(ast);
 
     // Performs inlining within the GPU code such that all GPU kernels consist of one function
     // without performing any function calls.
