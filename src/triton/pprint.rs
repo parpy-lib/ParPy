@@ -132,7 +132,13 @@ impl PrettyPrint for Expr {
                 (env, if *v { "True" } else { "False" }.to_string())
             },
             Expr::Int {v, ty: _, i: _} => (env, format!("{v}")),
-            Expr::Float {v, ty: _, i: _} => (env, format!("{v:?}")),
+            Expr::Float {v, ty: _, i: _} => {
+                if v.is_infinite() {
+                    (env, format!("float(\"{v:?}\")"))
+                } else {
+                    (env, format!("{v:?}"))
+                }
+            },
             Expr::UnOp {..} => self.print_parenthesized_unop(env),
             Expr::BinOp {..} => self.print_parenthesized_binop(env),
             Expr::Reduce {op, arg, ty: _, i: _} => {
