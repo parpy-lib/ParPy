@@ -240,6 +240,12 @@ fn unify_shapes_stmt(env: ShapeEnv, s: &Stmt) -> CompileResult<ShapeEnv> {
             let rsh = extract_shape_type(expr.get_type(), &i)?;
             unify_shapes(env, &lsh, rsh, &i)
         },
+        Stmt::For {lo, hi, body, i, ..} => {
+            let env = unify_shapes_expr(env, lo)?;
+            let env = unify_shapes_expr(env, hi)?;
+            let env = unify_shapes_type(env, lo.get_type(), hi.get_type(), &i);
+            body.sfold_result(env, unify_shapes_stmt)
+        },
         _ => {
             let env = s.sfold_result(Ok(env), unify_shapes_stmt);
             s.sfold_result(env, unify_shapes_expr)

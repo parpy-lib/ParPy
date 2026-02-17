@@ -219,6 +219,38 @@ fn add_masking_stmt(
             stmts.push(Stmt::Assign {dst, expr: where_expr, i});
             Ok((masks, stmts))
         },
+        Stmt::For {var, lo, hi, step, mut body, i} if is_blocked_type(lo.get_type()) => {
+            let ty = lo.get_type().clone();
+            let shape = Shape::Num(get_shape_from_type(&ty));
+            let var_expr = Expr::Var {id: var.clone(), ty: ty.clone(), i: i.clone()};
+            stmts.push(Stmt::Assign {
+                dst: var.clone(),
+                expr: lo,
+                i: i.clone()
+            });
+            body.push(Stmt::Assign {
+                dst: var,
+                expr: Expr::BinOp {
+                    lhs: Box::new(var_expr.clone()),
+                    op: BinOp::Add,
+                    rhs: Box::new(Expr::Int {
+                        v: step as i128, ty: ty.clone(), i: i.clone()
+                    }),
+                    ty: ty.clone(),
+                    i: i.clone()
+                },
+                i: i.clone()
+            });
+            let cond = Expr::BinOp {
+                lhs: Box::new(var_expr),
+                op: BinOp::Lt,
+                rhs: Box::new(hi),
+                ty: Type::Tensor {sz: ElemSize::Bool, shape},
+                i: i.clone()
+            };
+            let while_loop = Stmt::While {cond, body, i: i.clone()};
+            add_masking_stmt((masks, stmts), while_loop)
+        },
         Stmt::While {cond, body, i} if is_blocked_type(cond.get_type()) => {
             let ty = cond.get_type().clone();
             let cond_id = Name::sym_str("while_cond");
