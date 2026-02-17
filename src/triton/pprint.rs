@@ -46,7 +46,7 @@ impl PrettyPrintUnOp<Type> for Expr {
     fn print_unop(op: &UnOp, _argty: &Type) -> Option<String> {
         let s = match op {
             UnOp::Sub => Some("-"),
-            UnOp::Not => Some("not"),
+            UnOp::Not => Some("not "),
             UnOp::BitNeg => Some("~"),
             UnOp::Addressof => None,
             UnOp::Sqrt => Some("triton.language.sqrt"),
@@ -118,6 +118,7 @@ impl PrettyPrint for ReduceOp {
             ReduceOp::Max => "triton.language.max",
             ReduceOp::Sum => "triton.language.sum",
             ReduceOp::Prod => "_parpy_builtin_prod",
+            ReduceOp::Any => "_parpy_builtin_any",
         };
         (env, s.to_string())
     }

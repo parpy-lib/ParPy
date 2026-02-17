@@ -1,4 +1,5 @@
 pub mod ast;
+mod blocking;
 mod codegen;
 mod constant_fold;
 mod inline;
@@ -31,6 +32,11 @@ pub fn codegen(gpu_ast: gpu_ast::Ast) -> CompileResult<Ast> {
     // Attempts to unify the block-wide shapes of all expressions in each GPU kernel, to ensure
     // proper tracking of block-wide operations.
     let ast = shapes::unify(ast)?;
+
+    // Transforms the code within each GPU kernel to use a blocking structure. In particular, we
+    // rewrite control-flow statements whose condition depends on a block-wide value to a format
+    // supported by Triton.
+    let ast = blocking::transform(ast)?;
 
     Ok(ast)
 }

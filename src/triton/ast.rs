@@ -42,7 +42,7 @@ impl Type {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ReduceOp {
-    Min, Max, Sum, Prod
+    Min, Max, Sum, Prod, Any
 }
 
 #[derive(Clone, Debug, PartialEq)]
