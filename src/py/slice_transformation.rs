@@ -226,7 +226,7 @@ fn derive_dims_from_reduce_id_helper(
         let sub_expr = Expr::BinOp {
             lhs: Box::new(Expr::BinOp {
                 lhs: Box::new(reduce_var.clone()),
-                op: BinOp::Div,
+                op: BinOp::FloorDiv,
                 rhs: Box::new(mk_int(divn, &scalar_sizes, &i)),
                 ty: reduce_var.get_type().clone(),
                 i: i.clone()
