@@ -65,6 +65,7 @@ pub enum Expr {
     Full {shape: usize, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
     Where {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     AllocBuffer {nelems: usize, elem_sz: ElemSize, ty: Type, i: Info},
+    Convert {value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
 }
 
 impl Expr {
@@ -89,7 +90,9 @@ impl Expr {
             Expr::Where {cond, thn, els, ty: _, i} =>
                 Expr::Where {cond, thn, els, ty, i},
             Expr::AllocBuffer {nelems, elem_sz, ty: _, i} =>
-                Expr::AllocBuffer {nelems, elem_sz, ty, i}
+                Expr::AllocBuffer {nelems, elem_sz, ty, i},
+            Expr::Convert {value, elem_sz, ty: _, i} =>
+                Expr::Convert {value, elem_sz, ty, i},
         }
     }
 }
@@ -112,7 +115,8 @@ impl InfoNode for Expr {
             Expr::Store {i, ..} |
             Expr::Full {i, ..} |
             Expr::Where {i, ..} |
-            Expr::AllocBuffer {i, ..} => i.clone(),
+            Expr::AllocBuffer {i, ..} |
+            Expr::Convert {i, ..} => i.clone(),
         }
     }
 }
@@ -135,7 +139,8 @@ impl ExprType<Type> for Expr {
             Expr::Store {ty, ..} |
             Expr::Full {ty, ..} |
             Expr::Where {ty, ..} |
-            Expr::AllocBuffer {ty, ..} => ty,
+            Expr::AllocBuffer {ty, ..} |
+            Expr::Convert {ty, ..} => ty,
         }
     }
 
@@ -156,7 +161,8 @@ impl ExprType<Type> for Expr {
             Expr::Load {..} |
             Expr::Store {..} |
             Expr::Full {..} |
-            Expr::Where {..} => false,
+            Expr::Where {..} |
+            Expr::Convert {..} => false,
         }
     }
 }
@@ -179,6 +185,7 @@ impl SFold<Expr> for Expr {
             },
             Expr::Full {value, ..} => f(acc?, value),
             Expr::Where {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
+            Expr::Convert {value, ..} => f(acc?, value),
             Expr::Var {..} |
             Expr::Bool {..} |
             Expr::Int {..} |
@@ -243,6 +250,12 @@ impl SMapAccum<Expr> for Expr {
                     els: Box::new(els),
                     ty,
                     i
+                }))
+            },
+            Expr::Convert {value, elem_sz, ty, i} => {
+                let (acc, value) = f(acc?, *value)?;
+                Ok((acc, Expr::Convert {
+                    value: Box::new(value), elem_sz, ty, i
                 }))
             },
             Expr::Var {..} |

@@ -164,7 +164,7 @@ fn from_gpu_ast_kernel_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult
         gpu_ast::Expr::Convert {e, ty: gpu_ast::Type::Scalar {sz: elem_sz}} => {
             let i = e.get_info();
             let value = Box::new(from_gpu_ast_kernel_expr(env, *e)?);
-            Ok(Expr::Full {shape: 1, value, elem_sz, ty, i})
+            Ok(Expr::Convert {value, elem_sz, ty, i})
         },
         gpu_ast::Expr::Convert {e, ..} => {
             let i = e.get_info();

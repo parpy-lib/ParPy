@@ -7,6 +7,8 @@ use crate::utils::name::Name;
 use crate::utils::reduce::ExprLit;
 use crate::utils::smap::*;
 
+use std::collections::BTreeSet;
+
 fn get_elem_size(ty: &Type, i: &Info) -> CompileResult<ElemSize> {
     match ty.get_elem_size() {
         Some(sz) => Ok(sz.clone()),
@@ -23,6 +25,20 @@ fn get_shape_from_type(ty: &Type) -> usize {
 
 fn is_blocked_type(ty: &Type) -> bool {
     get_shape_from_type(ty) > 1
+}
+
+fn replace_full_with_conversion_expr(e: Expr) -> Expr {
+    match e {
+        Expr::Full {value, elem_sz, ty, i, ..} if is_blocked_type(value.get_type()) => {
+            Expr::Convert {value, elem_sz, ty, i}
+        },
+        _ => e.smap(replace_full_with_conversion_expr)
+    }
+}
+
+fn replace_full_with_conversion_stmt(s: Stmt) -> Stmt {
+    s.smap(replace_full_with_conversion_stmt)
+        .smap(replace_full_with_conversion_expr)
 }
 
 fn wrap_blocked_literals_in_full_expr(e: Expr) -> CompileResult<Expr> {
@@ -99,38 +115,73 @@ fn get_neutral_element(op: &ReduceOp, ty: &Type, i: &Info) -> CompileResult<Expr
     }
 }
 
-fn mask_memory_accesses_expr(cond: &Expr, e: Expr) -> CompileResult<Expr> {
+fn depends_on_var(vars: &BTreeSet<Name>, acc: bool, e: &Expr) -> bool {
     match e {
-        Expr::Reduce {op, arg, ty, i} if is_blocked_type(arg.get_type()) => {
-            let arg = Box::new(mask_memory_accesses_expr(&cond, *arg)?);
-            let ne = get_neutral_element(&op, &ty, &i)?;
-            let arg = Expr::Where {
-                cond: Box::new(cond.clone()),
-                thn: arg,
-                els: Box::new(ne),
-                ty: ty.clone(),
-                i: i.clone()
-            };
-            Ok(Expr::Reduce {op, arg: Box::new(arg), ty, i})
-        },
-        Expr::Load {ptr, mask, ty, i} if is_blocked_type(ptr.get_type()) => {
-            let ptr = Box::new(mask_memory_accesses_expr(&cond, *ptr)?);
-            let mask = Some(Box::new(make_mask(mask, &vec![cond.clone()])));
-            Ok(Expr::Load {ptr, mask, ty, i})
-        },
-        Expr::Store {ptr, value, mask, ty, i} if is_blocked_type(ptr.get_type()) => {
-            let ptr = Box::new(mask_memory_accesses_expr(&cond, *ptr)?);
-            let value = Box::new(mask_memory_accesses_expr(&cond, *value)?);
-            let mask = Some(Box::new(make_mask(mask, &vec![cond.clone()])));
-            Ok(Expr::Store {ptr, value, mask, ty, i})
-        },
-        _ => e.smap_result(|e| mask_memory_accesses_expr(&cond, e))
+        Expr::Var {id, ..} => acc || vars.contains(&id),
+        _ => e.sfold(acc, |acc, e| depends_on_var(&vars, acc, e))
     }
 }
 
-fn mask_memory_accesses_stmt(cond: &Expr, s: Stmt) -> CompileResult<Stmt> {
-    s.smap_result(|s| mask_memory_accesses_stmt(&cond, s))?
-        .smap_result(|e| mask_memory_accesses_expr(&cond, e))
+fn mask_memory_accesses_expr(
+    cond: &Expr,
+    vars: &BTreeSet<Name>,
+    e: Expr
+) -> CompileResult<Expr> {
+    match e {
+        Expr::Reduce {op, arg, ty, i} => {
+            let arg = Box::new(mask_memory_accesses_expr(&cond, &vars, *arg)?);
+            let arg = if depends_on_var(&vars, false, &arg) {
+                let ne = get_neutral_element(&op, &ty, &i)?;
+                Box::new(Expr::Where {
+                    cond: Box::new(cond.clone()),
+                    thn: arg,
+                    els: Box::new(ne),
+                    ty: ty.clone(),
+                    i: i.clone()
+                })
+            } else {
+                arg
+            };
+            Ok(Expr::Reduce {op, arg, ty, i})
+        },
+        Expr::Load {ptr, mask, ty, i} => {
+            let ptr = Box::new(mask_memory_accesses_expr(&cond, &vars, *ptr)?);
+            let mask = if depends_on_var(&vars, false, &ptr) {
+                Some(Box::new(make_mask(mask, &vec![cond.clone()])))
+            } else {
+                mask
+            };
+            Ok(Expr::Load {ptr, mask, ty, i})
+        },
+        Expr::Store {ptr, value, mask, ty, i} => {
+            let ptr = Box::new(mask_memory_accesses_expr(&cond, &vars, *ptr)?);
+            let value = Box::new(mask_memory_accesses_expr(&cond, &vars, *value)?);
+            let mask = if depends_on_var(&vars, false, &ptr) {
+                Some(Box::new(make_mask(mask, &vec![cond.clone()])))
+            } else {
+                mask
+            };
+            Ok(Expr::Store {ptr, value, mask, ty, i})
+        },
+        _ => e.smap_result(|e| mask_memory_accesses_expr(&cond, &vars, e))
+    }
+}
+
+fn mask_memory_accesses_stmt(
+    cond: &Expr,
+    mut vars: BTreeSet<Name>,
+    s: Stmt
+) -> CompileResult<(BTreeSet<Name>, Stmt)> {
+    let s = s.smap_result(|e| mask_memory_accesses_expr(&cond, &vars, e))?;
+    match s {
+        Stmt::Assign {dst, expr, i} if depends_on_var(&vars, false, &expr) => {
+            vars.insert(dst.clone());
+            Ok((vars, Stmt::Assign {dst, expr, i}))
+        },
+        _ => s.smap_accum_l_result(Ok(vars), |vars, s| {
+            mask_memory_accesses_stmt(&cond, vars, s)
+        })
+    }
 }
 
 fn mask_memory_accesses_in_parallel_for(s: Stmt) -> CompileResult<Stmt> {
@@ -142,13 +193,24 @@ fn mask_memory_accesses_in_parallel_for(s: Stmt) -> CompileResult<Stmt> {
                         let ty = hi.get_type().clone();
                         let shape = Shape::Num(get_shape_from_type(&ty));
                         let boundary_cond = Expr::BinOp {
-                            lhs: Box::new(Expr::Var {id, ty: ty.clone(), i: i.clone()}),
+                            lhs: Box::new(Expr::Var {
+                                id: id.clone(), ty: ty.clone(), i: i.clone()
+                            }),
                             op: BinOp::Lt,
                             rhs: Box::new(hi.clone()),
                             ty: Type::Tensor {sz: ElemSize::Bool, shape},
                             i: i.clone()
                         };
-                        body.smap_result(|s| mask_memory_accesses_stmt(&boundary_cond, s))
+                        // We add the boundary condition as a mask to any memory access that
+                        // depends on the blocked variable or any other variables which
+                        // transitively depends on it. The masking must be accurate, because the
+                        // Triton compiler rejects a blocked mask when the pointer is of shape 1.
+                        let mut vars = BTreeSet::new();
+                        vars.insert(id);
+                        let (_, body) = body.smap_accum_l_result(Ok(vars), |vars, s| {
+                            mask_memory_accesses_stmt(&boundary_cond, vars, s)
+                        })?;
+                        Ok(body)
                     },
                     None => Ok(body)
                 }
@@ -342,6 +404,11 @@ fn add_masking_stmt(
 fn transform_top(t: Top) -> CompileResult<Top> {
     match t {
         Top::FunDef {triton_jit: true, id, params, body, i} => {
+            // Replace uses of tl.full with an explicit conversion when they contain blocked data.
+            // This is required for correctness because the argument of a tl.full cannot itself be
+            // a blocked value.
+            let body = body.smap(replace_full_with_conversion_stmt);
+
             // If a literal has been assigned a non-unit shape, we rewrite it to use tl.full to
             // specify an explicit shape.
             let body = body.smap_result(wrap_blocked_literals_in_full_stmt)?;

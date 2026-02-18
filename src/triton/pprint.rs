@@ -213,6 +213,11 @@ impl PrettyPrint for Expr {
                 let dtype = print_dtype(elem_sz);
                 (env, format!("_parpy_builtin_alloc({nelems}, {dtype})"))
             },
+            Expr::Convert {value, elem_sz, ty: _, i: _} => {
+                let (env, value) = value.pprint(env);
+                let elem_sz = pprint_elem_size(elem_sz);
+                (env, format!("triton.language.cast({value}, {elem_sz})"))
+            },
         }
     }
 }

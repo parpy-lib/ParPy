@@ -112,13 +112,13 @@ fn add_shape_variable_type(env: ShapeEnv, ty: Type, o: Option<&Name>) -> (ShapeE
 fn add_shape_variables_expr(env: ShapeEnv, e: Expr) -> (ShapeEnv, Expr) {
     match e {
         Expr::Var {id, ty, i} => {
-            let (env, ty) = add_shape_variable_type(env, ty, Some(&id));
+            let (env, ty) = add_shape_variable_type(env, ty, None);
             (env, Expr::Var {id, ty, i})
         },
         _ => {
+            let (env, e) = e.smap_accum_l(env, add_shape_variables_expr);
             let (env, ty) = add_shape_variable_type(env, e.get_type().clone(), None);
-            let e = e.with_type(ty);
-            e.smap_accum_l(env, add_shape_variables_expr)
+            (env, e.with_type(ty))
         }
     }
 }
@@ -220,6 +220,10 @@ fn unify_shapes_expr(env: ShapeEnv, e: &Expr) -> CompileResult<ShapeEnv> {
             let env = unify_shapes_expr(env, value)?;
             unify_shapes_type(env, ptr.get_type(), value.get_type(), &i)
         },
+        Expr::Full {value, ty, i, ..} => {
+            let env = unify_shapes_expr(env, value)?;
+            unify_shapes_type(env, value.get_type(), &ty, &i)
+        },
         Expr::Where {cond, thn, els, ty, i} => {
             let env = unify_shapes_expr(env, cond)?;
             let env = unify_shapes_expr(env, thn)?;
@@ -227,6 +231,10 @@ fn unify_shapes_expr(env: ShapeEnv, e: &Expr) -> CompileResult<ShapeEnv> {
             let env = unify_shapes_type(env, cond.get_type(), thn.get_type(), &i)?;
             let env = unify_shapes_type(env, cond.get_type(), els.get_type(), &i)?;
             unify_shapes_type(env, cond.get_type(), &ty, &i)
+        },
+        Expr::Convert {value, ty, i, ..} => {
+            let env = unify_shapes_expr(env, value)?;
+            unify_shapes_type(env, value.get_type(), &ty, &i)
         },
         _ => e.sfold_result(Ok(env), unify_shapes_expr)
     }
