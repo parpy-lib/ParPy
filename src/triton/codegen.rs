@@ -591,7 +591,7 @@ fn from_gpu_ast_host_stmt(
                     Ok(acc)
                 },
                 gpu_ast::Expr::ArrayAccess {..} => {
-                    parpy_compile_error!(i, "Arrays cannot be accessed outside parallel code")
+                    parpy_compile_error!(i, "Data cannot be accessed outside parallel code")
                 },
                 _ => parpy_internal_error!(i, "Invalid form of assignment encountered \
                                                in Triton codegen")
