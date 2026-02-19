@@ -195,12 +195,14 @@ fn find_parallel_structure_stmt_seq(
             let mut p = find_parallel_structure_stmts_par(body)?;
             p.layers.insert(0, ParLayer::new(par.nthreads, par.tpb));
             // Ensure that the innermost thread count of the parallel structure of this loop uses a
-            // thread count evenly divisible by the size of a warp. This is very important because
-            // warp-level intrinsics behave unexpectedly when not all threads of a warp are used,
-            // causing parallel reductions to misbehave.
+            // thread count corresponding to a power of two of the number of warps. This ensures
+            // reductions do not need to track which threads of a warp are participating, and that
+            // the code is accepted by certain backends (Triton requires the thread count to be a
+            // power of two, not just a multiple of the warp size).
             match p.layers.last_mut() {
                 Some(ParLayer {threads: n, ..}) => {
-                    *n = ((*n + WARP_SIZE - 1) / WARP_SIZE) * WARP_SIZE
+                    let nwarps = ((*n + (WARP_SIZE - 1)) / WARP_SIZE) as usize;
+                    *n = (nwarps.next_power_of_two() * 32) as i64;
                 },
                 None => ()
             };
