@@ -116,6 +116,19 @@ fn rewrite_calls_anf(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
             acc.append(&mut mk_call_assignments(calls));
             acc.push(Stmt::Expr {e, i});
         },
+        Stmt::Store {ptr, value, mask, i} => {
+            let (calls, ptr) = replace_calls_with_free_variables(vec![], ptr);
+            let (calls, value) = replace_calls_with_free_variables(calls, value);
+            let (calls, mask) = match mask {
+                Some(m) => {
+                    let (calls, m) = replace_calls_with_free_variables(calls, m);
+                    (calls, Some(m))
+                },
+                None => (calls, None)
+            };
+            acc.append(&mut mk_call_assignments(calls));
+            acc.push(Stmt::Store {ptr, value, mask, i});
+        },
         Stmt::Barrier {..} |
         Stmt::KernelLaunch {..} => {
             acc.push(s);

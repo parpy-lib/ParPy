@@ -61,7 +61,6 @@ pub enum Expr {
     ProgramId {dim: Dim, ty: Type, i: Info},
     Arange {lo: usize, hi: usize, ty: Type, i: Info},
     Load {ptr: Box<Expr>, mask: Option<Box<Expr>>, ty: Type, i: Info},
-    Store {ptr: Box<Expr>, value: Box<Expr>, mask: Option<Box<Expr>>, ty: Type, i: Info},
     Full {shape: usize, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
     Where {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     AllocBuffer {nelems: usize, elem_sz: ElemSize, ty: Type, i: Info},
@@ -83,8 +82,6 @@ impl Expr {
             Expr::ProgramId {dim, ty: _, i} => Expr::ProgramId {dim, ty, i},
             Expr::Arange {lo, hi, ty: _, i} => Expr::Arange {lo, hi, ty, i},
             Expr::Load {ptr, mask, ty: _, i} => Expr::Load {ptr, mask, ty, i},
-            Expr::Store {ptr, value, mask, ty: _, i} =>
-                Expr::Store {ptr, value, mask, ty, i},
             Expr::Full {shape, value, elem_sz, ty: _, i} =>
                 Expr::Full {shape, value, elem_sz, ty, i},
             Expr::Where {cond, thn, els, ty: _, i} =>
@@ -112,7 +109,6 @@ impl InfoNode for Expr {
             Expr::ProgramId {i, ..} |
             Expr::Arange {i, ..} |
             Expr::Load {i, ..} |
-            Expr::Store {i, ..} |
             Expr::Full {i, ..} |
             Expr::Where {i, ..} |
             Expr::AllocBuffer {i, ..} |
@@ -136,7 +132,6 @@ impl ExprType<Type> for Expr {
             Expr::ProgramId {ty, ..} |
             Expr::Arange {ty, ..} |
             Expr::Load {ty, ..} |
-            Expr::Store {ty, ..} |
             Expr::Full {ty, ..} |
             Expr::Where {ty, ..} |
             Expr::AllocBuffer {ty, ..} |
@@ -159,7 +154,6 @@ impl ExprType<Type> for Expr {
             Expr::Call {..} |
             Expr::ExtCall {..} |
             Expr::Load {..} |
-            Expr::Store {..} |
             Expr::Full {..} |
             Expr::Where {..} |
             Expr::Convert {..} => false,
@@ -180,9 +174,6 @@ impl SFold<Expr> for Expr {
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::ExtCall {args, ..} => args.sfold_result(acc, &f),
             Expr::Load {ptr, mask, ..} => mask.sfold_result(f(acc?, ptr), &f),
-            Expr::Store {ptr, value, mask, ..} => {
-                mask.sfold_result(f(f(acc?, ptr)?, value), &f)
-            },
             Expr::Full {value, ..} => f(acc?, value),
             Expr::Where {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
             Expr::Convert {value, ..} => f(acc?, value),
@@ -230,12 +221,6 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, mask) = mask.smap_accum_l_result(Ok(acc), &f)?;
                 Ok((acc, Expr::Load {ptr: Box::new(ptr), mask, ty, i}))
             },
-            Expr::Store {ptr, value, mask, ty, i} => {
-                let (acc, ptr) = f(acc?, *ptr)?;
-                let (acc, value) = f(acc, *value)?;
-                let (acc, mask) = mask.smap_accum_l_result(Ok(acc), &f)?;
-                Ok((acc, Expr::Store {ptr: Box::new(ptr), value: Box::new(value), mask, ty, i}))
-            },
             Expr::Full {shape, value, elem_sz, ty, i} => {
                 let (acc, value) = f(acc?, *value)?;
                 Ok((acc, Expr::Full {shape, value: Box::new(value), elem_sz, ty, i}))
@@ -280,6 +265,7 @@ pub enum Stmt {
 
     // Triton-specific nodes
     Barrier {i: Info},
+    Store {ptr: Expr, value: Expr, mask: Option<Expr>, i: Info},
     KernelLaunch {id: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info},
 }
 
@@ -297,6 +283,13 @@ impl SFold<Expr> for Stmt {
             Stmt::Return {value, ..} => f(acc?, value),
             Stmt::Expr {e, ..} => f(acc?, e),
             Stmt::Barrier {..} => acc,
+            Stmt::Store {ptr, value, mask, ..} => {
+                let acc = f(f(acc?, ptr)?, value)?;
+                match mask {
+                    Some(m) => f(acc, m),
+                    None => Ok(acc)
+                }
+            },
             Stmt::KernelLaunch {args, ..} => args.sfold_result(acc, &f),
         }
     }
@@ -316,6 +309,7 @@ impl SFold<Stmt> for Stmt {
             Stmt::Return {..} |
             Stmt::Expr {..} |
             Stmt::Barrier {..} |
+            Stmt::Store {..} |
             Stmt::KernelLaunch {..} => acc,
         }
     }
@@ -354,6 +348,18 @@ impl SMapAccum<Expr> for Stmt {
                 Ok((acc, Stmt::Expr {e, i}))
             },
             Stmt::Barrier {..} => Ok((acc?, self)),
+            Stmt::Store {ptr, value, mask, i} => {
+                let (acc, ptr) = f(acc?, ptr)?;
+                let (acc, value) = f(acc, value)?;
+                let (acc, mask) = match mask {
+                    Some(m) => {
+                        let (acc, m) = f(acc, m)?;
+                        Ok((acc, Some(m)))
+                    },
+                    None => Ok((acc, None))
+                }?;
+                Ok((acc, Stmt::Store {ptr, value, mask, i}))
+            },
             Stmt::KernelLaunch {id, block_dims, args, nwarps, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Stmt::KernelLaunch {id, block_dims, args, nwarps, i}))
@@ -386,6 +392,7 @@ impl SMapAccum<Stmt> for Stmt {
             Stmt::Return {..} |
             Stmt::Expr {..} |
             Stmt::Barrier {..} |
+            Stmt::Store {..} |
             Stmt::KernelLaunch {..} => {
                 Ok((acc?, self))
             },
@@ -417,6 +424,7 @@ impl SFlatten<Stmt> for Stmt {
             Stmt::Return {..} |
             Stmt::Expr {..} |
             Stmt::Barrier {..} |
+            Stmt::Store {..} |
             Stmt::KernelLaunch {..} => {
                 acc.push(self);
             },

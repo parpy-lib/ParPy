@@ -365,21 +365,17 @@ fn from_gpu_ast_kernel_stmt(
                 gpu_ast::Expr::ArrayAccess {target, idx, ty: _, i: _} => {
                     let target = from_gpu_ast_kernel_expr(env, *target)?;
                     let idx = from_gpu_ast_kernel_expr(env, *idx)?;
-                    acc.push(Stmt::Expr {
-                        e: Expr::Store {
-                            ptr: Box::new(Expr::BinOp {
-                                lhs: Box::new(target),
-                                op: BinOp::Add,
-                                rhs: Box::new(idx.with_type(ptr_ty.clone())),
-                                ty: ptr_ty,
-                                i: i.clone()
-                            }),
-                            value: Box::new(rhs),
-                            mask: None,
-                            ty: Type::Void,
+                    acc.push(Stmt::Store {
+                        ptr: Expr::BinOp {
+                            lhs: Box::new(target),
+                            op: BinOp::Add,
+                            rhs: Box::new(idx.with_type(ptr_ty.clone())),
+                            ty: ptr_ty,
                             i: i.clone()
                         },
-                        i
+                        value: rhs,
+                        mask: None,
+                        i: i.clone()
                     });
                     Ok(acc)
                 },

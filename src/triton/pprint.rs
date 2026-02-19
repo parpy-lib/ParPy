@@ -186,17 +186,6 @@ impl PrettyPrint for Expr {
                     None => (env, format!("triton.language.load({ptr})"))
                 }
             },
-            Expr::Store {ptr, value, mask, ty: _, i: _} => {
-                let (env, ptr) = ptr.pprint(env);
-                let (env, value) = value.pprint(env);
-                match mask {
-                    Some(m) => {
-                        let (env, m) = m.pprint(env);
-                        (env, format!("triton.language.store({ptr}, {value}, mask={m})"))
-                    },
-                    None => (env, format!("triton.language.store({ptr}, {value})"))
-                }
-            },
             Expr::Full {shape, value, elem_sz, ty: _, i: _} => {
                 let shape = print_tuple_shape(shape);
                 let (env, value) = value.pprint(env);
@@ -279,6 +268,18 @@ impl PrettyPrint for Stmt {
                 (env, format!("{0}{e}", indent))
             },
             Stmt::Barrier {i: _} => (env, format!("{0}triton.language.debug_barrier()", indent)),
+            Stmt::Store {ptr, value, mask, i: _} => {
+                let (env, ptr) = ptr.pprint(env);
+                let (env, value) = value.pprint(env);
+                let (env, mask) = match mask {
+                    Some(m) => {
+                        let (env, m) = m.pprint(env);
+                        (env, format!(", mask={m}"))
+                    },
+                    None => (env, "".to_string())
+                };
+                (env, format!("{0}triton.language.store({ptr}, {value}{mask})", indent))
+            },
             Stmt::KernelLaunch {id, block_dims, args, nwarps, i: _} => {
                 let (env, id) = id.pprint(env);
                 let (env, block_dims) = block_dims.pprint(env);
@@ -366,30 +367,6 @@ mod test {
     }
 
     #[test]
-    fn print_store() {
-        let e = Expr::Store {
-            ptr: Box::new(var("x", None)),
-            value: Box::new(var("y", None)),
-            mask: None,
-            ty: Type::Void,
-            i: i()
-        };
-        assert_eq!(e.pprint_default(), "triton.language.store(x, y)");
-    }
-
-    #[test]
-    fn print_store_with_mask() {
-        let e = Expr::Store {
-            ptr: Box::new(var("x", None)),
-            value: Box::new(var("y", None)),
-            mask: Some(Box::new(var("z", None))),
-            ty: Type::Void,
-            i: i()
-        };
-        assert_eq!(e.pprint_default(), "triton.language.store(x, y, mask=z)");
-    }
-
-    #[test]
     fn print_full() {
         let e = Expr::Full {
             shape: 32,
@@ -439,6 +416,28 @@ mod test {
     fn print_barrier() {
         let s = Stmt::Barrier {i: i()};
         assert_eq!(s.pprint_default(), "triton.language.debug_barrier()")
+    }
+
+    #[test]
+    fn print_store() {
+        let s = Stmt::Store {
+            ptr: var("x", None),
+            value: var("y", None),
+            mask: None,
+            i: i()
+        };
+        assert_eq!(s.pprint_default(), "triton.language.store(x, y)");
+    }
+
+    #[test]
+    fn print_store_with_mask() {
+        let s = Stmt::Store {
+            ptr: var("x", None),
+            value: var("y", None),
+            mask: Some(var("z", None)),
+            i: i()
+        };
+        assert_eq!(s.pprint_default(), "triton.language.store(x, y, mask=z)");
     }
 
     #[test]

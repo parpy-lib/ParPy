@@ -83,9 +83,8 @@ fn try_extract_blocked_var(s: &Stmt) -> Option<Name> {
     }
 }
 
-fn make_mask(mask: Option<Box<Expr>>, masks: &Vec<Expr>) -> Expr {
+fn make_mask(mask: Option<Expr>, masks: &Vec<Expr>) -> Option<Expr> {
     mask.into_iter()
-        .map(|e| *e)
         .chain(masks.clone().into_iter())
         .reduce(|l, r| {
             let ty = l.get_type().clone();
@@ -97,7 +96,6 @@ fn make_mask(mask: Option<Box<Expr>>, masks: &Vec<Expr>) -> Expr {
                 ty, i
             }
         })
-        .unwrap()
 }
 
 fn get_neutral_element(op: &ReduceOp, ty: &Type, i: &Info) -> CompileResult<Expr> {
@@ -147,21 +145,12 @@ fn mask_memory_accesses_expr(
         Expr::Load {ptr, mask, ty, i} => {
             let ptr = Box::new(mask_memory_accesses_expr(&cond, &vars, *ptr)?);
             let mask = if depends_on_var(&vars, false, &ptr) {
-                Some(Box::new(make_mask(mask, &vec![cond.clone()])))
+                let mask = mask.map(|e| *e);
+                make_mask(mask, &vec![cond.clone()]).map(|e| Box::new(e))
             } else {
                 mask
             };
             Ok(Expr::Load {ptr, mask, ty, i})
-        },
-        Expr::Store {ptr, value, mask, ty, i} => {
-            let ptr = Box::new(mask_memory_accesses_expr(&cond, &vars, *ptr)?);
-            let value = Box::new(mask_memory_accesses_expr(&cond, &vars, *value)?);
-            let mask = if depends_on_var(&vars, false, &ptr) {
-                Some(Box::new(make_mask(mask, &vec![cond.clone()])))
-            } else {
-                mask
-            };
-            Ok(Expr::Store {ptr, value, mask, ty, i})
         },
         _ => e.smap_result(|e| mask_memory_accesses_expr(&cond, &vars, e))
     }
@@ -177,6 +166,16 @@ fn mask_memory_accesses_stmt(
         Stmt::Assign {dst, expr, i} if depends_on_var(&vars, false, &expr) => {
             vars.insert(dst.clone());
             Ok((vars, Stmt::Assign {dst, expr, i}))
+        },
+        Stmt::Store {ptr, value, mask, i} => {
+            let ptr = mask_memory_accesses_expr(&cond, &vars, ptr)?;
+            let value = mask_memory_accesses_expr(&cond, &vars, value)?;
+            let mask = if depends_on_var(&vars, false, &ptr) {
+                make_mask(mask, &vec![cond.clone()])
+            } else {
+                mask
+            };
+            Ok((vars, Stmt::Store {ptr, value, mask, i}))
         },
         _ => s.smap_accum_l_result(Ok(vars), |vars, s| {
             mask_memory_accesses_stmt(&cond, vars, s)
@@ -230,7 +229,7 @@ fn add_masking_expr(masks: &Vec<Expr>, e: Expr) -> CompileResult<Expr> {
     } else {
         match e {
             Expr::Reduce {op, arg, ty, i} => {
-                let mask = make_mask(None, masks);
+                let mask = make_mask(None, masks).unwrap();
                 let ne = get_neutral_element(&op, &ty, &i)?;
                 Ok(Expr::Reduce {
                     op,
@@ -246,12 +245,9 @@ fn add_masking_expr(masks: &Vec<Expr>, e: Expr) -> CompileResult<Expr> {
                 })
             },
             Expr::Load {ptr, mask, ty, i} => {
-                let mask = Some(Box::new(make_mask(mask, masks)));
+                let mask = make_mask(mask.map(|e| *e), masks)
+                    .map(|e| Box::new(e));
                 Ok(Expr::Load {ptr, mask, ty, i})
-            },
-            Expr::Store {ptr, value, mask, ty, i} => {
-                let mask = Some(Box::new(make_mask(mask, masks)));
-                Ok(Expr::Store {ptr, value, mask, ty, i})
             },
             _ => e.smap_result(|e| add_masking_expr(&masks, e))
         }
@@ -269,16 +265,21 @@ fn add_masking_stmt(
             // TODO: this rewrite is only safe when 'dst' has been defined earlier in the
             // program. Therefore, we need to track this information somehow.
             let ty = expr.get_type().clone();
-            let where_expr = Expr::Where {
-                cond: Box::new(make_mask(None, &masks)),
-                thn: Box::new(expr),
-                els: Box::new(Expr::Var {
-                    id: dst.clone(), ty: ty.clone(), i: i.clone()
-                }),
-                ty: ty,
-                i: i.clone()
+            let expr = if !masks.is_empty() {
+                let mask = make_mask(None, &masks).unwrap();
+                Expr::Where {
+                    cond: Box::new(mask),
+                    thn: Box::new(expr),
+                    els: Box::new(Expr::Var {
+                        id: dst.clone(), ty: ty.clone(), i: i.clone()
+                    }),
+                    ty: ty,
+                    i: i.clone()
+                }
+            } else {
+                expr
             };
-            stmts.push(Stmt::Assign {dst, expr: where_expr, i});
+            stmts.push(Stmt::Assign {dst, expr, i});
             Ok((masks, stmts))
         },
         Stmt::For {var, lo, hi, step, mut body, i} if is_blocked_type(lo.get_type()) => {
@@ -391,6 +392,11 @@ fn add_masking_stmt(
             let acc = Ok((masks, vec![]));
             let (masks, els) = els.sfold_owned_result(acc, add_masking_stmt)?;
             stmts.push(Stmt::If {cond, thn, els, i});
+            Ok((masks, stmts))
+        },
+        Stmt::Store {ptr, value, mask, i} => {
+            let mask = make_mask(mask, &masks);
+            stmts.push(Stmt::Store {ptr, value, mask, i});
             Ok((masks, stmts))
         },
         _ => {

@@ -215,11 +215,6 @@ fn unify_shapes_expr(env: ShapeEnv, e: &Expr) -> CompileResult<ShapeEnv> {
             let env = unify_shapes_expr(env, ptr)?;
             unify_shapes_type(env, ptr.get_type(), &ty, &i)
         },
-        Expr::Store {ptr, value, i, ..} => {
-            let env = unify_shapes_expr(env, ptr)?;
-            let env = unify_shapes_expr(env, value)?;
-            unify_shapes_type(env, ptr.get_type(), value.get_type(), &i)
-        },
         Expr::Full {value, ty, i, ..} => {
             let env = unify_shapes_expr(env, value)?;
             unify_shapes_type(env, value.get_type(), &ty, &i)
@@ -253,6 +248,11 @@ fn unify_shapes_stmt(env: ShapeEnv, s: &Stmt) -> CompileResult<ShapeEnv> {
             let env = unify_shapes_expr(env, hi)?;
             let env = unify_shapes_type(env, lo.get_type(), hi.get_type(), &i);
             body.sfold_result(env, unify_shapes_stmt)
+        },
+        Stmt::Store {ptr, value, i, ..} => {
+            let env = unify_shapes_expr(env, ptr)?;
+            let env = unify_shapes_expr(env, value)?;
+            unify_shapes_type(env, ptr.get_type(), value.get_type(), &i)
         },
         _ => {
             let env = s.sfold_result(Ok(env), unify_shapes_stmt);
