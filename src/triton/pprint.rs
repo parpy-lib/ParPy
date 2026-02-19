@@ -44,6 +44,19 @@ fn print_dtype(sz: &ElemSize) -> String {
     }.to_string()
 }
 
+impl PrettyPrint for Type {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        match self {
+            Type::Pointer {ty, shape: _} => {
+                let (env, ty) = ty.pprint(env);
+                (env, format!("tl.pointer_type({ty})"))
+            },
+            Type::Tensor {sz, shape: _} => (env, pprint_elem_size(&sz)),
+            Type::Void => (env, "void".to_string())
+        }
+    }
+}
+
 impl PrettyPrintUnOp<Type> for Expr {
     fn extract_unop<'a>(&'a self) -> Option<(&'a UnOp, &'a Expr)> {
         if let Expr::UnOp {op, arg, ..} = self {
@@ -202,10 +215,10 @@ impl PrettyPrint for Expr {
                 let dtype = print_dtype(elem_sz);
                 (env, format!("_parpy_builtin_alloc({nelems}, {dtype})"))
             },
-            Expr::Convert {value, elem_sz, ty: _, i: _} => {
+            Expr::Convert {value, ty, i: _} => {
                 let (env, value) = value.pprint(env);
-                let elem_sz = pprint_elem_size(elem_sz);
-                (env, format!("triton.language.cast({value}, {elem_sz})"))
+                let (env, ty) = ty.pprint(env);
+                (env, format!("triton.language.cast({value}, {ty})"))
             },
         }
     }

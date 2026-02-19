@@ -97,9 +97,9 @@ impl Default for ShapeEnv {
 
 fn add_shape_variable_type(env: ShapeEnv, ty: Type, o: Option<&Name>) -> (ShapeEnv, Type) {
     match ty {
-        Type::Pointer {sz, ..} => {
+        Type::Pointer {ty, ..} => {
             let (env, sh) = env.get_shape_var(o);
-            (env, Type::Pointer {sz, shape: sh})
+            (env, Type::Pointer {ty, shape: sh})
         },
         Type::Tensor {sz, ..} => {
             let (env, sh) = env.get_shape_var(o);
@@ -269,9 +269,9 @@ fn unify_shapes_body(env: ShapeEnv, body: &Vec<Stmt>) -> CompileResult<ShapeEnv>
 
 fn determine_shapes_type(env: ShapeEnv, ty: Type) -> (ShapeEnv, Type) {
     match ty {
-        Type::Pointer {sz, shape: Shape::Var(id)} => {
+        Type::Pointer {ty, shape: Shape::Var(id)} => {
             let (env, n) = env.lookup_shape(id);
-            (env, Type::Pointer {sz, shape: Shape::Num(n)})
+            (env, Type::Pointer {ty, shape: Shape::Num(n)})
         },
         Type::Tensor {sz, shape: Shape::Var(id)} => {
             let (env, n) = env.lookup_shape(id);

@@ -81,8 +81,14 @@ fn from_gpu_ast_type(ty: gpu_ast::Type, i: &Info) -> CompileResult<Type> {
         gpu_ast::Type::Scalar {sz} => Ok(Type::Tensor {sz, shape: Shape::Num(1)}),
         gpu_ast::Type::Pointer {ty, mem: gpu_ast::MemSpace::Device} => {
             match from_gpu_ast_type(*ty, &i) {
-                Ok(Type::Tensor {sz, shape}) => Ok(Type::Pointer {sz, shape}),
-                _ => parpy_internal_error!(i, "Failed to convert pointer to a valid Triton type")
+                Ok(ty @ (Type::Tensor {..} | Type::Pointer {..})) => {
+                    Ok(Type::Pointer {
+                        ty: Box::new(ty),
+                        shape: Shape::Num(1)
+                    })
+                },
+                Ok(Type::Void) => parpy_compile_error!(i, "Void pointers are not supported in Triton"),
+                Err(_) => parpy_internal_error!(i, "Failed to convert pointer to a valid Triton type")
             }
         },
         gpu_ast::Type::Pointer {..} => {
@@ -98,13 +104,6 @@ fn validate_bin_op(op: &BinOp, i: &Info) -> CompileResult<()> {
     match op {
         BinOp::Pow => parpy_compile_error!(i, "The power operator is not supported in Triton"),
         _ => Ok(())
-    }
-}
-
-fn extract_element_size(ty: &Type, i: &Info) -> CompileResult<ElemSize> {
-    match ty.get_elem_size() {
-        Some(sz) => Ok(sz.clone()),
-        None => parpy_compile_error!(i, "Invalid type of scalar value")
     }
 }
 
@@ -147,7 +146,13 @@ fn from_gpu_ast_kernel_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult
             let ptr = Box::new(Expr::BinOp {
                 lhs: target, op: BinOp::Add, rhs: idx, ty: target_ty, i: i.clone()
             });
-            Ok(Expr::Load {ptr, mask: None, ty, i})
+            let load_expr = Expr::Load {ptr, mask: None, ty: ty.clone(), i: i.clone()};
+            match &ty {
+                Type::Pointer {..} => {
+                    Ok(Expr::Convert { value: Box::new(load_expr), ty, i })
+                },
+                _ => Ok(load_expr)
+            }
         },
         gpu_ast::Expr::Call {id, args, ty: _, i} => {
             let args = args.into_iter()
@@ -161,14 +166,11 @@ fn from_gpu_ast_kernel_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult
         gpu_ast::Expr::PyCallback {i, ..} => {
             parpy_internal_error!(i, "Found Python callback in Triton codegen")
         },
-        gpu_ast::Expr::Convert {e, ty: gpu_ast::Type::Scalar {sz: elem_sz}} => {
+        gpu_ast::Expr::Convert {e, ty} => {
             let i = e.get_info();
+            let ty = from_gpu_ast_type(ty, &i)?;
             let value = Box::new(from_gpu_ast_kernel_expr(env, *e)?);
-            Ok(Expr::Convert {value, elem_sz, ty, i})
-        },
-        gpu_ast::Expr::Convert {e, ..} => {
-            let i = e.get_info();
-            parpy_internal_error!(i, "Unsupported conversion in Triton codegen")
+            Ok(Expr::Convert {value, ty, i})
         },
         gpu_ast::Expr::ThreadIdx {i, ..} => {
             parpy_internal_error!(i, "Thread indices are not supported")
@@ -354,8 +356,10 @@ fn from_gpu_ast_kernel_stmt(
         },
         gpu_ast::Stmt::Expr {e: gpu_ast::Expr::Assign {lhs, rhs, ty, i: _}, i} => {
             let ty = from_gpu_ast_type(ty, &i)?;
-            let sz = extract_element_size(&ty, &i)?;
-            let ptr_ty = Type::Pointer {sz, shape: Shape::Num(1)};
+            let ptr_ty = Type::Pointer {
+                ty: Box::new(ty.clone()),
+                shape: Shape::Num(1)
+            };
             let rhs = from_gpu_ast_kernel_expr(env, *rhs)?;
             match *lhs {
                 gpu_ast::Expr::Var {id, ty: _, i: _} => {
@@ -629,11 +633,11 @@ fn from_gpu_ast_host_stmt(
         },
         gpu_ast::Stmt::AllocDevice {elem_ty, id, sz: nelems, i} => {
             let elem_ty = from_gpu_ast_type(elem_ty, &i)?;
-            let elem_sz = match elem_ty.get_elem_size() {
-                Some(sz) => Ok(sz.clone()),
-                None => {
-                    parpy_internal_error!(i, "Found allocation statement of non-scalar \
-                                              element type in Triton codegen")
+            let elem_sz = match &elem_ty {
+                Type::Pointer {..} => Ok(ElemSize::I64),
+                Type::Tensor {sz, ..} => Ok(sz.clone()),
+                Type::Void => {
+                    parpy_internal_error!(i, "Found allocation of void type in Triton codegen")
                 }
             }?;
             acc.push(Stmt::Assign {

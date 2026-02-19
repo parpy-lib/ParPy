@@ -17,7 +17,7 @@ pub enum Shape {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
-    Pointer {sz: ElemSize, shape: Shape},
+    Pointer {ty: Box<Type>, shape: Shape},
     Tensor {sz: ElemSize, shape: Shape},
     Void,
 }
@@ -25,7 +25,7 @@ pub enum Type {
 impl Type {
     pub fn get_elem_size<'a>(&'a self) -> Option<&'a ElemSize> {
         match self {
-            Type::Pointer {sz, ..} => Some(sz),
+            Type::Pointer {ty, ..} => ty.get_elem_size(),
             Type::Tensor {sz, ..} => Some(sz),
             Type::Void => None,
         }
@@ -64,7 +64,7 @@ pub enum Expr {
     Full {shape: usize, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
     Where {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     AllocBuffer {nelems: usize, elem_sz: ElemSize, ty: Type, i: Info},
-    Convert {value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
+    Convert {value: Box<Expr>, ty: Type, i: Info},
 }
 
 impl Expr {
@@ -88,8 +88,7 @@ impl Expr {
                 Expr::Where {cond, thn, els, ty, i},
             Expr::AllocBuffer {nelems, elem_sz, ty: _, i} =>
                 Expr::AllocBuffer {nelems, elem_sz, ty, i},
-            Expr::Convert {value, elem_sz, ty: _, i} =>
-                Expr::Convert {value, elem_sz, ty, i},
+            Expr::Convert {value, ty: _, i} => Expr::Convert {value, ty, i},
         }
     }
 }
@@ -237,10 +236,10 @@ impl SMapAccum<Expr> for Expr {
                     i
                 }))
             },
-            Expr::Convert {value, elem_sz, ty, i} => {
+            Expr::Convert {value, ty, i} => {
                 let (acc, value) = f(acc?, *value)?;
                 Ok((acc, Expr::Convert {
-                    value: Box::new(value), elem_sz, ty, i
+                    value: Box::new(value), ty, i
                 }))
             },
             Expr::Var {..} |

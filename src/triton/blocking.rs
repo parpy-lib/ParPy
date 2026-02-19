@@ -29,8 +29,8 @@ fn is_blocked_type(ty: &Type) -> bool {
 
 fn replace_full_with_conversion_expr(e: Expr) -> Expr {
     match e {
-        Expr::Full {value, elem_sz, ty, i, ..} if is_blocked_type(value.get_type()) => {
-            Expr::Convert {value, elem_sz, ty, i}
+        Expr::Full {value, ty, i, ..} if is_blocked_type(value.get_type()) => {
+            Expr::Convert {value, ty, i}
         },
         _ => e.smap(replace_full_with_conversion_expr)
     }
