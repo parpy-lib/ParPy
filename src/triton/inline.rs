@@ -69,7 +69,7 @@ fn mk_call_assignments(calls: Vec<(Name, Expr)>) -> Vec<Stmt> {
         .collect::<Vec<Stmt>>()
 }
 
-fn rewrite_calls_anf(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
+fn rewrite_calls_anf_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
     match s {
         Stmt::Assign {dst, expr, i} => {
             let (calls, expr) = replace_calls_with_free_variables(vec![], expr);
@@ -80,14 +80,14 @@ fn rewrite_calls_anf(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
             let (calls, lo) = replace_calls_with_free_variables(vec![], lo);
             let (calls, hi) = replace_calls_with_free_variables(calls, hi);
             acc.append(&mut mk_call_assignments(calls));
-            let body = body.sflatten(vec![], rewrite_calls_anf);
+            let body = body.sflatten(vec![], rewrite_calls_anf_stmt);
             acc.push(Stmt::For {var, lo, hi, step, body, i});
         },
         Stmt::While {cond, body, i} => {
             let (calls, cond) = replace_calls_with_free_variables(vec![], cond);
             let mut call_assigns = mk_call_assignments(calls);
             acc.append(&mut call_assigns.clone());
-            let mut body = body.sflatten(vec![], rewrite_calls_anf);
+            let mut body = body.sflatten(vec![], rewrite_calls_anf_stmt);
             // For a while-loop, we could have a condition that involves function calls. Therefore,
             // we perform the function calls both before the loop and at the end of each iteration,
             // storing the result in the same new variable.
@@ -97,8 +97,8 @@ fn rewrite_calls_anf(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
         Stmt::If {cond, thn, els, i} => {
             let (calls, cond) = replace_calls_with_free_variables(vec![], cond);
             acc.append(&mut mk_call_assignments(calls));
-            let thn = thn.sflatten(vec![], rewrite_calls_anf);
-            let els = els.sflatten(vec![], rewrite_calls_anf);
+            let thn = thn.sflatten(vec![], rewrite_calls_anf_stmt);
+            let els = els.sflatten(vec![], rewrite_calls_anf_stmt);
             acc.push(Stmt::If {cond, thn, els, i});
         },
         Stmt::Return {value, i} => {
@@ -106,15 +106,15 @@ fn rewrite_calls_anf(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
             acc.append(&mut mk_call_assignments(calls));
             acc.push(Stmt::Return {value, i});
         },
-        Stmt::Expr {e: Expr::Call {id, args, ty, i: ei}, i} => {
-            let (calls, args) = args.smap_accum_l(vec![], replace_calls_with_free_variables);
-            acc.append(&mut mk_call_assignments(calls));
-            acc.push(Stmt::Expr {e: Expr::Call {id, args, ty, i: ei}, i});
-        },
         Stmt::Expr {e, i} => {
             let (calls, e) = replace_calls_with_free_variables(vec![], e);
             acc.append(&mut mk_call_assignments(calls));
-            acc.push(Stmt::Expr {e, i});
+            // If the expression was a function call it does not return a value. Therefore, we can
+            // disregard the variable representing its result.
+            match e {
+                Expr::Var {..} => (),
+                _ => acc.push(Stmt::Expr {e, i})
+            }
         },
         Stmt::Store {ptr, value, mask, i} => {
             let (calls, ptr) = replace_calls_with_free_variables(vec![], ptr);
@@ -137,6 +137,16 @@ fn rewrite_calls_anf(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
     acc
 }
 
+fn rewrite_calls_anf(t: Top) -> Top {
+    match t {
+        Top::FunDef {triton_jit, id, params, body, i} => {
+            let body = body.sflatten(vec![], rewrite_calls_anf_stmt);
+            Top::FunDef {triton_jit, id, params, body, i}
+        },
+        Top::Import {..} => t
+    }
+}
+
 fn replace_return_with_assign_to(id: &Name, s: Stmt) -> Stmt {
     match s {
         Stmt::Return {value, i} => Stmt::Assign {dst: id.clone(), expr: value, i},
@@ -146,7 +156,6 @@ fn replace_return_with_assign_to(id: &Name, s: Stmt) -> Stmt {
 
 fn inline_function(
     env: &InlineEnv,
-    mut acc: Vec<Stmt>,
     id: Name,
     args: Vec<Expr>,
     dst: Option<Name>,
@@ -161,13 +170,11 @@ fn inline_function(
                 .collect::<SubEnv<Expr>>();
             let body = body.clone()
                 .smap(|s| s.sub_vars(&sub_map));
-            let mut body = if let Some(dst_id) = dst {
+            Ok(if let Some(dst_id) = dst {
                 body.smap(|s| replace_return_with_assign_to(&dst_id, s))
             } else {
                 body
-            };
-            acc.append(&mut body);
-            Ok(acc)
+            })
         },
         None => parpy_internal_error!(i, "Failed to look up function {id} when \
                                           inlining in Triton codegen")
@@ -176,15 +183,25 @@ fn inline_function(
 
 fn inline_calls_stmt(
     env: &InlineEnv,
-    stmts: Vec<Stmt>,
+    mut stmts: Vec<Stmt>,
     s: Stmt
 ) -> CompileResult<Vec<Stmt>> {
     match s {
         Stmt::Assign {dst, expr: Expr::Call {id, args, ty: _, i}, i: _} => {
-            inline_function(env, stmts, id, args, Some(dst), &i)
+            let body = inline_function(env, id, args, Some(dst), &i)?;
+            let mut body = body.sflatten_result(vec![], |acc, s| {
+                inline_calls_stmt(env, acc, s)
+            })?;
+            stmts.append(&mut body);
+            Ok(stmts)
         },
         Stmt::Expr {e: Expr::Call {id, args, ty: _, i}, i: _} => {
-            inline_function(env, stmts, id, args, None, &i)
+            let body = inline_function(env, id, args, None, &i)?;
+            let mut body = body.sflatten_result(vec![], |acc, s| {
+                inline_calls_stmt(env, acc, s)
+            })?;
+            stmts.append(&mut body);
+            Ok(stmts)
         },
         _ => s.sflatten_result(stmts, |acc, s| inline_calls_stmt(env, acc, s))
     }
@@ -197,7 +214,6 @@ fn inline_calls_top(env: &InlineEnv, t: Top) -> CompileResult<Option<Top>> {
             // called via other functions. These functions are removed from the resulting AST for
             // brevity.
             if env.kernel_ids.contains(&id) {
-                let body = body.sflatten(vec![], rewrite_calls_anf);
                 let body = body.sflatten_result(vec![], |acc, s| inline_calls_stmt(env, acc, s))?;
                 Ok(Some(Top::FunDef {triton_jit: true, id, params, body, i}))
             } else {
@@ -209,7 +225,9 @@ fn inline_calls_top(env: &InlineEnv, t: Top) -> CompileResult<Option<Top>> {
 }
 
 pub fn apply(ast: Ast) -> CompileResult<Ast> {
-    let fun_tops = ast.tops.clone()
+    let kernel_ids = collect_kernel_entry_points(&ast);
+    let tops = ast.tops.smap(rewrite_calls_anf);
+    let fun_tops = tops.clone()
         .into_iter()
         .map(|t| match t {
             Top::FunDef {triton_jit: _, id, params, body, i: _} => {
@@ -219,14 +237,11 @@ pub fn apply(ast: Ast) -> CompileResult<Ast> {
         })
         .flatten()
         .collect::<BTreeMap<Name, (Vec<Name>, Vec<Stmt>)>>();
-    let env = InlineEnv {
-        kernel_ids: collect_kernel_entry_points(&ast),
-        fun_tops
-    };
-    let tops = ast.tops.into_iter()
-        .map(|t| inline_calls_top(&env, t))
-        .collect::<CompileResult<Vec<Option<Top>>>>()?;
+    let env = InlineEnv { kernel_ids, fun_tops };
     let tops = tops.into_iter()
+        .map(|t| inline_calls_top(&env, t))
+        .collect::<CompileResult<Vec<Option<Top>>>>()?
+        .into_iter()
         .flatten()
         .collect::<Vec<Top>>();
     Ok(Ast {tops})
@@ -271,7 +286,7 @@ mod test {
             expr: e.clone(),
             i: i()
         };
-        let stmts = rewrite_calls_anf(vec![], s);
+        let stmts = rewrite_calls_anf_stmt(vec![], s);
         let expected = vec![
             Stmt::Assign {dst: id("a"), expr: mk_call("f"), i: i()},
             Stmt::Assign {dst: id("b"), expr: mk_call("g"), i: i()},
@@ -309,7 +324,7 @@ mod test {
             },
             i: i()
         };
-        let stmts = rewrite_calls_anf(vec![], s);
+        let stmts = rewrite_calls_anf_stmt(vec![], s);
         let expected = vec![
             Stmt::Assign {dst: id("a"), expr: g_call, i: i()},
             Stmt::Assign {
@@ -347,7 +362,7 @@ mod test {
             ],
             i: i()
         };
-        let stmts = rewrite_calls_anf(vec![], s);
+        let stmts = rewrite_calls_anf_stmt(vec![], s);
         let expected = vec![
             Stmt::Assign {dst: id("a"), expr: f_call.clone(), i: i()},
             Stmt::While {
