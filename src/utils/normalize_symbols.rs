@@ -165,6 +165,11 @@ impl NormalizeSym for triton_ast::Expr {
 impl NormalizeSym for triton_ast::Stmt {
     fn normalize_sym(self, env: Env) -> (Env, triton_ast::Stmt) {
         match self {
+            triton_ast::Stmt::Definition {dst, expr, i} => {
+                let (env, dst) = dst.normalize_sym(env);
+                let (env, expr) = expr.normalize_sym(env);
+                (env, triton_ast::Stmt::Definition {dst, expr, i})
+            },
             triton_ast::Stmt::Assign {dst, expr, i} => {
                 let (env, dst) = dst.normalize_sym(env);
                 let (env, expr) = expr.normalize_sym(env);
