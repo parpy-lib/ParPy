@@ -9,6 +9,10 @@ def _parpy_builtin_alloc(sz, dtype):
     return parpy.buffer.empty((sz,), dtype, parpy.CompileBackend.Triton)
 
 @triton.jit
+def _parpy_builtin_not(x):
+    return not x
+
+@triton.jit
 def _parpy_builtin_any(x):
     return tl.max(x) == True
 

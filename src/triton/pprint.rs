@@ -68,15 +68,15 @@ impl PrettyPrintUnOp<Type> for Expr {
 
     fn is_function(op: &UnOp) -> bool {
         match op {
-            UnOp::Sub | UnOp::Not | UnOp::BitNeg | UnOp::Addressof => false,
-            UnOp::Sqrt => true,
+            UnOp::Sub | UnOp::BitNeg | UnOp::Addressof => false,
+            UnOp::Not | UnOp::Sqrt => true,
         }
     }
 
     fn print_unop(op: &UnOp, _argty: &Type) -> Option<String> {
         let s = match op {
             UnOp::Sub => Some("-"),
-            UnOp::Not => Some("not "),
+            UnOp::Not => Some("_parpy_builtin_not"),
             UnOp::BitNeg => Some("~"),
             UnOp::Addressof => None,
             UnOp::Sqrt => Some("triton.language.sqrt"),

@@ -76,7 +76,7 @@ fn contains_arange(acc: bool, e: &Expr) -> bool {
 
 fn try_extract_blocked_var(s: &Stmt) -> Option<Name> {
     match s {
-        Stmt::Assign {dst, expr, ..} if contains_arange(false, &expr) => {
+        Stmt::Definition {dst, expr, ..} if contains_arange(false, &expr) => {
             Some(dst.clone())
         },
         _ => None
@@ -91,7 +91,7 @@ fn make_mask(mask: Option<Expr>, masks: &Vec<Expr>) -> Option<Expr> {
             let i = l.get_info();
             Expr::BinOp {
                 lhs: Box::new(l),
-                op: BinOp::And,
+                op: BinOp::BitAnd,
                 rhs: Box::new(r),
                 ty, i
             }
