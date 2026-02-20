@@ -543,7 +543,7 @@ fn from_gpu_ast_host_stmt(
     match s {
         gpu_ast::Stmt::Definition {ty: _, id, expr, i} => {
             let expr = from_gpu_ast_host_expr(env, expr)?;
-            acc.push(Stmt::Assign {dst: id, expr, i});
+            acc.push(Stmt::Definition {dst: id, expr, i});
             Ok(acc)
         },
         gpu_ast::Stmt::For {var_ty, var, init, cond, incr, body, unroll: _, i} => {

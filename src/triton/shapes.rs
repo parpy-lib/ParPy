@@ -125,6 +125,12 @@ fn add_shape_variables_expr(env: ShapeEnv, e: Expr) -> (ShapeEnv, Expr) {
 
 fn add_shape_variables(env: ShapeEnv, s: Stmt) -> (ShapeEnv, Stmt) {
     match s {
+        Stmt::Definition {dst, expr, i} => {
+            let (env, expr) = add_shape_variables_expr(env, expr);
+            let ty = expr.get_type().clone();
+            let (env, _) = add_shape_variable_type(env, ty, Some(&dst));
+            (env, Stmt::Definition {dst, expr, i})
+        },
         Stmt::Assign {dst, expr, i} => {
             let (env, expr) = add_shape_variables_expr(env, expr);
             let ty = expr.get_type().clone();
@@ -237,6 +243,7 @@ fn unify_shapes_expr(env: ShapeEnv, e: &Expr) -> CompileResult<ShapeEnv> {
 
 fn unify_shapes_stmt(env: ShapeEnv, s: &Stmt) -> CompileResult<ShapeEnv> {
     match s {
+        Stmt::Definition {dst, expr, i} |
         Stmt::Assign {dst, expr, i} => {
             let env = unify_shapes_expr(env, expr)?;
             let (env, lsh) = env.get_shape_var(Some(&dst));

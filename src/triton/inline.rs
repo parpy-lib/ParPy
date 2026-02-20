@@ -60,7 +60,7 @@ fn mk_call_assignments(calls: Vec<(Name, Expr)>) -> Vec<Stmt> {
     calls.into_iter()
         .map(|(id, e)| {
             let i = e.get_info();
-            Stmt::Assign {
+            Stmt::Definition {
                 dst: id,
                 expr: e,
                 i
