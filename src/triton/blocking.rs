@@ -191,11 +191,12 @@ fn mask_memory_accesses_in_parallel_for(s: Stmt) -> CompileResult<Stmt> {
                     Some(id) => {
                         let ty = hi.get_type().clone();
                         let shape = Shape::Num(get_shape_from_type(&ty));
+                        let op = if step > 0 { BinOp::Lt } else { BinOp::Gt };
                         let boundary_cond = Expr::BinOp {
                             lhs: Box::new(Expr::Var {
                                 id: id.clone(), ty: ty.clone(), i: i.clone()
                             }),
-                            op: BinOp::Lt,
+                            op,
                             rhs: Box::new(hi.clone()),
                             ty: Type::Tensor {sz: ElemSize::Bool, shape},
                             i: i.clone()

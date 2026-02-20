@@ -209,7 +209,7 @@ fn extract_upper_bound(
     };
     if let gpu_ast::Expr::BinOp {lhs, op, rhs, ty: _, i} = cond {
         match (*lhs, op) {
-            (gpu_ast::Expr::Var {id, ..}, BinOp::Lt) if id == *var => {
+            (gpu_ast::Expr::Var {id, ..}, BinOp::Lt | BinOp::Gt) if id == *var => {
                 from_gpu_ast_kernel_expr(env, *rhs)
             },
             _ => fail(i)
@@ -223,7 +223,7 @@ fn extract_step(
     env: &CodegenEnv,
     var: &Name,
     incr: gpu_ast::Expr
-) -> CompileResult<usize> {
+) -> CompileResult<i128> {
     let fail = |i: Info| {
         parpy_compile_error!(i, "Failed to extract step size of for-loop in Triton codegen")
     };
@@ -231,7 +231,7 @@ fn extract_step(
         match (*lhs, op) {
             (gpu_ast::Expr::Var {id, ..}, BinOp::Add) if id == *var => {
                 match from_gpu_ast_kernel_expr(env, *rhs)? {
-                    Expr::Int {v, ..} => Ok(v as usize),
+                    Expr::Int {v, ..} => Ok(v),
                     _ => fail(i)
                 }
             },
@@ -250,7 +250,7 @@ fn extract_loop_bounds(
     cond: gpu_ast::Expr,
     incr: gpu_ast::Expr,
     i: &Info
-) -> CompileResult<(Name, Expr, Expr, usize, Option<Stmt>)> {
+) -> CompileResult<(Name, Expr, Expr, i128, Option<Stmt>)> {
     let (removed_thread, init) = remove_thread_idx(false, init);
     let lo = from_gpu_ast_kernel_expr(env, init)?;
     let hi = extract_upper_bound(env, &var, cond)?;
@@ -277,7 +277,7 @@ fn extract_loop_bounds(
                     }),
                     op: BinOp::Mul,
                     rhs: Box::new(Expr::Int {
-                        v: (step / env.nthreads as usize) as i128,
+                        v: step / env.nthreads as i128,
                         ty: var_ty.clone(),
                         i: i.clone()
                     }),

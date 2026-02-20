@@ -256,7 +256,7 @@ impl SMapAccum<Expr> for Expr {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Assign {dst: Name, expr: Expr, i: Info},
-    For {var: Name, lo: Expr, hi: Expr, step: usize, body: Vec<Stmt>, i: Info},
+    For {var: Name, lo: Expr, hi: Expr, step: i128, body: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     Return {value: Expr, i: Info},
