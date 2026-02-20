@@ -255,6 +255,7 @@ impl SMapAccum<Expr> for Expr {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
+    Definition {dst: Name, expr: Expr, i: Info},
     Assign {dst: Name, expr: Expr, i: Info},
     For {var: Name, lo: Expr, hi: Expr, step: i128, body: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
@@ -275,6 +276,7 @@ impl SFold<Expr> for Stmt {
         f: impl Fn(A, &Expr) -> Result<A, E>
     ) -> Result<A, E> {
         match self {
+            Stmt::Definition {expr, ..} => f(acc?, expr),
             Stmt::Assign {expr, ..} => f(acc?, expr),
             Stmt::For {lo, hi, ..} => f(f(acc?, hi)?, lo),
             Stmt::While {cond, ..} => f(acc?, cond),
@@ -304,6 +306,7 @@ impl SFold<Stmt> for Stmt {
             Stmt::For {body, ..} => body.sfold_result(acc, &f),
             Stmt::While {body, ..} => body.sfold_result(acc, &f),
             Stmt::If {thn, els, ..} => els.sfold_result(thn.sfold_result(acc, &f), &f),
+            Stmt::Definition {..} |
             Stmt::Assign {..} |
             Stmt::Return {..} |
             Stmt::Expr {..} |
@@ -321,6 +324,10 @@ impl SMapAccum<Expr> for Stmt {
         f: impl Fn(A, Expr) -> Result<(A, Expr), E>
     ) -> Result<(A, Self), E> {
         match self {
+            Stmt::Definition {dst, expr, i} => {
+                let (acc, expr) = f(acc?, expr)?;
+                Ok((acc, Stmt::Definition {dst, expr, i}))
+            },
             Stmt::Assign {dst, expr, i} => {
                 let (acc, expr) = f(acc?, expr)?;
                 Ok((acc, Stmt::Assign {dst, expr, i}))
@@ -387,6 +394,7 @@ impl SMapAccum<Stmt> for Stmt {
                 let (acc, els) = els.smap_accum_l_result(Ok(acc), &f)?;
                 Ok((acc, Stmt::If {cond, thn, els, i}))
             },
+            Stmt::Definition {..} |
             Stmt::Assign {..} |
             Stmt::Return {..} |
             Stmt::Expr {..} |
@@ -419,6 +427,7 @@ impl SFlatten<Stmt> for Stmt {
                 let els = els.sflatten_result(vec![], &f)?;
                 acc.push(Stmt::If {cond, thn, els, i});
             },
+            Stmt::Definition {..} |
             Stmt::Assign {..} |
             Stmt::Return {..} |
             Stmt::Expr {..} |

@@ -259,7 +259,7 @@ fn extract_loop_bounds(
     // runs in parallel over threads, in which case we have to restructure it.
     if removed_thread {
         let new_var = Name::new(format!("{0}_chunk", var.get_str())).with_new_sym();
-        let var_assign = Stmt::Assign {
+        let var_assign = Stmt::Definition {
             dst: var,
             expr: Expr::BinOp {
                 lhs: Box::new(Expr::Var {
@@ -313,7 +313,7 @@ fn from_gpu_ast_kernel_stmt(
     match s {
         gpu_ast::Stmt::Definition {ty: _, id, expr, i} => {
             let expr = from_gpu_ast_kernel_expr(env, expr)?;
-            acc.push(Stmt::Assign {dst: id, expr, i});
+            acc.push(Stmt::Definition {dst: id, expr, i});
             Ok(acc)
         },
         gpu_ast::Stmt::For {var_ty, var, init, cond, incr, body, i, ..} => {

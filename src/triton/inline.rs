@@ -71,6 +71,11 @@ fn mk_call_assignments(calls: Vec<(Name, Expr)>) -> Vec<Stmt> {
 
 fn rewrite_calls_anf_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
     match s {
+        Stmt::Definition {dst, expr, i} => {
+            let (calls, expr) = replace_calls_with_free_variables(vec![], expr);
+            acc.append(&mut mk_call_assignments(calls));
+            acc.push(Stmt::Definition {dst, expr, i});
+        },
         Stmt::Assign {dst, expr, i} => {
             let (calls, expr) = replace_calls_with_free_variables(vec![], expr);
             acc.append(&mut mk_call_assignments(calls));
@@ -187,6 +192,7 @@ fn inline_calls_stmt(
     s: Stmt
 ) -> CompileResult<Vec<Stmt>> {
     match s {
+        Stmt::Definition {dst, expr: Expr::Call {id, args, ty: _, i}, i: _} |
         Stmt::Assign {dst, expr: Expr::Call {id, args, ty: _, i}, i: _} => {
             let body = inline_function(env, id, args, Some(dst), &i)?;
             let mut body = body.sflatten_result(vec![], |acc, s| {

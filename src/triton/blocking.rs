@@ -263,8 +263,9 @@ fn add_masking_stmt(
     match s {
         Stmt::Assign {dst, expr, i} if !masks.is_empty() => {
             let expr = add_masking_expr(&masks, expr)?;
-            // TODO: this rewrite is only safe when 'dst' has been defined earlier in the
-            // program. Therefore, we need to track this information somehow.
+            // NOTE(larshum, 2025-02-20): This transformation relies on the fact that we keep a
+            // distinction between definitions and assignments, as it is only valid to apply
+            // masking to a previously defined variable that we are re-assigning.
             let ty = expr.get_type().clone();
             let expr = if !masks.is_empty() {
                 let mask = make_mask(None, &masks).unwrap();

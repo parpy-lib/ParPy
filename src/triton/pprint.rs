@@ -250,6 +250,7 @@ impl PrettyPrint for Stmt {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let indent = env.print_indent();
         match self {
+            Stmt::Definition {dst, expr, i: _} |
             Stmt::Assign {dst, expr, i: _} => {
                 let (env, dst) = dst.pprint(env);
                 let (env, expr) = expr.pprint(env);
