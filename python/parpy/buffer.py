@@ -284,7 +284,7 @@ class TritonBaseBuffer(BaseBuffer):
     def from_raw(ptr, shape, dtype):
         class dummy(object):
             def __init__(self):
-                self.__cuda_array_interface = to_array_interface(ptr, shape, dtype)
+                self.__cuda_array_interface__ = _to_array_interface(ptr, shape, dtype)
         dev = _active_triton_device()
         buf = torch.as_tensor(dummy(), device=dev)
         nbytes = _size(shape, dtype)

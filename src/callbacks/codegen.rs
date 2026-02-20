@@ -167,6 +167,7 @@ fn generate_backend_var(backend: &CompileBackend) -> py_ast::Expr {
     let id = match backend {
         CompileBackend::Cuda => "parpy.CompileBackend.Cuda",
         CompileBackend::Metal => "parpy.CompileBackend.Metal",
+        CompileBackend::Triton => "parpy.CompileBackend.Triton",
         _ => "None"
     };
     py_ast::Expr::Var {
