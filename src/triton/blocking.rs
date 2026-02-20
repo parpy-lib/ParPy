@@ -168,8 +168,6 @@ fn mask_memory_accesses_stmt(
             Ok((vars, Stmt::Assign {dst, expr, i}))
         },
         Stmt::Store {ptr, value, mask, i} => {
-            let ptr = mask_memory_accesses_expr(&cond, &vars, ptr)?;
-            let value = mask_memory_accesses_expr(&cond, &vars, value)?;
             let mask = if depends_on_var(&vars, false, &ptr) {
                 make_mask(mask, &vec![cond.clone()])
             } else {
@@ -212,12 +210,11 @@ fn mask_memory_accesses_in_parallel_for(s: Stmt) -> CompileResult<Stmt> {
                         })?;
                         Ok(body)
                     },
-                    None => Ok(body)
+                    None => body.smap_result(mask_memory_accesses_in_parallel_for)
                 }
             } else {
-                Ok(body)
+                body.smap_result(mask_memory_accesses_in_parallel_for)
             }?;
-            let body = body.smap_result(mask_memory_accesses_in_parallel_for)?;
             Ok(Stmt::For {var, lo, hi, step, body, i})
         },
         _ => s.smap_result(mask_memory_accesses_in_parallel_for)
@@ -288,7 +285,7 @@ fn add_masking_stmt(
             let ty = lo.get_type().clone();
             let shape = Shape::Num(get_shape_from_type(&ty));
             let var_expr = Expr::Var {id: var.clone(), ty: ty.clone(), i: i.clone()};
-            stmts.push(Stmt::Assign {
+            stmts.push(Stmt::Definition {
                 dst: var.clone(),
                 expr: lo,
                 i: i.clone()
@@ -324,17 +321,20 @@ fn add_masking_stmt(
                 ty: ty.clone(),
                 i: i.clone()
             };
-            let cond_upd = Stmt::Assign {
+            stmts.push(Stmt::Definition {
                 dst: cond_id.clone(),
-                expr: cond,
+                expr: cond.clone(),
                 i: i.clone()
-            };
-            stmts.push(cond_upd.clone());
+            });
             masks.push(cond_var.clone());
             let acc = Ok((masks, vec![]));
             let (mut masks, mut body) = body.sfold_owned_result(acc, add_masking_stmt)?;
             masks.pop();
-            body.push(cond_upd.clone());
+            body.push(Stmt::Assign {
+                dst: cond_id,
+                expr: cond,
+                i: i.clone()
+            });
             stmts.push(Stmt::While {
                 cond: Expr::Reduce {
                     op: ReduceOp::Any,
@@ -350,7 +350,7 @@ fn add_masking_stmt(
         Stmt::If {cond, thn, els, i} if is_blocked_type(cond.get_type()) => {
             let ty = cond.get_type().clone();
             let cond_id = Name::sym_str("if_cond");
-            stmts.push(Stmt::Assign {
+            stmts.push(Stmt::Definition {
                 dst: cond_id.clone(),
                 expr: cond,
                 i: i.clone()
