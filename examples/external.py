@@ -62,11 +62,17 @@ elif backend == parpy.CompileBackend.Cuda:
     B = torch.randn(K, N, dtype=torch.float64, device='cuda')
     C = torch.empty(M, N, dtype=torch.float64, device='cuda')
     opts = parpy.par({})
-# Add the directory of this file to the include path, so the header file is found.
+    # Add the directory of this file to the include path, so the header file is found.
     opts.includes += [str(pathlib.Path(__file__).parent.resolve())]
-# Add a flag to link the cuBLAS library when compiling.
+    # Add a flag to link the cuBLAS library when compiling.
     opts.extra_flags += ["-lcublas"]
-    cublas_gemm(1.0, A, B, 0.0, C, opts=opts)
-    assert torch.allclose(C, A @ B, atol=1e-5)
+    try:
+        cublas_gemm(1.0, A, B, 0.0, C, opts=opts)
+        assert torch.allclose(C, A @ B, atol=1e-5)
+    except RuntimeError as e:
+        if "cublas_v2.h" in str(e):
+            print("Skipping because cuBLAS header was not found")
+        else:
+            raise RuntimeError(e)
 
 print("Test OK")
