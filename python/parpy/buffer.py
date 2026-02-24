@@ -82,8 +82,13 @@ def sync(backend):
     Synchronizes the CPU and the target device by waiting until all running
     kernels complete.
     """
-    lib = _compile_runtime_lib(backend)
-    _check_errors(lib, lib.parpy_sync())
+    if backend == CompileBackend.Cuda:
+        torch.cuda.synchronize()
+    elif backend == CompileBackend.Triton:
+        torch.cuda.synchronize(_active_triton_device())
+    else:
+        lib = _compile_runtime_lib(backend)
+        _check_errors(lib, lib.parpy_sync())
 
 def empty(shape, dtype, backend):
     dtype = _resolve_dtype(dtype)
@@ -196,16 +201,17 @@ class BaseBuffer:
 class CudaBaseBuffer(BaseBuffer):
     def __init__(self, buf, nbytes, src=None, is_raw=False):
         super().__init__(buf, nbytes, src, is_raw)
+        self.libc = ctypes.cdll.LoadLibrary("libc.so.6")
+        self.libc.memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
 
     def _deconstruct(self, src_ptr):
         if src_ptr is not None:
-            buf_ptr, _, _ = _extract_array_interface(self.buf, allow_cuda=True)
-            lib = self._get_runtime_lib()
-            _check_errors(lib, lib.parpy_memcpy(src_ptr, buf_ptr, self.nbytes, 2))
-            self.sync()
+            cpu_buf = self.buf.cpu()
+            cpu_buf_ptr, _, _ = _extract_array_interface(cpu_buf, allow_cuda=False)
+            self.libc.memcpy(src_ptr, cpu_buf_ptr, self.nbytes)
 
     def _get_runtime_lib(self):
-        return _compile_runtime_lib(CompileBackend.Cuda)
+        return None
 
     def sync(self):
         sync(CompileBackend.Cuda)
@@ -225,9 +231,10 @@ class CudaBaseBuffer(BaseBuffer):
             buf = torch.empty((), dtype=dtype.to_torch(), device='cuda')
         else:
             buf = torch.empty(*shape, dtype=dtype.to_torch(), device='cuda')
-        ptr, _, _ = _extract_array_interface(buf, allow_cuda=True)
-        lib = _compile_runtime_lib(CompileBackend.Cuda)
-        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, nbytes, 1))
+        if isinstance(t, torch.Tensor):
+            buf.copy_(t, non_blocking=True)
+        else:
+            buf.copy_(torch.tensor(t), non_blocking=True)
         return CudaBaseBuffer(buf, nbytes, src=t)
 
     def from_raw(ptr, shape, dtype):

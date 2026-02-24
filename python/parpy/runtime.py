@@ -25,25 +25,6 @@ def init_library(libpath):
     lib.parpy_get_error_message.restype = ctypes.c_char_p
     return lib
 
-def _compile_cuda_runtime_lib():
-    import os
-    import subprocess
-    libpath = PARPY_CUDA_BASE_LIB_PATH
-    src_path = libpath.parent / "parpy_cuda.cpp"
-    if not libpath.exists() or os.path.getmtime(libpath) < os.path.getmtime(src_path):
-        cmd = [
-            "nvcc", "-O3", "--shared", "-Xcompiler", "-fPIC", "-x", "cu",
-            src_path, "-o", libpath
-        ]
-        r = subprocess.run(cmd, capture_output=True)
-        if r.returncode != 0:
-            stdout = r.stdout.decode('ascii')
-            stderr = r.stderr.decode('ascii')
-            raise RuntimeError("Compilation of the CUDA runtime library failed.\n"
-                              f"stdout:\n{stdout}\nstderr:\n{stderr}")
-
-    return init_library(libpath)
-
 def _compile_metal_runtime_lib():
     import ctypes
     import os
@@ -93,12 +74,11 @@ def _compile_runtime_lib(backend):
         from parpy.backend import is_enabled
         if not is_enabled(backend):
             raise RuntimeError(f"Cannot build runtime library for {backend} as it is disabled")
-        if backend == CompileBackend.Cuda:
-            libs[backend] = _compile_cuda_runtime_lib()
-            return libs[backend]
-        elif backend == CompileBackend.Metal:
+        if backend == CompileBackend.Metal:
             libs[backend] = _compile_metal_runtime_lib()
             return libs[backend]
+        elif backend in [CompileBackend.Cuda, CompileBackend.Triton]:
+            return None
         else:
             raise RuntimeError(f"Failed to compile runtime library for backend {backend}")
     else:
