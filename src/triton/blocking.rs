@@ -1,4 +1,5 @@
 use super::ast::*;
+use super::utils::*;
 use crate::parpy_internal_error;
 use crate::utils::ast::ExprType;
 use crate::utils::err::*;
@@ -21,13 +22,9 @@ fn get_shape_from_type(ty: &Type) -> usize {
     }
 }
 
-fn is_blocked_type(ty: &Type) -> bool {
-    get_shape_from_type(ty) > 1
-}
-
 fn replace_full_with_conversion_expr(e: Expr) -> Expr {
     match e {
-        Expr::Full {value, ty, i, ..} if is_blocked_type(value.get_type()) => {
+        Expr::Full {value, ty, i, ..} if value.get_type().is_blocked() => {
             Expr::Convert {value, ty, i}
         },
         _ => e.smap(replace_full_with_conversion_expr)
@@ -43,7 +40,7 @@ fn wrap_blocked_literals_in_full_expr(e: Expr) -> CompileResult<Expr> {
     match e {
         Expr::Bool {ref ty, ..} |
         Expr::Int {ref ty, ..} |
-        Expr::Float {ref ty, ..} if is_blocked_type(&ty) => {
+        Expr::Float {ref ty, ..} if ty.is_blocked() => {
             let i = e.get_info();
             let ty = ty.clone();
             let shape = get_shape_from_type(&ty);
@@ -63,22 +60,6 @@ fn wrap_blocked_literals_in_full_expr(e: Expr) -> CompileResult<Expr> {
 fn wrap_blocked_literals_in_full_stmt(s: Stmt) -> CompileResult<Stmt> {
     s.smap_result(wrap_blocked_literals_in_full_stmt)?
         .smap_result(wrap_blocked_literals_in_full_expr)
-}
-
-fn contains_arange(acc: bool, e: &Expr) -> bool {
-    match e {
-        Expr::Arange {..} => true,
-        _ => e.sfold(acc, contains_arange)
-    }
-}
-
-fn try_extract_blocked_var(s: &Stmt) -> Option<Name> {
-    match s {
-        Stmt::Definition {dst, expr, ..} if contains_arange(false, &expr) => {
-            Some(dst.clone())
-        },
-        _ => None
-    }
 }
 
 fn make_mask(mask: Option<Expr>, masks: &Vec<Expr>) -> Option<Expr> {
@@ -128,7 +109,7 @@ fn mask_for_loop_expr(
             });
             Ok(Expr::Reduce {op, arg, ty, i})
         },
-        Expr::Load {ptr, mask, ty, i} if is_blocked_type(&ty) => {
+        Expr::Load {ptr, mask, ty, i} if ty.is_blocked() => {
             let ptr = Box::new(mask_for_loop_expr(&loop_cond_var, *ptr)?);
             let mask = make_mask(mask.map(|e| *e), &vec![loop_cond_var.clone()])
                 .map(|e| Box::new(e));
@@ -146,7 +127,7 @@ fn mask_for_loop_stmt(
 ) -> CompileResult<Vec<Stmt>> {
     let s = s.smap_result(|e| mask_for_loop_expr(&loop_cond_var, e))?;
     match s {
-        Stmt::Definition {dst, expr, i} if contains_arange(false, &expr) => {
+        Stmt::Definition {dst, expr, i} if contains_arange(&expr) => {
             // Insert the definition of the for-loop condition immediately after defining the
             // blocked for-loop variable.
             acc.push(Stmt::Definition {dst, expr, i});
@@ -154,7 +135,7 @@ fn mask_for_loop_stmt(
             Ok(acc)
         },
         Stmt::Store {ptr, value, mask, i} => {
-            let mask = if is_blocked_type(ptr.get_type()) || is_blocked_type(value.get_type()) {
+            let mask = if ptr.get_type().is_blocked() || value.get_type().is_blocked() {
                 make_mask(mask, &vec![loop_cond_var.clone()])
             } else {
                 mask
@@ -230,7 +211,7 @@ fn add_masking_expr(masks: &Vec<Expr>, e: Expr) -> CompileResult<Expr> {
         Ok(e)
     } else {
         match e {
-            Expr::Reduce {op, arg, ty, i} if is_blocked_type(&ty) => {
+            Expr::Reduce {op, arg, ty, i} if ty.is_blocked() => {
                 let mask = make_mask(None, masks).unwrap();
                 let ne = get_neutral_element(&op, &ty, &i)?;
                 Ok(Expr::Reduce {
@@ -246,7 +227,7 @@ fn add_masking_expr(masks: &Vec<Expr>, e: Expr) -> CompileResult<Expr> {
                     i
                 })
             },
-            Expr::Load {ptr, mask, ty, i} if is_blocked_type(&ty) => {
+            Expr::Load {ptr, mask, ty, i} if ty.is_blocked() => {
                 let mask = make_mask(mask.map(|e| *e), masks)
                     .map(|e| Box::new(e));
                 Ok(Expr::Load {ptr, mask, ty, i})
@@ -294,7 +275,7 @@ fn add_masking_stmt(
             stmts.push(Stmt::For {var, lo, hi, step, body, i});
             Ok((masks, stmts))
         },
-        Stmt::While {cond, body, i} if is_blocked_type(cond.get_type()) => {
+        Stmt::While {cond, body, i} if cond.get_type().is_blocked() => {
             let cond = add_masking_expr(&masks, cond)?;
             let ty = cond.get_type().clone();
             let cond_id = Name::sym_str("while_cond");
@@ -329,7 +310,7 @@ fn add_masking_stmt(
             });
             Ok((masks, stmts))
         },
-        Stmt::If {cond, thn, els, i} if is_blocked_type(cond.get_type()) => {
+        Stmt::If {cond, thn, els, i} if cond.get_type().is_blocked() => {
             let cond = add_masking_expr(&masks, cond)?;
             let ty = cond.get_type().clone();
             let cond_id = Name::sym_str("if_cond");

@@ -6,6 +6,7 @@ mod inline;
 mod pprint;
 mod shapes;
 mod rewrite_reductions;
+mod utils;
 
 #[cfg(test)]
 mod ast_builder;

@@ -38,6 +38,14 @@ impl Type {
             Type::Void => None,
         }
     }
+
+    pub fn is_blocked(&self) -> bool {
+        match self.get_shape() {
+            Some(Shape::Num(n)) => *n > 1,
+            Some(_) => false,
+            None => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
