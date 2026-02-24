@@ -7,8 +7,6 @@ use crate::utils::name::Name;
 use crate::utils::reduce::ExprLit;
 use crate::utils::smap::*;
 
-use std::collections::BTreeSet;
-
 fn get_elem_size(ty: &Type, i: &Info) -> CompileResult<ElemSize> {
     match ty.get_elem_size() {
         Some(sz) => Ok(sz.clone()),
@@ -113,75 +111,67 @@ fn get_neutral_element(op: &ReduceOp, ty: &Type, i: &Info) -> CompileResult<Expr
     }
 }
 
-fn depends_on_var(vars: &BTreeSet<Name>, acc: bool, e: &Expr) -> bool {
-    match e {
-        Expr::Var {id, ..} => acc || vars.contains(&id),
-        _ => e.sfold(acc, |acc, e| depends_on_var(&vars, acc, e))
-    }
-}
-
-fn mask_memory_accesses_expr(
-    cond: &Expr,
-    vars: &BTreeSet<Name>,
+fn mask_for_loop_expr(
+    loop_cond_var: &Expr,
     e: Expr
 ) -> CompileResult<Expr> {
     match e {
         Expr::Reduce {op, arg, ty, i} => {
-            let arg = Box::new(mask_memory_accesses_expr(&cond, &vars, *arg)?);
-            let arg = if depends_on_var(&vars, false, &arg) {
-                let ne = get_neutral_element(&op, &ty, &i)?;
-                Box::new(Expr::Where {
-                    cond: Box::new(cond.clone()),
-                    thn: arg,
-                    els: Box::new(ne),
-                    ty: ty.clone(),
-                    i: i.clone()
-                })
-            } else {
-                arg
-            };
+            let arg = Box::new(mask_for_loop_expr(&loop_cond_var, *arg)?);
+            let ne = get_neutral_element(&op, &ty, &i)?;
+            let arg = Box::new(Expr::Where {
+                cond: Box::new(loop_cond_var.clone()),
+                thn: arg,
+                els: Box::new(ne),
+                ty: ty.clone(),
+                i: i.clone()
+            });
             Ok(Expr::Reduce {op, arg, ty, i})
         },
-        Expr::Load {ptr, mask, ty, i} => {
-            let ptr = Box::new(mask_memory_accesses_expr(&cond, &vars, *ptr)?);
-            let mask = if depends_on_var(&vars, false, &ptr) {
-                let mask = mask.map(|e| *e);
-                make_mask(mask, &vec![cond.clone()]).map(|e| Box::new(e))
-            } else {
-                mask
-            };
+        Expr::Load {ptr, mask, ty, i} if is_blocked_type(&ty) => {
+            let ptr = Box::new(mask_for_loop_expr(&loop_cond_var, *ptr)?);
+            let mask = make_mask(mask.map(|e| *e), &vec![loop_cond_var.clone()])
+                .map(|e| Box::new(e));
             Ok(Expr::Load {ptr, mask, ty, i})
         },
-        _ => e.smap_result(|e| mask_memory_accesses_expr(&cond, &vars, e))
+        _ => e.smap_result(|e| mask_for_loop_expr(&loop_cond_var, e))
     }
 }
 
-fn mask_memory_accesses_stmt(
-    cond: &Expr,
-    mut vars: BTreeSet<Name>,
-    s: Stmt
-) -> CompileResult<(BTreeSet<Name>, Stmt)> {
-    let s = s.smap_result(|e| mask_memory_accesses_expr(&cond, &vars, e))?;
+fn mask_for_loop_stmt(
+    mut acc: Vec<Stmt>,
+    s: Stmt,
+    cond_def: &Stmt,
+    loop_cond_var: &Expr,
+) -> CompileResult<Vec<Stmt>> {
+    let s = s.smap_result(|e| mask_for_loop_expr(&loop_cond_var, e))?;
     match s {
-        Stmt::Assign {dst, expr, i} if depends_on_var(&vars, false, &expr) => {
-            vars.insert(dst.clone());
-            Ok((vars, Stmt::Assign {dst, expr, i}))
+        Stmt::Definition {dst, expr, i} if contains_arange(false, &expr) => {
+            // Insert the definition of the for-loop condition immediately after defining the
+            // blocked for-loop variable.
+            acc.push(Stmt::Definition {dst, expr, i});
+            acc.push(cond_def.clone());
+            Ok(acc)
         },
         Stmt::Store {ptr, value, mask, i} => {
-            let mask = if depends_on_var(&vars, false, &ptr) {
-                make_mask(mask, &vec![cond.clone()])
+            let mask = if is_blocked_type(ptr.get_type()) || is_blocked_type(value.get_type()) {
+                make_mask(mask, &vec![loop_cond_var.clone()])
             } else {
                 mask
             };
-            Ok((vars, Stmt::Store {ptr, value, mask, i}))
+            acc.push(Stmt::Store {ptr, value, mask, i});
+            Ok(acc)
         },
-        _ => s.smap_accum_l_result(Ok(vars), |vars, s| {
-            mask_memory_accesses_stmt(&cond, vars, s)
+        _ => s.sflatten_result(acc, |acc, s| {
+            mask_for_loop_stmt(acc, s, &cond_def, &loop_cond_var)
         })
     }
 }
 
-fn mask_memory_accesses_in_parallel_for(s: Stmt) -> CompileResult<Stmt> {
+fn add_masking_in_parallel_for(
+    mut acc: Vec<Stmt>,
+    s: Stmt
+) -> CompileResult<Vec<Stmt>> {
     match s {
         Stmt::For {var, lo, hi, step, body, i} => {
             let body = if !body.is_empty() {
@@ -189,6 +179,7 @@ fn mask_memory_accesses_in_parallel_for(s: Stmt) -> CompileResult<Stmt> {
                     Some(id) => {
                         let ty = hi.get_type().clone();
                         let shape = Shape::Num(get_shape_from_type(&ty));
+                        let cond_ty = Type::Tensor {sz: ElemSize::Bool, shape};
                         let op = if step > 0 { BinOp::Lt } else { BinOp::Gt };
                         let boundary_cond = Expr::BinOp {
                             lhs: Box::new(Expr::Var {
@@ -196,28 +187,41 @@ fn mask_memory_accesses_in_parallel_for(s: Stmt) -> CompileResult<Stmt> {
                             }),
                             op,
                             rhs: Box::new(hi.clone()),
-                            ty: Type::Tensor {sz: ElemSize::Bool, shape},
+                            ty: cond_ty.clone(),
                             i: i.clone()
                         };
-                        // We add the boundary condition as a mask to any memory access that
-                        // depends on the blocked variable or any other variables which
-                        // transitively depends on it. The masking must be accurate, because the
-                        // Triton compiler rejects a blocked mask when the pointer is of shape 1.
-                        let mut vars = BTreeSet::new();
-                        vars.insert(id);
-                        let (_, body) = body.smap_accum_l_result(Ok(vars), |vars, s| {
-                            mask_memory_accesses_stmt(&boundary_cond, vars, s)
-                        })?;
-                        Ok(body)
+                        let for_cond_id = Name::sym_str("for_cond");
+                        let for_cond = Expr::Var {
+                            id: for_cond_id.clone(),
+                            ty: cond_ty.clone(),
+                            i: i.clone()
+                        };
+                        let cond_def = Stmt::Assign {
+                            dst: for_cond_id,
+                            expr: boundary_cond,
+                            i: i.clone()
+                        };
+                        // We insert the mask to any loads and stores that take place in the body
+                        // of the for-loop.
+                        body.sflatten_result(vec![], |acc, s| {
+                            mask_for_loop_stmt(acc, s, &cond_def, &for_cond)
+                        })
                     },
-                    None => body.smap_result(mask_memory_accesses_in_parallel_for)
+                    None => {
+                        body.sflatten_result(vec![], |acc, s| {
+                            add_masking_in_parallel_for(acc, s)
+                        })
+                    },
                 }
             } else {
-                body.smap_result(mask_memory_accesses_in_parallel_for)
+                body.sflatten_result(vec![], |acc, s| {
+                    add_masking_in_parallel_for(acc, s)
+                })
             }?;
-            Ok(Stmt::For {var, lo, hi, step, body, i})
+            acc.push(Stmt::For {var, lo, hi, step, body, i});
+            Ok(acc)
         },
-        _ => s.smap_result(mask_memory_accesses_in_parallel_for)
+        _ => s.sflatten_result(acc, add_masking_in_parallel_for)
     }
 }
 
@@ -258,60 +262,35 @@ fn add_masking_stmt(
 ) -> CompileResult<(Vec<Expr>, Vec<Stmt>)> {
     let (mut masks, mut stmts) = acc;
     match s {
+        Stmt::Definition {dst, expr, i} if !masks.is_empty() => {
+            let expr = add_masking_expr(&masks, expr)?;
+            stmts.push(Stmt::Definition {dst, expr, i});
+            Ok((masks, stmts))
+        },
         Stmt::Assign {dst, expr, i} if !masks.is_empty() => {
             let expr = add_masking_expr(&masks, expr)?;
             // NOTE(larshum, 2025-02-20): This transformation relies on the fact that we keep a
             // distinction between definitions and assignments, as it is only valid to apply
             // masking to a previously defined variable that we are re-assigning.
             let ty = expr.get_type().clone();
-            let expr = if !masks.is_empty() {
-                let mask = make_mask(None, &masks).unwrap();
-                Expr::Where {
-                    cond: Box::new(mask),
-                    thn: Box::new(expr),
-                    els: Box::new(Expr::Var {
-                        id: dst.clone(), ty: ty.clone(), i: i.clone()
-                    }),
-                    ty: ty,
-                    i: i.clone()
-                }
-            } else {
-                expr
+            let mask = make_mask(None, &masks).unwrap();
+            let expr = Expr::Where {
+                cond: Box::new(mask),
+                thn: Box::new(expr),
+                els: Box::new(Expr::Var {
+                    id: dst.clone(), ty: ty.clone(), i: i.clone()
+                }),
+                ty: ty,
+                i: i.clone()
             };
             stmts.push(Stmt::Assign {dst, expr, i});
             Ok((masks, stmts))
         },
-        Stmt::For {var, lo, hi, step, mut body, i} if is_blocked_type(lo.get_type()) => {
-            let ty = lo.get_type().clone();
-            let shape = Shape::Num(get_shape_from_type(&ty));
-            let var_expr = Expr::Var {id: var.clone(), ty: ty.clone(), i: i.clone()};
-            stmts.push(Stmt::Definition {
-                dst: var.clone(),
-                expr: lo,
-                i: i.clone()
-            });
-            body.push(Stmt::Assign {
-                dst: var,
-                expr: Expr::BinOp {
-                    lhs: Box::new(var_expr.clone()),
-                    op: BinOp::Add,
-                    rhs: Box::new(Expr::Int {
-                        v: step as i128, ty: ty.clone(), i: i.clone()
-                    }),
-                    ty: ty.clone(),
-                    i: i.clone()
-                },
-                i: i.clone()
-            });
-            let cond = Expr::BinOp {
-                lhs: Box::new(var_expr),
-                op: BinOp::Lt,
-                rhs: Box::new(hi),
-                ty: Type::Tensor {sz: ElemSize::Bool, shape},
-                i: i.clone()
-            };
-            let while_loop = Stmt::While {cond, body, i: i.clone()};
-            add_masking_stmt((masks, stmts), while_loop)
+        Stmt::For {var, lo, hi, step, body, i} => {
+            let acc = Ok((masks, vec![]));
+            let (masks, body) = body.sfold_owned_result(acc, add_masking_stmt)?;
+            stmts.push(Stmt::For {var, lo, hi, step, body, i});
+            Ok((masks, stmts))
         },
         Stmt::While {cond, body, i} if is_blocked_type(cond.get_type()) => {
             let ty = cond.get_type().clone();
@@ -376,12 +355,6 @@ fn add_masking_stmt(
             masks.pop();
             Ok((masks, stmts))
         },
-        Stmt::For {var, lo, hi, step, body, i} => {
-            let acc = Ok((masks, vec![]));
-            let (masks, body) = body.sfold_owned_result(acc, add_masking_stmt)?;
-            stmts.push(Stmt::For {var, lo, hi, step, body, i});
-            Ok((masks, stmts))
-        },
         Stmt::While {cond, body, i} => {
             let acc = Ok((masks, vec![]));
             let (masks, body) = body.sfold_owned_result(acc, add_masking_stmt)?;
@@ -421,10 +394,11 @@ fn transform_top(t: Top) -> CompileResult<Top> {
             // specify an explicit shape.
             let body = body.smap_result(wrap_blocked_literals_in_full_stmt)?;
 
-            // Adds masking of memory operations (tl.load and tl.store) when the pointers are
-            // blocked, by checking that the loop variable on which the index is (presumably) based
-            // is within range of the for-loop that introduced it.
-            let body = body.smap_result(mask_memory_accesses_in_parallel_for)?;
+            // Adds masking of blocked operations within a parallel for-loop. This is applied to
+            // memory operations (Expr::Load and Stmt::Store), whose results are visible across all
+            // threads of the GPU. It also applies to reductions (Expr::Reduce), because threads
+            // that are not participating should use a value that does not impact the final result.
+            let body = body.sflatten_result(vec![], add_masking_in_parallel_for)?;
 
             // Rewrite if-statements and while-loops containing block-wide conditions to perform
             // masked operations based on the individual values of a condition. Specifically, we
