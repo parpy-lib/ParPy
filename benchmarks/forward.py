@@ -104,11 +104,8 @@ def forward_init_inst(hmm, seqs, alpha_src, inst):
 
 @parpy.jit
 def forward_step_inst(hmm, seqs, alpha1, alpha2, inst, t):
-    alpha_src = alpha2
-    alpha_dst = alpha1
-    if t & 1:
-        alpha_src = alpha1
-        alpha_dst = alpha2
+    alpha_src = alpha1 if t & 1 != 0 else alpha2
+    alpha_dst = alpha2 if t & 1 != 0 else alpha1
     o = seqs["data"][inst, t]
     parpy.label('state')
     for state in range(hmm["num_states"]):
@@ -162,9 +159,7 @@ def forward_step_inst(hmm, seqs, alpha1, alpha2, inst, t):
 @parpy.jit
 def forward_lse_inst(hmm, seqs, result, alpha1, alpha2, inst):
     # Summation of final alpha values
-    alpha = alpha2
-    if seqs["lens"][inst] & 1 != 0:
-        alpha = alpha1
+    alpha = alpha1 if seqs["lens"][inst] & 1 != 0 else alpha2
 
     parpy.label('state')
     maxp = parpy.reduce.max(alpha[inst, :])
@@ -236,12 +231,8 @@ def forward_triton_init(
 @triton.jit
 def forward_triton_step(hmm_output_prob, hmm_trans1, hmm_trans2, hmm_gamma: tl.float32, hmm_synthetic_248: tl.float32, hmm_num_states: tl.constexpr, seqs_data, seqs_lens, seqs_maxlen: tl.constexpr, alpha1, alpha2, t, BLOCK_SIZE: tl.constexpr):
   instance = tl.program_id(axis=0)
-  if t & 1:
-    alpha_src = alpha1
-    alpha_dst = alpha2
-  else:
-    alpha_src = alpha2
-    alpha_dst = alpha1
+  alpha_src = alpha1 if t & 1 != 0 else alpha2
+  alpha_dst = alpha2 if t & 1 != 0 else alpha1
   state_ofs = BLOCK_SIZE * tl.program_id(axis=1)
   state_idx = state_ofs + tl.arange(0, BLOCK_SIZE)
   idx = instance * hmm_num_states + state_idx
@@ -291,13 +282,15 @@ def forward_triton_step(hmm_output_prob, hmm_trans1, hmm_trans2, hmm_gamma: tl.f
 
     # Combination of the three above cases...
     pred = tl.zeros((BLOCK_SIZE,), dtype=tl.int32)
-    pred = tl.where(state_idx // num_kmers == 15, pred_fst, pred)
-    pred = tl.where(state_idx // num_kmers == 14, pred_snd, pred)
-    pred = tl.where(state_idx // num_kmers != 14 and state_idx // num_kmers != 15, pred_trd, pred)
+    if_cond = state_idx // num_kmers == 15
+    elif_cond = state_idx // num_kmers == 14
+    pred = tl.where(if_cond, pred_fst, pred)
+    pred = tl.where((not if_cond) & elif_cond, pred_snd, pred)
+    pred = tl.where((not if_cond) & (not elif_cond), pred_trd, pred)
     p = tl.full((BLOCK_SIZE,), float('-inf'), dtype=tl.float32)
-    p = tl.where(state_idx // num_kmers == 15, p_fst, p)
-    p = tl.where(state_idx // num_kmers == 14, p_snd, p)
-    p = tl.where(state_idx // num_kmers != 14 and state_idx // num_kmers != 15, p_trd, p)
+    p = tl.where(if_cond, p_fst, p)
+    p = tl.where((not if_cond) & elif_cond, p_snd, p)
+    p = tl.where((not if_cond) & (not elif_cond), p_trd, p)
     p4 = p + tl.load(alpha_src + instance * hmm_num_states + pred)
 
     # Inlined version of log_sum_exp
@@ -319,12 +312,8 @@ def forward_triton_step(hmm_output_prob, hmm_trans1, hmm_trans2, hmm_gamma: tl.f
 def forward_triton_steps(hmm_output_prob, hmm_trans1, hmm_trans2, hmm_gamma : tl.float32, hmm_synthetic_248 : tl.float32, hmm_num_states : tl.constexpr, seqs_data, seqs_lens, seqs_maxlen : tl.constexpr, alpha1, alpha2):
   instance = tl.program_id(axis=0)
   for t in range(1, seqs_maxlen):
-    if t & 1:
-      alpha_src = alpha1
-      alpha_dst = alpha2
-    else:
-      alpha_src = alpha2
-      alpha_dst = alpha1
+    alpha_src = alpha1 if t & 1 != 0 else alpha2
+    alpha_dst = alpha2 if t & 1 != 0 else alpha1
     state_idx = tl.arange(0, hmm_num_states)
     idx = instance * hmm_num_states + state_idx
     seq_len = tl.load(seqs_lens + instance)
@@ -373,13 +362,15 @@ def forward_triton_steps(hmm_output_prob, hmm_trans1, hmm_trans2, hmm_gamma : tl
 
       # Combination of the three above cases...
       pred = tl.zeros((hmm_num_states,), dtype=tl.int32)
-      pred = tl.where(state_idx // num_kmers == 15, pred_fst, pred)
-      pred = tl.where(state_idx // num_kmers == 14, pred_snd, pred)
-      pred = tl.where(state_idx // num_kmers != 14 and state_idx // num_kmers != 15, pred_trd, pred)
+      if_cond = state_idx // num_kmers == 15
+      elif_cond = state_idx // num_kmers == 14
+      pred = tl.where(if_cond, pred_fst, pred)
+      pred = tl.where((not if_cond) & elif_cond, pred_snd, pred)
+      pred = tl.where((not if_cond) & (not elif_cond), pred_trd, pred)
       p = tl.full((hmm_num_states,), float('-inf'), dtype=tl.float32)
-      p = tl.where(state_idx // num_kmers == 15, p_fst, p)
-      p = tl.where(state_idx // num_kmers == 14, p_snd, p)
-      p = tl.where(state_idx // num_kmers != 14 and state_idx // num_kmers != 15, p_trd, p)
+      p = tl.where(if_cond, p_fst, p)
+      p = tl.where((not if_cond) & elif_cond, p_snd, p)
+      p = tl.where((not if_cond) & (not elif_cond), p_trd, p)
       p4 = p + tl.load(alpha_src + instance * hmm_num_states + pred)
 
       # Inlined version of log_sum_exp
@@ -401,10 +392,7 @@ def forward_triton_steps(hmm_output_prob, hmm_trans1, hmm_trans2, hmm_gamma : tl
 @triton.jit
 def forward_triton_lse(hmm_num_states : tl.constexpr, seqs_maxlen : tl.constexpr, alpha1, alpha2, result):
   instance = tl.program_id(axis=0)
-  if seqs_maxlen & 1:
-    alpha = alpha1
-  else:
-    alpha = alpha2
+  alpha = alpha1 if seqs_maxlen & 1 != 0 else alpha2
   state_idx = tl.arange(0, hmm_num_states)
   alpha_vals = tl.load(alpha + instance * hmm_num_states + state_idx)
   maxp = tl.max(alpha_vals, axis=0)
