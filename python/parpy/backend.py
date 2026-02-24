@@ -79,3 +79,15 @@ def _resolve_backend(opts, strict):
                             "flag in the compiler options.")
     else:
         return opts
+
+def set_default(backend):
+    """
+    Sets the provided backend as the default choice for the compiler.
+    """
+    global available
+    if backend is not None and backend in available:
+        # If the backend is one of the enabled backends, we put it in the front
+        # of the list of available backends. This makes it the default choice
+        # in the implementation of _resolve_backend.
+        available.remove(backend)
+        available.insert(0, backend)
