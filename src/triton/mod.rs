@@ -2,6 +2,7 @@ pub mod ast;
 mod blocking;
 mod codegen;
 mod constant_fold;
+mod eliminate_thread_for_loops;
 mod inline;
 mod pprint;
 mod shapes;
@@ -38,6 +39,12 @@ pub fn codegen(gpu_ast: gpu_ast::Ast) -> CompileResult<Ast> {
     // rewrite control-flow statements whose condition depends on a block-wide value to a format
     // supported by Triton.
     let ast = blocking::transform(ast)?;
+
+    // Eliminates for-loops over threads with known bounds by rewriting them as a single blocked
+    // operation. Rather than iteratively construct several smaller blocks, the updated code
+    // constructs one big block on which it performs all updates. This has a significant impact on
+    // performance.
+    let ast = eliminate_thread_for_loops::apply(ast)?;
 
     Ok(ast)
 }
