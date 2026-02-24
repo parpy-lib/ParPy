@@ -2,6 +2,7 @@ use super::ast::*;
 use crate::parpy_compile_error;
 use crate::parpy_internal_error;
 use crate::gpu::ast as gpu_ast;
+use crate::gpu::ast::LaunchArgs;
 use crate::gpu::reduce;
 use crate::utils::ast::*;
 use crate::utils::err::*;
@@ -14,12 +15,17 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug)]
 struct CodegenEnv {
     pub ext_map: BTreeMap<Name, String>,
-    pub nthreads: i64,
+    pub kernel_dims: BTreeMap<Name, LaunchArgs>,
+    pub current_grid: LaunchArgs,
 }
 
 impl Default for CodegenEnv {
     fn default() -> Self {
-        CodegenEnv {ext_map: BTreeMap::new(), nthreads: 0}
+        CodegenEnv {
+            ext_map: BTreeMap::new(),
+            kernel_dims: BTreeMap::new(),
+            current_grid: LaunchArgs::default(),
+        }
     }
 }
 
@@ -29,8 +35,11 @@ impl CodegenEnv {
         self
     }
 
-    fn with_nthreads(mut self, nthreads: i64) -> Self {
-        self.nthreads = nthreads;
+    fn set_active_kernel(mut self, o: Option<&Name>) -> Self {
+        match o.map_or(None, |id| self.kernel_dims.get(id)) {
+            Some(grid) => self.current_grid = grid.clone(),
+            None => self.current_grid = LaunchArgs::default(),
+        };
         self
     }
 }
@@ -47,6 +56,25 @@ fn generate_default_imports() -> Vec<Top> {
     ]
 }
 
+fn collect_kernel_dims_stmt(mut env: CodegenEnv, s: &gpu_ast::Stmt) -> CodegenEnv {
+    match s {
+        gpu_ast::Stmt::KernelLaunch {id, grid, ..} => {
+            env.kernel_dims.insert(id.clone(), grid.clone());
+            env
+        },
+        _ => s.sfold(env, collect_kernel_dims_stmt)
+    }
+}
+
+fn collect_kernel_dims_top(env: CodegenEnv, t: &gpu_ast::Top) -> CodegenEnv {
+    match t {
+        gpu_ast::Top::FunDef {body, target: Target::Host, ..} => {
+            body.sfold(env, collect_kernel_dims_stmt)
+        },
+        _ => env
+    }
+}
+
 fn validate_attr(attr: gpu_ast::KernelAttribute, i: &Info) -> CompileResult<i64> {
     match attr {
         gpu_ast::KernelAttribute::LaunchBounds {threads} => Ok(threads),
@@ -60,13 +88,14 @@ fn validate_attr(attr: gpu_ast::KernelAttribute, i: &Info) -> CompileResult<i64>
     }
 }
 
-fn validate_attrs(attrs: Vec<gpu_ast::KernelAttribute>, i: &Info) -> CompileResult<i64> {
+fn validate_attrs(attrs: Vec<gpu_ast::KernelAttribute>, i: &Info) -> CompileResult<()> {
     let valid_fn = |acc, attr| {
         let acc = acc?;
-        let n = validate_attr(attr, &i)?;
-        Ok(if n > 0 { n } else { acc })
+        validate_attr(attr, &i)?;
+        Ok(acc)
     };
-    attrs.into_iter().fold(Ok(0), valid_fn)
+    attrs.into_iter().fold(Ok(0), valid_fn)?;
+    Ok(())
 }
 
 fn from_gpu_ast_params(params: Vec<gpu_ast::Param>) -> Vec<Name> {
@@ -242,6 +271,28 @@ fn extract_step(
     }
 }
 
+fn refers_to_block_dim(acc: Option<Dim>, e: &Expr) -> Option<Dim> {
+    match e {
+        Expr::ProgramId {dim, ..} => Some(dim.clone()),
+        _ => e.sfold(acc, refers_to_block_dim)
+    }
+}
+
+fn determine_step_size(
+    env: &CodegenEnv,
+    step: i128,
+    lo: &Expr
+) -> i128 {
+    let nthreads = env.current_grid.threads.prod() as i128;
+    match lo.sfold(None, refers_to_block_dim) {
+        Some(dim) => {
+            let nblocks = env.current_grid.blocks.get_dim(&dim) as i128;
+            step / (nblocks * nthreads)
+        },
+        None => step / nthreads
+    }
+}
+
 fn extract_loop_bounds(
     env: &CodegenEnv,
     var_ty: Type,
@@ -258,6 +309,8 @@ fn extract_loop_bounds(
     // NOTE(larshum, 2026-02-11): If we removed the use of a thread index, we know this for-loop
     // runs in parallel over threads, in which case we have to restructure it.
     if removed_thread {
+        let step_size = determine_step_size(&env, step, &lo);
+        let nthreads = env.current_grid.threads.prod() as usize;
         let new_var = Name::new(format!("{0}_chunk", var.get_str())).with_new_sym();
         let var_assign = Stmt::Definition {
             dst: var,
@@ -271,13 +324,13 @@ fn extract_loop_bounds(
                 rhs: Box::new(Expr::BinOp {
                     lhs: Box::new(Expr::Arange {
                         lo: 0,
-                        hi: env.nthreads as usize,
+                        hi: nthreads,
                         ty: var_ty.clone(),
                         i: i.clone()
                     }),
                     op: BinOp::Mul,
                     rhs: Box::new(Expr::Int {
-                        v: step / env.nthreads as i128,
+                        v: step_size,
                         ty: var_ty.clone(),
                         i: i.clone()
                     }),
@@ -687,19 +740,16 @@ fn from_gpu_ast_top(
             }
         },
         gpu_ast::Top::KernelFunDef {attrs, id, params, body, i} => {
-            let nthreads = validate_attrs(attrs, &i)?;
-            if nthreads == 0 {
-                parpy_internal_error!(i, "Found kernel parallelized over zero threads")?
-            }
+            validate_attrs(attrs, &i)?;
             let params = from_gpu_ast_params(params);
-            let env = env.with_nthreads(nthreads);
+            let env = env.set_active_kernel(Some(&id));
             let body = from_gpu_ast_kernel_stmts(&env, body)?;
             tops.push(Top::FunDef {triton_jit: true, id, params, body, i});
             Ok((env, tops))
         },
         gpu_ast::Top::FunDef {ret_ty: _, id, params, body, target: Target::Device, i} => {
             let params = from_gpu_ast_params(params);
-            let env = env.with_nthreads(1);
+            let env = env.set_active_kernel(None);
             let body = from_gpu_ast_kernel_stmts(&env, body)?;
             tops.push(Top::FunDef {triton_jit: true, id, params, body, i});
             Ok((env, tops))
@@ -714,7 +764,7 @@ fn from_gpu_ast_top(
 }
 
 pub fn from_gpu_ast(ast: gpu_ast::Ast) -> CompileResult<Ast> {
-    let env = CodegenEnv::default();
+    let env = ast.sfold(CodegenEnv::default(), collect_kernel_dims_top);
     let mut tops = generate_default_imports();
     let (_, mut gen_tops) = ast.into_iter()
         .fold(Ok((env, vec![])), |acc, t| {
