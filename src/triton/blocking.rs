@@ -230,7 +230,7 @@ fn add_masking_expr(masks: &Vec<Expr>, e: Expr) -> CompileResult<Expr> {
         Ok(e)
     } else {
         match e {
-            Expr::Reduce {op, arg, ty, i} => {
+            Expr::Reduce {op, arg, ty, i} if is_blocked_type(&ty) => {
                 let mask = make_mask(None, masks).unwrap();
                 let ne = get_neutral_element(&op, &ty, &i)?;
                 Ok(Expr::Reduce {
@@ -246,7 +246,7 @@ fn add_masking_expr(masks: &Vec<Expr>, e: Expr) -> CompileResult<Expr> {
                     i
                 })
             },
-            Expr::Load {ptr, mask, ty, i} => {
+            Expr::Load {ptr, mask, ty, i} if is_blocked_type(&ty) => {
                 let mask = make_mask(mask.map(|e| *e), masks)
                     .map(|e| Box::new(e));
                 Ok(Expr::Load {ptr, mask, ty, i})
@@ -287,12 +287,15 @@ fn add_masking_stmt(
             Ok((masks, stmts))
         },
         Stmt::For {var, lo, hi, step, body, i} => {
+            let lo = add_masking_expr(&masks, lo)?;
+            let hi = add_masking_expr(&masks, hi)?;
             let acc = Ok((masks, vec![]));
             let (masks, body) = body.sfold_owned_result(acc, add_masking_stmt)?;
             stmts.push(Stmt::For {var, lo, hi, step, body, i});
             Ok((masks, stmts))
         },
         Stmt::While {cond, body, i} if is_blocked_type(cond.get_type()) => {
+            let cond = add_masking_expr(&masks, cond)?;
             let ty = cond.get_type().clone();
             let cond_id = Name::sym_str("while_cond");
             let cond_var = Expr::Var {
@@ -327,6 +330,7 @@ fn add_masking_stmt(
             Ok((masks, stmts))
         },
         Stmt::If {cond, thn, els, i} if is_blocked_type(cond.get_type()) => {
+            let cond = add_masking_expr(&masks, cond)?;
             let ty = cond.get_type().clone();
             let cond_id = Name::sym_str("if_cond");
             stmts.push(Stmt::Definition {
@@ -356,12 +360,14 @@ fn add_masking_stmt(
             Ok((masks, stmts))
         },
         Stmt::While {cond, body, i} => {
+            let cond = add_masking_expr(&masks, cond)?;
             let acc = Ok((masks, vec![]));
             let (masks, body) = body.sfold_owned_result(acc, add_masking_stmt)?;
             stmts.push(Stmt::While {cond, body, i});
             Ok((masks, stmts))
         },
         Stmt::If {cond, thn, els, i} => {
+            let cond = add_masking_expr(&masks, cond)?;
             let acc = Ok((masks, vec![]));
             let (masks, thn) = thn.sfold_owned_result(acc, add_masking_stmt)?;
             let acc = Ok((masks, vec![]));
@@ -370,6 +376,8 @@ fn add_masking_stmt(
             Ok((masks, stmts))
         },
         Stmt::Store {ptr, value, mask, i} => {
+            let ptr = add_masking_expr(&masks, ptr)?;
+            let value = add_masking_expr(&masks, value)?;
             let mask = make_mask(mask, &masks);
             stmts.push(Stmt::Store {ptr, value, mask, i});
             Ok((masks, stmts))
