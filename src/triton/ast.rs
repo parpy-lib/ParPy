@@ -9,6 +9,8 @@ pub use crate::utils::ast::BinOp;
 pub use crate::gpu::ast::Dim;
 pub use crate::gpu::ast::Dim3;
 
+use std::cmp::Ordering;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Var(usize),
@@ -48,12 +50,12 @@ impl Type {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ReduceOp {
     Min, Max, Sum, Prod, Any
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Expr {
     Var {id: Name, ty: Type, i: Info},
     Bool {v: bool, ty: Type, i: Info},
@@ -97,6 +99,27 @@ impl Expr {
             Expr::AllocBuffer {nelems, elem_sz, ty: _, i} =>
                 Expr::AllocBuffer {nelems, elem_sz, ty, i},
             Expr::Convert {value, ty: _, i} => Expr::Convert {value, ty, i},
+        }
+    }
+
+    pub fn discriminator(&self) -> u8 {
+        match self {
+            Expr::Var {..} => 0,
+            Expr::Bool {..} => 1,
+            Expr::Int {..} => 2,
+            Expr::Float {..} => 3,
+            Expr::UnOp {..} => 4,
+            Expr::BinOp {..} => 5,
+            Expr::Reduce {..} => 6,
+            Expr::Call {..} => 7,
+            Expr::ExtCall {..} => 8,
+            Expr::ProgramId {..} => 9,
+            Expr::Arange {..} => 10,
+            Expr::Load {..} => 11,
+            Expr::Full {..} => 12,
+            Expr::Where {..} => 13,
+            Expr::AllocBuffer {..} => 14,
+            Expr::Convert {..} => 15,
         }
     }
 }
@@ -260,6 +283,64 @@ impl SMapAccum<Expr> for Expr {
         }
     }
 }
+
+impl Ord for Expr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Expr::Var {id: lid, ..}, Expr::Var {id: rid, ..}) => lid.cmp(rid),
+            (Expr::Bool {v: lv, ..}, Expr::Bool {v: rv, ..}) => lv.cmp(rv),
+            (Expr::Int {v: lv, ..}, Expr::Int {v: rv, ..}) => lv.cmp(rv),
+            (Expr::Float {v: lv, ..}, Expr::Float {v: rv, ..}) => f64::total_cmp(lv, rv),
+            (Expr::UnOp {op: lop, arg: larg, ..}, Expr::UnOp {op: rop, arg: rarg, ..}) =>
+                lop.cmp(rop).then(larg.cmp(rarg)),
+            ( Expr::BinOp {lhs: llhs, op: lop, rhs: lrhs, ..}
+            , Expr::BinOp {lhs: rlhs, op: rop, rhs: rrhs, ..} ) =>
+                llhs.cmp(rlhs).then(lop.cmp(rop)).then(lrhs.cmp(rrhs)),
+            ( Expr::Reduce {op: lop, arg: larg, ..}
+            , Expr::Reduce {op: rop, arg: rarg, ..} ) =>
+                lop.cmp(rop).then(larg.cmp(rarg)),
+            ( Expr::Call {id: lid, args: largs, ..}
+            , Expr::Call {id: rid, args: rargs, ..} ) =>
+                lid.cmp(rid).then(largs.cmp(rargs)),
+            ( Expr::ExtCall {id: lid, args: largs, ..}
+            , Expr::ExtCall {id: rid, args: rargs, ..} ) =>
+                lid.cmp(rid).then(largs.cmp(rargs)),
+            (Expr::ProgramId {dim: ldim, ..}, Expr::ProgramId {dim: rdim, ..}) =>
+                ldim.cmp(rdim),
+            ( Expr::Arange {lo: llo, hi: lhi, ..},
+              Expr::Arange {lo: rlo, hi: rhi, ..} ) =>
+                llo.cmp(rlo).then(lhi.cmp(rhi)),
+            ( Expr::Load {ptr: lptr, mask: lmask, ..},
+              Expr::Load {ptr: rptr, mask: rmask, ..} ) =>
+                lptr.cmp(rptr).then(lmask.cmp(rmask)),
+            ( Expr::Full {shape: lshape, value: lvalue, ..}
+            , Expr::Full {shape: rshape, value: rvalue, ..} ) =>
+                lshape.cmp(rshape).then(lvalue.cmp(rvalue)),
+            ( Expr::Where {cond: lcond, thn: lthn, els: lels, ..}
+            , Expr::Where {cond: rcond, thn: rthn, els: rels, ..} ) =>
+                lcond.cmp(rcond).then(lthn.cmp(rthn)).then(lels.cmp(rels)),
+            ( Expr::AllocBuffer {nelems: ln, elem_sz: lsz, ..}
+            , Expr::AllocBuffer {nelems: rn, elem_sz: rsz, ..} ) =>
+                ln.cmp(rn).then(lsz.cmp(rsz)),
+            (Expr::Convert {value: lv, ..}, Expr::Convert {value: rv, ..}) => lv.cmp(rv),
+            _ => self.discriminator().cmp(&other.discriminator()),
+        }
+    }
+}
+
+impl PartialOrd for Expr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for Expr {
+    fn eq(&self, other: &Expr) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl Eq for Expr {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
