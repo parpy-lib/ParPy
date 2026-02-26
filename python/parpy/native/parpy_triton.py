@@ -1,6 +1,7 @@
 import parpy
 import triton
 import triton.language as tl
+from triton.language.extra import libdevice as libdevice
 
 def _parpy_builtin_to_torch(t):
     return t.torch()
