@@ -97,11 +97,10 @@ impl PrettyPrintBinOp<Type> for Expr {
     fn is_infix(op: &BinOp, _argty: &Type) -> bool {
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::FloorDiv | BinOp::Div |
-            BinOp::Rem | BinOp::Pow | BinOp::And | BinOp::Or | BinOp::BitAnd |
-            BinOp::BitOr | BinOp::BitShl | BinOp::BitShr | BinOp::BitXor |
-            BinOp::Eq | BinOp::Neq | BinOp::Leq | BinOp::Geq | BinOp::Lt |
-            BinOp::Gt => true,
-            BinOp::Max | BinOp::Min => false
+            BinOp::Rem | BinOp::And | BinOp::Or | BinOp::BitAnd | BinOp::BitOr |
+            BinOp::BitShl | BinOp::BitShr | BinOp::BitXor | BinOp::Eq |
+            BinOp::Neq | BinOp::Leq | BinOp::Geq | BinOp::Lt | BinOp::Gt => true,
+            BinOp::Pow | BinOp::Max | BinOp::Min => false
         }
     }
 
@@ -113,7 +112,7 @@ impl PrettyPrintBinOp<Type> for Expr {
             BinOp::FloorDiv => Some("//"),
             BinOp::Div => Some("/"),
             BinOp::Rem => Some("%"),
-            BinOp::Pow => Some("**"),
+            BinOp::Pow => Some("libdevice.pow"),
             BinOp::And => Some("and"),
             BinOp::Or => Some("or"),
             BinOp::BitAnd => Some("&"),

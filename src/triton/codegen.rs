@@ -130,13 +130,6 @@ fn from_gpu_ast_type(ty: gpu_ast::Type, i: &Info) -> CompileResult<Type> {
     }
 }
 
-fn validate_bin_op(op: &BinOp, i: &Info) -> CompileResult<()> {
-    match op {
-        BinOp::Pow => parpy_compile_error!(i, "The power operator is not supported in Triton"),
-        _ => Ok(())
-    }
-}
-
 fn from_gpu_ast_kernel_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<Expr> {
     let ty = from_gpu_ast_type(e.get_type().clone(), &e.get_info())?;
     match e {
@@ -157,7 +150,6 @@ fn from_gpu_ast_kernel_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult
         gpu_ast::Expr::BinOp {lhs, op, rhs, ty: _, i} => {
             let lhs = Box::new(from_gpu_ast_kernel_expr(env, *lhs)?);
             let rhs = Box::new(from_gpu_ast_kernel_expr(env, *rhs)?);
-            validate_bin_op(&op, &i)?;
             Ok(Expr::BinOp {lhs, op, rhs, ty, i})
         },
         gpu_ast::Expr::Assign {i, ..} => {
