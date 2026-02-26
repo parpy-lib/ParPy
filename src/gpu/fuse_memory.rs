@@ -8,7 +8,7 @@
 ///    operation 'x[i] = e', then it is rewritten as two statements:
 ///     1) A definition introducing a new local variable of the same type 'T' as the expression
 ///        'e': 'T t = e;'.
-///     2) An assignment of the local variable to the memory location: 'x[i] = e'.
+///     2) An assignment of the local variable to the memory location: 'x[i] = t'.
 ///
 ///    This makes the later passes more straightforward to implement. It should not introduce any
 ///    extra overheads as the underlying compiler will optimize this temporary variable away when
@@ -414,7 +414,7 @@ fn apply_kernel_body(body: Vec<Stmt>) -> CompileResult<Vec<Stmt>> {
     //    compiler can optimize this extra variable away if it ends up being unused.
     let body = body.sflatten(vec![], store_write_results_in_temporary_variable);
 
-    // 2. If we read from memory after writing to it previously, without any writes in-between,  we
+    // 2. If we read from memory after writing to it previously, without any writes in-between, we
     //    can now refer to the temporary variable in which the written value is stored instead.
     //    This can eliminate unnecessary loads from global memory.
     let env = FuseEnv::default();
