@@ -38,6 +38,7 @@ fn count_slice_dims_expr(acc: usize, e: &Expr) -> usize {
 fn is_reduction(rhs: &Expr) -> bool {
     match rhs {
         Expr::ReduceOp {..} => true,
+        Expr::Convert {e, ..} => is_reduction(e),
         _ => false
     }
 }
@@ -278,6 +279,17 @@ impl ReduceTargetType {
     }
 }
 
+fn extract_reduction(rhs: Expr, i: &Info) -> PyResult<(BinOp, Expr)> {
+    match rhs {
+        Expr::ReduceOp {op, arg, ..} => Ok((op.to_bin_op(), *arg)),
+        Expr::Convert {e, ty, i: conv_i} => {
+            let (op, arg) = extract_reduction(*e, &i)?;
+            Ok((op, Expr::Convert {e: Box::new(arg), ty, i: conv_i}))
+        },
+        _ => py_internal_error!(i, "Invalid form of reduction operation")
+    }
+}
+
 fn find_neutral_element(op: &BinOp, ty: &Type, i: &Info) -> PyResult<Expr> {
     match ty.get_scalar_elem_size() {
         Some(sz) => match reduce::neutral_element(&op, &sz, &i) {
@@ -324,10 +336,7 @@ fn generate_reduction_loop(
     // report an internal error if these assumptions do not hold.
     let lhs_expr = lhs.get_expr();
     let ty = lhs.get_expr().get_type().clone();
-    let (op, rhs) = match rhs {
-        Expr::ReduceOp {op, arg, ..} => Ok((op.to_bin_op(), *arg)),
-        _ => py_internal_error!(i, "Invalid form of reduction operation")
-    }?;
+    let (op, rhs) = extract_reduction(rhs, &i)?;
 
     let ne = find_neutral_element(&op, &ty, &i)?;
     let rhs = Expr::BinOp {

@@ -51,18 +51,20 @@ def min_2d(x, out, N):
 
 def reduce_wrap(reduce_fn, x, opts=None):
     N, M = x.shape
-    out = np.zeros(N, dtype=x.dtype)
+    out = np.zeros(N, dtype=np.float32)
     if opts is None:
         reduce_fn(x, out, N)
     else:
         parpy.jit(reduce_fn)(x, out, N, opts=opts)
     return out
 
-def compare_reduce(reduce_fn, N, M, opts):
-    x = np.random.randn(N, M).astype(np.float32)
+def compare_reduce(reduce_fn, N, M, ty, opts):
+    x = np.random.randn(N, M).astype(ty)
     expected = reduce_wrap(reduce_fn, x)
     actual = reduce_wrap(reduce_fn, x, opts)
-    assert np.allclose(expected, actual, atol=1e-4), f"{expected}\n{actual}"
+    atol = 0.05 if ty == np.float16 else 1e-4
+    rtol = 1e-2 if ty == np.float16 else 1e-4
+    assert np.allclose(expected, actual, atol=atol, rtol=rtol), f"{expected}\n{actual}"
 
 reduce_funs = [
     sum_rows,
@@ -76,19 +78,23 @@ reduce_funs = [
 ]
 multi_dim_reduce_funs = set([sum_2d, prod_2d, max_2d, min_2d])
 
+dtypes = [np.float16, np.float32]
+
 @pytest.mark.parametrize('fn', reduce_funs)
 @pytest.mark.parametrize('backend', compiler_backends)
-def test_reduce_outer_parallel_gpu(fn, backend):
+@pytest.mark.parametrize('ty', dtypes)
+def test_reduce_outer_parallel_gpu(fn, backend, ty):
     def helper():
         N = 100
         M = 50
         p = {'outer': parpy.threads(N)}
-        compare_reduce(fn, N, M, par_opts(backend, p))
+        compare_reduce(fn, N, M, ty, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('fn', reduce_funs)
 @pytest.mark.parametrize('backend', compiler_backends)
-def test_reduce_inner_and_outer_parallel_gpu(fn, backend):
+@pytest.mark.parametrize('ty', dtypes)
+def test_reduce_inner_and_outer_parallel_gpu(fn, backend, ty):
     def helper():
         N = 100
         M = 50
@@ -96,12 +102,13 @@ def test_reduce_inner_and_outer_parallel_gpu(fn, backend):
             'outer': parpy.threads(N),
             'inner': parpy.threads(128)
         }
-        compare_reduce(fn, N, M, par_opts(backend, p))
+        compare_reduce(fn, N, M, ty, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('fn', reduce_funs)
 @pytest.mark.parametrize('backend', compiler_backends)
-def test_irregular_reduction(fn, backend):
+@pytest.mark.parametrize('ty', dtypes)
+def test_irregular_reduction(fn, backend, ty):
     # We request use of 83 threads for the innermost loop, which is not evenly
     # divisible by 32. The compiler should adjust it upward to the next number
     # divisible by 32 or warp-level intrinsics will misbehave.
@@ -112,12 +119,13 @@ def test_irregular_reduction(fn, backend):
             'outer': parpy.threads(N),
             'inner': parpy.threads(M)
         }
-        compare_reduce(fn, N, M, par_opts(backend, p))
+        compare_reduce(fn, N, M, ty, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('fn', reduce_funs)
 @pytest.mark.parametrize('backend', compiler_backends)
-def test_multi_block_reduction(fn, backend):
+@pytest.mark.parametrize('ty', dtypes)
+def test_multi_block_reduction(fn, backend, ty):
     # Request more than 1024 threads, so that the compiler generates the
     # multi-block reduction approach. In addition, we request the number of
     # threads per block as 512.
@@ -128,12 +136,13 @@ def test_multi_block_reduction(fn, backend):
             'outer': parpy.threads(N),
             'inner': parpy.threads(M).tpb(512)
         }
-        compare_reduce(fn, N, M, par_opts(backend, p))
+        compare_reduce(fn, N, M, ty, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('fn', reduce_funs)
 @pytest.mark.parametrize('backend', compiler_backends)
-def test_clustered_reduction(fn, backend):
+@pytest.mark.parametrize('ty', dtypes)
+def test_clustered_reduction(fn, backend, ty):
     def helper():
         N = 100
         M = 2048
@@ -143,12 +152,13 @@ def test_clustered_reduction(fn, backend):
         }
         opts = par_opts(backend, p)
         opts.use_cuda_thread_block_clusters = True
-        compare_reduce(fn, N, M, opts)
+        compare_reduce(fn, N, M, ty, opts)
     run_if_clusters_are_enabled(backend, helper)
 
 @pytest.mark.parametrize('fn', reduce_funs)
 @pytest.mark.parametrize('backend', compiler_backends)
-def test_extended_clustered_reduction(fn, backend):
+@pytest.mark.parametrize('ty', dtypes)
+def test_extended_clustered_reduction(fn, backend, ty):
     def helper():
         N = 100
         M = 8192
@@ -159,7 +169,7 @@ def test_extended_clustered_reduction(fn, backend):
         opts = par_opts(backend, p)
         opts.use_cuda_thread_block_clusters = True
         opts.max_thread_blocks_per_cluster = 16
-        compare_reduce(fn, N, M, opts)
+        compare_reduce(fn, N, M, ty, opts)
     run_if_clusters_are_enabled(backend, helper)
 
 @pytest.mark.parametrize('fn', reduce_funs)
