@@ -150,6 +150,7 @@ fn remove_duplicate_arange_definitions(
     }
 }
 
+#[derive(Clone, Debug)]
 struct MaskSubEnv {
     vars: BTreeMap<Name, Expr>,
     masks: BTreeMap<Expr, Expr>,
@@ -202,7 +203,7 @@ fn remove_repeated_mask_definitions(
             let lo = lo.sub_vars(&env.vars);
             let hi = hi.sub_vars(&env.vars);
             let (_, body) = body.smap_accum_l(
-                MaskSubEnv::default(),
+                env.clone(),
                 remove_repeated_mask_definitions
             );
             (env, Stmt::For {var, lo, hi, step, body, i})
@@ -210,7 +211,7 @@ fn remove_repeated_mask_definitions(
         Stmt::While {cond, body, i} => {
             let cond = cond.sub_vars(&env.vars);
             let (_, body) = body.smap_accum_l(
-                MaskSubEnv::default(),
+                env.clone(),
                 remove_repeated_mask_definitions
             );
             (env, Stmt::While {cond, body, i})
@@ -218,11 +219,11 @@ fn remove_repeated_mask_definitions(
         Stmt::If {cond, thn, els, i} => {
             let cond = cond.sub_vars(&env.vars);
             let (_, thn) = thn.smap_accum_l(
-                MaskSubEnv::default(),
+                env.clone(),
                 remove_repeated_mask_definitions
             );
             let (_, els) = els.smap_accum_l(
-                MaskSubEnv::default(),
+                env.clone(),
                 remove_repeated_mask_definitions
             );
             (env, Stmt::If {cond, thn, els, i})
