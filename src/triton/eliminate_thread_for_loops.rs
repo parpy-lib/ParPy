@@ -68,8 +68,7 @@ fn update_block_size(s: Stmt, block_size: usize) -> Stmt {
 
 fn apply_stmt(mut acc: Vec<Stmt>, s: Stmt) -> CompileResult<Vec<Stmt>> {
     match s {
-        Stmt::For {var, lo, hi, step, body, i} => {
-            let mut body = body.sflatten_result(vec![], apply_stmt)?;
+        Stmt::For {var, lo, hi, step, mut body, i} => {
             // When the number of iterations is known, we remove the for-loop and its
             // first statement. The loop variable is instead defined as one block
             // containing all values referred to by the original loop. Afterward, we
@@ -112,12 +111,17 @@ fn apply_stmt(mut acc: Vec<Stmt>, s: Stmt) -> CompileResult<Vec<Stmt>> {
                             },
                             i: i.clone()
                         });
-                        // Push the for-loop body after updating the block size within.
-                        acc.append(&mut body.smap(|s| update_block_size(s, block_size)));
+                        // Push the for-loop body after updating the block size within and
+                        // recursively applying this function to the updated body.
+                        let body = body.smap(|s| update_block_size(s, block_size));
+                        let mut body = body.sflatten_result(vec![], apply_stmt)?;
+                        acc.append(&mut body);
                     } else {
+                        let body = body.sflatten_result(vec![], apply_stmt)?;
                         acc.push(Stmt::For {var, lo, hi, step, body, i});
                     }
                 } else {
+                    let body = body.sflatten_result(vec![], apply_stmt)?;
                     acc.push(Stmt::For {var, lo, hi, step, body, i});
                 }
             };
