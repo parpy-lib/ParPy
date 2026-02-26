@@ -1,7 +1,7 @@
 use super::ast::*;
 use crate::utils::constant_fold::*;
 use crate::utils::info::Info;
-use crate::utils::smap::SMapAccum;
+use crate::utils::smap::{SFlatten, SMapAccum};
 
 impl CFExpr<Type> for Expr {
     fn mk_unop(op: UnOp, arg: Expr, ty: Type, i: Info) -> Expr {
@@ -69,7 +69,7 @@ impl CFType for Type {
     }
 }
 
-fn fold_expr(e: Expr) -> Expr {
+pub fn fold_expr(e: Expr) -> Expr {
     match e {
         Expr::UnOp {op, arg, ty, i} => {
             let arg = fold_expr(*arg);
@@ -84,15 +84,18 @@ fn fold_expr(e: Expr) -> Expr {
     }
 }
 
-fn fold_stmt(s: Stmt) -> Stmt {
-    s.smap(fold_stmt).smap(fold_expr)
+fn fold_stmt(acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
+    match s {
+        Stmt::Pass {..} => acc,
+        s => s.smap(fold_expr).sflatten(acc, fold_stmt)
+    }
 }
 
 fn fold_top(t: Top) -> Top {
     match t {
         Top::Import {..} => t,
         Top::FunDef {triton_jit, id, params, body, i} => {
-            let body = body.smap(fold_stmt);
+            let body = body.sflatten(vec![], fold_stmt);
             Top::FunDef {triton_jit, id, params, body, i}
         },
     }

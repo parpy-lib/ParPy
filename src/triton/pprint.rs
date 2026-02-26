@@ -281,6 +281,7 @@ impl PrettyPrint for Stmt {
                 let (env, e) = e.pprint(env);
                 (env, format!("{0}{e}", indent))
             },
+            Stmt::Pass {i: _} => (env, format!("{0}pass", indent)),
             Stmt::Barrier {i: _} => (env, format!("{0}triton.language.debug_barrier()", indent)),
             Stmt::Store {ptr, value, mask, i: _} => {
                 let (env, ptr) = ptr.pprint(env);

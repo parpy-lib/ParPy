@@ -134,6 +134,7 @@ fn rewrite_calls_anf_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
             acc.append(&mut mk_call_assignments(calls));
             acc.push(Stmt::Store {ptr, value, mask, i});
         },
+        Stmt::Pass {..} |
         Stmt::Barrier {..} |
         Stmt::KernelLaunch {..} => {
             acc.push(s);

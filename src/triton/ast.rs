@@ -351,6 +351,7 @@ pub enum Stmt {
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     Return {value: Expr, i: Info},
     Expr {e: Expr, i: Info},
+    Pass {i: Info},
 
     // Triton-specific nodes
     Barrier {i: Info},
@@ -372,6 +373,7 @@ impl SFold<Expr> for Stmt {
             Stmt::If {cond, ..} => f(acc?, cond),
             Stmt::Return {value, ..} => f(acc?, value),
             Stmt::Expr {e, ..} => f(acc?, e),
+            Stmt::Pass {..} => acc,
             Stmt::Barrier {..} => acc,
             Stmt::Store {ptr, value, mask, ..} => {
                 let acc = f(f(acc?, ptr)?, value)?;
@@ -399,6 +401,7 @@ impl SFold<Stmt> for Stmt {
             Stmt::Assign {..} |
             Stmt::Return {..} |
             Stmt::Expr {..} |
+            Stmt::Pass {..} |
             Stmt::Barrier {..} |
             Stmt::Store {..} |
             Stmt::KernelLaunch {..} => acc,
@@ -442,6 +445,7 @@ impl SMapAccum<Expr> for Stmt {
                 let (acc, e) = f(acc?, e)?;
                 Ok((acc, Stmt::Expr {e, i}))
             },
+            Stmt::Pass {..} |
             Stmt::Barrier {..} => Ok((acc?, self)),
             Stmt::Store {ptr, value, mask, i} => {
                 let (acc, ptr) = f(acc?, ptr)?;
@@ -487,6 +491,7 @@ impl SMapAccum<Stmt> for Stmt {
             Stmt::Assign {..} |
             Stmt::Return {..} |
             Stmt::Expr {..} |
+            Stmt::Pass {..} |
             Stmt::Barrier {..} |
             Stmt::Store {..} |
             Stmt::KernelLaunch {..} => {
@@ -520,6 +525,7 @@ impl SFlatten<Stmt> for Stmt {
             Stmt::Assign {..} |
             Stmt::Return {..} |
             Stmt::Expr {..} |
+            Stmt::Pass {..} |
             Stmt::Barrier {..} |
             Stmt::Store {..} |
             Stmt::KernelLaunch {..} => {
