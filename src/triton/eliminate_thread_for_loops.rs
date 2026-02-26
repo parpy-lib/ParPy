@@ -4,6 +4,8 @@ use crate::utils::ast::ExprType;
 use crate::utils::err::*;
 use crate::utils::smap::{SFlatten, SMapAccum};
 
+const TRITON_MAX_NUMEL: usize = 1048576;
+
 fn try_extract_int_literal(e: &Expr) -> Option<i128> {
     match e {
         Expr::Int {v, ..} => Some(*v),
@@ -14,7 +16,11 @@ fn try_extract_int_literal(e: &Expr) -> Option<i128> {
 fn extract_iteration_count(lo: &Expr, hi: &Expr) -> Option<(i128, i128)> {
     let l = try_extract_int_literal(&lo)?;
     let h = try_extract_int_literal(&hi)?;
-    Some((l, h))
+    if i128::abs(h-l) as usize > TRITON_MAX_NUMEL {
+        None
+    } else {
+        Some((l, h))
+    }
 }
 
 fn update_block_size_shape(shape: Shape, block_size: usize) -> Shape {
