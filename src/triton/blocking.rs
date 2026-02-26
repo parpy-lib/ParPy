@@ -70,7 +70,7 @@ fn make_mask(mask: Option<Expr>, masks: &Vec<Expr>) -> Option<Expr> {
             let i = l.get_info();
             Expr::BinOp {
                 lhs: Box::new(l),
-                op: BinOp::BitAnd,
+                op: BinOp::And,
                 rhs: Box::new(r),
                 ty, i
             }
@@ -371,6 +371,54 @@ fn add_masking_stmt(
     }
 }
 
+fn use_bitwise_ops_in_mask(mask: Expr) -> Expr {
+    match mask {
+        Expr::BinOp {lhs, op: BinOp::And, rhs, ty, i} => {
+            let lhs = Box::new(use_bitwise_ops_in_mask(*lhs));
+            let rhs = Box::new(use_bitwise_ops_in_mask(*rhs));
+            Expr::BinOp {lhs, op: BinOp::BitAnd, rhs, ty, i}
+        },
+        Expr::BinOp {lhs, op: BinOp::Or, rhs, ty, i} => {
+            let lhs = Box::new(use_bitwise_ops_in_mask(*lhs));
+            let rhs = Box::new(use_bitwise_ops_in_mask(*rhs));
+            Expr::BinOp {lhs, op: BinOp::BitOr, rhs, ty, i}
+        },
+        _ => mask.smap(use_bitwise_ops_in_mask)
+    }
+}
+
+fn use_bitwise_ops_in_masking_expr(e: Expr) -> Expr {
+    match e {
+        Expr::Load {ptr, mask, ty, i} => {
+            let ptr = Box::new(use_bitwise_ops_in_masking_expr(*ptr));
+            let mask = mask.map(|e| Box::new(use_bitwise_ops_in_mask(*e)));
+            Expr::Load {ptr, mask, ty, i}
+        },
+        Expr::Where {cond, thn, els, ty, i} => {
+            let cond = Box::new(use_bitwise_ops_in_mask(*cond));
+            let thn = Box::new(use_bitwise_ops_in_masking_expr(*thn));
+            let els = Box::new(use_bitwise_ops_in_masking_expr(*els));
+            Expr::Where {cond, thn, els, ty, i}
+        },
+        _ => e.smap(use_bitwise_ops_in_masking_expr)
+    }
+}
+
+fn use_bitwise_ops_in_masking(s: Stmt) -> Stmt {
+    match s {
+        Stmt::Store {ptr, value, mask, i} => {
+            let ptr = use_bitwise_ops_in_masking_expr(ptr);
+            let value = use_bitwise_ops_in_masking_expr(value);
+            let mask = mask.map(use_bitwise_ops_in_mask);
+            Stmt::Store {ptr, value, mask, i}
+        },
+        _ => {
+            s.smap(use_bitwise_ops_in_masking_expr)
+                .smap(use_bitwise_ops_in_masking)
+        }
+    }
+}
+
 fn transform_top(t: Top) -> CompileResult<Top> {
     match t {
         Top::FunDef {triton_jit: true, id, params, body, i} => {
@@ -399,6 +447,12 @@ fn transform_top(t: Top) -> CompileResult<Top> {
             // similarly, reductions use the neutral element of its operation to avoid having an
             // impact on the result.
             let (_, body) = body.sfold_owned_result(Ok((vec![], vec![])), add_masking_stmt)?;
+
+            // Replaces the use of the boolean 'and' and 'or' operations in Python with the bitwise
+            // operators '&' and '|' because recent versions of Triton do not accept the former
+            // when used in masks. This applies to the masks of loads and stores and the condition
+            // of a tl.where.
+            let body = body.smap(use_bitwise_ops_in_masking);
             
             Ok(Top::FunDef {triton_jit: true, id, params, body, i})
         },
