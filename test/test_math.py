@@ -82,7 +82,7 @@ def unop_should_fail(backend, fn, dtype, running):
             else:
                 return not dtype in [parpy.types.F32, parpy.types.F64]
         elif backend == parpy.CompileBackend.Triton:
-            return True
+            return not dtype in [parpy.types.F32, parpy.types.F64]
     elif fn in [parpy_cos, parpy_exp, parpy_log, parpy_sin, parpy_sqrt]:
         # Several of the functions above are not supported in 16-bit mode in
         # Triton.
@@ -147,7 +147,7 @@ def binop_should_fail(backend, fn, dtype):
         elif backend == parpy.CompileBackend.Metal:
             return not dtype in [parpy.types.F16, parpy.types.F32]
         elif backend == parpy.CompileBackend.Triton:
-            return True
+            return not dtype in [parpy.types.F32, parpy.types.F64]
     else:
         if backend == parpy.CompileBackend.Cuda:
             return False
