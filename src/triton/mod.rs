@@ -3,6 +3,7 @@ mod blocking;
 mod codegen;
 mod constant_fold;
 mod eliminate_thread_for_loops;
+mod fuse_memory;
 mod inline;
 mod pprint;
 mod shapes;
@@ -14,15 +15,20 @@ mod ast_builder;
 
 use ast::*;
 use crate::gpu::ast as gpu_ast;
+use crate::utils::debug::*;
 use crate::utils::err::CompileResult;
 
-pub fn codegen(gpu_ast: gpu_ast::Ast) -> CompileResult<Ast> {
+pub fn codegen(
+    gpu_ast: gpu_ast::Ast,
+    debug_env: &DebugEnv
+) -> CompileResult<Ast> {
     // Rewrite reductions such that the intermediate result is always stored in a (fresh) temporary
     // variable, and written once to the left-hand side of the original reduction.
     let gpu_ast = rewrite_reductions::apply(gpu_ast)?;
 
     // Convert the GPU AST to an AST representing the Triton code.
     let ast = codegen::from_gpu_ast(gpu_ast)?;
+    debug_env.print("Initial Triton AST", &ast);
 
     // Apply constant folding to eliminate unnecessary expressions.
     let ast = constant_fold::apply(ast);
@@ -30,6 +36,7 @@ pub fn codegen(gpu_ast: gpu_ast::Ast) -> CompileResult<Ast> {
     // Performs inlining within the GPU code such that all GPU kernels consist of one function
     // without performing any function calls.
     let ast = inline::apply(ast)?;
+    debug_env.print("Triton AST after inlining", &ast);
 
     // Attempts to unify the block-wide shapes of all expressions in each GPU kernel, to ensure
     // proper tracking of block-wide operations.
@@ -39,12 +46,26 @@ pub fn codegen(gpu_ast: gpu_ast::Ast) -> CompileResult<Ast> {
     // rewrite control-flow statements whose condition depends on a block-wide value to a format
     // supported by Triton.
     let ast = blocking::transform(ast)?;
+    debug_env.print("Triton AST after inserting blocking", &ast);
 
     // Eliminates for-loops over threads with known bounds by rewriting them as a single blocked
     // operation. Rather than iteratively construct several smaller blocks, the updated code
     // constructs one big block on which it performs all updates. This has a significant impact on
     // performance.
     let ast = eliminate_thread_for_loops::apply(ast)?;
+    debug_env.print("Triton AST after eliminating thread-loops", &ast);
+
+    // Apply another round of constant folding to simplify the later analyses.
+    let ast = constant_fold::apply(ast);
+
+    // Apply a fusion of memory operations, where excess loads and stores to the same static memory
+    // location are replaced by storage of data in temporary variables. This reduces the number of
+    // reads and writes to memory, which can help Triton generate significantly more efficient
+    // code.
+    //let ast = fuse_memory::apply(ast)?;
+
+    // Run a final round of constant folding before returning the resulting AST.
+    //let ast = constant_fold::apply(ast);
 
     Ok(ast)
 }

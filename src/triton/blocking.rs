@@ -177,13 +177,13 @@ fn add_masking_in_parallel_for(
                             ty: cond_ty.clone(),
                             i: i.clone()
                         };
-                        let cond_def = Stmt::Assign {
+                        let cond_def = Stmt::Definition {
                             dst: for_cond_id,
                             expr: boundary_cond,
                             i: i.clone()
                         };
-                        // We insert the mask to any loads and stores that take place in the body
-                        // of the for-loop.
+                        // We use the mask in any loads and stores that take place in the body of
+                        // the for-loop.
                         body.sflatten_result(vec![], |acc, s| {
                             mask_for_loop_stmt(acc, s, &cond_def, &for_cond)
                         })

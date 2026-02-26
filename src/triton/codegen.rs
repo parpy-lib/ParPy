@@ -455,7 +455,7 @@ fn from_gpu_ast_kernel_stmt(
             if let Expr::Var {ref id, ..} = l {
                 let ty = Type::Tensor {sz, shape: Shape::Num(1)};
                 let r = from_gpu_ast_kernel_expr(&env, r)?;
-                let reduce_stmt = Stmt::Assign {
+                let reduce_stmt = Stmt::Definition {
                     dst: id.clone(),
                     expr: Expr::BinOp {
                         lhs: Box::new(l),
