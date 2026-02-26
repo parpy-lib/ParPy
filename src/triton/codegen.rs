@@ -1,4 +1,5 @@
 use super::ast::*;
+use crate::option::CompileOptions;
 use crate::parpy_compile_error;
 use crate::parpy_internal_error;
 use crate::gpu::ast as gpu_ast;
@@ -17,19 +18,19 @@ struct CodegenEnv {
     pub ext_map: BTreeMap<Name, String>,
     pub kernel_dims: BTreeMap<Name, LaunchArgs>,
     pub current_grid: LaunchArgs,
+    pub sz: ScalarSizes,
 }
 
-impl Default for CodegenEnv {
-    fn default() -> Self {
+impl CodegenEnv {
+    fn new(opts: &CompileOptions) -> Self {
         CodegenEnv {
             ext_map: BTreeMap::new(),
             kernel_dims: BTreeMap::new(),
             current_grid: LaunchArgs::default(),
+            sz: ScalarSizes::from_opts(opts),
         }
     }
-}
 
-impl CodegenEnv {
     fn add_ext(mut self, ext_id: Name, ext_str: String) -> Self {
         self.ext_map.insert(ext_id, ext_str);
         self
@@ -358,14 +359,28 @@ fn get_reduction_operator(op: &BinOp, i: &Info) -> CompileResult<ReduceOp> {
     }
 }
 
+fn can_omit_explicit_conversion(s: &ScalarSizes, ty: &Type) -> bool {
+    match ty {
+        Type::Tensor {sz, ..} => *sz == s.int || *sz == s.float,
+        _ => false,
+    }
+}
+
 fn from_gpu_ast_kernel_stmt(
     env: &CodegenEnv,
     mut acc: Vec<Stmt>,
     s: gpu_ast::Stmt
 ) -> CompileResult<Vec<Stmt>> {
     match s {
-        gpu_ast::Stmt::Definition {ty: _, id, expr, i} => {
+        gpu_ast::Stmt::Definition {ty, id, expr, i} => {
+            let ty = from_gpu_ast_type(ty, &i)?;
             let expr = from_gpu_ast_kernel_expr(env, expr)?;
+            let expr = if can_omit_explicit_conversion(&env.sz, &ty) {
+                expr
+            } else {
+                let i = expr.get_info();
+                Expr::Convert {value: Box::new(expr), ty, i}
+            };
             acc.push(Stmt::Definition {dst: id, expr, i});
             Ok(acc)
         },
@@ -763,8 +778,8 @@ fn from_gpu_ast_top(
     }
 }
 
-pub fn from_gpu_ast(ast: gpu_ast::Ast) -> CompileResult<Ast> {
-    let env = ast.sfold(CodegenEnv::default(), collect_kernel_dims_top);
+pub fn from_gpu_ast(ast: gpu_ast::Ast, opts: &CompileOptions) -> CompileResult<Ast> {
+    let env = ast.sfold(CodegenEnv::new(opts), collect_kernel_dims_top);
     let mut tops = generate_default_imports();
     let (_, mut gen_tops) = ast.into_iter()
         .fold(Ok((env, vec![])), |acc, t| {

@@ -59,6 +59,8 @@ def reduce_wrap(reduce_fn, x, opts=None):
     return out
 
 def compare_reduce(reduce_fn, N, M, ty, opts):
+    if opts.backend == parpy.CompileBackend.Metal and ty == np.float64:
+        pytest.skip("64-bit floats are not supported in Metal")
     x = np.random.randn(N, M).astype(ty)
     expected = reduce_wrap(reduce_fn, x)
     actual = reduce_wrap(reduce_fn, x, opts)
@@ -78,7 +80,7 @@ reduce_funs = [
 ]
 multi_dim_reduce_funs = set([sum_2d, prod_2d, max_2d, min_2d])
 
-dtypes = [np.float16, np.float32]
+dtypes = [np.float16, np.float32, np.float64]
 
 @pytest.mark.parametrize('fn', reduce_funs)
 @pytest.mark.parametrize('backend', compiler_backends)
@@ -363,4 +365,23 @@ def test_reduce_mixed_parallel_loops(backend):
         })
         softmax_mixed_parallelism(x, out, nrows, ncols, opts=opts)
         assert torch.allclose(out, torch.softmax(x, axis=1), atol=1e-5)
+    run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+@pytest.mark.parametrize('ty', dtypes)
+def test_reduce_varied_input_size(backend, ty):
+    def helper():
+        @parpy.jit
+        def fn(x, out, N):
+            with parpy.gpu:
+                parpy.label('N')
+                for i in range(N[0]):
+                    out[0] += x[i]
+        N = np.full((1,), 10, dtype=np.int64)
+        x = np.random.randn(10).astype(ty)
+        out = np.zeros((1,), dtype=np.float32)
+        if backend == parpy.CompileBackend.Metal and ty == np.float64:
+            pytest.skip("64-bit floats are not supported in Metal")
+        fn(x, out, N, opts=par_opts(backend, {'N': parpy.threads(10).par_reduction()}))
+        assert np.allclose(out, np.sum(x), atol=1e-3)
     run_if_backend_is_enabled(backend, helper)

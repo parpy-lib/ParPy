@@ -148,7 +148,7 @@ fn compile_ir<'py>(
             ))
         },
         option::CompileBackend::Triton => {
-            let ast = triton::codegen(gpu_ast)?;
+            let ast = triton::codegen(gpu_ast, &opts, &debug_env)?;
             debug_env.print("Triton AST", &ast);
             Ok((
                 argtypes,

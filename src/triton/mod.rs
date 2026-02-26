@@ -14,12 +14,14 @@ mod utils;
 mod ast_builder;
 
 use ast::*;
+use crate::option::CompileOptions;
 use crate::gpu::ast as gpu_ast;
 use crate::utils::debug::*;
 use crate::utils::err::CompileResult;
 
 pub fn codegen(
     gpu_ast: gpu_ast::Ast,
+    opts: &CompileOptions,
     debug_env: &DebugEnv
 ) -> CompileResult<Ast> {
     // Rewrite reductions such that the intermediate result is always stored in a (fresh) temporary
@@ -27,7 +29,7 @@ pub fn codegen(
     let gpu_ast = rewrite_reductions::apply(gpu_ast)?;
 
     // Convert the GPU AST to an AST representing the Triton code.
-    let ast = codegen::from_gpu_ast(gpu_ast)?;
+    let ast = codegen::from_gpu_ast(gpu_ast, &opts)?;
     debug_env.print("Initial Triton AST", &ast);
 
     // Apply constant folding to eliminate unnecessary expressions.
@@ -62,10 +64,10 @@ pub fn codegen(
     // location are replaced by storage of data in temporary variables. This reduces the number of
     // reads and writes to memory, which can help Triton generate significantly more efficient
     // code.
-    //let ast = fuse_memory::apply(ast)?;
+    let ast = fuse_memory::apply(ast)?;
 
     // Run a final round of constant folding before returning the resulting AST.
-    //let ast = constant_fold::apply(ast);
+    let ast = constant_fold::apply(ast);
 
     Ok(ast)
 }
