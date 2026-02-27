@@ -371,50 +371,96 @@ fn add_masking_stmt(
     }
 }
 
-fn use_bitwise_ops_in_mask(mask: Expr) -> Expr {
-    match mask {
-        Expr::BinOp {lhs, op: BinOp::And, rhs, ty, i} => {
-            let lhs = Box::new(use_bitwise_ops_in_mask(*lhs));
-            let rhs = Box::new(use_bitwise_ops_in_mask(*rhs));
-            Expr::BinOp {lhs, op: BinOp::BitAnd, rhs, ty, i}
-        },
-        Expr::BinOp {lhs, op: BinOp::Or, rhs, ty, i} => {
-            let lhs = Box::new(use_bitwise_ops_in_mask(*lhs));
-            let rhs = Box::new(use_bitwise_ops_in_mask(*rhs));
-            Expr::BinOp {lhs, op: BinOp::BitOr, rhs, ty, i}
-        },
-        _ => mask.smap(use_bitwise_ops_in_mask)
+fn convert_to_bitwise(op: BinOp) -> BinOp {
+    match op {
+        BinOp::And => BinOp::BitAnd,
+        BinOp::Or => BinOp::BitOr,
+        _ => op
     }
 }
 
-fn use_bitwise_ops_in_masking_expr(e: Expr) -> Expr {
+fn is_bitwise_operator(op: &BinOp) -> bool {
+    match op {
+        BinOp::BitAnd | BinOp::BitOr => true,
+        _ => false
+    }
+}
+
+fn use_bitwise_ops_in_mask(acc: Vec<Stmt>, mask: Expr) -> (Vec<Stmt>, Expr) {
+    match mask {
+        Expr::BinOp {lhs, op, rhs, ty, i} => {
+            let (acc, lhs) = use_bitwise_ops_in_mask(acc, *lhs);
+            let (mut acc, rhs) = use_bitwise_ops_in_mask(acc, *rhs);
+            let op = convert_to_bitwise(op);
+            if is_bitwise_operator(&op) {
+                (acc, Expr::BinOp {lhs: Box::new(lhs), op, rhs: Box::new(rhs), ty, i})
+            } else {
+                let id = Name::sym_str("mask_t");
+                acc.push(Stmt::Definition {
+                    dst: id.clone(),
+                    expr: Expr::BinOp {
+                        lhs: Box::new(lhs),
+                        op,
+                        rhs: Box::new(rhs),
+                        ty: ty.clone(),
+                        i: i.clone()
+                    },
+                    i: i.clone()
+                });
+                (acc, Expr::Var {id, ty, i})
+            }
+        },
+        _ => mask.smap_accum_l(acc, use_bitwise_ops_in_mask)
+    }
+}
+
+fn use_bitwise_ops_in_masking_expr(acc: Vec<Stmt>, e: Expr) -> (Vec<Stmt>, Expr) {
     match e {
         Expr::Load {ptr, mask, ty, i} => {
-            let ptr = Box::new(use_bitwise_ops_in_masking_expr(*ptr));
-            let mask = mask.map(|e| Box::new(use_bitwise_ops_in_mask(*e)));
-            Expr::Load {ptr, mask, ty, i}
+            let (acc, ptr) = use_bitwise_ops_in_masking_expr(acc, *ptr);
+            let (acc, mask) = match mask {
+                Some(m) => {
+                    let (acc, m) = use_bitwise_ops_in_mask(acc, *m);
+                    (acc, Some(Box::new(m)))
+                }
+                None => (acc, None)
+            };
+            (acc, Expr::Load {ptr: Box::new(ptr), mask, ty, i})
         },
         Expr::Where {cond, thn, els, ty, i} => {
-            let cond = Box::new(use_bitwise_ops_in_mask(*cond));
-            let thn = Box::new(use_bitwise_ops_in_masking_expr(*thn));
-            let els = Box::new(use_bitwise_ops_in_masking_expr(*els));
-            Expr::Where {cond, thn, els, ty, i}
+            let (acc, cond) = use_bitwise_ops_in_mask(acc, *cond);
+            let (acc, thn) = use_bitwise_ops_in_masking_expr(acc, *thn);
+            let (acc, els) = use_bitwise_ops_in_masking_expr(acc, *els);
+            (acc, Expr::Where {
+                cond: Box::new(cond),
+                thn: Box::new(thn),
+                els: Box::new(els),
+                ty,
+                i
+            })
         },
-        _ => e.smap(use_bitwise_ops_in_masking_expr)
+        _ => e.smap_accum_l(acc, use_bitwise_ops_in_masking_expr)
     }
 }
 
-fn use_bitwise_ops_in_masking(s: Stmt) -> Stmt {
+fn use_bitwise_ops_in_masking(acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
     match s {
         Stmt::Store {ptr, value, mask, i} => {
-            let ptr = use_bitwise_ops_in_masking_expr(ptr);
-            let value = use_bitwise_ops_in_masking_expr(value);
-            let mask = mask.map(use_bitwise_ops_in_mask);
-            Stmt::Store {ptr, value, mask, i}
+            let (acc, ptr) = use_bitwise_ops_in_masking_expr(acc, ptr);
+            let (acc, value) = use_bitwise_ops_in_masking_expr(acc, value);
+            let (mut acc, mask) = match mask {
+                Some(m) => {
+                    let (acc, m) = use_bitwise_ops_in_mask(acc, m);
+                    (acc, Some(m))
+                },
+                None => (acc, None)
+            };
+            acc.push(Stmt::Store {ptr, value, mask, i});
+            acc
         },
         _ => {
-            s.smap(use_bitwise_ops_in_masking_expr)
-                .smap(use_bitwise_ops_in_masking)
+            let (acc, s) = s.smap_accum_l(acc, use_bitwise_ops_in_masking_expr);
+            s.sflatten(acc, use_bitwise_ops_in_masking)
         }
     }
 }
@@ -450,9 +496,11 @@ fn transform_top(t: Top) -> CompileResult<Top> {
 
             // Replaces the use of the boolean 'and' and 'or' operations in Python with the bitwise
             // operators '&' and '|' because recent versions of Triton do not accept the former
-            // when used in masks. This applies to the masks of loads and stores and the condition
-            // of a tl.where.
-            let body = body.smap(use_bitwise_ops_in_masking);
+            // when used in masks. This is applied to the masks of loads and stores and to the
+            // condition of a tl.where. Furthermore, to work around limitations in Triton related to
+            // multiple comparions in a chain of bitwise ands, we define all operands of a bitwise
+            // operator in a temporary variable.
+            let body = body.sflatten(vec![], use_bitwise_ops_in_masking);
             
             Ok(Top::FunDef {triton_jit: true, id, params, body, i})
         },
