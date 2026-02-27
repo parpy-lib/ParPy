@@ -252,7 +252,7 @@ fn store_expr_in_temporary(mut acc: Vec<Stmt>, e: Expr) -> (Vec<Stmt>, Expr) {
     }
 }
 
-fn store_memory_ops_in_temporary_variable(
+fn write_stores_to_temporary_variable(
     acc: Vec<Stmt>,
     s: Stmt
 ) -> Vec<Stmt> {
@@ -262,7 +262,7 @@ fn store_memory_ops_in_temporary_variable(
             acc.push(Stmt::Store {ptr, value, mask, i});
             acc
         },
-        _ => s.sflatten(acc, store_memory_ops_in_temporary_variable)
+        _ => s.sflatten(acc, write_stores_to_temporary_variable)
     }
 }
 
@@ -471,34 +471,34 @@ fn remove_redundant_stores(
 }
 
 fn apply_kernel_body(body: Vec<Stmt>) -> CompileResult<Vec<Stmt>> {
-    // 1. Substitute variables defined using arange based on previous definitions, to make it
-    //    easier to identify references to equivalent static memory locations.
+    // Substitute variables defined using arange based on previous definitions, to make it easier
+    // to identify references to equivalent static memory locations.
     let (_, body) = body.smap_accum_l(
         ArangeSubEnv::default(),
         remove_duplicate_arange_definitions
     );
 
-    // 2. Remove repeated definitions of the same mask, making subsequent uses refer to the first
-    //    definition of a variable using a particular mask.
+    // Remove repeated definitions of the same mask, making subsequent uses refer to the first
+    // definition of a variable using a particular mask.
     let (_, body) = body.smap_accum_l(
         MaskSubEnv::default(),
         remove_repeated_mask_definitions
     );
 
-    // 3. Store the value of each memory store operation in a temporary variable to enable fusing a
-    //    store followed by a load by immediately referring to the temporary variable.
-    let body = body.sflatten(vec![], store_memory_ops_in_temporary_variable);
+    // Store the value of each memory store operation in a temporary variable to enable fusing a
+    // store followed by a load by immediately referring to the temporary variable.
+    let body = body.sflatten(vec![], write_stores_to_temporary_variable);
 
-    // 4. Perform a fusion of memory operations, where a load operation referring to the same
-    //    pointer and offset as a previous store (using the same mask) is replaced by a temporary
-    //    variable containing the value stored.
+    // Perform a fusion of memory operations, where a load operation referring to the same pointer
+    // and offset as a previous store (using the same mask) is replaced by a temporary variable
+    // containing the value stored.
     let (_, body) = body.smap_accum_l(
         BTreeMap::new(),
         sub_load_with_temporary_variable
     );
 
-    // 5. Eliminate subsequent stores to the same memory location, when we perform no other memory
-    //    operations to the same target in-between.
+    // Eliminate subsequent stores to the same memory location, when we perform no other memory
+    // operations to the same target in-between.
     let (_, body) = remove_redundant_stores(BTreeMap::new(), body);
 
     Ok(body)
