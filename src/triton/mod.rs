@@ -6,6 +6,7 @@ mod eliminate_thread_for_loops;
 mod fuse_memory;
 mod inline;
 mod pprint;
+mod power;
 mod shapes;
 mod rewrite_reductions;
 mod utils;
@@ -49,6 +50,10 @@ pub fn codegen(
     // supported by Triton.
     let ast = blocking::transform(ast)?;
     debug_env.print("Triton AST after inserting blocking", &ast);
+
+    // Simplifies uses of the power operator where the exponent is a known value by rewriting it to
+    // use multiplications and square root.
+    let ast = power::simplify_power_operator(ast);
 
     // Eliminates for-loops over threads with known bounds by rewriting them as a single blocked
     // operation. Rather than iteratively construct several smaller blocks, the updated code
