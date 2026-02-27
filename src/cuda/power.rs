@@ -1,80 +1,13 @@
 use super::ast::*;
-use crate::utils::info::Info;
+use crate::utils::power;
 use crate::utils::smap::SMapAccum;
-
-fn extract_float_value(e: &Expr) -> Option<f64> {
-    match e {
-        Expr::Float {v, ..} => Some(*v),
-        _ => None
-    }
-}
-
-fn make_multiply_chain(e: Expr, n: i64, ty: Type, i: Info) -> Expr {
-    if n > 1 {
-        let rhs = make_multiply_chain(e.clone(), n-1, ty.clone(), i.clone());
-        Expr::BinOp {
-            lhs: Box::new(e),
-            op: BinOp::Mul,
-            rhs: Box::new(rhs),
-            ty,
-            i
-        }
-    } else {
-        e
-    }
-}
-
-fn try_simplify_power_operator(lhs: Expr, rhs: f64, ty: Type, i: Info) -> Expr {
-    // NOTE(larshum, 2026-01-08): We intentionally impose a limit on the number of times we will
-    // unroll a power operation with an integer exponent into multiplications, to avoid excessive
-    // code explosion.
-    if rhs < 0.0 {
-        Expr::BinOp {
-            lhs: Box::new(Expr::Float {v: 1.0, ty: ty.clone(), i: i.clone()}),
-            op: BinOp::Div,
-            rhs: Box::new(try_simplify_power_operator(lhs, -rhs, ty.clone(), i.clone())),
-            ty, i
-        }
-    } else if rhs.fract() == 0.5 {
-        Expr::BinOp {
-            lhs: Box::new(try_simplify_power_operator(
-                 lhs.clone(),
-                 rhs.trunc(),
-                 ty.clone(),
-                 i.clone()
-            )),
-            op: BinOp::Mul,
-            rhs: Box::new(Expr::UnOp {
-                op: UnOp::Sqrt,
-                arg: Box::new(lhs),
-                ty: ty.clone(),
-                i: i.clone()
-            }),
-            ty, i
-        }
-    } else if rhs.trunc() == rhs && rhs <= 10.0 {
-        if rhs == 0.0 {
-            Expr::Float {v: 1.0, ty, i}
-        } else {
-            make_multiply_chain(lhs, rhs as i64, ty, i)
-        }
-    } else {
-        Expr::BinOp {
-            lhs: Box::new(lhs),
-            op: BinOp::Pow,
-            rhs: Box::new(Expr::Float {v: rhs, ty: ty.clone(), i: i.clone()}),
-            ty, i
-        }
-    }
-}
 
 fn simplify_power_operator_expr(e: Expr) -> Expr {
     match e {
         Expr::BinOp {lhs, op: BinOp::Pow, rhs, ty, i} => {
-            match extract_float_value(&rhs) {
-                Some(v) => try_simplify_power_operator(*lhs, v, ty, i),
-                None => Expr::BinOp {lhs, op: BinOp::Pow, rhs, ty, i}
-            }
+            let lhs = simplify_power_operator_expr(*lhs);
+            let rhs = simplify_power_operator_expr(*rhs);
+            power::simplify_power_operator(lhs, rhs, ty, i)
         },
         _ => e.smap(simplify_power_operator_expr)
     }
