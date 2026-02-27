@@ -266,64 +266,6 @@ fn store_memory_ops_in_temporary_variable(
     }
 }
 
-fn sub_load_expr(env: &BTreeMap<Expr, Expr>, e: Expr) -> Expr {
-    match env.get(&e) {
-        Some(sub_expr) => sub_expr.clone(),
-        None => e.smap(|e| sub_load_expr(&env, e)),
-    }
-}
-
-fn sub_load_with_temporary_variable(
-    mut env: BTreeMap<Expr, Expr>,
-    s: Stmt
-) -> (BTreeMap<Expr, Expr>, Stmt) {
-    match s {
-        Stmt::Store {ptr, value, mask, i} => {
-            let expected_load = Expr::Load {
-                ptr: Box::new(ptr.clone()),
-                mask: mask.clone().map(|m| Box::new(m)),
-                ty: value.get_type().clone(),
-                i: i.clone()
-            };
-            env.insert(expected_load, value.clone());
-            (env, Stmt::Store {ptr, value, mask, i})
-        },
-        Stmt::For {var, lo, hi, step, body, i} => {
-            let lo = sub_load_expr(&env, lo);
-            let hi = sub_load_expr(&env, hi);
-            let (_, body) = body.smap_accum_l(
-                BTreeMap::new(),
-                sub_load_with_temporary_variable
-            );
-            (env, Stmt::For {var, lo, hi, step, body, i})
-        },
-        Stmt::While {cond, body, i} => {
-            let cond = sub_load_expr(&env, cond);
-            let (_, body) = body.smap_accum_l(
-                BTreeMap::new(),
-                sub_load_with_temporary_variable
-            );
-            (env, Stmt::While {cond, body, i})
-        },
-        Stmt::If {cond, thn, els, i} => {
-            let cond = sub_load_expr(&env, cond);
-            let (_, thn) = thn.smap_accum_l(
-                BTreeMap::new(),
-                sub_load_with_temporary_variable
-            );
-            let (_, els) = els.smap_accum_l(
-                BTreeMap::new(),
-                sub_load_with_temporary_variable
-            );
-            (env, Stmt::If {cond, thn, els, i})
-        },
-        _ => {
-            let s = s.smap(|e| sub_load_expr(&env, e));
-            s.smap_accum_l(env, sub_load_with_temporary_variable)
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 struct Location {
     ptr: Expr,
@@ -348,6 +290,91 @@ fn get_ptr_target<'a>(ptr: &'a Expr) -> Option<&'a Name> {
         }
     } else {
         None
+    }
+}
+
+fn sub_load_expr(
+    env: &BTreeMap<Name, (Location, Expr)>, e: Expr) -> Expr {
+    match e {
+        Expr::Load {ptr, mask, ty, i} => {
+            if let Some(id) = get_ptr_target(&ptr) {
+                let l = Location {
+                    ptr: *ptr.clone(),
+                    mask: mask.clone().map(|e| *e)
+                };
+                match env.get(&id) {
+                    Some((prev_loc, sub_expr)) if l == *prev_loc => sub_expr.clone(),
+                    _ => Expr::Load {ptr, mask, ty, i}
+                }
+            } else {
+                Expr::Load {ptr, mask, ty, i}
+            }
+        },
+        _ => e.smap(|e| sub_load_expr(&env, e))
+    }
+}
+
+fn filter_sub_load_outer_env(
+    env: BTreeMap<Name, (Location, Expr)>,
+    inner_env: &BTreeMap<Name, (Location, Expr)>
+) -> BTreeMap<Name, (Location, Expr)> {
+    // When the inner environment contains an entry for a particular identifier, this means it
+    // performs store operations targeting this identifier. We conservatively exclude it from the
+    // outer environment in this case, to avoid substituting loads with old data.
+    env.into_iter()
+        .filter(|(id, _)| !inner_env.contains_key(&id))
+        .collect::<BTreeMap<Name, (Location, Expr)>>()
+}
+
+fn sub_load_with_temporary_variable(
+    mut env: BTreeMap<Name, (Location, Expr)>,
+    s: Stmt
+) -> (BTreeMap<Name, (Location, Expr)>, Stmt) {
+    match s {
+        Stmt::Store {ptr, value, mask, i} => {
+            if let Some(id) = get_ptr_target(&ptr) {
+                let l = Location { ptr: ptr.clone(), mask: mask.clone() };
+                env.insert(id.clone(), (l, value.clone()));
+            };
+            (env, Stmt::Store {ptr, value, mask, i})
+        },
+        Stmt::For {var, lo, hi, step, body, i} => {
+            let lo = sub_load_expr(&env, lo);
+            let hi = sub_load_expr(&env, hi);
+            let (body_env, body) = body.smap_accum_l(
+                BTreeMap::new(),
+                sub_load_with_temporary_variable
+            );
+            let env = filter_sub_load_outer_env(env, &body_env);
+            (env, Stmt::For {var, lo, hi, step, body, i})
+        },
+        Stmt::While {cond, body, i} => {
+            let cond = sub_load_expr(&env, cond);
+            let (body_env, body) = body.smap_accum_l(
+                BTreeMap::new(),
+                sub_load_with_temporary_variable
+            );
+            let env = filter_sub_load_outer_env(env, &body_env);
+            (env, Stmt::While {cond, body, i})
+        },
+        Stmt::If {cond, thn, els, i} => {
+            let cond = sub_load_expr(&env, cond);
+            let (thn_env, thn) = thn.smap_accum_l(
+                BTreeMap::new(),
+                sub_load_with_temporary_variable
+            );
+            let (els_env, els) = els.smap_accum_l(
+                BTreeMap::new(),
+                sub_load_with_temporary_variable
+            );
+            let env = filter_sub_load_outer_env(env, &thn_env);
+            let env = filter_sub_load_outer_env(env, &els_env);
+            (env, Stmt::If {cond, thn, els, i})
+        },
+        _ => {
+            let s = s.smap(|e| sub_load_expr(&env, e));
+            s.smap_accum_l(env, sub_load_with_temporary_variable)
+        }
     }
 }
 
