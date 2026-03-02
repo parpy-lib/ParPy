@@ -172,6 +172,8 @@ impl ParEntry {
                 acc_threads.push(threads);
                 if acc_tpb == par::DEFAULT_TPB || acc_tpb == tpb {
                     Ok((tpb, acc_threads))
+                } else if tpb == par::DEFAULT_TPB {
+                    Ok((acc_tpb, acc_threads))
                 } else {
                     parpy_compile_error!(
                         p.i,
@@ -194,15 +196,14 @@ fn find_parallel_structure_stmt_seq(
         Stmt::For {var, body, par, ..} if par.is_parallel() => {
             let mut p = find_parallel_structure_stmts_par(body)?;
             p.layers.insert(0, ParLayer::new(par.nthreads, par.tpb));
-            // Ensure that the innermost thread count of the parallel structure of this loop uses a
-            // thread count corresponding to a power of two of the number of warps. This ensures
-            // reductions do not need to track which threads of a warp are participating, and that
-            // the code is accepted by certain backends (Triton requires the thread count to be a
-            // power of two, not just a multiple of the warp size).
             match p.layers.last_mut() {
-                Some(ParLayer {threads: n, ..}) => {
-                    let nwarps = ((*n + (WARP_SIZE - 1)) / WARP_SIZE) as usize;
-                    *n = (nwarps.next_power_of_two() * 32) as i64;
+                Some(ParLayer {threads, tpb}) => {
+                    if *threads > *tpb {
+                        *threads = (*threads + (*tpb - 1)) / *tpb * *tpb;
+                    } else {
+                        let nwarps = ((*threads + (WARP_SIZE - 1)) / WARP_SIZE) as usize;
+                        *threads = nwarps.next_power_of_two() as i64 * WARP_SIZE;
+                    }
                 },
                 None => ()
             };

@@ -211,27 +211,6 @@ fn determine_loop_bounds(
                 lhs: Box::new(init), op: BinOp::Add, rhs: Box::new(rhs),
                 ty: int_ty.clone(), i: i.clone()
             };
-            // If the total number of threads we are using is not evenly divisible by the number of
-            // threads per block, we insert an additional condition to ensure only the intended
-            // threads run the code inside the for-loop.
-            let bool_ty = Type::Scalar {sz: ElemSize::Bool};
-            let cond = if nthreads * nblocks != n {
-                Expr::BinOp {
-                    lhs: Box::new(cond),
-                    op: BinOp::And,
-                    rhs: Box::new(Expr::BinOp {
-                        lhs: Box::new(idx.clone()),
-                        op: BinOp::Lt,
-                        rhs: Box::new(Expr::Int {
-                            v: n as i128, ty: int_ty.clone(), i: i.clone()
-                        }),
-                        ty: bool_ty.clone(), i: i.clone()
-                    }),
-                    ty: bool_ty.clone(), i: i.clone()
-                }
-            } else {
-                cond
-            };
             Ok((init, cond, fn_incr(n)))
         },
         None => Ok((init, cond, fn_incr(1)))
@@ -837,12 +816,7 @@ mod test {
             ty.clone()
         );
         let init = binop(int(0, None), BinOp::Add, idx.clone(), ty.clone());
-        let cond = binop(
-            binop(var("x", ty.clone()), BinOp::Lt, int(10, None), ty.clone()),
-            BinOp::And,
-            binop(idx.clone(), BinOp::Lt, int(2000, None), ty.clone()),
-            ty.clone()
-        );
+        let cond = binop(var("x", ty.clone()), BinOp::Lt, int(10, None), ty.clone());
         let incr = binop(
             var("x", ty.clone()),
             BinOp::Add,
