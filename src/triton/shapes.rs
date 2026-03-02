@@ -9,7 +9,10 @@ use crate::utils::smap::*;
 use rustsat::instances::SatInstance;
 use rustsat::types::*;
 use rustsat::solvers::{Solve, SolverResult};
+use rustsat::solvers::external;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::File;
+use std::process::Command;
 
 fn type_with_shape(
     ty: Type,
@@ -332,21 +335,55 @@ fn solve_constraints(env: ShapeEnv, n: usize) -> CompileResult<Vec<usize>> {
                 instance.add_binary(v, !rv);
             },
         });
-    let mut solver = rustsat_minisat::core::Minisat::default();
-    solver.add_cnf(instance.into_cnf().0).unwrap();
-    match solver.solve().unwrap() {
-        SolverResult::Sat => {
-            let sol = solver.full_solution().unwrap();
-            let vals = vars.into_iter()
-                .map(|v| sol.var_value(v))
-                .collect::<Vec<TernaryVal>>();
-            Ok(vals.into_iter()
-                .map(|v| if v == TernaryVal::True { n } else { 1 })
-                .collect::<Vec<usize>>())
-        },
-        _ => {
-            parpy_internal_error!(Info::default(), "Failed to determine blocking of variables")?
+    // NOTE(larshum, 2026-03-02): The rustsat library uses the DIMACS format when communicating
+    // with extenal solvers. To make the Z3 solver use this format, we have to provide the input in
+    // a file using the extension ".dimacs".
+    let (_dir, tempfile) = if let Ok(td) = tempfile::tempdir() {
+        let fp = td.path().join("temp.dimacs");
+        if let Ok(_) = File::create(&fp) {
+            Ok((td, fp))
+        } else {
+            parpy_internal_error!(Info::default(), "Failed to create temporary file for solver")
         }
+    } else {
+        parpy_internal_error!(Info::default(), "Failed to allocate temporary directory")
+    }?;
+    // NOTE(larshum, 2026-03-02): We use the Z3 solver binary as an external solver to determine
+    // which shape variables should be blocked. This binary should be available after installing
+    // the package "z3-solver" which is one of our dependencies.
+    which::which("z3")
+        .map_err(|_| CompileError::internal_err(
+            "Could not find the z3 binary, which is required by the Triton backend.\n\
+             This should be installed via the \"z3-solver\" package, which is \
+             a dependency of ParPy.".to_string()
+        ))?;
+    let mut solver = external::Solver::new(
+        Command::new("z3"),
+        external::InputVia::file_last(tempfile),
+        external::OutputVia::pipe(),
+        "z3-solver"
+    );
+    solver.add_cnf(instance.into_cnf().0).unwrap();
+    match solver.solve() {
+        Ok(SolverResult::Sat) => {
+            vars.into_iter()
+                .map(|v| solver.lit_val(v.pos_lit()))
+                .collect::<Result<Vec<TernaryVal>, _>>()
+                .map(|vals| {
+                    vals.into_iter()
+                        .map(|v| if v == TernaryVal::True { n } else { 1 })
+                        .collect::<Vec<usize>>()
+                })
+                .map_err(|_| {
+                    CompileError::internal_err(
+                        "Solver failed to determine block shapes of variables".to_string()
+                    )
+                })
+        },
+        Ok(_) => {
+            parpy_internal_error!(Info::default(), "Failed to determine blocking of variables")
+        }
+        Err(e) => parpy_internal_error!(Info::default(), "Solver failed: {e}")
     }
 }
 
