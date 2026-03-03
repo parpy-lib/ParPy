@@ -12,17 +12,17 @@ dependencies:
   - gcc=12.4.0
   - gxx=12.4.0
   - coreutils
-  - cupy
+  - cupy=13.6
   - cuda-version=12.9
   - dace=1.0.2
-  - "jax[cuda12]"
+  - "jax[cuda12]=0.4.27"
   - triton=3.6.0
-  - pytorch==2.10.0
+  - pytorch=2.10.0
   - torchvision
   - cuda-nvcc=12.9.86
   - h5py=3.14.0
   - ssgetpy=1.0rc2
-  - matplotlib=3.10.3
+  - matplotlib
   - numpy
   - pandas
   - pygount
