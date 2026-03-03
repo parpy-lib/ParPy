@@ -232,11 +232,19 @@ pub trait PrettyPrintBinOp<T>: PrettyPrint + ExprType<T> + Sized {
     }
 }
 
+pub enum CondPrintKind {
+    CLike, Pythonic
+}
+
 pub trait PrettyPrintCond<E: PrettyPrint>: PrettyPrint + Sized {
     fn extract_if<'a>(&'a self) -> Option<(&'a E, &'a Vec<Self>, &'a Vec<Self>)>;
     fn extract_elseif<'a>(&'a self) -> Option<(&'a E, &'a Vec<Self>, &'a Vec<Self>)>;
 
-    fn print_cond(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+    fn print_cond_helper(
+        &self,
+        env: PrettyPrintEnv,
+        kind: CondPrintKind
+    ) -> (PrettyPrintEnv, String) {
         let (cond, thn, els) = self.extract_if().unwrap();
         let indent = env.print_indent();
         let (env, cond_str) = cond.pprint(env);
@@ -246,25 +254,54 @@ pub trait PrettyPrintCond<E: PrettyPrint>: PrettyPrint + Sized {
             Some((elif_cond, elif_thn, elif_els)) => {
                 let (env, elif_cond) = elif_cond.pprint(env);
                 let (env, elif_thn) = pprint_iter(elif_thn.iter(), env, "\n");
-                let s = format!(
-                    "{0}\n{1}}} else if ({2}) {{\n{3}",
-                    thn_str, indent, elif_cond, elif_thn
-                );
+                let s = match kind {
+                    CondPrintKind::CLike => {
+                        format!("{0}\n{1}}} else if ({2}) {{\n{3}",
+                                thn_str, indent, elif_cond, elif_thn)
+                    },
+                    CondPrintKind::Pythonic => {
+                        format!("{0}\n{1}elif {2}:\n{3}",
+                                thn_str, indent, elif_cond, elif_thn)
+                    },
+                };
                 (env, s, elif_els)
             },
             None => (env, thn_str, els)
         };
         let (env, s) = if els.is_empty() {
-            (env, format!("{0}if ({1}) {{\n{2}\n{0}}}", indent, cond_str, thn_str))
+            let s = match kind {
+                CondPrintKind::CLike => {
+                    format!("{0}if ({1}) {{\n{2}\n{0}}}", indent, cond_str, thn_str)
+                },
+                CondPrintKind::Pythonic => {
+                    format!("{0}if {1}:\n{2}", indent, cond_str, thn_str)
+                },
+            };
+            (env, s)
         } else {
             let (env, els_str) = pprint_iter(els.iter(), env, "\n");
-            (env, format!(
-                "{0}if ({1}) {{\n{2}\n{0}}} else {{\n{3}\n{0}}}",
-                indent, cond_str, thn_str, els_str
-            ))
+            let s = match kind {
+                CondPrintKind::CLike => {
+                    format!("{0}if ({1}) {{\n{2}\n{0}}} else {{\n{3}\n{0}}}",
+                            indent, cond_str, thn_str, els_str)
+                },
+                CondPrintKind::Pythonic => {
+                    format!("{0}if {1}:\n{2}\n{0}else:\n{3}",
+                            indent, cond_str, thn_str, els_str)
+                }
+            };
+            (env, s)
         };
         let env = env.decr_indent();
         (env, s)
+    }
+
+    fn print_cond(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        self.print_cond_helper(env, CondPrintKind::CLike)
+    }
+
+    fn print_cond_pythonic(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        self.print_cond_helper(env, CondPrintKind::Pythonic)
     }
 }
 

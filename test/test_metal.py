@@ -17,21 +17,26 @@ def sum_elems_per_row(x, y, N, M):
             y[i] += x[i,j]
 
 @pytest.mark.parametrize('backend', compiler_backends)
-def test_metal_no_parallelism(backend):
+def test_metal_cpu_array_access(backend):
     N = 10
     M = 20
     x = np.random.randn(N, M).astype(np.float32)
     y = np.zeros(N).astype(np.float32)
     p = {'M': parpy.threads(M).par_reduction()}
     opts = par_opts(backend, p)
+    # The Metal backend uses memory accessible from both CPU and GPU, while the
+    # others use dedicated GPU memory. The above example should work as-is on
+    # Metal, while other backends should raise an error because we cannot
+    # access GPU data on the CPU.
     if backend == parpy.CompileBackend.Metal:
-        if parpy.backend.is_enabled(backend):
+        def fn():
             sum_elems_per_row(x, y, N, M, opts=opts)
             assert np.allclose(np.sum(x, axis=1), y, atol=1e-5)
-        return
-    with pytest.raises(RuntimeError) as e_info:
-        code = parpy.print_compiled(sum_elems_per_row, [x, y, N, M], opts)
-    assert e_info.match(r".*Data cannot be accessed outside parallel code.*")
+        run_if_backend_is_enabled(backend, fn)
+    else:
+        with pytest.raises(RuntimeError) as e_info:
+            code = parpy.print_compiled(sum_elems_per_row, [x, y, N, M], opts)
+        assert e_info.match(r".*Data cannot be accessed outside parallel code.*")
 
 def test_metal_catch_runtime_error():
     backend = parpy.CompileBackend.Metal

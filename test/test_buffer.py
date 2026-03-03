@@ -123,7 +123,7 @@ def test_buffer_to_torch(backend):
         assert a.shape == shape
         assert a.dtype == torch.int16
         assert torch.allclose(a, torch.zeros(shape, dtype=torch.int16, device=a.device))
-        if backend == parpy.CompileBackend.Cuda:
+        if backend in [parpy.CompileBackend.Cuda, parpy.CompileBackend.Triton]:
             assert a.device == torch.device('cuda', 0)
         else:
             assert a.device == torch.device('cpu')
@@ -208,7 +208,7 @@ def test_buffer_multidim_partial_indexing_torch(backend):
         shape = (20, 10, 32)
         a = torch.randn(*shape)
         b = parpy.buffer.from_array(a, backend)
-        if backend == parpy.CompileBackend.Cuda:
+        if backend in [parpy.CompileBackend.Cuda, parpy.CompileBackend.Triton]:
             assert torch.allclose(b[12].torch(), a[12].cuda())
         else:
             assert torch.allclose(b[12].torch(), a[12])

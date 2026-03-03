@@ -8,7 +8,7 @@ use pyo3::exceptions::PyRuntimeError;
 #[pyclass(eq, eq_int, hash, frozen)]
 #[derive(Clone, Debug, Default, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum CompileBackend {
-    #[default] Auto, Cuda, Metal
+    #[default] Auto, Cuda, Metal, Triton
 }
 
 #[pyclass]

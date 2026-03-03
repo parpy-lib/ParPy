@@ -13,8 +13,10 @@ def parpy_backend_set_value(x):
             x[0] = 0
         elif parpy.builtin.static_backend_eq(parpy.CompileBackend.Metal):
             x[0] = 1
+        elif parpy.builtin.static_backend_eq(parpy.CompileBackend.Triton):
+            x[0] = 2
         else:
-            parpy.builtin.static_fail("Function only supports CUDA and Metal")
+            parpy.builtin.static_fail("Function only supports CUDA, Metal, and Triton")
 
 @pytest.mark.parametrize('backend', compiler_backends)
 def test_backend_set_value(backend):
@@ -25,6 +27,8 @@ def test_backend_set_value(backend):
             assert x[0] == 0
         elif backend == parpy.CompileBackend.Metal:
             assert x[0] == 1
+        elif backend == parpy.CompileBackend.Triton:
+            assert x[0] == 2
         else:
             pytest.failwith(f"Unsupported backend {backend}")
     run_if_backend_is_enabled(backend, helper)
@@ -57,9 +61,9 @@ def parpy_type_set_value(x: parpy.types.buffer(sz, [N])):
             x[0] = 8.0
         elif parpy.builtin.static_types_eq(sz, parpy.types.F32):
             x[0] = 9.0
-        elif parpy.builtin.static_backend_eq(parpy.CompileBackend.Cuda) and \
-            parpy.builtin.static_types_eq(sz, parpy.types.F64):
-                x[0] = 10.0
+        elif parpy.builtin.static_types_eq(sz, parpy.types.F64) and \
+                not parpy.builtin.static_backend_eq(parpy.CompileBackend.Metal):
+            x[0] = 10.0
         else:
             parpy.builtin.static_fail("Function not supported for type")
 

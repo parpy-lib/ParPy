@@ -1,6 +1,7 @@
 pub mod ast;
 mod clusters;
 mod codegen;
+mod constant_fold;
 mod error;
 mod escape_function_names;
 mod graphs;

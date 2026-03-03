@@ -6,6 +6,10 @@ pub mod err;
 pub mod info;
 pub mod name;
 pub mod pprint;
+pub mod power;
 pub mod reduce;
 pub mod smap;
 pub mod substitute;
+
+#[cfg(test)]
+pub mod normalize_symbols;

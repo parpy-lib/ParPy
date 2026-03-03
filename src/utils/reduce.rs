@@ -2,6 +2,7 @@ use crate::ir::ast as ir_ast;
 use crate::py::ast::{BinOp, ElemSize};
 use crate::py::ast as py_ast;
 use crate::gpu::ast as gpu_ast;
+use crate::triton::ast as triton_ast;
 use crate::utils::info::*;
 
 // Trait allowing us to construct an expression given a literal floating-point value and an element
@@ -67,6 +68,25 @@ impl ExprLit for gpu_ast::Expr {
             },
             ElemSize::F16 | ElemSize::F32 | ElemSize::F64 => {
                 gpu_ast::Expr::Float {v, ty, i}
+            }
+        }
+    }
+}
+
+impl ExprLit for triton_ast::Expr {
+    fn generate_literal(v: f64, sz: &ElemSize, i: Info) -> triton_ast::Expr {
+        let shape = triton_ast::Shape::Num(1);
+        let ty = triton_ast::Type::Tensor {sz: sz.clone(), shape};
+        match sz {
+            ElemSize::Bool => {
+                triton_ast::Expr::Bool {v: triton_ast::Expr::to_bool_lit(v), ty, i}
+            },
+            ElemSize::I8 | ElemSize::I16 | ElemSize::I32 | ElemSize::I64 |
+            ElemSize::U8 | ElemSize::U16 | ElemSize::U32 | ElemSize::U64 => {
+                triton_ast::Expr::Int {v: triton_ast::Expr::to_int_lit(v), ty, i}
+            },
+            ElemSize::F16 | ElemSize::F32 | ElemSize::F64 => {
+                triton_ast::Expr::Float {v, ty, i}
             }
         }
     }
