@@ -200,13 +200,16 @@ def test_forward_multi_block(backend):
                 run_forw_test(hmm, seqs, expected, par_opts(backend, p))
             assert e_info.match(r".*nested pointer in generated code.*")
         elif backend == parpy.CompileBackend.Triton:
-            pytest.skip(
-                "Skipping test because Triton seems to misbehave for this test. " +
-                "Specifically, the test passes when run with TRITON_DEBUG=1, but it " +
-                "fails with a CUDA error otherwise. Tested on Triton versions 3.3.1 " +
-                "(where it produces the wrong result) and 3.6.0 (where it gets " +
-                "a CUDA error)."
-            )
+            if os.getenv("TRITON_DEBUG") == "1":
+                run_forw_test(hmm, seqs, expected, par_opts(backend, p))
+            else:
+                pytest.skip(
+                    "Skipping test because Triton seems to misbehave for this test. " +
+                    "Specifically, the test passes when run with TRITON_DEBUG=1, but it " +
+                    "fails with a CUDA error otherwise. Tested on Triton versions 3.3.1 " +
+                    "(where it produces the wrong result) and 3.6.0 (where it gets " +
+                    "a CUDA error)."
+                )
         else:
             run_forw_test(hmm, seqs, expected, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)

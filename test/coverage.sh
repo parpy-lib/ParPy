@@ -46,8 +46,12 @@ for f in "examples"/*."py"; do
   fail_count=$((fail_count + $fail))
 done
 
+# We set TRITON_DEBUG=1 to make the test suite run additional tests that would
+# otherwise be skipped because Triton fails with a CUDA memory error.
 printf "\nRunning integration tests\n"
+export TRITON_DEBUG=1
 run_test "pytest"
+unset TRITON_DEBUG
 fail_count=$((fail_count + $?))
 
 cargo llvm-cov report
