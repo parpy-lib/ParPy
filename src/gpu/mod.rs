@@ -7,15 +7,13 @@ mod fuse_memory;
 mod global_mem;
 mod par;
 mod pprint;
-mod reduce;
+pub mod reduce;
 mod split_function_targets;
 mod sync_elim;
 mod unroll_loops;
 
 #[cfg(test)]
 pub mod ast_builder;
-#[cfg(test)]
-pub mod unsymbolize;
 
 use ast::*;
 use crate::option::CompileOptions;
@@ -41,17 +39,28 @@ pub fn from_general_ir(
     // Functions assigned TargetClass::Both are split into two separate versions, depending on
     // whether they are called from the host or from the device.
     let (ast, classification) = split_function_targets::apply(ast, classification)?;
+    debug_env.print("IR AST after splitting on classification", &ast);
 
     // Translate the general IR AST to a representation used for all GPU targets.
     let ast = codegen::from_general_ir(ast, classification, gpu_mapping, opts)?;
-    debug_env.print("GPU AST", &ast);
-
-    // Expand intermediate parallel reductions node to proper for-loops in the GPU IR AST.
-    let ast = reduce::expand_parallel_reductions(opts, ast)?;
-    debug_env.print("GPU AST after expanding reductions", &ast);
+    debug_env.print("Initial GPU AST", &ast);
 
     let ast = constant_fold::fold(ast);
     debug_env.print("GPU AST after constant folding", &ast);
+
+    // Eliminate redundant uses of synchronization. This includes repeated uses of synchronization
+    // on the same scope and trailing synchronization at the end of a kernel.
+    Ok(sync_elim::remove_redundant_synchronization(ast))
+}
+
+pub fn transform(
+    ast: Ast,
+    opts: &CompileOptions,
+    debug_env: &DebugEnv
+) -> CompileResult<Ast> {
+    // Expand intermediate parallel reductions node to proper for-loops in the GPU IR AST.
+    let ast = reduce::expand_parallel_reductions(opts, ast)?;
+    debug_env.print("GPU AST after expanding reductions", &ast);
 
     // Unroll simple for-loops that contain a single statement and that do not perform more than a
     // fixed number of iterations in total, as determined via a compiler option.
@@ -75,7 +84,5 @@ pub fn from_general_ir(
     let ast = global_mem::eliminate_block_wide_memory_writes(ast)?;
     debug_env.print("GPU AST after eliminating block-wide memory writes", &ast);
 
-    // Eliminate redundant uses of synchronization. This includes repeated uses of synchronization
-    // on the same scope and trailing synchronization at the end of a kernel.
-    Ok(sync_elim::remove_redundant_synchronization(ast))
+    Ok(constant_fold::fold(ast))
 }

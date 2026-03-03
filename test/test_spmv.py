@@ -37,7 +37,7 @@ def uniform_random_csr_f32_i64(N, M, d):
     rows, cols = np.divmod(flat_idxs, M)
     values = torch.randn(nnz, dtype=torch.float32)
     idxs = np.array((rows, cols))
-    A = torch.sparse_coo_tensor(idxs, values)
+    A = torch.sparse_coo_tensor(idxs, values, size=(N, M))
     # Ignore warning about sparse CSR support being in beta state
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

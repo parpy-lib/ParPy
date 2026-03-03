@@ -96,13 +96,12 @@ fn specialize_stmt<'a>(
             let cond = specialize_expr(env, cond)?;
             let cond = constant_fold::fold_expr(cond);
             if let Expr::Bool {v, ..} = cond {
-                if v {
-                    let mut thn = specialize_stmts(env, thn)?;
-                    acc.append(&mut thn);
+                let mut body = if v {
+                    specialize_stmts(env, thn)
                 } else {
-                    let mut els = specialize_stmts(env, els)?;
-                    acc.append(&mut els);
-                };
+                    specialize_stmts(env, els)
+                }?;
+                acc.append(&mut body);
                 Ok(acc)
             } else {
                 let thn = specialize_stmts(env, thn)?;

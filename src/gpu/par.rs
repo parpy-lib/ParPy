@@ -172,6 +172,8 @@ impl ParEntry {
                 acc_threads.push(threads);
                 if acc_tpb == par::DEFAULT_TPB || acc_tpb == tpb {
                     Ok((tpb, acc_threads))
+                } else if tpb == par::DEFAULT_TPB {
+                    Ok((acc_tpb, acc_threads))
                 } else {
                     parpy_compile_error!(
                         p.i,
@@ -194,13 +196,14 @@ fn find_parallel_structure_stmt_seq(
         Stmt::For {var, body, par, ..} if par.is_parallel() => {
             let mut p = find_parallel_structure_stmts_par(body)?;
             p.layers.insert(0, ParLayer::new(par.nthreads, par.tpb));
-            // Ensure that the innermost thread count of the parallel structure of this loop uses a
-            // thread count evenly divisible by the size of a warp. This is very important because
-            // warp-level intrinsics behave unexpectedly when not all threads of a warp are used,
-            // causing parallel reductions to misbehave.
             match p.layers.last_mut() {
-                Some(ParLayer {threads: n, ..}) => {
-                    *n = ((*n + WARP_SIZE - 1) / WARP_SIZE) * WARP_SIZE
+                Some(ParLayer {threads, tpb}) => {
+                    if *threads > *tpb {
+                        *threads = (*threads + (*tpb - 1)) / *tpb * *tpb;
+                    } else {
+                        let nwarps = ((*threads + (WARP_SIZE - 1)) / WARP_SIZE) as usize;
+                        *threads = nwarps.next_power_of_two() as i64 * WARP_SIZE;
+                    }
                 },
                 None => ()
             };

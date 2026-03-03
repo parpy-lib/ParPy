@@ -94,11 +94,8 @@ def forward_kernel(hmm, seqs, alpha1, alpha2, result):
 
         # Forward steps (t = 1, .., maxlen-1)
         for t in range(1, seqs["maxlen"]):
-            alpha_src = alpha2
-            alpha_dst = alpha1
-            if t & 1:
-                alpha_src = alpha1
-                alpha_dst = alpha2
+            alpha_src = alpha1 if t & 1 != 0 else alpha2
+            alpha_dst = alpha2 if t & 1 != 0 else alpha1
             o = seqs["data"][inst, t]
             parpy.label('state')
             for state in range(hmm["num_states"]):
@@ -149,9 +146,7 @@ def forward_kernel(hmm, seqs, alpha1, alpha2, result):
                     alpha_dst[inst, state] = alpha_src[inst, state]
 
         # Summation of final alpha values
-        alpha = alpha2
-        if seqs["maxlen"] & 1:
-            alpha = alpha1
+        alpha = alpha1 if seqs["maxlen"] & 1 != 0 else alpha2
 
         parpy.label('state')
         maxp = parpy.reduce.max(alpha[inst, :])
@@ -204,6 +199,17 @@ def test_forward_multi_block(backend):
             with pytest.raises(TypeError) as e_info:
                 run_forw_test(hmm, seqs, expected, par_opts(backend, p))
             assert e_info.match(r".*nested pointer in generated code.*")
+        elif backend == parpy.CompileBackend.Triton:
+            if os.getenv("TRITON_DEBUG") == "1":
+                run_forw_test(hmm, seqs, expected, par_opts(backend, p))
+            else:
+                pytest.skip(
+                    "Skipping test because Triton seems to misbehave for this test. " +
+                    "Specifically, the test passes when run with TRITON_DEBUG=1, but it " +
+                    "fails with a CUDA error otherwise. Tested on Triton versions 3.3.1 " +
+                    "(where it produces the wrong result) and 3.6.0 (where it gets " +
+                    "a CUDA error)."
+                )
         else:
             run_forw_test(hmm, seqs, expected, par_opts(backend, p))
     run_if_backend_is_enabled(backend, helper)

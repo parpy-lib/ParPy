@@ -14,7 +14,7 @@ classifiers = [
 authors = [
   { name = "Lars Hummelgren", email = "lasse.hummelgren@gmail.com" }
 ]
-dependencies = ["numpy", "torch", "pytest", "scipy"]
+dependencies = ["numpy", "torch", "pytest", "scipy", "z3-solver"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

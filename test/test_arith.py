@@ -126,20 +126,32 @@ def op_supported_types(backend, op):
     else:
         raise RuntimeError(f"Unclassified function: {fn.__name__} in op_should_fail")
 
-def op_should_fail(backend, op, ldtype, rdtype):
+def op_expected_error(backend, op, ldtype, rdtype, run):
+    # If either argument is a type not supported by the operation, we expect
+    # the call to result in a type error.
+    accepted_types = op_supported_types(backend, op)
+    if not (ldtype in accepted_types and rdtype in accepted_types):
+        return TypeError
+
     # Metal does not support 64-bit floats
     if backend == parpy.CompileBackend.Metal and \
             (ldtype == parpy.types.F64 or rdtype == parpy.types.F64):
-        return True
+        return TypeError
+
     # CUDA does not support the 'pow' operation on 16-bit floats. Note that if
     # one operand is a larger floating-point type, the 16-bit float is coerced
     # to the larger float size.
     if backend == parpy.CompileBackend.Cuda and \
             op == parpy_pow and \
             (ldtype == parpy.types.F16 and rdtype == parpy.types.F16):
-        return True
-    accepted_types = op_supported_types(backend, op)
-    return not (ldtype in accepted_types and rdtype in accepted_types)
+        return TypeError
+
+    if backend == parpy.CompileBackend.Triton and \
+            op == parpy_pow and \
+            (ldtype == parpy.types.F16 and rdtype == parpy.types.F16) and \
+            run:
+        import triton
+        return triton.compiler.errors.CompilationError
 
 @pytest.mark.parametrize('backend', compiler_backends)
 @pytest.mark.parametrize('test_data', arith_tests)
@@ -153,8 +165,9 @@ def test_run_binop(backend, test_data, dtype):
         y[0] = 4
         dst = np.zeros((1,), dtype=dtype.to_numpy())
         opts = par_opts(backend, {})
-        if op_should_fail(backend, parpy_fn, dtype, dtype):
-            with pytest.raises(TypeError):
+        err = op_expected_error(backend, parpy_fn, dtype, dtype, True)
+        if err is not None:
+            with pytest.raises(err):
                 parpy_fn(dst, x, y, opts=opts)
         else:
             parpy_fn(dst, x, y, opts=opts)
@@ -173,8 +186,9 @@ def test_compile_binop(backend, test_data, dtype):
     y[0] = 4
     dst = np.zeros((1,), dtype=dtype.to_numpy())
     opts = par_opts(backend, {})
-    if op_should_fail(backend, parpy_fn, dtype, dtype):
-        with pytest.raises(TypeError):
+    err = op_expected_error(backend, parpy_fn, dtype, dtype, False)
+    if err is not None:
+        with pytest.raises(err):
             parpy.print_compiled(parpy_fn, [dst, x, y], opts)
     else:
         code = parpy.print_compiled(parpy_fn, [dst, x, y], opts)
@@ -214,9 +228,10 @@ def test_run_binop_distinct_operand_types(backend, test_data, dtypes):
         y[0] = 4
         dst = np.zeros((1,), dtype=rdtype.to_numpy())
         opts = par_opts(backend, {})
-        if op_should_fail(backend, parpy_fn, ldtype, rdtype):
-            with pytest.raises(TypeError):
-                parpy_fn(dst, x, opts=opts)
+        err = op_expected_error(backend, parpy_fn, ldtype, rdtype, True)
+        if err is not None:
+            with pytest.raises(err):
+                parpy_fn(dst, x, y, opts=opts)
         else:
             parpy_fn(dst, x, y, opts=opts)
             expected = seq_fn(x, y)
@@ -235,8 +250,9 @@ def test_compile_binop_distinct_operand_types(backend, test_data, dtypes):
     y[0] = 4
     dst = np.zeros((1,), dtype=rdtype.to_numpy())
     opts = par_opts(backend, {})
-    if op_should_fail(backend, parpy_fn, ldtype, rdtype):
-        with pytest.raises(TypeError):
+    err = op_expected_error(backend, parpy_fn, ldtype, rdtype, False)
+    if err is not None:
+        with pytest.raises(err):
             parpy.print_compiled(parpy_fn, [dst, x, y], opts)
     else:
         code = parpy.print_compiled(parpy_fn, [dst, x, y], opts)

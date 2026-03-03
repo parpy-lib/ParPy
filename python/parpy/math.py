@@ -61,6 +61,34 @@ def abs_metal_f16(x: F16) -> F16:
 def abs_metal_f32(x: F32) -> F32:
     return abs(x)
 
+@external("triton.language.abs", CompileBackend.Triton, Target.Device)
+def abs_triton_i8(x: I8) -> I8:
+    return abs(x)
+
+@external("triton.language.abs", CompileBackend.Triton, Target.Device)
+def abs_triton_i16(x: I16) -> I16:
+    return abs(x)
+
+@external("triton.language.abs", CompileBackend.Triton, Target.Device)
+def abs_triton_i32(x: I32) -> I32:
+    return abs(x)
+
+@external("triton.language.abs", CompileBackend.Triton, Target.Device)
+def abs_triton_i64(x: I64) -> I64:
+    return abs(x)
+
+@external("triton.language.abs", CompileBackend.Triton, Target.Device)
+def abs_triton_f16(x: F16) -> F16:
+    return abs(x)
+
+@external("triton.language.abs", CompileBackend.Triton, Target.Device)
+def abs_triton_f32(x: F32) -> F32:
+    return abs(x)
+
+@external("triton.language.abs", CompileBackend.Triton, Target.Device)
+def abs_triton_f64(x: F64) -> F64:
+    return abs(x)
+
 @jit
 def abs(x: T) -> T:
     """
@@ -105,8 +133,25 @@ def abs(x: T) -> T:
             return abs_metal_f32(x)
         else:
             static_fail("The abs function only supports int and float scalars")
+    elif static_backend_eq(CompileBackend.Triton):
+        if static_types_eq(T, I8):
+            return abs_triton_i8(x)
+        elif static_types_eq(T, I16):
+            return abs_triton_i16(x)
+        elif static_types_eq(T, I32):
+            return abs_triton_i32(x)
+        elif static_types_eq(T, I64):
+            return abs_triton_i64(x)
+        elif static_types_eq(T, F16):
+            return abs_triton_f16(x)
+        elif static_types_eq(T, F32):
+            return abs_triton_f32(x)
+        elif static_types_eq(T, F64):
+            return abs_triton_f64(x)
+        else:
+            static_fail("The abs function only supports int and float scalars")
     else:
-        static_fail("The abs function only supports the CUDA and Metal backends")
+        static_fail("The abs function only supports the CUDA, Metal, and Triton backends")
 
 @external("hcos", CompileBackend.Cuda, Target.Device, header="<cuda_fp16.h>")
 def cos_cuda_f16(x: F16) -> F16:
@@ -126,6 +171,14 @@ def cos_metal_f16(x: F16) -> F16:
 
 @external("metal::cos", CompileBackend.Metal, Target.Device)
 def cos_metal_f32(x: F32) -> F32:
+    return math.cos(x)
+
+@external("triton.language.cos", CompileBackend.Triton, Target.Device)
+def cos_triton_f32(x: F32) -> F32:
+    return math.cos(x)
+
+@external("triton.language.cos", CompileBackend.Triton, Target.Device)
+def cos_triton_f64(x: F64) -> F64:
     return math.cos(x)
 
 @jit
@@ -149,8 +202,17 @@ def cos(x: T) -> T:
             return cos_metal_f32(x)
         else:
             static_fail("The cos function only supports float scalars")
+    elif static_backend_eq(CompileBackend.Triton):
+        if static_types_eq(T, F16):
+            static_fail("The cos function does not support 16-bit floats in Triton")
+        elif static_types_eq(T, F32):
+            return cos_triton_f32(x)
+        elif static_types_eq(T, F64):
+            return cos_triton_f64(x)
+        else:
+            static_fail("The cos function only supports float scalars")
     else:
-        static_fail("The cos function only supports the CUDA and Metal backends")
+        static_fail("The cos function only supports the CUDA, Metal, and Triton backends")
 
 @external("hexp", CompileBackend.Cuda, Target.Device, header="<cuda_fp16.h>")
 def exp_cuda_f16(x: F16) -> F16:
@@ -170,6 +232,14 @@ def exp_metal_f16(x: F16) -> F16:
 
 @external("metal::exp", CompileBackend.Metal, Target.Device)
 def exp_metal_f32(x: F32) -> F32:
+    return math.exp(x)
+
+@external("triton.language.exp", CompileBackend.Triton, Target.Device)
+def exp_triton_f32(x: F32) -> F32:
+    return math.exp(x)
+
+@external("triton.language.exp", CompileBackend.Triton, Target.Device)
+def exp_triton_f64(x: F64) -> F64:
     return math.exp(x)
 
 @jit
@@ -193,8 +263,17 @@ def exp(x: T) -> T:
             return exp_metal_f32(x)
         else:
             static_fail("The exp function only supports float scalars")
+    elif static_backend_eq(CompileBackend.Triton):
+        if static_types_eq(T, F16):
+            static_fail("The exp function does not support 16-bit floats in Triton")
+        elif static_types_eq(T, F32):
+            return exp_triton_f32(x)
+        elif static_types_eq(T, F64):
+            return exp_triton_f64(x)
+        else:
+            static_fail("The exp function only supports float scalars")
     else:
-        static_fail("The exp function only supports the CUDA and Metal backends")
+        static_fail("The exp function only supports the CUDA, Metal, and Triton backends")
 
 @external("hlog", CompileBackend.Cuda, Target.Device, header="<cuda_fp16.h>")
 def log_cuda_f16(x: F16) -> F16:
@@ -214,6 +293,14 @@ def log_metal_f16(x: F16) -> F16:
 
 @external("metal::log", CompileBackend.Metal, Target.Device)
 def log_metal_f32(x: F32) -> F32:
+    return math.log(x)
+
+@external("triton.language.log", CompileBackend.Triton, Target.Device)
+def log_triton_f32(x: F32) -> F32:
+    return math.log(x)
+
+@external("triton.language.log", CompileBackend.Triton, Target.Device)
+def log_triton_f64(x: F64) -> F64:
     return math.log(x)
 
 @jit
@@ -237,8 +324,17 @@ def log(x: T) -> T:
             return log_metal_f32(x)
         else:
             static_fail("The log function only supports float scalars")
+    elif static_backend_eq(CompileBackend.Triton):
+        if static_types_eq(T, F16):
+            static_fail("The log function does not support 16-bit floats in Triton")
+        elif static_types_eq(T, F32):
+            return log_triton_f32(x)
+        elif static_types_eq(T, F64):
+            return log_triton_f64(x)
+        else:
+            static_fail("The log function only supports float scalars")
     else:
-        static_fail("The log function only supports the CUDA and Metal backends")
+        static_fail("The log function only supports the CUDA, Metal, and Triton backends")
 
 @external("hsin", CompileBackend.Cuda, Target.Device, header="<cuda_fp16.h>")
 def sin_cuda_f16(x: F16) -> F16:
@@ -258,6 +354,14 @@ def sin_metal_f16(x: F16) -> F16:
 
 @external("metal::sin", CompileBackend.Metal, Target.Device)
 def sin_metal_f32(x: F32) -> F32:
+    return math.sin(x)
+
+@external("triton.language.sin", CompileBackend.Triton, Target.Device)
+def sin_triton_f32(x: F32) -> F32:
+    return math.sin(x)
+
+@external("triton.language.sin", CompileBackend.Triton, Target.Device)
+def sin_triton_f64(x: F64) -> F64:
     return math.sin(x)
 
 @jit
@@ -281,8 +385,17 @@ def sin(x: T) -> T:
             return sin_metal_f32(x)
         else:
             static_fail("The sin function only supports float scalars")
+    elif static_backend_eq(CompileBackend.Triton):
+        if static_types_eq(T, F16):
+            static_fail("The sin function does not support 16-bit floats in Triton")
+        elif static_types_eq(T, F32):
+            return sin_triton_f32(x)
+        elif static_types_eq(T, F64):
+            return sin_triton_f64(x)
+        else:
+            static_fail("The sin function only supports float scalars")
     else:
-        static_fail("The sin function only supports the CUDA and Metal backends")
+        static_fail("The sin function only supports the CUDA, Metal, and Triton backends")
 
 @external("hsqrt", CompileBackend.Cuda, Target.Device, header="<cuda_fp16.h>")
 def sqrt_cuda_f16(x: F16) -> F16:
@@ -302,6 +415,14 @@ def sqrt_metal_f16(x: F16) -> F16:
 
 @external("metal::sqrt", CompileBackend.Metal, Target.Device)
 def sqrt_metal_f32(x: F32) -> F32:
+    return math.sqrt(x)
+
+@external("triton.language.sqrt", CompileBackend.Triton, Target.Device)
+def sqrt_triton_f32(x: F32) -> F32:
+    return math.sqrt(x)
+
+@external("triton.language.sqrt", CompileBackend.Triton, Target.Device)
+def sqrt_triton_f64(x: F64) -> F64:
     return math.sqrt(x)
 
 @jit
@@ -325,8 +446,17 @@ def sqrt(x: T) -> T:
             return sqrt_metal_f32(x)
         else:
             static_fail("The sqrt function only supports float scalars")
+    elif static_backend_eq(CompileBackend.Triton):
+        if static_types_eq(T, F16):
+            static_fail("The sqrt function does not support 16-bit floats in Triton")
+        elif static_types_eq(T, F32):
+            return sqrt_triton_f32(x)
+        elif static_types_eq(T, F64):
+            return sqrt_triton_f64(x)
+        else:
+            static_fail("The sqrt function only supports float scalars")
     else:
-        static_fail("The sqrt function only supports the CUDA and Metal backends")
+        static_fail("The sqrt function only supports the CUDA, Metal, and Triton backends")
 
 @external("htanh", CompileBackend.Cuda, Target.Device, header="<cuda_fp16.h>")
 def tanh_cuda_f16(x: F16) -> F16:
@@ -346,6 +476,14 @@ def tanh_metal_f16(x: F16) -> F16:
 
 @external("metal::tanh", CompileBackend.Metal, Target.Device)
 def tanh_metal_f32(x: F32) -> F32:
+    return math.tanh(x)
+
+@external("libdevice.tanh", CompileBackend.Triton, Target.Device)
+def tanh_triton_f32(x: F32) -> F32:
+    return math.tanh(x)
+
+@external("libdevice.tanh", CompileBackend.Triton, Target.Device)
+def tanh_triton_f64(x: F64) -> F64:
     return math.tanh(x)
 
 @jit
@@ -369,8 +507,17 @@ def tanh(x: T) -> T:
             return tanh_metal_f32(x)
         else:
             static_fail("The tanh function only supports float scalars")
+    elif static_backend_eq(CompileBackend.Triton):
+        if static_types_eq(T, F16):
+            static_fail("The tanh function is not supported for 16-bit floats in Triton")
+        elif static_types_eq(T, F32):
+            return tanh_triton_f32(x)
+        elif static_types_eq(T, F64):
+            return tanh_triton_f64(x)
+        else:
+            static_fail("The tanh function only supports float scalars")
     else:
-        static_fail("The tanh function only supports the CUDA and Metal backends")
+        static_fail("The tanh function only supports the CUDA, Metal, and Triton backends")
 
 # Binary functions
 
@@ -388,6 +535,14 @@ def atan2_metal_f16(y: F16, x: F16) -> F16:
 
 @external("metal::atan2", CompileBackend.Metal, Target.Device)
 def atan2_metal_f32(y: F32, x: F32) -> F32:
+    return math.atan2(y, x)
+
+@external("libdevice.atan2", CompileBackend.Triton, Target.Device)
+def atan2_triton_f32(y: F32, x: F32) -> F32:
+    return math.atan2(y, x)
+
+@external("libdevice.atan2", CompileBackend.Triton, Target.Device)
+def atan2_triton_f64(y: F64, x: F64) -> F64:
     return math.atan2(y, x)
 
 @jit
@@ -413,5 +568,14 @@ def atan2(y: T, x: T) -> T:
             return atan2_metal_f32(y, x)
         else:
             static_fail("The atan2 function only supports float scalars")
+    elif static_backend_eq(CompileBackend.Triton):
+        if static_types_eq(T, F16):
+            static_fail("The atan2 function is not supported for 16-bit floats in Triton")
+        elif static_types_eq(T, F32):
+            return atan2_triton_f32(y, x)
+        elif static_types_eq(T, F64):
+            return atan2_triton_f64(y, x)
+        else:
+            static_fail("The atan2 function only supports float scalars")
     else:
-        static_fail("The atan2 function only supports the CUDA and Metal backends")
+        static_fail("The atan2 function only supports the CUDA, Metal, and Triton backends")

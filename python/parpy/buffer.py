@@ -1,5 +1,8 @@
+import ctypes
+import numpy as np
 import pathlib
 import sys
+import torch
 from .parpy import CompileBackend, DataType, ElemSize
 from .runtime import _compile_runtime_lib
 
@@ -70,18 +73,26 @@ def _alloc_data(shape, dtype, lib):
     nbytes = _size(shape, dtype)
     return _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
 
+def _active_triton_device():
+    import triton
+    return triton.runtime.driver.active.get_active_torch_device()
+
 def sync(backend):
     """
     Synchronizes the CPU and the target device by waiting until all running
     kernels complete.
     """
-    lib = _compile_runtime_lib(backend)
-    _check_errors(lib, lib.parpy_sync())
+    if backend == CompileBackend.Cuda:
+        torch.cuda.synchronize()
+    elif backend == CompileBackend.Triton:
+        torch.cuda.synchronize(_active_triton_device())
+    else:
+        lib = _compile_runtime_lib(backend)
+        _check_errors(lib, lib.parpy_sync())
 
 def empty(shape, dtype, backend):
     dtype = _resolve_dtype(dtype)
     if backend == CompileBackend.Cuda:
-        import torch
         t = torch.empty(*shape, dtype=dtype.to_torch(), device='cuda')
         return CudaBuffer.from_array(t)
     elif backend == CompileBackend.Metal:
@@ -90,6 +101,10 @@ def empty(shape, dtype, backend):
         buf = _check_not_nullptr(lib, lib.parpy_alloc_buffer(nbytes))
         base_buf = MetalBaseBuffer(buf, nbytes, None)
         return MetalBuffer(base_buf, shape, dtype)
+    elif backend == CompileBackend.Triton:
+        device = _active_triton_device()
+        t = torch.empty(*shape, dtype=dtype.to_torch(), device=device)
+        return TritonBuffer.from_array(t)
     else:
         raise ValueError(f"Cannot construct buffer of type {type(dtype)}")
 
@@ -98,13 +113,14 @@ def empty_like(b):
         return empty(b.shape, b.dtype, CompileBackend.Cuda)
     elif isinstance(b, MetalBuffer):
         return empty(b.shape, b.dtype, CompileBackend.Metal)
+    elif isinstance(b, TritonBuffer):
+        return empty(b.shape, b.dtype, CompileBackend.Triton)
     else:
         raise ValueError(f"Cannot construct buffer of type {type(b)}")
 
 def zeros(shape, dtype, backend):
     dtype = _resolve_dtype(dtype)
     if backend == CompileBackend.Cuda:
-        import torch
         t = torch.zeros(*shape, dtype=dtype.to_torch(), device='cuda')
         return CudaBuffer.from_array(t)
     elif backend == CompileBackend.Metal:
@@ -112,6 +128,10 @@ def zeros(shape, dtype, backend):
         lib = _compile_runtime_lib(backend)
         _check_errors(lib, lib.parpy_memset(b.buf.buf, b.size(), 0))
         return b
+    elif backend == CompileBackend.Triton:
+        device = _active_triton_device()
+        t = torch.zeros(*shape, dtype=dtype.to_torch(), device=device)
+        return TritonBuffer.from_array(t)
     else:
         raise ValueError(f"Cannot construct buffer of type {type(b)}")
 
@@ -120,6 +140,8 @@ def zeros_like(b):
         return zeros(b.shape, b.dtype, CompileBackend.Cuda)
     elif isinstance(b, MetalBuffer):
         return zeros(b.shape, b.dtype, CompileBackend.Metal)
+    elif isinstance(b, TritonBuffer):
+        return zeros(b.shape, b.dtype, CompileBackend.Triton)
     else:
         raise ValueError(f"Cannot construct buffer of type {type(b)}")
 
@@ -130,6 +152,8 @@ def from_array(t, backend):
         return CudaBuffer.from_array(t)
     elif backend == CompileBackend.Metal:
         return MetalBuffer.from_array(t)
+    elif backend == CompileBackend.Triton:
+        return TritonBuffer.from_array(t)
     else:
         raise ValueError(f"Cannot convert to buffer of unknown backend {backend}")
 
@@ -140,6 +164,8 @@ def from_raw(ptr, shape, dtype, backend):
         return CudaBuffer.from_raw(ptr, shape, dtype)
     elif backend == CompileBackend.Metal:
         return MetalBuffer.from_raw(ptr, shape, dtype)
+    elif backend == CompileBackend.Triton:
+        return TritonBuffer.from_raw(ptr, shape, dtype)
     else:
         raise ValueError(f"Cannot convert raw data to buffer of unknown backend {backend}")
 
@@ -153,6 +179,10 @@ class BaseBuffer:
         self.is_raw = is_raw
 
     def __del__(self):
+        # When the system is about to exit, we skip the deinitialization to
+        # avoid raising extra errors.
+        if sys.is_finalizing():
+            return
         # We skip running the deconstructor for a buffer constructed from raw
         # data, as this will be handled in the original buffer.
         if not self.is_raw:
@@ -171,29 +201,22 @@ class BaseBuffer:
 class CudaBaseBuffer(BaseBuffer):
     def __init__(self, buf, nbytes, src=None, is_raw=False):
         super().__init__(buf, nbytes, src, is_raw)
+        self.libc = ctypes.cdll.LoadLibrary("libc.so.6")
+        self.libc.memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
 
     def _deconstruct(self, src_ptr):
         if src_ptr is not None:
-            # NOTE(larshum, 2025-11-04): If the interpreter is about to shut
-            # down, PyTorch may raise exceptions if we interact with the
-            # underlying tensor. To avoid such ugly errors, we skip running the
-            # deconstructor, which is fine since the data is freed by the OS
-            # anyway.
-            if sys.is_finalizing():
-                return
-            buf_ptr, _, _ = _extract_array_interface(self.buf, allow_cuda=True)
-            lib = self._get_runtime_lib()
-            _check_errors(lib, lib.parpy_memcpy(src_ptr, buf_ptr, self.nbytes, 2))
-            self.sync()
+            cpu_buf = self.buf.cpu()
+            cpu_buf_ptr, _, _ = _extract_array_interface(cpu_buf, allow_cuda=False)
+            self.libc.memcpy(src_ptr, cpu_buf_ptr, self.nbytes)
 
     def _get_runtime_lib(self):
-        return _compile_runtime_lib(CompileBackend.Cuda)
+        return None
 
     def sync(self):
         sync(CompileBackend.Cuda)
 
     def from_array(t):
-        import torch
         try:
             data_ptr, shape, dtype = _extract_array_interface(t, allow_cuda=True)
             nbytes = _size(shape, dtype)
@@ -208,13 +231,13 @@ class CudaBaseBuffer(BaseBuffer):
             buf = torch.empty((), dtype=dtype.to_torch(), device='cuda')
         else:
             buf = torch.empty(*shape, dtype=dtype.to_torch(), device='cuda')
-        ptr, _, _ = _extract_array_interface(buf, allow_cuda=True)
-        lib = _compile_runtime_lib(CompileBackend.Cuda)
-        _check_errors(lib, lib.parpy_memcpy(ptr, data_ptr, nbytes, 1))
+        if isinstance(t, torch.Tensor):
+            buf.copy_(t, non_blocking=True)
+        else:
+            buf.copy_(torch.tensor(t), non_blocking=True)
         return CudaBaseBuffer(buf, nbytes, src=t)
 
     def from_raw(ptr, shape, dtype):
-        import torch
         class dummy(object):
             def __init__(self):
                 self.__cuda_array_interface__ = _to_array_interface(ptr, shape, dtype)
@@ -224,6 +247,58 @@ class CudaBaseBuffer(BaseBuffer):
 
     def copy(self):
         return CudaBaseBuffer(self.buf.detach().clone(), self.nbytes)
+
+class TritonBaseBuffer(BaseBuffer):
+    def __init__(self, buf, nbytes, src=None, is_raw=False):
+        super().__init__(buf, nbytes, src, is_raw)
+        self.libc = ctypes.cdll.LoadLibrary("libc.so.6")
+        self.libc.memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+
+    def _deconstruct(self, src_ptr):
+        # Copy data back to the CPU container
+        if src_ptr is not None:
+            cpu_buf = self.buf.cpu()
+            cpu_buf_ptr, _, _ = _extract_array_interface(cpu_buf, allow_cuda=False)
+            self.libc.memcpy(src_ptr, cpu_buf_ptr, self.nbytes)
+
+    def _get_runtime_lib(self):
+        return None
+
+    def sync(self):
+        torch.cuda.synchronize()
+
+    def from_array(t):
+        try:
+            data_ptr, shape, dtype = _extract_array_interface(t, allow_cuda=True)
+            nbytes = _size(shape, dtype)
+            if hasattr(t, "__cuda_array_interface__"):
+                return TritonBaseBuffer(torch.as_tensor(t), nbytes)
+        except Exception as e:
+            raise ValueError(f"Cannot convert argument {t} to Triton buffer")
+
+        dev = _active_triton_device()
+        if len(shape) == 0:
+            buf = torch.empty((), dtype=dtype.to_torch(), device=dev)
+        else:
+            buf = torch.empty(*shape, dtype=dtype.to_torch(), device=dev)
+        if isinstance(t, torch.Tensor):
+            buf.copy_(t, non_blocking=True)
+        else:
+            buf.copy_(torch.tensor(t), non_blocking=True)
+        nbytes = _size(shape, dtype)
+        return TritonBaseBuffer(buf, nbytes, src=t)
+
+    def from_raw(ptr, shape, dtype):
+        class dummy(object):
+            def __init__(self):
+                self.__cuda_array_interface__ = _to_array_interface(ptr, shape, dtype)
+        dev = _active_triton_device()
+        buf = torch.as_tensor(dummy(), device=dev)
+        nbytes = _size(shape, dtype)
+        return TritonBaseBuffer(buf, nbytes, is_raw=True)
+
+    def copy(self):
+        return TritonBaseBuffer(self.buf.detach().clone(), self.nbytes)
 
 class MetalBaseBuffer(BaseBuffer):
     def __init__(self, buf, nbytes, src=None, is_raw=False):
@@ -335,14 +410,12 @@ class Buffer:
         self.buf.sync()
 
     def numpy(self):
-        import numpy as np
         class dummy(object):
             def __init__(self, buf, shape, dtype):
                 self.__array_interface__ = _to_array_interface(buf, shape, dtype)
         return np.asarray(dummy(self.buf, self.shape, self.dtype))
 
     def torch(self):
-        import torch
         return self._get_indexed(torch.as_tensor(self.numpy()))
 
     def copy(self):
@@ -390,7 +463,6 @@ class CudaBuffer(Buffer):
             raise ValueError(f"Cannot copy data from array of shape {shape} and type {dtype} to CUDA buffer of shape {self.shape} and type {self.dtype}")
 
     def numpy(self):
-        import numpy as np
         return self._get_indexed(np.asarray(self.buf.buf.cpu()))
 
     def torch(self):
@@ -406,6 +478,40 @@ class CudaBuffer(Buffer):
                 nbytes = _size(self.shape, new_dtype)
                 buf = CudaBaseBuffer(t, nbytes)
                 return CudaBuffer(buf, self.shape, new_dtype, self.buf_offset)
+
+class TritonBuffer(CudaBuffer):
+    def __init__(self, buf, shape, dtype, buf_offset=0):
+        super().__init__(buf, shape, dtype, buf_offset)
+
+    def backend(self):
+        return CompileBackend.Triton
+
+    def from_array(t):
+        _, shape, dtype = _extract_array_interface(t, allow_cuda=True)
+        buf = TritonBaseBuffer.from_array(t)
+        return TritonBuffer(buf, shape, dtype)
+
+    def from_raw(ptr, shape, dtype):
+        buf = TritonBaseBuffer.from_raw(ptr, shape, dtype)
+        return TritonBuffer(buf, shape, dtype)
+
+    def copy_from(self, t):
+        _, shape, dtype = _extract_array_interface(t, allow_cuda=True)
+        if self.shape == shape and self.dtype == dtype:
+            self.torch()[:] = t
+        else:
+            raise ValueError(f"Cannot copy data from array of shape {shape} and type {dtype} to Triton buffer of shape {self.shape} and type {self.dtype}")
+
+    def with_type(self, new_dtype):
+        new_dtype = _resolve_dtype(new_dtype)
+        if isinstance(new_dtype, DataType):
+            if self.dtype.size() == new_dtype.size():
+                return TritonBuffer(self.buf, self.shape, new_dtype, self.buf_offset)
+            else:
+                t = self.buf.buf.detach().clone().to(new_dtype.to_torch())
+                nbytes = _size(self.shape, new_dtype)
+                buf = TritonBaseBuffer(t, nbytes)
+                return TritonBuffer(buf, self.shape, new_dtype, self.buf_offset)
 
 class MetalBuffer(Buffer):
     def __init__(self, buf, shape, dtype, buf_offset=0):
@@ -441,7 +547,6 @@ class MetalBuffer(Buffer):
         return MetalBuffer(buf, shape, dtype, mb.offset)
 
     def numpy(self):
-        import numpy as np
         nelems = self.size() // self.dtype.size()
         a = np.ndarray((nelems,), dtype=self.dtype.to_numpy())
         ptr, _, _ = _check_array_interface(a.__array_interface__)
@@ -451,7 +556,6 @@ class MetalBuffer(Buffer):
         return a.reshape(self.shape)
 
     def torch(self):
-        import torch
         return torch.as_tensor(self.numpy())
 
     def copy(self):

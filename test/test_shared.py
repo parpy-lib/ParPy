@@ -13,6 +13,11 @@ T = parpy.types.type_var()
 M = parpy.types.shape_var()
 N = parpy.types.shape_var()
 
+# As Triton manages shared memory automatically, we cannot use any shared
+# memory related functionality on the Triton backend.
+smem_backends = \
+    [backend for backend in compiler_backends if backend != parpy.CompileBackend.Triton]
+
 @parpy.jit
 def transpose_blocked(
         x: parpy.types.buffer(T, [M, N]),
@@ -63,7 +68,7 @@ def arbitrary_smem_alloc(N):
         for i in range(N):
             smem[i] = i
 
-@pytest.mark.parametrize('backend', compiler_backends)
+@pytest.mark.parametrize('backend', smem_backends)
 def test_transpose_smem(backend):
     def helper():
         N = 100
@@ -79,7 +84,7 @@ def test_transpose_smem(backend):
         assert torch.allclose(y, x.transpose(0, 1))
     run_if_backend_is_enabled(backend, helper)
 
-@pytest.mark.parametrize('backend', compiler_backends)
+@pytest.mark.parametrize('backend', smem_backends)
 def test_smem_reuse(backend):
     N = 100
     M = 53
@@ -103,7 +108,7 @@ def test_smem_reuse(backend):
         raise RuntimeError(f"Unsupported backend {backend}")
     assert re.search(pat, s, re.DOTALL) is not None
 
-@pytest.mark.parametrize('backend', compiler_backends)
+@pytest.mark.parametrize('backend', smem_backends)
 def test_smem_oom(backend):
     def helper():
         # We allocate an absurd amount of shared memory and test that this
@@ -114,7 +119,7 @@ def test_smem_oom(backend):
         assert e_info.match(r"Insufficient shared memory\..*current device only supports up to .* bytes")
     run_if_backend_is_enabled(backend, helper)
 
-@pytest.mark.parametrize('backend', compiler_backends)
+@pytest.mark.parametrize('backend', smem_backends)
 def test_smem_invalid_shape(backend):
     with pytest.raises(RuntimeError) as e_info:
         @parpy.jit
@@ -123,7 +128,7 @@ def test_smem_invalid_shape(backend):
                 x = parpy.builtin.alloc_shared(N, parpy.types.I32)
     assert e_info.match(r"First argument of .* must be a tuple of dimensions")
 
-@pytest.mark.parametrize('backend', compiler_backends)
+@pytest.mark.parametrize('backend', smem_backends)
 def test_smem_invalid_type(backend):
     with pytest.raises(RuntimeError) as e_info:
         @parpy.jit
@@ -155,7 +160,7 @@ def transpose_blocked_call(
     for i, j in parpy.builtin.ranges((0, M, BM), (0, N, BN)):
         transpose_called(x, y, i, j, BM, BN)
 
-@pytest.mark.parametrize('backend', compiler_backends)
+@pytest.mark.parametrize('backend', smem_backends)
 def test_smem_alloc_in_called_function(backend):
     def helper():
         N = 123

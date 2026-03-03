@@ -7,6 +7,7 @@ mod metal;
 mod option;
 mod par;
 mod py;
+mod triton;
 mod utils;
 
 use crate::utils::pprint::PrettyPrint;
@@ -106,6 +107,7 @@ fn compile_ir<'py>(
     // it includes constructs exclusive to GPU programming, such as thread and block indexing and
     // statements representing the allocation of shared memory.
     let gpu_ast = gpu::from_general_ir(ir_ast, classification, &opts, &debug_env)?;
+    debug_env.print("GPU AST", &gpu_ast);
 
     // Extracts the callback functions used in the GPU AST and produces separate ASTs for these.
     // The result consists of three parts:
@@ -124,6 +126,7 @@ fn compile_ir<'py>(
     // symbols differ between two ASTs, they should be considered equivalent.
     match opts.backend {
         option::CompileBackend::Cuda => {
+            let gpu_ast = gpu::transform(gpu_ast, &opts, &debug_env)?;
             let ast = cuda::codegen(gpu_ast, &opts)?;
             debug_env.print("CUDA AST", &ast);
             Ok((
@@ -134,8 +137,19 @@ fn compile_ir<'py>(
             ))
         },
         option::CompileBackend::Metal => {
+            let gpu_ast = gpu::transform(gpu_ast, &opts, &debug_env)?;
             let ast = metal::codegen(gpu_ast)?;
             debug_env.print("Metal AST", &ast);
+            Ok((
+                argtypes,
+                callback_asts,
+                ast.pprint_default(),
+                ast.pprint_ignore_symbols()
+            ))
+        },
+        option::CompileBackend::Triton => {
+            let ast = triton::codegen(gpu_ast, &opts, &debug_env)?;
+            debug_env.print("Triton AST", &ast);
             Ok((
                 argtypes,
                 callback_asts,
