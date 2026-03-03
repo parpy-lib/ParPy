@@ -2,6 +2,7 @@ name: cuda-parpy-env
 channels:
   - pytorch
   - conda-forge
+  - nvidia
 dependencies:
   - python=3.10
   - pip=25.1.1
@@ -11,16 +12,18 @@ dependencies:
   - gcc=12.4.0
   - gxx=12.4.0
   - coreutils
-  - pip:
-    - cupy-cuda12x==13.4.1
-    - dace==1.0.2
-    - "jax[cuda12]==0.5.3"
-    - triton==3.3.1
-    - torch==2.7.1
-    - h5py==3.14.0
-    - ssgetpy==1.0rc2
-    - matplotlib==3.10.3
-    - numpy==1.26.4
-    - pandas==2.3.1
-    - pygount==3.1.0
-    - scipy==1.15.3
+  - cupy=13.6
+  - cuda-version=12.9
+  - dace=1.0.2
+  - "jax[cuda12]=0.4.27"
+  - triton=3.6.0
+  - pytorch=2.10.0
+  - torchvision
+  - cuda-nvcc=12.9.86
+  - h5py=3.14.0
+  - ssgetpy=1.0rc2
+  - matplotlib
+  - numpy
+  - pandas
+  - pygount
+  - scipy
