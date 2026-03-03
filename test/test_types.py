@@ -126,8 +126,8 @@ def test_called_function_scalar_coercion(backend):
         def calling_func_add_scalars(x, y):
             parpy.label('N')
             x[:] = base_func_add_scalars(x[:], y[:])
-        x = np.ndarray((10,), dtype=np.int64)
-        y = np.ndarray((10,), dtype=np.int64)
+        x = np.random.randint(0, 100, size=(10,), dtype=np.int64)
+        y = np.random.randint(0, 100, size=(10,), dtype=np.int64)
         opts = par_opts(backend, {'N': parpy.threads(128)})
         calling_func_add_scalars(x, y, opts=opts)
     run_if_backend_is_enabled(backend, helper)
