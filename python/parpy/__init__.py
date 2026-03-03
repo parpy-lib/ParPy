@@ -11,4 +11,4 @@ from .buffer import sync
 from .main import threads, par_reduction, unroll, clear_cache, default_backend, compile_string, print_compiled, callback, external, jit
 from .builtin import gpu, label
 
-__version__ = "0.4.4"
+__version__ = "0.5.0"
