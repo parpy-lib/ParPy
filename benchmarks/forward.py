@@ -400,39 +400,51 @@ def forward_triton_lse(hmm_num_states : tl.constexpr, seqs_maxlen : tl.constexpr
   tl.store(result + instance, maxp + tl.log(psum))
 
 def forward_triton(hmm, seqs, nthreads):
-    result = torch.empty(seqs["num_instances"], dtype=torch.float32, device='cuda')
-    alpha1 = torch.empty(seqs["num_instances"] * hmm["num_states"], dtype=torch.float32, device='cuda')
+    hmm_gamma = float(hmm["gamma"])
+    hmm_initial_prob = hmm["initial_prob"]
+    hmm_num_states = int(hmm["num_states"])
+    hmm_output_prob = hmm["output_prob"]
+    hmm_synthetic_248 = float(hmm["synthetic_248"])
+    hmm_trans1 = hmm["trans1"]
+    hmm_trans2 = hmm["trans2"]
+    seqs_data = seqs["data"].flatten()
+    seqs_lens = seqs["lens"]
+    seqs_maxlen = int(seqs["maxlen"])
+    seqs_num_instances = int(seqs["num_instances"])
+
+    result = torch.empty(seqs_num_instances, dtype=torch.float32, device='cuda')
+    alpha1 = torch.empty(seqs_num_instances * hmm_num_states, dtype=torch.float32, device='cuda')
     alpha2 = torch.empty_like(alpha1)
 
     def grid_sz(meta):
       if "BLOCK_SIZE" in meta:
-        return (seqs["num_instances"], hmm["num_states"] // meta["BLOCK_SIZE"])
+        return (seqs_num_instances, hmm_num_states // meta["BLOCK_SIZE"])
       else:
-        return (seqs["num_instances"], )
+        return (seqs_num_instances, )
     forward_triton_init[grid_sz](
-        hmm["initial_prob"], hmm["output_prob"], int(hmm["num_states"]),
-        seqs["data"].flatten(), int(seqs["maxlen"]), alpha1
+        hmm_initial_prob, hmm_output_prob, hmm_num_states,
+        seqs_data, seqs_maxlen, alpha1
     )
     if nthreads <= 1024:
         forward_triton_steps[grid_sz](
-            hmm["output_prob"], hmm["trans1"], hmm["trans2"],
-            float(hmm["gamma"]), float(hmm["synthetic_248"]), int(hmm["num_states"]),
-            seqs["data"], seqs["lens"], int(seqs["maxlen"]), alpha1, alpha2
+            hmm_output_prob, hmm_trans1, hmm_trans2,
+            hmm_gamma, hmm_synthetic_248, hmm_num_states,
+            seqs_data, seqs_lens, seqs_maxlen, alpha1, alpha2
         )
     else:
         # If the user requests more than 1024 threads, multiple blocks have to
         # run the code in each time step. As Triton has no way of multi-block
         # synchronization, we have to break it up into multiple separate calls
         # to Triton kernels.
-        for t in range(1, seqs["maxlen"]):
+        for t in range(1, seqs_maxlen):
             forward_triton_step[grid_sz](
-              hmm["output_prob"], hmm["trans1"], hmm["trans2"],
-              float(hmm["gamma"]), float(hmm["synthetic_248"]), int(hmm["num_states"]),
-              seqs["data"], seqs["lens"], int(seqs["maxlen"]), alpha1, alpha2, t,
+              hmm_output_prob, hmm_trans1, hmm_trans2,
+              hmm_gamma, hmm_synthetic_248, hmm_num_states,
+              seqs_data, seqs_lens, seqs_maxlen, alpha1, alpha2, t,
               BLOCK_SIZE=1024
             )
     forward_triton_lse[grid_sz](
-        int(hmm["num_states"]), int(seqs["maxlen"]), alpha1, alpha2, result
+        hmm_num_states, seqs_maxlen, alpha1, alpha2, result
     )
     return result
 
