@@ -110,7 +110,7 @@ def _torch_to_ctype(dtype):
 def _build_triton_python_module(key, source, opts):
     from .parpy import CompileBackend
     from .runtime import PARPY_NATIVE_PATH
-    module_path = cache_path / f"{key}.py"
+    module_path = _get_native_path(key, opts)
     # Loads a pre-defined Triton file containing simple definitions we may use
     # in the generated Triton code.
     with open(PARPY_NATIVE_PATH / "parpy_triton.py", "r") as f:
