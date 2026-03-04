@@ -8,6 +8,7 @@ mod inline;
 mod pprint;
 mod power;
 mod shapes;
+mod remove_sync;
 mod rewrite_reductions;
 mod utils;
 
@@ -25,6 +26,10 @@ pub fn codegen(
     opts: &CompileOptions,
     debug_env: &DebugEnv
 ) -> CompileResult<Ast> {
+    // Remove synchronization points after reductions, as Triton will ensure threads are
+    // synchronized after such operations.
+    let gpu_ast = remove_sync::apply(gpu_ast)?;
+
     // Rewrite reductions such that the intermediate result is always stored in a (fresh) temporary
     // variable, and written once to the left-hand side of the original reduction.
     let gpu_ast = rewrite_reductions::apply(gpu_ast)?;
