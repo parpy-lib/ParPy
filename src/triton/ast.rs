@@ -21,6 +21,7 @@ pub enum Shape {
 pub enum Type {
     Pointer {ty: Box<Type>, shape: Shape},
     Tensor {sz: ElemSize, shape: Shape},
+    Function {result: Box<Type>, args: Vec<Type>},
     Void,
 }
 
@@ -29,6 +30,7 @@ impl Type {
         match self {
             Type::Pointer {ty, ..} => ty.get_elem_size(),
             Type::Tensor {sz, ..} => Some(sz),
+            Type::Function {..} => None,
             Type::Void => None,
         }
     }
@@ -37,6 +39,7 @@ impl Type {
         match self {
             Type::Pointer {shape, ..} => Some(shape),
             Type::Tensor {shape, ..} => Some(shape),
+            Type::Function {..} => None,
             Type::Void => None,
         }
     }
@@ -73,8 +76,11 @@ pub enum Expr {
     Load {ptr: Box<Expr>, mask: Option<Box<Expr>>, ty: Type, i: Info},
     Full {shape: usize, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
     Where {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
-    AllocBuffer {nelems: usize, elem_sz: ElemSize, ty: Type, i: Info},
     Convert {value: Box<Expr>, ty: Type, i: Info},
+
+    // Host-side nodes
+    AllocBuffer {nelems: usize, elem_sz: ElemSize, ty: Type, i: Info},
+    ToTorch {e: Box<Expr>, ty: Type, i: Info},
 }
 
 impl Expr {
@@ -96,9 +102,10 @@ impl Expr {
                 Expr::Full {shape, value, elem_sz, ty, i},
             Expr::Where {cond, thn, els, ty: _, i} =>
                 Expr::Where {cond, thn, els, ty, i},
+            Expr::Convert {value, ty: _, i} => Expr::Convert {value, ty, i},
             Expr::AllocBuffer {nelems, elem_sz, ty: _, i} =>
                 Expr::AllocBuffer {nelems, elem_sz, ty, i},
-            Expr::Convert {value, ty: _, i} => Expr::Convert {value, ty, i},
+            Expr::ToTorch {e, ty: _, i} => Expr::ToTorch {e, ty, i},
         }
     }
 
@@ -118,8 +125,9 @@ impl Expr {
             Expr::Load {..} => 11,
             Expr::Full {..} => 12,
             Expr::Where {..} => 13,
-            Expr::AllocBuffer {..} => 14,
-            Expr::Convert {..} => 15,
+            Expr::Convert {..} => 14,
+            Expr::AllocBuffer {..} => 15,
+            Expr::ToTorch {..} => 16,
         }
     }
 }
@@ -141,8 +149,9 @@ impl InfoNode for Expr {
             Expr::Load {i, ..} |
             Expr::Full {i, ..} |
             Expr::Where {i, ..} |
+            Expr::Convert {i, ..} |
             Expr::AllocBuffer {i, ..} |
-            Expr::Convert {i, ..} => i.clone(),
+            Expr::ToTorch {i, ..} => i.clone(),
         }
     }
 }
@@ -164,8 +173,9 @@ impl ExprType<Type> for Expr {
             Expr::Load {ty, ..} |
             Expr::Full {ty, ..} |
             Expr::Where {ty, ..} |
+            Expr::Convert {ty, ..} |
             Expr::AllocBuffer {ty, ..} |
-            Expr::Convert {ty, ..} => ty,
+            Expr::ToTorch {ty, ..} => ty,
         }
     }
 
@@ -186,7 +196,8 @@ impl ExprType<Type> for Expr {
             Expr::Load {..} |
             Expr::Full {..} |
             Expr::Where {..} |
-            Expr::Convert {..} => false,
+            Expr::Convert {..} |
+            Expr::ToTorch {..} => false,
         }
     }
 }
@@ -208,6 +219,7 @@ impl SFold<Expr> for Expr {
             Expr::Full {value, ..} => f(acc?, value),
             Expr::Where {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
             Expr::Convert {value, ..} => f(acc?, value),
+            Expr::ToTorch {e, ..} => f(acc?, e),
             Expr::Var {..} |
             Expr::Bool {..} |
             Expr::Int {..} |
@@ -278,6 +290,10 @@ impl SMapAccum<Expr> for Expr {
                     value: Box::new(value), ty, i
                 }))
             },
+            Expr::ToTorch {e, ty, i} => {
+                let (acc, e) = f(acc?, *e)?;
+                Ok((acc, Expr::ToTorch {e: Box::new(e), ty, i}))
+            },
             Expr::Var {..} |
             Expr::Bool {..} |
             Expr::Int {..} |
@@ -323,10 +339,11 @@ impl Ord for Expr {
             ( Expr::Where {cond: lcond, thn: lthn, els: lels, ..}
             , Expr::Where {cond: rcond, thn: rthn, els: rels, ..} ) =>
                 lcond.cmp(rcond).then(lthn.cmp(rthn)).then(lels.cmp(rels)),
+            (Expr::Convert {value: lv, ..}, Expr::Convert {value: rv, ..}) => lv.cmp(rv),
             ( Expr::AllocBuffer {nelems: ln, elem_sz: lsz, ..}
             , Expr::AllocBuffer {nelems: rn, elem_sz: rsz, ..} ) =>
                 ln.cmp(rn).then(lsz.cmp(rsz)),
-            (Expr::Convert {value: lv, ..}, Expr::Convert {value: rv, ..}) => lv.cmp(rv),
+            (Expr::ToTorch {e: le, ..}, Expr::ToTorch {e: re, ..}) => le.cmp(re),
             _ => self.discriminator().cmp(&other.discriminator()),
         }
     }
@@ -541,12 +558,19 @@ impl SFlatten<Stmt> for Stmt {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Param {
+    pub id: Name,
+    pub ty: Type,
+    pub i: Info,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Top {
     Import {package: String, as_str: Option<String>, i: Info},
     FunDef {
         triton_jit: bool,
         id: Name,
-        params: Vec<Name>,
+        params: Vec<Param>,
         body: Vec<Stmt>,
         i: Info
     },

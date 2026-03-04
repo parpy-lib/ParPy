@@ -238,7 +238,10 @@ pub fn apply(ast: Ast) -> CompileResult<Ast> {
         .into_iter()
         .map(|t| match t {
             Top::FunDef {triton_jit: _, id, params, body, i: _} => {
-                Some((id.clone(), (params, body)))
+                let param_ids = params.into_iter()
+                    .map(|Param {id, ..}| id)
+                    .collect::<Vec<Name>>();
+                Some((id.clone(), (param_ids, body)))
             },
             _ => None
         })

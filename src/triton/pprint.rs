@@ -52,6 +52,7 @@ impl PrettyPrint for Type {
                 (env, format!("tl.pointer_type({ty})"))
             },
             Type::Tensor {sz, shape: _} => (env, pprint_elem_size(&sz)),
+            Type::Function {..} => (env, format!("<function type>")),
             Type::Void => (env, "void".to_string())
         }
     }
@@ -214,14 +215,18 @@ impl PrettyPrint for Expr {
                 let (env, els) = els.pprint(env);
                 (env, format!("triton.language.where({cond}, {thn}, {els})"))
             },
-            Expr::AllocBuffer {nelems, elem_sz, ty: _, i: _} => {
-                let dtype = print_dtype(elem_sz);
-                (env, format!("_parpy_builtin_alloc({nelems}, {dtype})"))
-            },
             Expr::Convert {value, ty, i: _} => {
                 let (env, value) = value.pprint(env);
                 let (env, ty) = ty.pprint(env);
                 (env, format!("triton.language.cast({value}, {ty})"))
+            },
+            Expr::AllocBuffer {nelems, elem_sz, ty: _, i: _} => {
+                let dtype = print_dtype(elem_sz);
+                (env, format!("_parpy_builtin_alloc({nelems}, {dtype})"))
+            },
+            Expr::ToTorch {e, ty: _, i: _} => {
+                let (env, e) = e.pprint(env);
+                (env, format!("_parpy_builtin_to_torch({e})"))
             },
         }
     }
@@ -305,6 +310,13 @@ impl PrettyPrint for Stmt {
                 (env, format!("{0}{id}[lambda _: ({block_dims})]({args}, num_warps={nwarps})", indent))
             },
         }
+    }
+}
+
+impl PrettyPrint for Param {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let (env, id) = self.id.pprint(env);
+        (env, format!("{id}"))
     }
 }
 
@@ -489,8 +501,8 @@ mod test {
             triton_jit: true,
             id: Name::sym_str("f"),
             params: vec![
-                Name::sym_str("x"),
-                Name::sym_str("y"),
+                Param {id: Name::sym_str("x"), ty: Type::Void, i: i()},
+                Param {id: Name::sym_str("y"), ty: Type::Void, i: i()},
             ],
             body: vec![
                 Stmt::Assign {dst: Name::sym_str("w"), expr: var("k", None), i: i()}

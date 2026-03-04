@@ -22,6 +22,7 @@ fn type_with_shape(
     match ty {
         Type::Pointer {ty, ..} => Ok(Type::Pointer {ty, shape}),
         Type::Tensor {sz, ..} => Ok(Type::Tensor {sz, shape}),
+        Type::Function {..} => parpy_internal_error!(i, "Cannot set shape of function type"),
         Type::Void => parpy_internal_error!(i, "Cannot set shape of void type")
     }
 }
@@ -30,6 +31,7 @@ fn get_type_shape(ty: &Type, i: &Info) -> CompileResult<Shape> {
     match ty {
         Type::Pointer {shape, ..} |
         Type::Tensor {shape, ..} => Ok(shape.clone()),
+        Type::Function {..} => parpy_internal_error!(i, "Cannot get shape of function type"),
         Type::Void => parpy_internal_error!(i, "Cannot get shape of void type")
     }
 }
@@ -198,13 +200,14 @@ fn add_shape_variables_expr(env: ShapeEnv, e: Expr) -> CompileResult<(ShapeEnv, 
                 cond: Box::new(cond), thn: Box::new(thn), els: Box::new(els), ty, i
             }))
         },
-        Expr::AllocBuffer {..} => Ok((env, e)),
         Expr::Convert {value, ty, i} => {
             let (env, value) = add_shape_variables_expr(env, *value)?;
             let shape = get_type_shape(value.get_type(), &i)?;
             let ty = type_with_shape(ty, shape, &i)?;
             Ok((env, Expr::Convert {value: Box::new(value), ty, i}))
         },
+        Expr::AllocBuffer {..} |
+        Expr::ToTorch {..} => Ok((env, e)),
     }
 }
 
@@ -418,7 +421,8 @@ fn determine_type(
             let shape = determine_shape(&mapping, shape);
             Type::Tensor {sz, shape}
         },
-        Type::Void => Type::Void
+        Type::Function {..} |
+        Type::Void => ty
     }
 }
 

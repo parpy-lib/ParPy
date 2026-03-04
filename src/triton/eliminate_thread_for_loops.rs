@@ -41,7 +41,8 @@ fn update_block_size_type(ty: Type, block_size: i128) -> Type {
             let shape = update_block_size_shape(shape, block_size);
             Type::Tensor {sz, shape}
         },
-        Type::Void => Type::Void
+        Type::Function {..} |
+        Type::Void => ty
     }
 }
 
