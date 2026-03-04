@@ -187,7 +187,11 @@ impl PrettyPrint for Expr {
             Expr::ProgramId {dim: Dim::X, ty: _, i: _} => (env, format!("triton.language.program_id(0)")),
             Expr::ProgramId {dim: Dim::Y, ty: _, i: _} => (env, format!("triton.language.program_id(1)")),
             Expr::ProgramId {dim: Dim::Z, ty: _, i: _} => (env, format!("triton.language.program_id(2)")),
-            Expr::Arange {lo, hi, ty: _, i: _} => (env, format!("triton.language.arange({lo}, {hi})")),
+            Expr::Arange {lo, hi, ty: _, i: _} => {
+                let (env, lo) = lo.pprint(env);
+                let (env, hi) = hi.pprint(env);
+                (env, format!("triton.language.arange({lo}, {hi})"))
+            },
             Expr::Load {ptr, mask, ty: _, i: _} => {
                 let (env, ptr) = ptr.pprint(env);
                 match mask {
@@ -354,7 +358,12 @@ mod test {
 
     #[test]
     fn print_arange() {
-        let e = Expr::Arange {lo: 0, hi: 16, ty: Type::Void, i: i()};
+        let e = Expr::Arange {
+            lo: Box::new(int(0)),
+            hi: Box::new(int(16)),
+            ty: Type::Void,
+            i: i()
+        };
         assert_eq!(e.pprint_default(), "triton.language.arange(0, 16)");
     }
 

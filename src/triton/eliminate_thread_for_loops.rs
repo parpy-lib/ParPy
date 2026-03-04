@@ -23,14 +23,14 @@ fn extract_iteration_count(lo: &Expr, hi: &Expr) -> Option<(i128, i128)> {
     }
 }
 
-fn update_block_size_shape(shape: Shape, block_size: usize) -> Shape {
+fn update_block_size_shape(shape: Shape, block_size: i128) -> Shape {
     match shape {
-        Shape::Num(n) if n > 1 => Shape::Num(block_size),
+        Shape::Num(n) if n > 1 => Shape::Num(block_size as usize),
         _ => shape
     }
 }
 
-fn update_block_size_type(ty: Type, block_size: usize) -> Type {
+fn update_block_size_type(ty: Type, block_size: i128) -> Type {
     match ty {
         Type::Pointer {ty, shape} => {
             let ty = Box::new(update_block_size_type(*ty, block_size));
@@ -45,7 +45,7 @@ fn update_block_size_type(ty: Type, block_size: usize) -> Type {
     }
 }
 
-fn update_block_size_expr(e: Expr, block_size: usize) -> Expr {
+fn update_block_size_expr(e: Expr, block_size: i128) -> Expr {
     let ty = update_block_size_type(e.get_type().clone(), block_size);
     let e = e.with_type(ty);
     match e {
@@ -57,7 +57,7 @@ fn update_block_size_expr(e: Expr, block_size: usize) -> Expr {
     }
 }
 
-fn update_block_size(s: Stmt, block_size: usize) -> Stmt {
+fn update_block_size(s: Stmt, block_size: i128) -> Stmt {
     match s {
         _ => {
             s.smap(|s| update_block_size(s, block_size))
@@ -85,7 +85,7 @@ fn apply_stmt(mut acc: Vec<Stmt>, s: Stmt) -> CompileResult<Vec<Stmt>> {
                         // for sanity purposes (the size of a warp).
                         let n_iters = if l < h { h - l } else { l - h };
                         let block_size = (n_iters as usize).next_power_of_two();
-                        let block_size = usize::max(block_size, 32);
+                        let block_size = usize::max(block_size, 32) as i128;
                         let ty = lo.get_type().clone();
                         acc.push(Stmt::Definition {
                             dst: id.clone(),
@@ -94,8 +94,16 @@ fn apply_stmt(mut acc: Vec<Stmt>, s: Stmt) -> CompileResult<Vec<Stmt>> {
                                 op: BinOp::Add,
                                 rhs: Box::new(Expr::BinOp {
                                     lhs: Box::new(Expr::Arange {
-                                        lo: 0,
-                                        hi: block_size,
+                                        lo: Box::new(Expr::Int {
+                                            v: 0,
+                                            ty: ty.clone(),
+                                            i: i.clone()
+                                        }),
+                                        hi: Box::new(Expr::Int {
+                                            v: block_size,
+                                            ty: ty.clone(),
+                                            i: i.clone()
+                                        }),
                                         ty: ty.clone(),
                                         i: i.clone()
                                     }),

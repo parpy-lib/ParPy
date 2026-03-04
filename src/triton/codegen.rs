@@ -303,7 +303,7 @@ fn extract_loop_bounds(
     // runs in parallel over threads, in which case we have to restructure it.
     if removed_thread {
         let step_size = determine_step_size(&env, step, &lo);
-        let nthreads = env.current_grid.threads.prod() as usize;
+        let nthreads = env.current_grid.threads.prod() as i128;
         let new_var = Name::new(format!("{0}_chunk", var.get_str())).with_new_sym();
         let var_assign = Stmt::Definition {
             dst: var,
@@ -316,8 +316,16 @@ fn extract_loop_bounds(
                 op: BinOp::Add,
                 rhs: Box::new(Expr::BinOp {
                     lhs: Box::new(Expr::Arange {
-                        lo: 0,
-                        hi: nthreads,
+                        lo: Box::new(Expr::Int {
+                            v: 0,
+                            ty: var_ty.clone(),
+                            i: i.clone()
+                        }),
+                        hi: Box::new(Expr::Int {
+                            v: nthreads,
+                            ty: var_ty.clone(),
+                            i: i.clone()
+                        }),
                         ty: var_ty.clone(),
                         i: i.clone()
                     }),

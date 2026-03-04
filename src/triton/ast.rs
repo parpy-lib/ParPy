@@ -69,7 +69,7 @@ pub enum Expr {
 
     // Triton-specific nodes
     ProgramId {dim: Dim, ty: Type, i: Info},
-    Arange {lo: usize, hi: usize, ty: Type, i: Info},
+    Arange {lo: Box<Expr>, hi: Box<Expr>, ty: Type, i: Info},
     Load {ptr: Box<Expr>, mask: Option<Box<Expr>>, ty: Type, i: Info},
     Full {shape: usize, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
     Where {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
@@ -203,6 +203,7 @@ impl SFold<Expr> for Expr {
             Expr::Reduce {arg, ..} => f(acc?, arg),
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::ExtCall {args, ..} => args.sfold_result(acc, &f),
+            Expr::Arange {lo, hi, ..} => f(f(acc?, lo)?, hi),
             Expr::Load {ptr, mask, ..} => mask.sfold_result(f(acc?, ptr), &f),
             Expr::Full {value, ..} => f(acc?, value),
             Expr::Where {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
@@ -212,7 +213,6 @@ impl SFold<Expr> for Expr {
             Expr::Int {..} |
             Expr::Float {..} |
             Expr::ProgramId {..} |
-            Expr::Arange {..} |
             Expr::AllocBuffer {..} => acc
         }
     }
@@ -246,6 +246,11 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Expr::ExtCall {id, args, ty, i}))
             },
+            Expr::Arange {lo, hi, ty, i} => {
+                let (acc, lo) = f(acc?, *lo)?;
+                let (acc, hi) = f(acc, *hi)?;
+                Ok((acc, Expr::Arange {lo: Box::new(lo), hi: Box::new(hi), ty, i}))
+            },
             Expr::Load {ptr, mask, ty, i} => {
                 let (acc, ptr) = f(acc?, *ptr)?;
                 let (acc, mask) = mask.smap_accum_l_result(Ok(acc), &f)?;
@@ -278,7 +283,6 @@ impl SMapAccum<Expr> for Expr {
             Expr::Int {..} |
             Expr::Float {..} |
             Expr::ProgramId {..} |
-            Expr::Arange {..} |
             Expr::AllocBuffer {..} => Ok((acc?, self))
         }
     }

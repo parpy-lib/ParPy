@@ -154,7 +154,14 @@ fn add_shape_variables_expr(env: ShapeEnv, e: Expr) -> CompileResult<(ShapeEnv, 
             Ok((env, Expr::ProgramId {dim, ty, i}))
         },
         Expr::Arange {lo, hi, ty, i} => {
-            let ty = type_with_shape(ty, Shape::Num(hi-lo), &i)?;
+            let extract_integer_literal = |e: &Expr, i: &Info| match e {
+                Expr::Int {v, ..} => Ok(v.clone()),
+                _ => parpy_internal_error!(i, "Found non-literal bound of arange in the \
+                                               shape analysis of the Triton backend")
+            };
+            let l = extract_integer_literal(&lo, &i)?;
+            let h = extract_integer_literal(&hi, &i)?;
+            let ty = type_with_shape(ty, Shape::Num((h-l) as usize), &i)?;
             Ok((env, Expr::Arange {lo, hi, ty, i}))
         },
         Expr::Load {ptr, mask, ty, i} => {
