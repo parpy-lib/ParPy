@@ -1,23 +1,24 @@
 use super::ast::*;
 use crate::utils::ast::*;
+use crate::utils::name::Name;
 use crate::utils::pprint::*;
 
 use itertools::Itertools;
 
 fn pprint_elem_size(sz: &ElemSize) -> String {
     match sz {
-        ElemSize::Bool => "triton.language.int1",
-        ElemSize::I8 => "triton.language.int8",
-        ElemSize::I16 => "triton.language.int16",
-        ElemSize::I32 => "triton.language.int32",
-        ElemSize::I64 => "triton.language.int64",
-        ElemSize::U8 => "triton.language.uint8",
-        ElemSize::U16 => "triton.language.uint16",
-        ElemSize::U32 => "triton.language.uint32",
-        ElemSize::U64 => "triton.language.uint64",
-        ElemSize::F16 => "triton.language.float16",
-        ElemSize::F32 => "triton.language.float32",
-        ElemSize::F64 => "triton.language.float64",
+        ElemSize::Bool => "tl.int1",
+        ElemSize::I8 => "tl.int8",
+        ElemSize::I16 => "tl.int16",
+        ElemSize::I32 => "tl.int32",
+        ElemSize::I64 => "tl.int64",
+        ElemSize::U8 => "tl.uint8",
+        ElemSize::U16 => "tl.uint16",
+        ElemSize::U32 => "tl.uint32",
+        ElemSize::U64 => "tl.uint64",
+        ElemSize::F16 => "tl.float16",
+        ElemSize::F32 => "tl.float32",
+        ElemSize::F64 => "tl.float64",
     }.to_string()
 }
 
@@ -74,7 +75,7 @@ impl PrettyPrintUnOp<Type> for Expr {
             UnOp::Not => Some("_parpy_builtin_not"),
             UnOp::BitNeg => Some("~"),
             UnOp::Addressof => None,
-            UnOp::Sqrt => Some("triton.language.sqrt"),
+            UnOp::Sqrt => Some("tl.sqrt"),
         }?;
         Some(s.to_string())
     }
@@ -121,8 +122,8 @@ impl PrettyPrintBinOp<Type> for Expr {
             BinOp::Geq => Some(">="),
             BinOp::Lt => Some("<"),
             BinOp::Gt => Some(">"),
-            BinOp::Max => Some("triton.language.maximum"),
-            BinOp::Min => Some("triton.language.minimum"),
+            BinOp::Max => Some("tl.maximum"),
+            BinOp::Min => Some("tl.minimum"),
         }?;
         Some(s.to_string())
     }
@@ -138,9 +139,9 @@ impl PrettyPrintBinOp<Type> for Expr {
 impl PrettyPrint for ReduceOp {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let s = match self {
-            ReduceOp::Min => "triton.language.min",
-            ReduceOp::Max => "triton.language.max",
-            ReduceOp::Sum => "triton.language.sum",
+            ReduceOp::Min => "tl.min",
+            ReduceOp::Max => "tl.max",
+            ReduceOp::Sum => "tl.sum",
             ReduceOp::Prod => "_parpy_builtin_prod",
             ReduceOp::Any => "_parpy_builtin_any",
         };
@@ -179,40 +180,40 @@ impl PrettyPrint for Expr {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{id}({args})"))
             },
-            Expr::ProgramId {dim: Dim::X, ty: _, i: _} => (env, format!("triton.language.program_id(0)")),
-            Expr::ProgramId {dim: Dim::Y, ty: _, i: _} => (env, format!("triton.language.program_id(1)")),
-            Expr::ProgramId {dim: Dim::Z, ty: _, i: _} => (env, format!("triton.language.program_id(2)")),
+            Expr::ProgramId {dim: Dim::X, ty: _, i: _} => (env, format!("tl.program_id(0)")),
+            Expr::ProgramId {dim: Dim::Y, ty: _, i: _} => (env, format!("tl.program_id(1)")),
+            Expr::ProgramId {dim: Dim::Z, ty: _, i: _} => (env, format!("tl.program_id(2)")),
             Expr::Arange {lo, hi, ty: _, i: _} => {
                 let (env, lo) = lo.pprint(env);
                 let (env, hi) = hi.pprint(env);
-                (env, format!("triton.language.arange({lo}, {hi})"))
+                (env, format!("tl.arange({lo}, {hi})"))
             },
             Expr::Load {ptr, mask, ty: _, i: _} => {
                 let (env, ptr) = ptr.pprint(env);
                 match mask {
                     Some(m) => {
                         let (env, m) = m.pprint(env);
-                        (env, format!("triton.language.load({ptr}, mask={m})"))
+                        (env, format!("tl.load({ptr}, mask={m})"))
                     },
-                    None => (env, format!("triton.language.load({ptr})"))
+                    None => (env, format!("tl.load({ptr})"))
                 }
             },
             Expr::Full {shape, value, elem_sz, ty: _, i: _} => {
                 let (env, shape) = shape.pprint(env);
                 let (env, value) = value.pprint(env);
                 let elem_sz = pprint_elem_size(elem_sz);
-                (env, format!("triton.language.full(({shape},), {value}, {elem_sz})"))
+                (env, format!("tl.full(({shape},), {value}, {elem_sz})"))
             },
             Expr::Where {cond, thn, els, ty: _, i: _} => {
                 let (env, cond) = cond.pprint(env);
                 let (env, thn) = thn.pprint(env);
                 let (env, els) = els.pprint(env);
-                (env, format!("triton.language.where({cond}, {thn}, {els})"))
+                (env, format!("tl.where({cond}, {thn}, {els})"))
             },
             Expr::Convert {value, ty, i: _} => {
                 let (env, value) = value.pprint(env);
                 let (env, ty) = ty.pprint(env);
-                (env, format!("triton.language.cast({value}, {ty})"))
+                (env, format!("tl.cast({value}, {ty})"))
             },
             Expr::AllocBuffer {nelems, elem_sz, ty: _, i: _} => {
                 let dtype = print_dtype(elem_sz);
@@ -285,7 +286,7 @@ impl PrettyPrint for Stmt {
                 (env, format!("{0}{e}", indent))
             },
             Stmt::Pass {i: _} => (env, format!("{0}pass", indent)),
-            Stmt::Barrier {i: _} => (env, format!("{0}triton.language.debug_barrier()", indent)),
+            Stmt::Barrier {i: _} => (env, format!("{0}tl.debug_barrier()", indent)),
             Stmt::Store {ptr, value, mask, i: _} => {
                 let (env, ptr) = ptr.pprint(env);
                 let (env, value) = value.pprint(env);
@@ -296,7 +297,7 @@ impl PrettyPrint for Stmt {
                     },
                     None => (env, "".to_string())
                 };
-                (env, format!("{0}triton.language.store({ptr}, {value}{mask})", indent))
+                (env, format!("{0}tl.store({ptr}, {value}{mask})", indent))
             },
             Stmt::KernelLaunch {id, block_dims, args, nwarps: _, i: _} => {
                 let (env, id) = id.pprint(env);
@@ -355,7 +356,7 @@ impl PrettyPrint for Param {
         let (env, id) = self.id.pprint(env);
         match self.annot_ty {
             AnnotType::Any => (env, format!("{id}")),
-            AnnotType::Constexpr => (env, format!("{id}: triton.language.constexpr")),
+            AnnotType::Constexpr => (env, format!("{id}: tl.constexpr")),
         }
     }
 }
@@ -364,9 +365,14 @@ impl PrettyPrint for Top {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
             Top::Import {package, as_str, i: _} => {
+                // We add the string of the imported package into the environment, to effectively
+                // reserve its name. This avoids naming conflicts that could occur because
+                // user-defined code uses a variable with the same name as an imported package.
                 if let Some(s) = as_str {
+                    let (env, _) = Name::sym_str(s).pprint(env);
                     (env, format!("import {package} as {s}"))
                 } else {
+                    let (env, _) = Name::sym_str(package).pprint(env);
                     (env, format!("import {package}"))
                 }
             },
@@ -420,7 +426,7 @@ mod test {
     #[test]
     fn print_program_id() {
         let e = Expr::ProgramId {dim: Dim::Y, ty: Type::Void, i: i()};
-        assert_eq!(e.pprint_default(), "triton.language.program_id(1)");
+        assert_eq!(e.pprint_default(), "tl.program_id(1)");
     }
 
     #[test]
@@ -431,7 +437,7 @@ mod test {
             ty: Type::Void,
             i: i()
         };
-        assert_eq!(e.pprint_default(), "triton.language.arange(0, 16)");
+        assert_eq!(e.pprint_default(), "tl.arange(0, 16)");
     }
 
     #[test]
@@ -442,7 +448,7 @@ mod test {
             ty: Type::Void,
             i: i()
         };
-        assert_eq!(e.pprint_default(), "triton.language.load(x)");
+        assert_eq!(e.pprint_default(), "tl.load(x)");
     }
 
     #[test]
@@ -453,7 +459,7 @@ mod test {
             ty: Type::Void,
             i: i()
         };
-        assert_eq!(e.pprint_default(), "triton.language.load(x, mask=y)");
+        assert_eq!(e.pprint_default(), "tl.load(x, mask=y)");
     }
 
     #[test]
@@ -465,7 +471,7 @@ mod test {
             ty: Type::Void,
             i: i()
         };
-        assert_eq!(e.pprint_default(), "triton.language.full((32,), 1, triton.language.int32)");
+        assert_eq!(e.pprint_default(), "tl.full((32,), 1, tl.int32)");
     }
 
     #[test]
@@ -477,7 +483,7 @@ mod test {
             ty: Type::Void,
             i: i()
         };
-        assert_eq!(e.pprint_default(), "triton.language.full((1,), 1.0, triton.language.float32)");
+        assert_eq!(e.pprint_default(), "tl.full((1,), 1.0, tl.float32)");
     }
 
     #[test]
@@ -489,7 +495,7 @@ mod test {
             ty: Type::Void,
             i: i()
         };
-        assert_eq!(e.pprint_default(), "triton.language.where(x, y, z)");
+        assert_eq!(e.pprint_default(), "tl.where(x, y, z)");
     }
 
     #[test]
@@ -505,7 +511,7 @@ mod test {
     #[test]
     fn print_barrier() {
         let s = Stmt::Barrier {i: i()};
-        assert_eq!(s.pprint_default(), "triton.language.debug_barrier()")
+        assert_eq!(s.pprint_default(), "tl.debug_barrier()")
     }
 
     #[test]
@@ -516,7 +522,7 @@ mod test {
             mask: None,
             i: i()
         };
-        assert_eq!(s.pprint_default(), "triton.language.store(x, y)");
+        assert_eq!(s.pprint_default(), "tl.store(x, y)");
     }
 
     #[test]
@@ -527,7 +533,7 @@ mod test {
             mask: Some(var("z", None)),
             i: i()
         };
-        assert_eq!(s.pprint_default(), "triton.language.store(x, y, mask=z)");
+        assert_eq!(s.pprint_default(), "tl.store(x, y, mask=z)");
     }
 
     #[test]
@@ -605,5 +611,36 @@ mod test {
                 ")"
             )
         )
+    }
+
+    #[test]
+    fn print_escaped_import_name() {
+        let import_triton = Top::Import {
+            package: "triton".to_string(),
+            as_str: None,
+            i: i()
+        };
+        let import_tl = Top::Import {
+            package: "triton.language".to_string(),
+            as_str: Some("tl".to_string()),
+            i: i()
+        };
+        let env = PrettyPrintEnv::default();
+        let (env, _) = import_triton.pprint(env);
+        let (env, _) = import_tl.pprint(env);
+        let e = Expr::Var {
+            id: Name::sym_str("triton"),
+            ty: Type::Void,
+            i: i()
+        };
+        let (env, s) = e.pprint(env);
+        assert!(s.starts_with("triton") && s != "triton");
+        let e = Expr::Var {
+            id: Name::sym_str("tl"),
+            ty: Type::Void,
+            i: i()
+        };
+        let (_, s) = e.pprint(env);
+        assert!(s.starts_with("tl") && s != "tl");
     }
 }

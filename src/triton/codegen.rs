@@ -47,14 +47,14 @@ impl CodegenEnv {
 }
 
 fn generate_default_imports() -> Vec<Top> {
-    let mk_import = |package_str: &str| Top::Import {
+    let mk_import = |package_str: &str, as_str: Option<&str>| Top::Import {
         package: package_str.to_string(),
-        as_str: None,
+        as_str: as_str.map(|s| s.to_string()),
         i: Info::default()
     };
     vec![
-        mk_import("triton"),
-        mk_import("triton.language"),
+        mk_import("triton", None),
+        mk_import("triton.language", Some("tl")),
     ]
 }
 
