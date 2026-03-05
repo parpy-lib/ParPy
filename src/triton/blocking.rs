@@ -15,7 +15,7 @@ fn get_elem_size(ty: &Type, i: &Info) -> CompileResult<ElemSize> {
     }
 }
 
-fn get_shape_from_type(ty: &Type) -> usize {
+fn get_shape_from_type(ty: &Type) -> i128 {
     match ty.get_shape() {
         Some(Shape::Num(n)) => *n,
         _ => 1
@@ -46,7 +46,11 @@ fn wrap_blocked_literals_in_full_expr(e: Expr) -> CompileResult<Expr> {
             let shape = get_shape_from_type(&ty);
             let elem_sz = get_elem_size(&ty, &i)?;
             Ok(Expr::Full {
-                shape,
+                shape: Box::new(Expr::Int {
+                    v: shape,
+                    ty: ty.clone(),
+                    i: i.clone()
+                }),
                 value: Box::new(e),
                 elem_sz,
                 ty,
@@ -161,7 +165,11 @@ fn add_masking_in_parallel_for(
                         let ty = hi.get_type().clone();
                         let shape = Shape::Num(get_shape_from_type(&ty));
                         let cond_ty = Type::Tensor {sz: ElemSize::Bool, shape};
-                        let op = if step > 0 { BinOp::Lt } else { BinOp::Gt };
+                        let op = match step {
+                            Expr::Int {v, ..} if v > 0 => Ok(BinOp::Lt),
+                            Expr::Int {..} => Ok(BinOp::Gt),
+                            _ => parpy_internal_error!(i, "Found non-literal step size: {step:#?}")
+                        }?;
                         let boundary_cond = Expr::BinOp {
                             lhs: Box::new(Expr::Var {
                                 id: id.clone(), ty: ty.clone(), i: i.clone()

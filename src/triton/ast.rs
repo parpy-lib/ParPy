@@ -15,7 +15,7 @@ use std::cmp::Ordering;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Var(usize),
-    Num(usize),
+    Num(i128),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -75,7 +75,7 @@ pub enum Expr {
     ProgramId {dim: Dim, ty: Type, i: Info},
     Arange {lo: Box<Expr>, hi: Box<Expr>, ty: Type, i: Info},
     Load {ptr: Box<Expr>, mask: Option<Box<Expr>>, ty: Type, i: Info},
-    Full {shape: usize, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
+    Full {shape: Box<Expr>, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
     Where {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
     Convert {value: Box<Expr>, ty: Type, i: Info},
 
@@ -217,7 +217,7 @@ impl SFold<Expr> for Expr {
             Expr::ExtCall {args, ..} => args.sfold_result(acc, &f),
             Expr::Arange {lo, hi, ..} => f(f(acc?, lo)?, hi),
             Expr::Load {ptr, mask, ..} => mask.sfold_result(f(acc?, ptr), &f),
-            Expr::Full {value, ..} => f(acc?, value),
+            Expr::Full {shape, value, ..} => f(f(acc?, shape)?, value),
             Expr::Where {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
             Expr::Convert {value, ..} => f(acc?, value),
             Expr::ToTorch {e, ..} => f(acc?, e),
@@ -270,8 +270,15 @@ impl SMapAccum<Expr> for Expr {
                 Ok((acc, Expr::Load {ptr: Box::new(ptr), mask, ty, i}))
             },
             Expr::Full {shape, value, elem_sz, ty, i} => {
-                let (acc, value) = f(acc?, *value)?;
-                Ok((acc, Expr::Full {shape, value: Box::new(value), elem_sz, ty, i}))
+                let (acc, shape) = f(acc?, *shape)?;
+                let (acc, value) = f(acc, *value)?;
+                Ok((acc, Expr::Full {
+                    shape: Box::new(shape),
+                    value: Box::new(value),
+                    elem_sz,
+                    ty,
+                    i
+                }))
             },
             Expr::Where {cond, thn, els, ty, i} => {
                 let (acc, cond) = f(acc?, *cond)?;
@@ -368,7 +375,7 @@ impl Eq for Expr {}
 pub enum Stmt {
     Definition {dst: Name, expr: Expr, i: Info},
     Assign {dst: Name, expr: Expr, i: Info},
-    For {var: Name, lo: Expr, hi: Expr, step: i128, body: Vec<Stmt>, i: Info},
+    For {var: Name, lo: Expr, hi: Expr, step: Expr, body: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     Return {value: Expr, i: Info},
@@ -449,6 +456,7 @@ impl SMapAccum<Expr> for Stmt {
             Stmt::For {var, lo, hi, step, body, i} => {
                 let (acc, lo) = f(acc?, lo)?;
                 let (acc, hi) = f(acc, hi)?;
+                let (acc, step) = f(acc, step)?;
                 Ok((acc, Stmt::For {var, lo, hi, step, body, i}))
             },
             Stmt::While {cond, body, i} => {
@@ -561,18 +569,29 @@ impl SFlatten<Stmt> for Stmt {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AutotuneConfig {
     pub mapping: BTreeMap<Name, Expr>,
-    pub warp_count: i64,
+    pub warp_count: i128
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Decorator {
-    Autotune {configs: Vec<AutotuneConfig>, keys: Vec<String>},
+    Autotune {
+        configs: Vec<AutotuneConfig>,
+        key: Vec<String>,
+        restore_value: Vec<Name>
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum AnnotType {
+    Any,
+    Constexpr,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Param {
     pub id: Name,
     pub ty: Type,
+    pub annot_ty: AnnotType,
     pub i: Info,
 }
 

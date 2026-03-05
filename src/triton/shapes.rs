@@ -104,6 +104,16 @@ impl ShapeEnv {
     }
 }
 
+fn extract_shape_value(sh: &Expr) -> CompileResult<i128> {
+    match sh {
+        Expr::Int {v, ..} => Ok(*v),
+        _ => {
+            let i = sh.get_info();
+            parpy_internal_error!(i, "Failed to extract shape literal of Full expression")
+        }
+    }
+}
+
 fn add_shape_variables_expr(env: ShapeEnv, e: Expr) -> CompileResult<(ShapeEnv, Expr)> {
     match e {
         Expr::Var {id, ty, i} => {
@@ -163,7 +173,7 @@ fn add_shape_variables_expr(env: ShapeEnv, e: Expr) -> CompileResult<(ShapeEnv, 
             };
             let l = extract_integer_literal(&lo, &i)?;
             let h = extract_integer_literal(&hi, &i)?;
-            let ty = type_with_shape(ty, Shape::Num((h-l) as usize), &i)?;
+            let ty = type_with_shape(ty, Shape::Num(h-l), &i)?;
             Ok((env, Expr::Arange {lo, hi, ty, i}))
         },
         Expr::Load {ptr, mask, ty, i} => {
@@ -183,7 +193,8 @@ fn add_shape_variables_expr(env: ShapeEnv, e: Expr) -> CompileResult<(ShapeEnv, 
         },
         Expr::Full {shape, value, elem_sz, ty, i} => {
             let (env, value) = add_shape_variables_expr(env, *value)?;
-            let ty = type_with_shape(ty, Shape::Num(shape), &i)?;
+            let shape_val = extract_shape_value(&shape)?;
+            let ty = type_with_shape(ty, Shape::Num(shape_val), &i)?;
             Ok((env, Expr::Full {shape, value: Box::new(value), elem_sz, ty, i}))
         },
         Expr::Where {cond, thn, els, ty, i} => {
@@ -293,7 +304,7 @@ fn add_shape_variables_stmt(env: ShapeEnv, s: Stmt) -> CompileResult<(ShapeEnv, 
     }
 }
 
-fn add_lit_shape(mut acc: BTreeSet<usize>, shape: &Shape) -> BTreeSet<usize> {
+fn add_lit_shape(mut acc: BTreeSet<i128>, shape: &Shape) -> BTreeSet<i128> {
     match shape {
         Shape::Var(_) => acc,
         Shape::Num(n) => {
@@ -303,7 +314,7 @@ fn add_lit_shape(mut acc: BTreeSet<usize>, shape: &Shape) -> BTreeSet<usize> {
     }
 }
 
-fn validate_constraints(env: &ShapeEnv) -> CompileResult<Option<usize>> {
+fn validate_constraints(env: &ShapeEnv) -> CompileResult<Option<i128>> {
     let literals = env.constraints.iter()
         .fold(BTreeSet::new(), |acc, c| match c {
             Constraint::Geq {l, r} | Constraint::Max {l, r, var: _} => {
@@ -316,7 +327,7 @@ fn validate_constraints(env: &ShapeEnv) -> CompileResult<Option<usize>> {
     }
 }
 
-fn solve_constraints(env: ShapeEnv, n: usize) -> CompileResult<Vec<usize>> {
+fn solve_constraints(env: ShapeEnv, n: i128) -> CompileResult<Vec<i128>> {
     let mut instance: SatInstance = SatInstance::new();
     let false_lit = instance.new_lit();
     instance.add_unit(!false_lit);
@@ -382,7 +393,7 @@ fn solve_constraints(env: ShapeEnv, n: usize) -> CompileResult<Vec<usize>> {
                 .map(|vals| {
                     vals.into_iter()
                         .map(|v| if v == TernaryVal::True { n } else { 1 })
-                        .collect::<Vec<usize>>()
+                        .collect::<Vec<i128>>()
                 })
                 .map_err(|_| {
                     CompileError::internal_err(
@@ -398,7 +409,7 @@ fn solve_constraints(env: ShapeEnv, n: usize) -> CompileResult<Vec<usize>> {
 }
 
 fn determine_shape(
-    mapping: &Vec<usize>,
+    mapping: &Vec<i128>,
     shape: Shape
 ) -> Shape {
     match shape {
@@ -408,7 +419,7 @@ fn determine_shape(
 }
 
 fn determine_type(
-    mapping: &Vec<usize>,
+    mapping: &Vec<i128>,
     ty: Type
 ) -> Type {
     match ty {
@@ -427,7 +438,7 @@ fn determine_type(
 }
 
 fn replace_vars_expr(
-    mapping: &Vec<usize>,
+    mapping: &Vec<i128>,
     e: Expr
 ) -> Expr {
     let ty = determine_type(&mapping, e.get_type().clone());
@@ -435,13 +446,13 @@ fn replace_vars_expr(
     e.smap(|e| replace_vars_expr(&mapping, e))
 }
 
-fn replace_vars_stmt(mapping: &Vec<usize>, s: Stmt) -> Stmt {
+fn replace_vars_stmt(mapping: &Vec<i128>, s: Stmt) -> Stmt {
     s.smap(|s| replace_vars_stmt(&mapping, s))
         .smap(|e| replace_vars_expr(&mapping, e))
 }
 
 fn explicitly_broadcast_blocked_variable_assignment(
-    vars: &BTreeMap<Name, usize>,
+    vars: &BTreeMap<Name, i128>,
     s: Stmt
 ) -> CompileResult<Stmt> {
     match s {
@@ -459,7 +470,11 @@ fn explicitly_broadcast_blocked_variable_assignment(
                     None => parpy_internal_error!(i, "Failed to extract element size of type")
                 }?;
                 let expr = Expr::Full {
-                    shape: expected_shape,
+                    shape: Box::new(Expr::Int {
+                        v: expected_shape,
+                        ty: ty.clone(),
+                        i: i.clone()
+                    }),
                     value: Box::new(expr),
                     elem_sz,
                     ty,
@@ -475,7 +490,7 @@ fn explicitly_broadcast_blocked_variable_assignment(
 }
 
 fn explicitly_broadcast_variable_assignments(
-    vars: &BTreeMap<Name, usize>,
+    vars: &BTreeMap<Name, i128>,
     body: Vec<Stmt>
 ) -> CompileResult<Vec<Stmt>> {
     body.smap_result(|s| {
@@ -484,7 +499,7 @@ fn explicitly_broadcast_variable_assignments(
 }
 
 fn rewrite_blocked_for_loops_stmt(
-    vars: &BTreeMap<Name, usize>,
+    vars: &BTreeMap<Name, i128>,
     mut acc: Vec<Stmt>,
     s: Stmt
 ) -> CompileResult<Vec<Stmt>> {
@@ -514,9 +529,7 @@ fn rewrite_blocked_for_loops_stmt(
                     expr: Expr::BinOp {
                         lhs: Box::new(var_expr.clone()),
                         op: BinOp::Add,
-                        rhs: Box::new(Expr::Int {
-                            v: step as i128, ty: ty.clone(), i: i.clone()
-                        }),
+                        rhs: Box::new(step),
                         ty: ty.clone(),
                         i: i.clone()
                     },
@@ -554,13 +567,13 @@ fn unify_top(t: Top) -> CompileResult<Top> {
                     // one.
                     Ok((0..env.nvars)
                         .map(|_| 1)
-                        .collect::<Vec<usize>>())
+                        .collect::<Vec<i128>>())
                 },
             }?;
             let body = body.smap(|s| replace_vars_stmt(&var_mapping, s));
             let vars = vars.into_iter()
                 .map(|(k, v)| (k, var_mapping[v]))
-                .collect::<BTreeMap<Name, usize>>();
+                .collect::<BTreeMap<Name, i128>>();
             let body = body.sflatten_result(vec![], |acc, s| {
                 rewrite_blocked_for_loops_stmt(&vars, acc, s)
             })?;

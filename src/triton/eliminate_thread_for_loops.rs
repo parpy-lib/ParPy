@@ -25,7 +25,7 @@ fn extract_iteration_count(lo: &Expr, hi: &Expr) -> Option<(i128, i128)> {
 
 fn update_block_size_shape(shape: Shape, block_size: i128) -> Shape {
     match shape {
-        Shape::Num(n) if n > 1 => Shape::Num(block_size as usize),
+        Shape::Num(n) if n > 1 => Shape::Num(block_size),
         _ => shape
     }
 }
@@ -51,8 +51,13 @@ fn update_block_size_expr(e: Expr, block_size: i128) -> Expr {
     let e = e.with_type(ty);
     match e {
         Expr::Full {shape: _, value, elem_sz, ty, i} => {
+            let shape = Box::new(Expr::Int {
+                v: block_size,
+                ty: ty.clone(),
+                i: i.clone()
+            });
             let value = Box::new(update_block_size_expr(*value, block_size));
-            Expr::Full {shape: block_size as usize, value, elem_sz, ty, i}
+            Expr::Full {shape, value, elem_sz, ty, i}
         },
         _ => e.smap(|e| update_block_size_expr(e, block_size))
     }

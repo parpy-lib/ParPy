@@ -106,6 +106,7 @@ fn from_gpu_ast_params(params: Vec<gpu_ast::Param>) -> CompileResult<Vec<Param>>
             Ok(Param {
                 id: id,
                 ty: from_gpu_ast_type(ty, &i)?,
+                annot_ty: AnnotType::Any,
                 i
             })
         })
@@ -316,15 +317,20 @@ fn extract_loop_bounds(
     cond: gpu_ast::Expr,
     incr: gpu_ast::Expr,
     i: &Info
-) -> CompileResult<(Name, Expr, Expr, i128, Option<Stmt>)> {
+) -> CompileResult<(Name, Expr, Expr, Expr, Option<Stmt>)> {
     let (removed_thread, init) = remove_thread_idx(false, init);
     let lo = from_gpu_ast_kernel_expr(env, init)?;
     let hi = extract_upper_bound(env, &var, cond)?;
-    let step = extract_step(env, &var, incr)?;
+    let step_val = extract_step(env, &var, incr)?;
+    let step = Expr::Int {
+        v: step_val,
+        ty: hi.get_type().clone(),
+        i: i.clone()
+    };
     // NOTE(larshum, 2026-02-11): If we removed the use of a thread index, we know this for-loop
     // runs in parallel over threads, in which case we have to restructure it.
     if removed_thread {
-        let step_size = determine_step_size(&env, step, &lo);
+        let step_size = determine_step_size(&env, step_val, &lo);
         let nthreads = env.current_grid.threads.prod() as i128;
         let new_var = Name::new(format!("{0}_chunk", var.get_str())).with_new_sym();
         let var_assign = Stmt::Definition {
@@ -586,14 +592,10 @@ fn from_gpu_ast_host_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<E
         gpu_ast::Expr::PyCallback {i, ..} => {
             parpy_internal_error!(i, "Found Python callback in Triton codegen")
         },
-        gpu_ast::Expr::Convert {e, ty: gpu_ast::Type::Scalar {sz: elem_sz}} => {
+        gpu_ast::Expr::Convert {e, ty: _} => {
             let i = e.get_info();
             let value = Box::new(from_gpu_ast_host_expr(env, *e)?);
-            Ok(Expr::Full {shape: 1, value, elem_sz, ty, i})
-        },
-        gpu_ast::Expr::Convert {e, ..} => {
-            let i = e.get_info();
-            parpy_internal_error!(i, "Unsupported conversion in Triton codegen")
+            Ok(Expr::Convert {value, ty, i})
         },
         gpu_ast::Expr::ThreadIdx {i, ..} => {
             parpy_internal_error!(i, "Thread indices are not supported")
@@ -835,7 +837,7 @@ fn add_buffer_to_torch_conversion(
         .collect::<Vec<Name>>();
     let sub_map = new_ids.iter()
         .zip(pointer_params.iter())
-        .map(|(new_id, Param {id, ty, i})| {
+        .map(|(new_id, Param {id, ty, annot_ty: _, i})| {
             (id.clone(), Expr::Var {
                 id: new_id.clone(),
                 ty: ty.clone(),
@@ -858,7 +860,7 @@ fn add_buffer_to_torch_conversion(
     });
     let body = new_ids.into_iter()
         .zip(pointer_params.into_iter())
-        .map(|(new_id, Param {id, ty, i})| Stmt::Definition {
+        .map(|(new_id, Param {id, ty, annot_ty: _, i})| Stmt::Definition {
             dst: new_id,
             expr: Expr::ToTorch {
                 e: Box::new(Expr::Var {id, ty: ty.clone(), i: i.clone()}),

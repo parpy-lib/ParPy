@@ -4,14 +4,6 @@ use crate::utils::pprint::*;
 
 use itertools::Itertools;
 
-fn print_tuple_shape(sh: &usize) -> String {
-    if *sh == 1 {
-        "()".to_string()
-    } else {
-        format!("({sh},)")
-    }
-}
-
 fn pprint_elem_size(sz: &ElemSize) -> String {
     match sz {
         ElemSize::Bool => "triton.language.int1",
@@ -206,10 +198,10 @@ impl PrettyPrint for Expr {
                 }
             },
             Expr::Full {shape, value, elem_sz, ty: _, i: _} => {
-                let shape = print_tuple_shape(shape);
+                let (env, shape) = shape.pprint(env);
                 let (env, value) = value.pprint(env);
                 let elem_sz = pprint_elem_size(elem_sz);
-                (env, format!("triton.language.full({shape}, {value}, {elem_sz})"))
+                (env, format!("triton.language.full(({shape},), {value}, {elem_sz})"))
             },
             Expr::Where {cond, thn, els, ty: _, i: _} => {
                 let (env, cond) = cond.pprint(env);
@@ -270,6 +262,7 @@ impl PrettyPrint for Stmt {
                 let (env, var) = var.pprint(env);
                 let (env, lo) = lo.pprint(env);
                 let (env, hi) = hi.pprint(env);
+                let (env, step) = step.pprint(env);
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
@@ -305,11 +298,11 @@ impl PrettyPrint for Stmt {
                 };
                 (env, format!("{0}triton.language.store({ptr}, {value}{mask})", indent))
             },
-            Stmt::KernelLaunch {id, block_dims, args, nwarps, i: _} => {
+            Stmt::KernelLaunch {id, block_dims, args, nwarps: _, i: _} => {
                 let (env, id) = id.pprint(env);
                 let (env, block_dims) = block_dims.pprint(env);
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
-                (env, format!("{0}{id}[lambda _: ({block_dims})]({args}, num_warps={nwarps})", indent))
+                (env, format!("{0}{id}[lambda _: ({block_dims})]({args})", indent))
             },
         }
     }
@@ -334,15 +327,24 @@ impl PrettyPrint for AutotuneConfig {
 impl PrettyPrint for Decorator {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
-            Decorator::Autotune {configs, keys} => {
+            Decorator::Autotune {configs, key, restore_value} => {
                 let env = env.incr_indent();
                 let indent = env.print_indent();
                 let env = env.incr_indent();
                 let (env, configs) = pprint_iter(configs.iter(), env, ",\n");
                 let env = env.decr_indent();
                 let env = env.decr_indent();
-                let keys = keys.iter().map(|s| format!("\"{s}\"")).join(", ");
-                (env, format!("@triton.autotune(\n{0}configs=[\n{configs}\n{0}],\n{0}keys=[{keys}]\n)", indent))
+                let key = key.iter().map(|s| format!("\"{s}\"")).join(", ");
+                let (env, restore_value) = restore_value.into_iter()
+                    .fold((env, vec![]), |(env, mut strs), id| {
+                        let (env, id) = id.pprint(env);
+                        strs.push(format!("\"{id}\""));
+                        (env, strs)
+                    });
+                let restore_value = restore_value.into_iter().join(", ");
+                (env, format!(
+                    "@triton.autotune(\n{0}configs=[\n{configs}\n{0}],\n{0}key=[{key}],\n{0}restore_value=[{restore_value}]\n)", indent
+                ))
             },
         }
     }
@@ -351,7 +353,10 @@ impl PrettyPrint for Decorator {
 impl PrettyPrint for Param {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let (env, id) = self.id.pprint(env);
-        (env, format!("{id}"))
+        match self.annot_ty {
+            AnnotType::Any => (env, format!("{id}")),
+            AnnotType::Constexpr => (env, format!("{id}: triton.language.constexpr")),
+        }
     }
 }
 
@@ -454,7 +459,7 @@ mod test {
     #[test]
     fn print_full() {
         let e = Expr::Full {
-            shape: 32,
+            shape: Box::new(int(32)),
             value: Box::new(int(1)),
             elem_sz: ElemSize::I32,
             ty: Type::Void,
@@ -466,13 +471,13 @@ mod test {
     #[test]
     fn print_full_singleton() {
         let e = Expr::Full {
-            shape: 1,
+            shape: Box::new(int(1)),
             value: Box::new(float(1.0)),
             elem_sz: ElemSize::F32,
             ty: Type::Void,
             i: i()
         };
-        assert_eq!(e.pprint_default(), "triton.language.full((), 1.0, triton.language.float32)");
+        assert_eq!(e.pprint_default(), "triton.language.full((1,), 1.0, triton.language.float32)");
     }
 
     #[test]
@@ -551,8 +556,18 @@ mod test {
             decorators: vec![],
             id: Name::sym_str("f"),
             params: vec![
-                Param {id: Name::sym_str("x"), ty: Type::Void, i: i()},
-                Param {id: Name::sym_str("y"), ty: Type::Void, i: i()},
+                Param {
+                    id: Name::sym_str("x"),
+                    ty: Type::Void,
+                    annot_ty: AnnotType::Any,
+                    i: i()
+                },
+                Param {
+                    id: Name::sym_str("y"),
+                    ty: Type::Void,
+                    annot_ty: AnnotType::Any,
+                    i: i()
+                },
             ],
             body: vec![
                 Stmt::Assign {dst: Name::sym_str("w"), expr: var("k", None), i: i()}
@@ -574,7 +589,8 @@ mod test {
                 AutotuneConfig { mapping: m1, warp_count: 4 },
                 AutotuneConfig { mapping: m2, warp_count: 8 },
             ],
-            keys: vec!["a".to_string(), "b".to_string()]
+            key: vec!["a".to_string(), "b".to_string()],
+            restore_value: vec![Name::new("a".to_string())],
         };
         assert_eq!(
             decorator.pprint_default(),
@@ -584,7 +600,8 @@ mod test {
                 "    triton.Config({\"BLOCK_SIZE\": 128}, num_warps=4),\n",
                 "    triton.Config({\"BLOCK_SIZE\": 512}, num_warps=8)\n",
                 "  ],\n",
-                "  keys=[\"a\", \"b\"]\n",
+                "  key=[\"a\", \"b\"],\n",
+                "  restore_value=[\"a\"]\n",
                 ")"
             )
         )

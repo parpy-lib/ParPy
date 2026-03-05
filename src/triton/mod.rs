@@ -5,11 +5,12 @@ mod constant_fold;
 mod eliminate_thread_for_loops;
 mod fuse_memory;
 mod inline;
-mod pprint;
 mod power;
-mod shapes;
+mod pprint;
 mod remove_sync;
 mod rewrite_reductions;
+mod shapes;
+mod tuning;
 mod utils;
 
 #[cfg(test)]
@@ -78,6 +79,11 @@ pub fn codegen(
 
     // Run a final round of constant folding before returning the resulting AST.
     let ast = constant_fold::apply(ast);
+
+    // Adds use of autotuning via Triton into the AST, so that it automatically selects between a
+    // few different block sizes rather than using a one-to-one mapping between block size and
+    // thread count.
+    let ast = tuning::apply(ast, &opts);
 
     Ok(ast)
 }

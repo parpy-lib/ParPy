@@ -85,6 +85,12 @@ pub struct CompileOptions {
     #[pyo3(get, set)]
     pub implicit_shape_labels: bool,
 
+    // Enabled by default. Determines whether the compiler should generate autotuning directives
+    // for emitted Triton code, which selects the block size(s) to use in the kernels. This option
+    // only applies to the Triton backend.
+    #[pyo3(get, set)]
+    pub triton_autotune: bool,
+
     /////////////////
     // BUILD FLAGS //
     /////////////////
@@ -119,6 +125,7 @@ impl Default for CompileOptions {
             force_int_size: None,
             force_float_size: None,
             implicit_shape_labels: true,
+            triton_autotune: true,
             includes: vec![],
             libs: vec![],
             extra_flags: vec![],
