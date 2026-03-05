@@ -898,21 +898,21 @@ fn from_gpu_ast_top(
             let params = from_gpu_ast_params(params)?;
             let env = env.set_active_kernel(Some(&id));
             let body = from_gpu_ast_kernel_stmts(&env, body)?;
-            tops.push(Top::FunDef {triton_jit: true, id, params, body, i});
+            tops.push(Top::KernelFunDef {decorators: vec![], id, params, body, i});
             Ok((env, tops))
         },
         gpu_ast::Top::FunDef {ret_ty: _, id, params, body, target: Target::Device, i} => {
             let params = from_gpu_ast_params(params)?;
             let env = env.set_active_kernel(None);
             let body = from_gpu_ast_kernel_stmts(&env, body)?;
-            tops.push(Top::FunDef {triton_jit: true, id, params, body, i});
+            tops.push(Top::KernelFunDef {decorators: vec![], id, params, body, i});
             Ok((env, tops))
         },
         gpu_ast::Top::FunDef {ret_ty: _, id, params, body, target: Target::Host, i} => {
             let params = from_gpu_ast_params(params)?;
             let body = from_gpu_ast_host_stmts(&env, body)?;
             let body = add_buffer_to_torch_conversion(&params, body)?;
-            tops.push(Top::FunDef {triton_jit: false, id, params, body, i});
+            tops.push(Top::FunDef {id, params, body, i});
             Ok((env, tops))
         },
     }

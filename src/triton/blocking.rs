@@ -467,7 +467,7 @@ fn use_bitwise_ops_in_masking(acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
 
 fn transform_top(t: Top) -> CompileResult<Top> {
     match t {
-        Top::FunDef {triton_jit: true, id, params, body, i} => {
+        Top::KernelFunDef {decorators, id, params, body, i} => {
             // Replace uses of tl.full with an explicit conversion when they contain blocked data.
             // This is required for correctness because the argument of a tl.full cannot itself be
             // a blocked value.
@@ -502,7 +502,7 @@ fn transform_top(t: Top) -> CompileResult<Top> {
             // operator in a temporary variable.
             let body = body.sflatten(vec![], use_bitwise_ops_in_masking);
             
-            Ok(Top::FunDef {triton_jit: true, id, params, body, i})
+            Ok(Top::KernelFunDef {decorators, id, params, body, i})
         },
         Top::Import {..} | Top::FunDef {..} => Ok(t),
     }

@@ -142,9 +142,9 @@ fn apply_stmt(mut acc: Vec<Stmt>, s: Stmt) -> CompileResult<Vec<Stmt>> {
 
 fn apply_top(t: Top) -> CompileResult<Top> {
     match t {
-        Top::FunDef {triton_jit: true, id, params, body, i} => {
+        Top::KernelFunDef {decorators, id, params, body, i} => {
             let body = body.sflatten_result(vec![], apply_stmt)?;
-            Ok(Top::FunDef {triton_jit: true, id, params, body, i})
+            Ok(Top::KernelFunDef {decorators, id, params, body, i})
         },
         _ => Ok(t)
     }

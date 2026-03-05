@@ -543,7 +543,7 @@ fn rewrite_blocked_for_loops_stmt(
 
 fn unify_top(t: Top) -> CompileResult<Top> {
     match t {
-        Top::FunDef {triton_jit: true, id, params, body, i} => {
+        Top::KernelFunDef {decorators, id, params, body, i} => {
             let env = Ok(ShapeEnv::default());
             let (env, body) = body.smap_accum_l_result(env, add_shape_variables_stmt)?;
             let vars = env.vars.clone();
@@ -565,7 +565,7 @@ fn unify_top(t: Top) -> CompileResult<Top> {
                 rewrite_blocked_for_loops_stmt(&vars, acc, s)
             })?;
             let body = explicitly_broadcast_variable_assignments(&vars, body)?;
-            Ok(Top::FunDef {triton_jit: true, id, params, body, i})
+            Ok(Top::KernelFunDef {decorators, id, params, body, i})
         },
         Top::Import {..} | Top::FunDef {..} => Ok(t),
     }

@@ -9,6 +9,7 @@ pub use crate::utils::ast::BinOp;
 pub use crate::gpu::ast::Dim;
 pub use crate::gpu::ast::Dim3;
 
+use std::collections::BTreeMap;
 use std::cmp::Ordering;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -558,6 +559,17 @@ impl SFlatten<Stmt> for Stmt {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct AutotuneConfig {
+    pub mapping: BTreeMap<Name, Expr>,
+    pub warp_count: i64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Decorator {
+    Autotune {configs: Vec<AutotuneConfig>, keys: Vec<String>},
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Param {
     pub id: Name,
     pub ty: Type,
@@ -567,8 +579,14 @@ pub struct Param {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Top {
     Import {package: String, as_str: Option<String>, i: Info},
+    KernelFunDef {
+        decorators: Vec<Decorator>,
+        id: Name,
+        params: Vec<Param>,
+        body: Vec<Stmt>,
+        i: Info
+    },
     FunDef {
-        triton_jit: bool,
         id: Name,
         params: Vec<Param>,
         body: Vec<Stmt>,

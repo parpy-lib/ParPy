@@ -2,6 +2,8 @@ use super::ast::*;
 use crate::utils::ast::*;
 use crate::utils::pprint::*;
 
+use itertools::Itertools;
+
 fn print_tuple_shape(sh: &usize) -> String {
     if *sh == 1 {
         "()".to_string()
@@ -313,6 +315,39 @@ impl PrettyPrint for Stmt {
     }
 }
 
+impl PrettyPrint for AutotuneConfig {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        let indent = env.print_indent();
+        let AutotuneConfig {mapping, warp_count} = self;
+        let (env, m) = mapping.iter()
+            .fold((env, vec![]), |(env, mut acc), (id, e)| {
+                let (env, id) = id.pprint(env);
+                let (env, e) = e.pprint(env);
+                acc.push(format!("\"{id}\": {e}"));
+                (env, acc)
+            });
+        let mapping = m.iter().join(", ");
+        (env, format!("{indent}triton.Config({{{mapping}}}, num_warps={warp_count})"))
+    }
+}
+
+impl PrettyPrint for Decorator {
+    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
+        match self {
+            Decorator::Autotune {configs, keys} => {
+                let env = env.incr_indent();
+                let indent = env.print_indent();
+                let env = env.incr_indent();
+                let (env, configs) = pprint_iter(configs.iter(), env, ",\n");
+                let env = env.decr_indent();
+                let env = env.decr_indent();
+                let keys = keys.iter().map(|s| format!("\"{s}\"")).join(", ");
+                (env, format!("@triton.autotune(\n{0}configs=[\n{configs}\n{0}],\n{0}keys=[{keys}]\n)", indent))
+            },
+        }
+    }
+}
+
 impl PrettyPrint for Param {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         let (env, id) = self.id.pprint(env);
@@ -330,14 +365,27 @@ impl PrettyPrint for Top {
                     (env, format!("import {package}"))
                 }
             },
-            Top::FunDef {triton_jit, id, params, body, i: _} => {
+            Top::KernelFunDef {decorators, id, params, body, i: _} => {
+                let (env, decorators) = if decorators.is_empty() {
+                    (env, "".to_string())
+                } else {
+                    let (env, decorators) = pprint_iter(decorators.iter(), env, "\n");
+                    (env, format!("{decorators}\n"))
+                };
                 let (env, id) = id.pprint(env);
                 let (env, params) = pprint_iter(params.iter(), env, ", ");
                 let env = env.incr_indent();
                 let (env, body) = pprint_iter(body.iter(), env, "\n");
                 let env = env.decr_indent();
-                let prefix = if *triton_jit { "@triton.jit\n" } else { "" };
-                (env, format!("{prefix}def {id}({params}):\n{body}"))
+                (env, format!("{decorators}@triton.jit\ndef {id}({params}):\n{body}"))
+            },
+            Top::FunDef {id, params, body, i: _} => {
+                let (env, id) = id.pprint(env);
+                let (env, params) = pprint_iter(params.iter(), env, ", ");
+                let env = env.incr_indent();
+                let (env, body) = pprint_iter(body.iter(), env, "\n");
+                let env = env.decr_indent();
+                (env, format!("def {id}({params}):\n{body}"))
             },
         }
     }
@@ -356,6 +404,8 @@ mod test {
     use crate::test::*;
     use crate::triton::ast_builder::*;
     use crate::utils::name::Name;
+
+    use std::collections::BTreeMap;
 
     #[test]
     fn print_variable() {
@@ -496,9 +546,9 @@ mod test {
     }
 
     #[test]
-    fn print_fun_def() {
-        let t = Top::FunDef {
-            triton_jit: true,
+    fn print_kernel_fun_def() {
+        let t = Top::KernelFunDef {
+            decorators: vec![],
             id: Name::sym_str("f"),
             params: vec![
                 Param {id: Name::sym_str("x"), ty: Type::Void, i: i()},
@@ -510,5 +560,33 @@ mod test {
             i: i()
         };
         assert_eq!(t.pprint_default(), "@triton.jit\ndef f(x, y):\n  w = k");
+    }
+
+    #[test]
+    fn print_autotune_decorator() {
+        let bsize = Name::sym_str("BLOCK_SIZE");
+        let mut m1 = BTreeMap::new();
+        m1.insert(bsize.clone(), int(128));
+        let mut m2 = BTreeMap::new();
+        m2.insert(bsize, int(512));
+        let decorator = Decorator::Autotune {
+            configs: vec![
+                AutotuneConfig { mapping: m1, warp_count: 4 },
+                AutotuneConfig { mapping: m2, warp_count: 8 },
+            ],
+            keys: vec!["a".to_string(), "b".to_string()]
+        };
+        assert_eq!(
+            decorator.pprint_default(),
+            concat!(
+                "@triton.autotune(\n",
+                "  configs=[\n",
+                "    triton.Config({\"BLOCK_SIZE\": 128}, num_warps=4),\n",
+                "    triton.Config({\"BLOCK_SIZE\": 512}, num_warps=8)\n",
+                "  ],\n",
+                "  keys=[\"a\", \"b\"]\n",
+                ")"
+            )
+        )
     }
 }
