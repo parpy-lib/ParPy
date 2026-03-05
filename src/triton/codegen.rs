@@ -764,22 +764,22 @@ fn sub_buffers_stmt(
         Stmt::Assign {ref dst, expr: Expr::AllocBuffer {..}, ..} => {
             // After each allocation of a temporary buffer, we insert a definition of a variable
             // containing the inner PyTorch tensor.
-            if let Some(Expr::ToTorch {e, ..}) = sub_map.get(&dst) {
-                if let Expr::Var {ref id, ref ty, ref i} = **e {
-                    let torch_def = Stmt::Definition {
-                        dst: id.clone(),
-                        expr: Expr::Var {
+            if let Some(Expr::Var {id, ty, i}) = sub_map.get(&dst) {
+                let torch_def = Stmt::Definition {
+                    dst: id.clone(),
+                    expr: Expr::ToTorch {
+                        e: Box::new(Expr::Var {
                             id: dst.clone(),
                             ty: ty.clone(),
                             i: i.clone()
-                        },
+                        }),
+                        ty: ty.clone(),
                         i: i.clone()
-                    };
-                    acc.push(s);
-                    acc.push(torch_def);
-                } else {
-                    acc.push(s);
-                }
+                    },
+                    i: i.clone()
+                };
+                acc.push(s);
+                acc.push(torch_def);
             } else {
                 acc.push(s);
             }
@@ -798,14 +798,10 @@ fn collect_buffer_alloc_subs(
 ) -> BTreeMap<Name, Expr> {
     match s {
         Stmt::Assign {dst, expr: Expr::AllocBuffer {ty, i, ..}, ..} => {
-            let sub_expr = Expr::ToTorch {
-                e: Box::new(Expr::Var {
-                    id: dst.clone().with_new_sym(),
-                    ty: ty.clone(),
-                    i: i.clone()
-                }),
+            let sub_expr = Expr::Var {
+                id: dst.clone().with_new_sym(),
                 ty: ty.clone(),
-                i: i.clone()
+                i: i.clone(),
             };
             sub_map.insert(dst.clone(), sub_expr);
             sub_map
