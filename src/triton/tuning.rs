@@ -6,7 +6,6 @@ use crate::utils::info::Info;
 use crate::utils::name::Name;
 use crate::utils::smap::{SFold, SMapAccum};
 
-use itertools::Itertools;
 use std::collections::BTreeMap;
 
 fn try_extract_integer(e: &Expr) -> Option<i128> {
@@ -79,33 +78,38 @@ fn substitute_int_size(
 }
 
 fn add_threaded_block_size_variables(
-    mut acc: Vec<(Name, i128)>,
-    s: Stmt
-) -> (Vec<(Name, i128)>, Stmt) {
+    mut acc: Option<Name>,
+    s: Stmt,
+    thread_count: i128
+) -> (Option<Name>, Stmt) {
+    let rec_call = |acc, s| add_threaded_block_size_variables(acc, s, thread_count);
     match s {
         Stmt::For {var, lo, hi, step, body, i} => {
-            if let Some(step_val) = try_extract_integer(&step) {
-                if let Some(thread_count) = try_extract_thread_count(step_val, &body) {
-                    let block_size_id = Name::sym_str("BLOCK_SIZE");
-                    let sub_expr = Expr::Var {
-                        id: block_size_id.clone(),
-                        ty: lo.get_type().clone(),
-                        i: i.clone()
-                    };
-                    let step = sub_expr.clone();
-                    let body = body.smap(|s| substitute_int_size(thread_count, &sub_expr, s));
-                    acc.push((block_size_id, thread_count));
-                    (acc, Stmt::For {var, lo, hi, step, body, i})
-                } else {
-                    let (acc, body) = body.smap_accum_l(acc, add_threaded_block_size_variables);
+            match try_extract_integer(&step) {
+                Some(step_val) if step_val == thread_count => {
+                    if let Some(thread_count) = try_extract_thread_count(step_val, &body) {
+                        let block_size_id = acc.unwrap_or(Name::sym_str("BLOCK_SIZE"));
+                        let sub_expr = Expr::Var {
+                            id: block_size_id.clone(),
+                            ty: lo.get_type().clone(),
+                            i: i.clone()
+                        };
+                        let step = sub_expr.clone();
+                        let body = body.smap(|s| substitute_int_size(thread_count, &sub_expr, s));
+                        acc = Some(block_size_id.clone());
+                        (acc, Stmt::For {var, lo, hi, step, body, i})
+                    } else {
+                        let (acc, body) = body.smap_accum_l(acc, rec_call);
+                        (acc, Stmt::For {var, lo, hi, step, body, i})
+                    }
+                },
+                _ => {
+                    let (acc, body) = body.smap_accum_l(acc, rec_call);
                     (acc, Stmt::For {var, lo, hi, step, body, i})
                 }
-            } else {
-                let (acc, body) = body.smap_accum_l(acc, add_threaded_block_size_variables);
-                (acc, Stmt::For {var, lo, hi, step, body, i})
             }
         },
-        _ => s.smap_accum_l(acc, add_threaded_block_size_variables)
+        _ => s.smap_accum_l(acc, rec_call)
     }
 }
 
@@ -120,63 +124,60 @@ fn get_pointer_param_ids(params: &Vec<Param>) -> Vec<Name> {
 }
 
 fn generate_autotune_decorator(
-    block_sizes: Vec<(Name, i128)>,
+    block_size_id: Name,
+    warp_count: i128,
     params: &Vec<Param>
-) -> Option<Decorator> {
-    if block_sizes.is_empty() {
-        None
-    } else {
-        let multiples = vec![1, 2, 4, 8];
-        let bsz = block_sizes.iter()
-            .fold(Some(0), |acc, (_, sz)| {
-                let acc = acc?;
-                if acc == 0 || acc == *sz {
-                    Some(*sz)
-                } else {
-                    None
-                }
-            })?;
-        let warp_count = bsz / par::WARP_SIZE as i128;
-        let configs = block_sizes.iter()
-            .map(|(id, n)| {
-                multiples.clone()
-                    .into_iter()
-                    .map(|k| (id.clone(), k * *n))
-            })
-            .multi_cartesian_product()
-            .map(|items| {
-                let mapping = items.into_iter()
-                    .map(|(id, v)| (id, Expr::Int {v, ty: Type::Void, i: Info::default()}))
-                    .collect::<BTreeMap<Name, Expr>>();
-                AutotuneConfig {mapping, warp_count}
-            })
-            .collect::<Vec<AutotuneConfig>>();
-        let restore_value = get_pointer_param_ids(&params);
-        Some(Decorator::Autotune {configs, key: vec![], restore_value})
-    }
+) -> Decorator {
+    let multiples = vec![1, 2, 4, 8];
+    let thread_count = warp_count * par::WARP_SIZE as i128;
+    let configs = multiples.into_iter()
+        .map(|k| {
+            let mut mapping = BTreeMap::new();
+            mapping.insert(block_size_id.clone(), Expr::Int {
+                v: k * thread_count,
+                ty: Type::Void,
+                i: Info::default()
+            });
+            AutotuneConfig {mapping, warp_count}
+        })
+        .collect::<Vec<AutotuneConfig>>();
+    let restore_value = get_pointer_param_ids(&params);
+    Decorator::Autotune {configs, key: vec![], restore_value}
 }
 
-fn add_autotune_decorator_top(t: Top, opts: &CompileOptions) -> Top {
+fn add_autotune_decorator_top(
+    t: Top,
+    warp_counts: &BTreeMap<Name, i128>,
+    opts: &CompileOptions
+) -> Top {
     match t {
-        Top::KernelFunDef {decorators, id, params, body, i} => {
-            if opts.triton_autotune {
-                let (block_sizes, body) = body.smap_accum_l(vec![], add_threaded_block_size_variables);
-                let autotune_decorator = generate_autotune_decorator(block_sizes.clone(), &params);
-                let decorators = decorators.into_iter()
-                    .chain(autotune_decorator.into_iter())
-                    .collect::<Vec<Decorator>>();
-                let params = params.into_iter()
-                    .chain(block_sizes.into_iter()
-                           .map(|(id, _)| Param {
-                               id,
-                               ty: Type::Void,
-                               annot_ty: AnnotType::Constexpr,
-                               i: i.clone()
-                           }))
-                    .collect::<Vec<Param>>();
-                Top::KernelFunDef {decorators, id, params, body, i}
-            } else {
-                Top::KernelFunDef {decorators, id, params, body, i}
+        Top::KernelFunDef {mut decorators, id, mut params, body, i} => {
+            match warp_counts.get(&id) {
+                Some(wc) => {
+                    if opts.triton_autotune {
+                        let thread_count = *wc * par::WARP_SIZE as i128;
+                        let (block_size_id, body) = body.smap_accum_l(None, |acc, e| {
+                            add_threaded_block_size_variables(acc, e, thread_count)
+                        });
+                        if let Some(bsize_id) = block_size_id {
+                            decorators.push(
+                                generate_autotune_decorator(bsize_id.clone(), *wc, &params)
+                            );
+                            params.push(Param {
+                                id: bsize_id,
+                                ty: Type::Void,
+                                annot_ty: AnnotType::Constexpr,
+                                i: i.clone()
+                            });
+                            Top::KernelFunDef {decorators, id, params, body, i}
+                        } else {
+                            Top::KernelFunDef {decorators, id, params, body, i}
+                        }
+                    } else {
+                        Top::KernelFunDef {decorators, id, params, body, i}
+                    }
+                },
+                None => Top::KernelFunDef {decorators, id, params, body, i}
             }
         },
         _ => t
@@ -222,11 +223,11 @@ fn get_default_autotune_decorator(
 
 fn add_default_autotune_decorator_if_none(
     t: Top,
-    thread_counts: &BTreeMap<Name, i128>
+    warp_counts: &BTreeMap<Name, i128>
 ) -> Top {
     match t {
         Top::KernelFunDef {mut decorators, id, params, body, i} => {
-            match thread_counts.get(&id) {
+            match warp_counts.get(&id) {
                 Some(c) if !contains_autotune_decorator(&decorators) => {
                     decorators.push(get_default_autotune_decorator(*c, &params));
                 },
@@ -239,7 +240,7 @@ fn add_default_autotune_decorator_if_none(
 }
 
 pub fn apply(ast: Ast, opts: &CompileOptions) -> Ast {
-    let tops = ast.tops.smap(|t| add_autotune_decorator_top(t, &opts));
-    let thread_counts = tops.sfold(BTreeMap::new(), collect_warp_counts);
-    Ast {tops: tops.smap(|t| add_default_autotune_decorator_if_none(t, &thread_counts))}
+    let warp_counts = ast.tops.sfold(BTreeMap::new(), collect_warp_counts);
+    let tops = ast.tops.smap(|t| add_autotune_decorator_top(t, &warp_counts, &opts));
+    Ast {tops: tops.smap(|t| add_default_autotune_decorator_if_none(t, &warp_counts))}
 }
