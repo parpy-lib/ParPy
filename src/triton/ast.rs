@@ -7,7 +7,6 @@ pub use crate::utils::ast::ElemSize;
 pub use crate::utils::ast::UnOp;
 pub use crate::utils::ast::BinOp;
 pub use crate::gpu::ast::Dim;
-pub use crate::gpu::ast::Dim3;
 
 use std::collections::BTreeMap;
 use std::cmp::Ordering;
@@ -372,6 +371,19 @@ impl PartialEq for Expr {
 impl Eq for Expr {}
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum DimEntry {
+    Literal {v: i128},
+    Scaled {thread_count: i128, meta_var: Name, block_size_id: Name},
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Dim3 {
+    pub x: DimEntry,
+    pub y: DimEntry,
+    pub z: DimEntry,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Definition {dst: Name, expr: Expr, i: Info},
     Assign {dst: Name, expr: Expr, i: Info},
@@ -385,7 +397,9 @@ pub enum Stmt {
     // Triton-specific nodes
     Barrier {i: Info},
     Store {ptr: Expr, value: Expr, mask: Option<Expr>, i: Info},
-    KernelLaunch {id: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info},
+    KernelLaunch {
+        id: Name, meta_var: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info
+    },
 }
 
 impl SFold<Expr> for Stmt {
@@ -489,9 +503,9 @@ impl SMapAccum<Expr> for Stmt {
                 }?;
                 Ok((acc, Stmt::Store {ptr, value, mask, i}))
             },
-            Stmt::KernelLaunch {id, block_dims, args, nwarps, i} => {
+            Stmt::KernelLaunch {id, meta_var, block_dims, args, nwarps, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Stmt::KernelLaunch {id, block_dims, args, nwarps, i}))
+                Ok((acc, Stmt::KernelLaunch {id, meta_var, block_dims, args, nwarps, i}))
             },
         }
     }
