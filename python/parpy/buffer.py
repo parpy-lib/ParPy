@@ -202,7 +202,7 @@ class CudaBaseBuffer(BaseBuffer):
     def __init__(self, buf, nbytes, src=None, is_raw=False):
         super().__init__(buf, nbytes, src, is_raw)
         self.libc = ctypes.cdll.LoadLibrary("libc.so.6")
-        self.libc.memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+        self.libc.memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
 
     def _deconstruct(self, src_ptr):
         if src_ptr is not None:
@@ -252,7 +252,7 @@ class TritonBaseBuffer(BaseBuffer):
     def __init__(self, buf, nbytes, src=None, is_raw=False):
         super().__init__(buf, nbytes, src, is_raw)
         self.libc = ctypes.cdll.LoadLibrary("libc.so.6")
-        self.libc.memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+        self.libc.memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
 
     def _deconstruct(self, src_ptr):
         # Copy data back to the CPU container
