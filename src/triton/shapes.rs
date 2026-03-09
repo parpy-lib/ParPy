@@ -165,6 +165,10 @@ fn add_shape_variables_expr(env: ShapeEnv, e: Expr) -> CompileResult<(ShapeEnv, 
             let ty = type_with_shape(ty, Shape::Num(1), &i)?;
             Ok((env, Expr::ProgramId {dim, ty, i}))
         },
+        Expr::NumPrograms {dim, ty, i} => {
+            let ty = type_with_shape(ty, Shape::Num(1), &i)?;
+            Ok((env, Expr::NumPrograms {dim, ty, i}))
+        },
         Expr::Arange {lo, hi, ty, i} => {
             let extract_integer_literal = |e: &Expr, i: &Info| match e {
                 Expr::Int {v, ..} => Ok(v.clone()),

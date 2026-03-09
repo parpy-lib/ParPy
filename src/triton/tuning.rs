@@ -15,29 +15,78 @@ fn try_extract_integer(e: &Expr) -> Option<i128> {
     }
 }
 
-fn try_extract_thread_count(
-    step: i128,
-    body: &Vec<Stmt>
-) -> Option<i128> {
-    match body.first() {
-        Some(Stmt::Definition {expr: Expr::BinOp {op: BinOp::Add, rhs, ..}, ..}) => {
-            match &**rhs {
-                Expr::Arange {lo, hi, ..} => {
-                    let l = try_extract_integer(&*lo);
-                    let h = try_extract_integer(&*hi);
-                    let block_size = match (l, h) {
-                        (Some(l), Some(h)) => Some(h - l),
-                        _ => None
-                    };
-                    match (block_size, step) {
-                        (Some(b), _) if b == step => Some(step),
+fn try_extract_thread_count_arange(body: &Vec<Stmt>) -> Option<i128> {
+    match body.first()? {
+        Stmt::Definition {expr: Expr::BinOp {op: BinOp::Add, rhs, ..}, ..} => {
+            if let Expr::Arange {lo, hi, ..} = &**rhs {
+                let l = try_extract_integer(&*lo)?;
+                let h = try_extract_integer(&*hi)?;
+                Some(h-l)
+            } else {
+                None
+            }
+        },
+        _ => None
+    }
+}
+
+fn try_extract_thread_loop_size(
+    step: &Expr,
+    body: &Vec<Stmt>,
+    kernel_thread_count: i128
+) -> Option<()> {
+    let step_size = try_extract_integer(step)?;
+    let thread_count = try_extract_thread_count_arange(body)?;
+    if kernel_thread_count == thread_count && step_size == thread_count {
+        Some(())
+    } else {
+        None
+    }
+}
+
+fn try_extract_dim_and_multiplier(lo: &Expr) -> Option<(Dim, i128)> {
+    match lo {
+        Expr::BinOp {lhs, op: BinOp::Mul, rhs, ..} => {
+            match (&**lhs, &**rhs) {
+                (Expr::ProgramId {dim, ..}, Expr::Int {v, ..}) => {
+                    Some((dim.clone(), *v))
+                },
+                (Expr::Convert {value, ..}, Expr::Int {v, ..}) => {
+                    match &**value {
+                        Expr::ProgramId {dim, ..} => Some((dim.clone(), *v)),
                         _ => None
                     }
                 },
                 _ => None
             }
-        },
+        }
         _ => None
+    }
+}
+
+fn try_extract_multi_block_thread_loop_size(
+    lo: &Expr,
+    body: &Vec<Stmt>,
+    kernel_thread_count: i128
+) -> Option<Dim> {
+    let (dim, multiplier) = try_extract_dim_and_multiplier(lo)?;
+    let thread_count = try_extract_thread_count_arange(body)?;
+    if kernel_thread_count == thread_count && multiplier == thread_count {
+        Some(dim)
+    } else {
+        None
+    }
+}
+
+fn substitute_int_size_lo_expr(
+    sub_expr: &Expr,
+    e: Expr
+) -> Expr {
+    match e {
+        Expr::BinOp {lhs, op, rhs: _, ty, i} => {
+            Expr::BinOp {lhs, op, rhs: Box::new(sub_expr.clone()), ty, i}
+        },
+        _ => e
     }
 }
 
@@ -77,36 +126,59 @@ fn substitute_int_size(
         .smap(|e| substitute_int_size_expr(thread_count, sub_expr, e))
 }
 
-fn add_threaded_block_size_variables(
-    mut acc: Option<Name>,
+struct BlockSizeResult {
+    block_size_id: Option<Name>,
+    dim: Option<Dim>
+}
+
+fn add_block_size_variables(
+    mut acc: BlockSizeResult,
     s: Stmt,
     thread_count: i128
-) -> (Option<Name>, Stmt) {
-    let rec_call = |acc, s| add_threaded_block_size_variables(acc, s, thread_count);
+) -> (BlockSizeResult, Stmt) {
+    let rec_call = |acc, s| add_block_size_variables(acc, s, thread_count);
     match s {
         Stmt::For {var, lo, hi, step, body, i} => {
-            match try_extract_integer(&step) {
-                Some(step_val) if step_val == thread_count => {
-                    if let Some(thread_count) = try_extract_thread_count(step_val, &body) {
-                        let block_size_id = acc.unwrap_or(Name::sym_str("BLOCK_SIZE"));
-                        let sub_expr = Expr::Var {
-                            id: block_size_id.clone(),
-                            ty: lo.get_type().clone(),
-                            i: i.clone()
-                        };
-                        let step = sub_expr.clone();
-                        let body = body.smap(|s| substitute_int_size(thread_count, &sub_expr, s));
-                        acc = Some(block_size_id.clone());
-                        (acc, Stmt::For {var, lo, hi, step, body, i})
-                    } else {
-                        let (acc, body) = body.smap_accum_l(acc, rec_call);
-                        (acc, Stmt::For {var, lo, hi, step, body, i})
-                    }
-                },
-                _ => {
-                    let (acc, body) = body.smap_accum_l(acc, rec_call);
-                    (acc, Stmt::For {var, lo, hi, step, body, i})
-                }
+            if let Some(_) = try_extract_thread_loop_size(&step, &body, thread_count) {
+                let block_size_id = acc.block_size_id.unwrap_or(Name::sym_str("BLOCK_SIZE"));
+                let sub_expr = Expr::Var {
+                    id: block_size_id.clone(),
+                    ty: lo.get_type().clone(),
+                    i: i.clone()
+                };
+                let step = sub_expr.clone();
+                let body = body.smap(|s| substitute_int_size(thread_count, &sub_expr, s));
+                acc = BlockSizeResult {
+                    block_size_id: Some(block_size_id.clone()),
+                    dim: acc.dim
+                };
+                (acc, Stmt::For {var, lo, hi, step, body, i})
+            } else if let Some(dim) = try_extract_multi_block_thread_loop_size(&lo, &body, thread_count) {
+                let block_size_id = acc.block_size_id.unwrap_or(Name::sym_str("BLOCK_SIZE"));
+                let sub_expr = Expr::Var {
+                    id: block_size_id.clone(),
+                    ty: lo.get_type().clone(),
+                    i: i.clone()
+                };
+                let lo = substitute_int_size_lo_expr(&sub_expr, lo);
+                let step = Expr::BinOp {
+                    lhs: Box::new(Expr::NumPrograms {
+                        dim: dim.clone(), ty: lo.get_type().clone(), i: i.clone()
+                    }),
+                    op: BinOp::Mul,
+                    rhs: Box::new(sub_expr.clone()),
+                    ty: lo.get_type().clone(),
+                    i: i.clone()
+                };
+                let body = body.smap(|s| substitute_int_size(thread_count, &sub_expr, s));
+                acc = BlockSizeResult {
+                    block_size_id: Some(block_size_id.clone()),
+                    dim: Some(dim)
+                };
+                (acc, Stmt::For {var, lo, hi, step, body, i})
+            } else {
+                let (acc, body) = body.smap_accum_l(acc, rec_call);
+                (acc, Stmt::For {var, lo, hi, step, body, i})
             }
         },
         _ => s.smap_accum_l(acc, rec_call)
@@ -156,10 +228,14 @@ fn add_autotune_decorator_top(
                 Some(wc) => {
                     if opts.triton_autotune {
                         let thread_count = *wc * par::WARP_SIZE as i128;
-                        let (block_size_id, body) = body.smap_accum_l(None, |acc, e| {
-                            add_threaded_block_size_variables(acc, e, thread_count)
+                        let acc = BlockSizeResult {
+                            block_size_id: None,
+                            dim: None
+                        };
+                        let (acc, body) = body.smap_accum_l(acc, |acc, e| {
+                            add_block_size_variables(acc, e, thread_count)
                         });
-                        if let Some(bsize_id) = block_size_id {
+                        if let Some(bsize_id) = acc.block_size_id {
                             decorators.push(
                                 generate_autotune_decorator(bsize_id.clone(), *wc, &params)
                             );

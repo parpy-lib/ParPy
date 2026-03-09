@@ -183,6 +183,9 @@ impl PrettyPrint for Expr {
             Expr::ProgramId {dim: Dim::X, ty: _, i: _} => (env, format!("tl.program_id(0)")),
             Expr::ProgramId {dim: Dim::Y, ty: _, i: _} => (env, format!("tl.program_id(1)")),
             Expr::ProgramId {dim: Dim::Z, ty: _, i: _} => (env, format!("tl.program_id(2)")),
+            Expr::NumPrograms {dim: Dim::X, ty: _, i: _} => (env, format!("tl.num_programs(0)")),
+            Expr::NumPrograms {dim: Dim::Y, ty: _, i: _} => (env, format!("tl.num_programs(1)")),
+            Expr::NumPrograms {dim: Dim::Z, ty: _, i: _} => (env, format!("tl.num_programs(2)")),
             Expr::Arange {lo, hi, ty: _, i: _} => {
                 let (env, lo) = lo.pprint(env);
                 let (env, hi) = hi.pprint(env);
@@ -224,29 +227,6 @@ impl PrettyPrint for Expr {
                 (env, format!("_parpy_builtin_to_torch({e})"))
             },
         }
-    }
-}
-
-impl PrettyPrint for DimEntry {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        match self {
-            DimEntry::Literal {v} => (env, format!("{v}")),
-            DimEntry::Scaled {thread_count, meta_var, block_size_id} => {
-                let (env, meta_var) = meta_var.pprint(env);
-                let (env, block_size_id) = block_size_id.pprint(env);
-                (env, format!("{thread_count} // {meta_var}[\"{block_size_id}\"]"))
-            },
-        }
-    }
-}
-
-impl PrettyPrint for Dim3 {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Dim3 {x, y, z} = self;
-        let (env, x) = x.pprint(env);
-        let (env, y) = y.pprint(env);
-        let (env, z) = z.pprint(env);
-        (env, format!("({x}, {y}, {z})"))
     }
 }
 
@@ -322,12 +302,11 @@ impl PrettyPrint for Stmt {
                 };
                 (env, format!("{0}tl.store({ptr}, {value}{mask})", indent))
             },
-            Stmt::KernelLaunch {id, meta_var, block_dims, args, nwarps: _, i: _} => {
+            Stmt::KernelLaunch {id, block_dims, args, nwarps: _, i: _} => {
                 let (env, id) = id.pprint(env);
-                let (env, meta_var) = meta_var.pprint(env);
                 let (env, block_dims) = block_dims.pprint(env);
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
-                (env, format!("{0}{id}[lambda {meta_var}: {block_dims}]({args})", indent))
+                (env, format!("{0}{id}[lambda _: ({block_dims})]({args})", indent))
             },
         }
     }
@@ -562,22 +541,15 @@ mod test {
 
     #[test]
     fn print_kernel_launch() {
-        let meta_var = Name::sym_str("meta");
-        let block_size_id = Name::sym_str("BLOCK_SIZE");
-        let block_dims = Dim3 {
-            x: DimEntry::Literal {v: 10},
-            y: DimEntry::Literal {v: 5},
-            z: DimEntry::Scaled {thread_count: 1024, meta_var: meta_var.clone(), block_size_id}
-        };
+        let block_dims = Dim3 {x: 10, y: 5, z: 1024};
         let s = Stmt::KernelLaunch {
             id: Name::sym_str("f"),
-            meta_var,
             block_dims,
             args: vec![],
             nwarps: 2,
             i: i()
         };
-        assert_eq!(s.pprint_default(), "f[lambda meta: (10, 5, 1024 // meta[\"BLOCK_SIZE\"])]()");
+        assert_eq!(s.pprint_default(), "f[lambda _: (10, 5, 1024)]()");
     }
 
     #[test]

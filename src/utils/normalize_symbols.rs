@@ -182,11 +182,10 @@ impl NormalizeSym for triton_ast::Stmt {
                 let (env, body) = body.normalize_sym(env);
                 (env, triton_ast::Stmt::For {var, lo, hi, step, body, i})
             },
-            triton_ast::Stmt::KernelLaunch {id, meta_var, block_dims, args, nwarps, i} => {
+            triton_ast::Stmt::KernelLaunch {id, block_dims, args, nwarps, i} => {
                 let (env, id) = id.normalize_sym(env);
-                let (env, meta_var) = meta_var.normalize_sym(env);
                 let (env, args) = args.normalize_sym(env);
-                (env, triton_ast::Stmt::KernelLaunch {id, meta_var, block_dims, args, nwarps, i})
+                (env, triton_ast::Stmt::KernelLaunch {id, block_dims, args, nwarps, i})
             },
             _ => {
                 let (env, s) = self.smap_accum_l(env, |env, s: triton_ast::Stmt| {

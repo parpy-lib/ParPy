@@ -606,11 +606,6 @@ fn from_gpu_ast_host_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<E
     }
 }
 
-fn from_gpu_ast_dim3(d: gpu_ast::Dim3) -> Dim3 {
-    let to_dim_entry = |v| DimEntry::Literal {v: v as i128};
-    Dim3 {x: to_dim_entry(d.x), y: to_dim_entry(d.y), z: to_dim_entry(d.z)}
-}
-
 fn from_gpu_ast_host_stmt(
     env: &CodegenEnv,
     mut acc: Vec<Stmt>,
@@ -700,8 +695,7 @@ fn from_gpu_ast_host_stmt(
             let nwarps = (grid.threads.prod() / par::WARP_SIZE) as usize;
             acc.push(Stmt::KernelLaunch {
                 id,
-                meta_var: Name::sym_str("meta"),
-                block_dims: from_gpu_ast_dim3(grid.blocks),
+                block_dims: grid.blocks,
                 args,
                 nwarps,
                 i

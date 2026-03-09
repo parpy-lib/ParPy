@@ -7,6 +7,7 @@ pub use crate::utils::ast::ElemSize;
 pub use crate::utils::ast::UnOp;
 pub use crate::utils::ast::BinOp;
 pub use crate::gpu::ast::Dim;
+pub use crate::gpu::ast::Dim3;
 
 use std::collections::BTreeMap;
 use std::cmp::Ordering;
@@ -72,6 +73,7 @@ pub enum Expr {
 
     // Triton-specific nodes
     ProgramId {dim: Dim, ty: Type, i: Info},
+    NumPrograms {dim: Dim, ty: Type, i: Info},
     Arange {lo: Box<Expr>, hi: Box<Expr>, ty: Type, i: Info},
     Load {ptr: Box<Expr>, mask: Option<Box<Expr>>, ty: Type, i: Info},
     Full {shape: Box<Expr>, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
@@ -96,6 +98,7 @@ impl Expr {
             Expr::Call {id, args, ty: _, i} => Expr::Call {id, args, ty, i},
             Expr::ExtCall {id, args, ty: _, i} => Expr::ExtCall {id, args, ty, i},
             Expr::ProgramId {dim, ty: _, i} => Expr::ProgramId {dim, ty, i},
+            Expr::NumPrograms {dim, ty: _, i} => Expr::NumPrograms {dim, ty, i},
             Expr::Arange {lo, hi, ty: _, i} => Expr::Arange {lo, hi, ty, i},
             Expr::Load {ptr, mask, ty: _, i} => Expr::Load {ptr, mask, ty, i},
             Expr::Full {shape, value, elem_sz, ty: _, i} =>
@@ -121,13 +124,14 @@ impl Expr {
             Expr::Call {..} => 7,
             Expr::ExtCall {..} => 8,
             Expr::ProgramId {..} => 9,
-            Expr::Arange {..} => 10,
-            Expr::Load {..} => 11,
-            Expr::Full {..} => 12,
-            Expr::Where {..} => 13,
-            Expr::Convert {..} => 14,
-            Expr::AllocBuffer {..} => 15,
-            Expr::ToTorch {..} => 16,
+            Expr::NumPrograms {..} => 10,
+            Expr::Arange {..} => 11,
+            Expr::Load {..} => 12,
+            Expr::Full {..} => 13,
+            Expr::Where {..} => 14,
+            Expr::Convert {..} => 15,
+            Expr::AllocBuffer {..} => 16,
+            Expr::ToTorch {..} => 17,
         }
     }
 }
@@ -145,6 +149,7 @@ impl InfoNode for Expr {
             Expr::Call {i, ..} |
             Expr::ExtCall {i, ..} |
             Expr::ProgramId {i, ..} |
+            Expr::NumPrograms {i, ..} |
             Expr::Arange {i, ..} |
             Expr::Load {i, ..} |
             Expr::Full {i, ..} |
@@ -169,6 +174,7 @@ impl ExprType<Type> for Expr {
             Expr::Call {ty, ..} |
             Expr::ExtCall {ty, ..} |
             Expr::ProgramId {ty, ..} |
+            Expr::NumPrograms {ty, ..} |
             Expr::Arange {ty, ..} |
             Expr::Load {ty, ..} |
             Expr::Full {ty, ..} |
@@ -186,6 +192,7 @@ impl ExprType<Type> for Expr {
             Expr::Int {..} |
             Expr::Float {..} |
             Expr::ProgramId {..} |
+            Expr::NumPrograms {..} |
             Expr::Arange {..} |
             Expr::AllocBuffer {..} => true,
             Expr::UnOp {..} |
@@ -225,6 +232,7 @@ impl SFold<Expr> for Expr {
             Expr::Int {..} |
             Expr::Float {..} |
             Expr::ProgramId {..} |
+            Expr::NumPrograms {..} |
             Expr::AllocBuffer {..} => acc
         }
     }
@@ -306,6 +314,7 @@ impl SMapAccum<Expr> for Expr {
             Expr::Int {..} |
             Expr::Float {..} |
             Expr::ProgramId {..} |
+            Expr::NumPrograms {..} |
             Expr::AllocBuffer {..} => Ok((acc?, self))
         }
     }
@@ -333,6 +342,8 @@ impl Ord for Expr {
             , Expr::ExtCall {id: rid, args: rargs, ..} ) =>
                 lid.cmp(rid).then(largs.cmp(rargs)),
             (Expr::ProgramId {dim: ldim, ..}, Expr::ProgramId {dim: rdim, ..}) =>
+                ldim.cmp(rdim),
+            (Expr::NumPrograms {dim: ldim, ..}, Expr::NumPrograms {dim: rdim, ..}) =>
                 ldim.cmp(rdim),
             ( Expr::Arange {lo: llo, hi: lhi, ..},
               Expr::Arange {lo: rlo, hi: rhi, ..} ) =>
@@ -371,19 +382,6 @@ impl PartialEq for Expr {
 impl Eq for Expr {}
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum DimEntry {
-    Literal {v: i128},
-    Scaled {thread_count: i128, meta_var: Name, block_size_id: Name},
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Dim3 {
-    pub x: DimEntry,
-    pub y: DimEntry,
-    pub z: DimEntry,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub enum Stmt {
     Definition {dst: Name, expr: Expr, i: Info},
     Assign {dst: Name, expr: Expr, i: Info},
@@ -397,9 +395,7 @@ pub enum Stmt {
     // Triton-specific nodes
     Barrier {i: Info},
     Store {ptr: Expr, value: Expr, mask: Option<Expr>, i: Info},
-    KernelLaunch {
-        id: Name, meta_var: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info
-    },
+    KernelLaunch {id: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info},
 }
 
 impl SFold<Expr> for Stmt {
@@ -503,9 +499,9 @@ impl SMapAccum<Expr> for Stmt {
                 }?;
                 Ok((acc, Stmt::Store {ptr, value, mask, i}))
             },
-            Stmt::KernelLaunch {id, meta_var, block_dims, args, nwarps, i} => {
+            Stmt::KernelLaunch {id, block_dims, args, nwarps, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Stmt::KernelLaunch {id, meta_var, block_dims, args, nwarps, i}))
+                Ok((acc, Stmt::KernelLaunch {id, block_dims, args, nwarps, i}))
             },
         }
     }
