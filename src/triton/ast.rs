@@ -9,18 +9,20 @@ pub use crate::utils::ast::BinOp;
 pub use crate::gpu::ast::Dim;
 pub use crate::gpu::ast::Dim3;
 
+use std::collections::BTreeMap;
 use std::cmp::Ordering;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Var(usize),
-    Num(usize),
+    Num(i128),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Type {
     Pointer {ty: Box<Type>, shape: Shape},
     Tensor {sz: ElemSize, shape: Shape},
+    Function {result: Box<Type>, args: Vec<Type>},
     Void,
 }
 
@@ -29,6 +31,7 @@ impl Type {
         match self {
             Type::Pointer {ty, ..} => ty.get_elem_size(),
             Type::Tensor {sz, ..} => Some(sz),
+            Type::Function {..} => None,
             Type::Void => None,
         }
     }
@@ -37,6 +40,7 @@ impl Type {
         match self {
             Type::Pointer {shape, ..} => Some(shape),
             Type::Tensor {shape, ..} => Some(shape),
+            Type::Function {..} => None,
             Type::Void => None,
         }
     }
@@ -69,12 +73,16 @@ pub enum Expr {
 
     // Triton-specific nodes
     ProgramId {dim: Dim, ty: Type, i: Info},
-    Arange {lo: usize, hi: usize, ty: Type, i: Info},
+    NumPrograms {dim: Dim, ty: Type, i: Info},
+    Arange {lo: Box<Expr>, hi: Box<Expr>, ty: Type, i: Info},
     Load {ptr: Box<Expr>, mask: Option<Box<Expr>>, ty: Type, i: Info},
-    Full {shape: usize, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
+    Full {shape: Box<Expr>, value: Box<Expr>, elem_sz: ElemSize, ty: Type, i: Info},
     Where {cond: Box<Expr>, thn: Box<Expr>, els: Box<Expr>, ty: Type, i: Info},
-    AllocBuffer {nelems: usize, elem_sz: ElemSize, ty: Type, i: Info},
     Convert {value: Box<Expr>, ty: Type, i: Info},
+
+    // Host-side nodes
+    AllocBuffer {nelems: usize, elem_sz: ElemSize, ty: Type, i: Info},
+    ToTorch {e: Box<Expr>, ty: Type, i: Info},
 }
 
 impl Expr {
@@ -90,15 +98,17 @@ impl Expr {
             Expr::Call {id, args, ty: _, i} => Expr::Call {id, args, ty, i},
             Expr::ExtCall {id, args, ty: _, i} => Expr::ExtCall {id, args, ty, i},
             Expr::ProgramId {dim, ty: _, i} => Expr::ProgramId {dim, ty, i},
+            Expr::NumPrograms {dim, ty: _, i} => Expr::NumPrograms {dim, ty, i},
             Expr::Arange {lo, hi, ty: _, i} => Expr::Arange {lo, hi, ty, i},
             Expr::Load {ptr, mask, ty: _, i} => Expr::Load {ptr, mask, ty, i},
             Expr::Full {shape, value, elem_sz, ty: _, i} =>
                 Expr::Full {shape, value, elem_sz, ty, i},
             Expr::Where {cond, thn, els, ty: _, i} =>
                 Expr::Where {cond, thn, els, ty, i},
+            Expr::Convert {value, ty: _, i} => Expr::Convert {value, ty, i},
             Expr::AllocBuffer {nelems, elem_sz, ty: _, i} =>
                 Expr::AllocBuffer {nelems, elem_sz, ty, i},
-            Expr::Convert {value, ty: _, i} => Expr::Convert {value, ty, i},
+            Expr::ToTorch {e, ty: _, i} => Expr::ToTorch {e, ty, i},
         }
     }
 
@@ -114,12 +124,14 @@ impl Expr {
             Expr::Call {..} => 7,
             Expr::ExtCall {..} => 8,
             Expr::ProgramId {..} => 9,
-            Expr::Arange {..} => 10,
-            Expr::Load {..} => 11,
-            Expr::Full {..} => 12,
-            Expr::Where {..} => 13,
-            Expr::AllocBuffer {..} => 14,
+            Expr::NumPrograms {..} => 10,
+            Expr::Arange {..} => 11,
+            Expr::Load {..} => 12,
+            Expr::Full {..} => 13,
+            Expr::Where {..} => 14,
             Expr::Convert {..} => 15,
+            Expr::AllocBuffer {..} => 16,
+            Expr::ToTorch {..} => 17,
         }
     }
 }
@@ -137,12 +149,14 @@ impl InfoNode for Expr {
             Expr::Call {i, ..} |
             Expr::ExtCall {i, ..} |
             Expr::ProgramId {i, ..} |
+            Expr::NumPrograms {i, ..} |
             Expr::Arange {i, ..} |
             Expr::Load {i, ..} |
             Expr::Full {i, ..} |
             Expr::Where {i, ..} |
+            Expr::Convert {i, ..} |
             Expr::AllocBuffer {i, ..} |
-            Expr::Convert {i, ..} => i.clone(),
+            Expr::ToTorch {i, ..} => i.clone(),
         }
     }
 }
@@ -160,12 +174,14 @@ impl ExprType<Type> for Expr {
             Expr::Call {ty, ..} |
             Expr::ExtCall {ty, ..} |
             Expr::ProgramId {ty, ..} |
+            Expr::NumPrograms {ty, ..} |
             Expr::Arange {ty, ..} |
             Expr::Load {ty, ..} |
             Expr::Full {ty, ..} |
             Expr::Where {ty, ..} |
+            Expr::Convert {ty, ..} |
             Expr::AllocBuffer {ty, ..} |
-            Expr::Convert {ty, ..} => ty,
+            Expr::ToTorch {ty, ..} => ty,
         }
     }
 
@@ -176,6 +192,7 @@ impl ExprType<Type> for Expr {
             Expr::Int {..} |
             Expr::Float {..} |
             Expr::ProgramId {..} |
+            Expr::NumPrograms {..} |
             Expr::Arange {..} |
             Expr::AllocBuffer {..} => true,
             Expr::UnOp {..} |
@@ -186,7 +203,8 @@ impl ExprType<Type> for Expr {
             Expr::Load {..} |
             Expr::Full {..} |
             Expr::Where {..} |
-            Expr::Convert {..} => false,
+            Expr::Convert {..} |
+            Expr::ToTorch {..} => false,
         }
     }
 }
@@ -203,16 +221,18 @@ impl SFold<Expr> for Expr {
             Expr::Reduce {arg, ..} => f(acc?, arg),
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::ExtCall {args, ..} => args.sfold_result(acc, &f),
+            Expr::Arange {lo, hi, ..} => f(f(acc?, lo)?, hi),
             Expr::Load {ptr, mask, ..} => mask.sfold_result(f(acc?, ptr), &f),
-            Expr::Full {value, ..} => f(acc?, value),
+            Expr::Full {shape, value, ..} => f(f(acc?, shape)?, value),
             Expr::Where {cond, thn, els, ..} => f(f(f(acc?, cond)?, thn)?, els),
             Expr::Convert {value, ..} => f(acc?, value),
+            Expr::ToTorch {e, ..} => f(acc?, e),
             Expr::Var {..} |
             Expr::Bool {..} |
             Expr::Int {..} |
             Expr::Float {..} |
             Expr::ProgramId {..} |
-            Expr::Arange {..} |
+            Expr::NumPrograms {..} |
             Expr::AllocBuffer {..} => acc
         }
     }
@@ -246,14 +266,26 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Expr::ExtCall {id, args, ty, i}))
             },
+            Expr::Arange {lo, hi, ty, i} => {
+                let (acc, lo) = f(acc?, *lo)?;
+                let (acc, hi) = f(acc, *hi)?;
+                Ok((acc, Expr::Arange {lo: Box::new(lo), hi: Box::new(hi), ty, i}))
+            },
             Expr::Load {ptr, mask, ty, i} => {
                 let (acc, ptr) = f(acc?, *ptr)?;
                 let (acc, mask) = mask.smap_accum_l_result(Ok(acc), &f)?;
                 Ok((acc, Expr::Load {ptr: Box::new(ptr), mask, ty, i}))
             },
             Expr::Full {shape, value, elem_sz, ty, i} => {
-                let (acc, value) = f(acc?, *value)?;
-                Ok((acc, Expr::Full {shape, value: Box::new(value), elem_sz, ty, i}))
+                let (acc, shape) = f(acc?, *shape)?;
+                let (acc, value) = f(acc, *value)?;
+                Ok((acc, Expr::Full {
+                    shape: Box::new(shape),
+                    value: Box::new(value),
+                    elem_sz,
+                    ty,
+                    i
+                }))
             },
             Expr::Where {cond, thn, els, ty, i} => {
                 let (acc, cond) = f(acc?, *cond)?;
@@ -273,12 +305,16 @@ impl SMapAccum<Expr> for Expr {
                     value: Box::new(value), ty, i
                 }))
             },
+            Expr::ToTorch {e, ty, i} => {
+                let (acc, e) = f(acc?, *e)?;
+                Ok((acc, Expr::ToTorch {e: Box::new(e), ty, i}))
+            },
             Expr::Var {..} |
             Expr::Bool {..} |
             Expr::Int {..} |
             Expr::Float {..} |
             Expr::ProgramId {..} |
-            Expr::Arange {..} |
+            Expr::NumPrograms {..} |
             Expr::AllocBuffer {..} => Ok((acc?, self))
         }
     }
@@ -307,6 +343,8 @@ impl Ord for Expr {
                 lid.cmp(rid).then(largs.cmp(rargs)),
             (Expr::ProgramId {dim: ldim, ..}, Expr::ProgramId {dim: rdim, ..}) =>
                 ldim.cmp(rdim),
+            (Expr::NumPrograms {dim: ldim, ..}, Expr::NumPrograms {dim: rdim, ..}) =>
+                ldim.cmp(rdim),
             ( Expr::Arange {lo: llo, hi: lhi, ..},
               Expr::Arange {lo: rlo, hi: rhi, ..} ) =>
                 llo.cmp(rlo).then(lhi.cmp(rhi)),
@@ -319,10 +357,11 @@ impl Ord for Expr {
             ( Expr::Where {cond: lcond, thn: lthn, els: lels, ..}
             , Expr::Where {cond: rcond, thn: rthn, els: rels, ..} ) =>
                 lcond.cmp(rcond).then(lthn.cmp(rthn)).then(lels.cmp(rels)),
+            (Expr::Convert {value: lv, ..}, Expr::Convert {value: rv, ..}) => lv.cmp(rv),
             ( Expr::AllocBuffer {nelems: ln, elem_sz: lsz, ..}
             , Expr::AllocBuffer {nelems: rn, elem_sz: rsz, ..} ) =>
                 ln.cmp(rn).then(lsz.cmp(rsz)),
-            (Expr::Convert {value: lv, ..}, Expr::Convert {value: rv, ..}) => lv.cmp(rv),
+            (Expr::ToTorch {e: le, ..}, Expr::ToTorch {e: re, ..}) => le.cmp(re),
             _ => self.discriminator().cmp(&other.discriminator()),
         }
     }
@@ -346,7 +385,7 @@ impl Eq for Expr {}
 pub enum Stmt {
     Definition {dst: Name, expr: Expr, i: Info},
     Assign {dst: Name, expr: Expr, i: Info},
-    For {var: Name, lo: Expr, hi: Expr, step: i128, body: Vec<Stmt>, i: Info},
+    For {var: Name, lo: Expr, hi: Expr, step: Expr, body: Vec<Stmt>, i: Info},
     While {cond: Expr, body: Vec<Stmt>, i: Info},
     If {cond: Expr, thn: Vec<Stmt>, els: Vec<Stmt>, i: Info},
     Return {value: Expr, i: Info},
@@ -427,6 +466,7 @@ impl SMapAccum<Expr> for Stmt {
             Stmt::For {var, lo, hi, step, body, i} => {
                 let (acc, lo) = f(acc?, lo)?;
                 let (acc, hi) = f(acc, hi)?;
+                let (acc, step) = f(acc, step)?;
                 Ok((acc, Stmt::For {var, lo, hi, step, body, i}))
             },
             Stmt::While {cond, body, i} => {
@@ -537,12 +577,47 @@ impl SFlatten<Stmt> for Stmt {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct AutotuneConfig {
+    pub mapping: BTreeMap<Name, Expr>,
+    pub warp_count: i128
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Decorator {
+    Autotune {
+        configs: Vec<AutotuneConfig>,
+        key: Vec<String>,
+        restore_value: Vec<Name>
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum AnnotType {
+    Any,
+    Constexpr,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Param {
+    pub id: Name,
+    pub ty: Type,
+    pub annot_ty: AnnotType,
+    pub i: Info,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Top {
     Import {package: String, as_str: Option<String>, i: Info},
-    FunDef {
-        triton_jit: bool,
+    KernelFunDef {
+        decorators: Vec<Decorator>,
         id: Name,
-        params: Vec<Name>,
+        params: Vec<Param>,
+        body: Vec<Stmt>,
+        i: Info
+    },
+    FunDef {
+        id: Name,
+        params: Vec<Param>,
         body: Vec<Stmt>,
         i: Info
     },

@@ -248,58 +248,6 @@ class CudaBaseBuffer(BaseBuffer):
     def copy(self):
         return CudaBaseBuffer(self.buf.detach().clone(), self.nbytes)
 
-class TritonBaseBuffer(BaseBuffer):
-    def __init__(self, buf, nbytes, src=None, is_raw=False):
-        super().__init__(buf, nbytes, src, is_raw)
-        self.libc = ctypes.cdll.LoadLibrary("libc.so.6")
-        self.libc.memcpy.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
-
-    def _deconstruct(self, src_ptr):
-        # Copy data back to the CPU container
-        if src_ptr is not None:
-            cpu_buf = self.buf.cpu()
-            cpu_buf_ptr, _, _ = _extract_array_interface(cpu_buf, allow_cuda=False)
-            self.libc.memcpy(src_ptr, cpu_buf_ptr, self.nbytes)
-
-    def _get_runtime_lib(self):
-        return None
-
-    def sync(self):
-        torch.cuda.synchronize()
-
-    def from_array(t):
-        try:
-            data_ptr, shape, dtype = _extract_array_interface(t, allow_cuda=True)
-            nbytes = _size(shape, dtype)
-            if hasattr(t, "__cuda_array_interface__"):
-                return TritonBaseBuffer(torch.as_tensor(t), nbytes)
-        except Exception as e:
-            raise ValueError(f"Cannot convert argument {t} to Triton buffer")
-
-        dev = _active_triton_device()
-        if len(shape) == 0:
-            buf = torch.empty((), dtype=dtype.to_torch(), device=dev)
-        else:
-            buf = torch.empty(*shape, dtype=dtype.to_torch(), device=dev)
-        if isinstance(t, torch.Tensor):
-            buf.copy_(t, non_blocking=True)
-        else:
-            buf.copy_(torch.tensor(t), non_blocking=True)
-        nbytes = _size(shape, dtype)
-        return TritonBaseBuffer(buf, nbytes, src=t)
-
-    def from_raw(ptr, shape, dtype):
-        class dummy(object):
-            def __init__(self):
-                self.__cuda_array_interface__ = _to_array_interface(ptr, shape, dtype)
-        dev = _active_triton_device()
-        buf = torch.as_tensor(dummy(), device=dev)
-        nbytes = _size(shape, dtype)
-        return TritonBaseBuffer(buf, nbytes, is_raw=True)
-
-    def copy(self):
-        return TritonBaseBuffer(self.buf.detach().clone(), self.nbytes)
-
 class MetalBaseBuffer(BaseBuffer):
     def __init__(self, buf, nbytes, src=None, is_raw=False):
         super().__init__(buf, nbytes, src, is_raw)
@@ -386,10 +334,13 @@ class Buffer:
     def _get_indexed(self, buf):
         import math
         nelems = self.buf.nbytes // self.dtype.size()
-        a = buf.reshape(nelems)
         size = math.prod(self.shape)
-        elem_ofs = self.buf_offset // self.dtype.size()
-        return a[elem_ofs:elem_ofs+size].reshape(self.shape)
+        if nelems == size:
+            return buf.reshape(self.shape)
+        else:
+            elem_ofs = self.buf_offset // self.dtype.size()
+            a = buf.reshape(nelems)
+            return a[elem_ofs:elem_ofs+size].reshape(self.shape)
 
     def _get_runtime_lib(self):
         return self.buf._get_runtime_lib()
@@ -429,7 +380,7 @@ class Buffer:
         if curr_sz == new_sz:
             return type(self)(self.buf, new_shape, self.dtype, self.buf_offset)
         else:
-            raise ValueError(f"Cannot reshape buffer of shape {self.shape} to {new_shape}")
+            raise RuntimeError(f"Cannot reshape buffer of shape {self.shape} to {new_shape}")
 
     def with_type(self, new_dtype):
         raise RuntimeError(f"Cannot instantiate base Buffer class")
@@ -438,6 +389,18 @@ class CudaBuffer(Buffer):
     def __init__(self, buf, shape, dtype, buf_offset=0):
         super().__init__(buf, shape, dtype, buf_offset)
         self.__cuda_array_interface__ = self.buf.buf.__cuda_array_interface__
+
+    def __getitem__(self, idx):
+        import math
+        b = self.buf.buf[idx]
+        if b.shape == ():
+            return np.array(b.cpu())
+        nbytes = math.prod(b.shape) * self.dtype.size()
+        new_buf = CudaBaseBuffer(b, nbytes)
+        return type(self)(new_buf, list(b.shape), self.dtype, self.buf_offset)
+
+    def _get_indexed(self, buf):
+        return buf
 
     def _get_ptr(self):
         ptr, _, _, = _check_array_interface(self.__cuda_array_interface__)
@@ -460,7 +423,8 @@ class CudaBuffer(Buffer):
         if self.shape == shape and self.dtype == dtype:
             self.torch()[:] = t
         else:
-            raise ValueError(f"Cannot copy data from array of shape {shape} and type {dtype} to CUDA buffer of shape {self.shape} and type {self.dtype}")
+            buf_type = str(type(self))
+            raise ValueError(f"Cannot copy data from array of shape {shape} and type {dtype} to {buf_type} of shape {self.shape} and type {self.dtype}")
 
     def numpy(self):
         return self._get_indexed(np.asarray(self.buf.buf.cpu()))
@@ -472,12 +436,16 @@ class CudaBuffer(Buffer):
         new_dtype = _resolve_dtype(new_dtype)
         if isinstance(new_dtype, DataType):
             if self.dtype.size() == new_dtype.size():
-                return CudaBuffer(self.buf, self.shape, new_dtype, self.buf_offset)
+                return type(self)(self.buf, self.shape, new_dtype, self.buf_offset)
             else:
                 t = self.buf.buf.detach().clone().to(new_dtype.to_torch())
                 nbytes = _size(self.shape, new_dtype)
                 buf = CudaBaseBuffer(t, nbytes)
-                return CudaBuffer(buf, self.shape, new_dtype, self.buf_offset)
+                return type(self)(buf, self.shape, new_dtype, self.buf_offset)
+
+    def reshape(self, *dims):
+        b = self.buf.buf.reshape(*dims)
+        return type(self)(CudaBaseBuffer(b, self.buf.nbytes), list(dims), self.dtype, self.buf_offset)
 
 class TritonBuffer(CudaBuffer):
     def __init__(self, buf, shape, dtype, buf_offset=0):
@@ -488,30 +456,12 @@ class TritonBuffer(CudaBuffer):
 
     def from_array(t):
         _, shape, dtype = _extract_array_interface(t, allow_cuda=True)
-        buf = TritonBaseBuffer.from_array(t)
+        buf = CudaBaseBuffer.from_array(t)
         return TritonBuffer(buf, shape, dtype)
 
     def from_raw(ptr, shape, dtype):
-        buf = TritonBaseBuffer.from_raw(ptr, shape, dtype)
+        buf = CudaBaseBuffer.from_raw(ptr, shape, dtype)
         return TritonBuffer(buf, shape, dtype)
-
-    def copy_from(self, t):
-        _, shape, dtype = _extract_array_interface(t, allow_cuda=True)
-        if self.shape == shape and self.dtype == dtype:
-            self.torch()[:] = t
-        else:
-            raise ValueError(f"Cannot copy data from array of shape {shape} and type {dtype} to Triton buffer of shape {self.shape} and type {self.dtype}")
-
-    def with_type(self, new_dtype):
-        new_dtype = _resolve_dtype(new_dtype)
-        if isinstance(new_dtype, DataType):
-            if self.dtype.size() == new_dtype.size():
-                return TritonBuffer(self.buf, self.shape, new_dtype, self.buf_offset)
-            else:
-                t = self.buf.buf.detach().clone().to(new_dtype.to_torch())
-                nbytes = _size(self.shape, new_dtype)
-                buf = TritonBaseBuffer(t, nbytes)
-                return TritonBuffer(buf, self.shape, new_dtype, self.buf_offset)
 
 class MetalBuffer(Buffer):
     def __init__(self, buf, shape, dtype, buf_offset=0):

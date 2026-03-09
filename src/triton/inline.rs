@@ -25,9 +25,7 @@ fn collect_kernel_entry_points_stmt(mut acc: BTreeSet<Name>, s: &Stmt) -> BTreeS
 
 fn collect_kernel_entry_points_top(acc: BTreeSet<Name>, t: &Top) -> BTreeSet<Name> {
     match t {
-        Top::FunDef {triton_jit: false, body, ..} => {
-            body.sfold(acc, collect_kernel_entry_points_stmt)
-        },
+        Top::FunDef {body, ..} => body.sfold(acc, collect_kernel_entry_points_stmt),
         _ => acc
     }
 }
@@ -145,9 +143,13 @@ fn rewrite_calls_anf_stmt(mut acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
 
 fn rewrite_calls_anf(t: Top) -> Top {
     match t {
-        Top::FunDef {triton_jit, id, params, body, i} => {
+        Top::KernelFunDef {decorators, id, params, body, i} => {
             let body = body.sflatten(vec![], rewrite_calls_anf_stmt);
-            Top::FunDef {triton_jit, id, params, body, i}
+            Top::KernelFunDef {decorators, id, params, body, i}
+        },
+        Top::FunDef {id, params, body, i} => {
+            let body = body.sflatten(vec![], rewrite_calls_anf_stmt);
+            Top::FunDef {id, params, body, i}
         },
         Top::Import {..} => t
     }
@@ -216,13 +218,13 @@ fn inline_calls_stmt(
 
 fn inline_calls_top(env: &InlineEnv, t: Top) -> CompileResult<Option<Top>> {
     match t {
-        Top::FunDef {triton_jit: true, id, params, body, i} => {
+        Top::KernelFunDef {decorators, id, params, body, i} => {
             // Any GPU function that is not in the set of kernel identifiers is only indirectly
             // called via other functions. These functions are removed from the resulting AST for
             // brevity.
             if env.kernel_ids.contains(&id) {
                 let body = body.sflatten_result(vec![], |acc, s| inline_calls_stmt(env, acc, s))?;
-                Ok(Some(Top::FunDef {triton_jit: true, id, params, body, i}))
+                Ok(Some(Top::KernelFunDef {decorators, id, params, body, i}))
             } else {
                 Ok(None)
             }
@@ -237,8 +239,12 @@ pub fn apply(ast: Ast) -> CompileResult<Ast> {
     let fun_tops = tops.clone()
         .into_iter()
         .map(|t| match t {
-            Top::FunDef {triton_jit: _, id, params, body, i: _} => {
-                Some((id.clone(), (params, body)))
+            Top::KernelFunDef {id, params, body, ..} |
+            Top::FunDef {id, params, body, ..} => {
+                let param_ids = params.into_iter()
+                    .map(|Param {id, ..}| id)
+                    .collect::<Vec<Name>>();
+                Some((id.clone(), (param_ids, body)))
             },
             _ => None
         })

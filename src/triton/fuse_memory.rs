@@ -506,9 +506,9 @@ fn apply_kernel_body(body: Vec<Stmt>) -> CompileResult<Vec<Stmt>> {
 
 fn apply_top(t: Top) -> CompileResult<Top> {
     match t {
-        Top::FunDef {triton_jit: true, id, params, body, i} => {
+        Top::KernelFunDef {decorators, id, params, body, i} => {
             let body = apply_kernel_body(body)?;
-            Ok(Top::FunDef {triton_jit: true, id, params, body, i})
+            Ok(Top::KernelFunDef {decorators, id, params, body, i})
         },
         _ => Ok(t)
     }

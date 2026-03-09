@@ -5,10 +5,12 @@ mod constant_fold;
 mod eliminate_thread_for_loops;
 mod fuse_memory;
 mod inline;
-mod pprint;
 mod power;
-mod shapes;
+mod pprint;
+mod remove_sync;
 mod rewrite_reductions;
+mod shapes;
+mod tuning;
 mod utils;
 
 #[cfg(test)]
@@ -25,6 +27,10 @@ pub fn codegen(
     opts: &CompileOptions,
     debug_env: &DebugEnv
 ) -> CompileResult<Ast> {
+    // Remove synchronization points after reductions, as Triton will ensure threads are
+    // synchronized after such operations.
+    let gpu_ast = remove_sync::apply(gpu_ast)?;
+
     // Rewrite reductions such that the intermediate result is always stored in a (fresh) temporary
     // variable, and written once to the left-hand side of the original reduction.
     let gpu_ast = rewrite_reductions::apply(gpu_ast)?;
@@ -73,6 +79,11 @@ pub fn codegen(
 
     // Run a final round of constant folding before returning the resulting AST.
     let ast = constant_fold::apply(ast);
+
+    // Adds use of autotuning via Triton into the AST, so that it automatically selects between a
+    // few different block sizes rather than using a one-to-one mapping between block size and
+    // thread count.
+    let ast = tuning::apply(ast, &opts);
 
     Ok(ast)
 }

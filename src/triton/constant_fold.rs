@@ -94,9 +94,13 @@ fn fold_stmt(acc: Vec<Stmt>, s: Stmt) -> Vec<Stmt> {
 fn fold_top(t: Top) -> Top {
     match t {
         Top::Import {..} => t,
-        Top::FunDef {triton_jit, id, params, body, i} => {
+        Top::KernelFunDef {decorators, id, params, body, i} => {
             let body = body.sflatten(vec![], fold_stmt);
-            Top::FunDef {triton_jit, id, params, body, i}
+            Top::KernelFunDef {decorators, id, params, body, i}
+        },
+        Top::FunDef {id, params, body, i} => {
+            let body = body.sflatten(vec![], fold_stmt);
+            Top::FunDef {id, params, body, i}
         },
     }
 }

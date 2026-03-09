@@ -134,9 +134,15 @@ def test_buffer_invalid_reshape(backend):
     def helper():
         shape = (20, 10, 32)
         b1 = parpy.buffer.zeros(shape, parpy.types.F32, backend)
-        with pytest.raises(ValueError) as e_info:
+        with pytest.raises(RuntimeError) as e_info:
             b1.reshape(20, 10, 32, 2)
-        assert e_info.match("Cannot reshape buffer of shape.*to.*")
+        if backend == parpy.CompileBackend.Metal:
+            assert e_info.match("Cannot reshape buffer of shape .* to .*")
+        elif backend in [parpy.CompileBackend.Cuda, parpy.CompileBackend.Triton]:
+            # In these backends, we propagate the underlying PyTorch error. We
+            # do not want to test that its message matches a particular shape,
+            # to avoid tests failing if their error message changes.
+            pass
     run_if_backend_is_enabled(backend, helper)
 
 @pytest.mark.parametrize('backend', compiler_backends)

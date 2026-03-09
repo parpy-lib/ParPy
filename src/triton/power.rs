@@ -47,9 +47,13 @@ fn simplify_power_operator_stmt(s: Stmt) -> Stmt {
 
 fn simplify_power_operator_top(t: Top) -> Top {
     match t {
-        Top::FunDef {triton_jit, id, params, body, i} => {
+        Top::FunDef {id, params, body, i} => {
             let body = body.smap(simplify_power_operator_stmt);
-            Top::FunDef {triton_jit, id, params, body, i}
+            Top::FunDef {id, params, body, i}
+        },
+        Top::KernelFunDef {decorators, id, params, body, i} => {
+            let body = body.smap(simplify_power_operator_stmt);
+            Top::KernelFunDef {decorators, id, params, body, i}
         },
         _ => t
     }

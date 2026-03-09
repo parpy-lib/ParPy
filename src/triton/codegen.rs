@@ -4,6 +4,7 @@ use crate::parpy_compile_error;
 use crate::parpy_internal_error;
 use crate::gpu::ast as gpu_ast;
 use crate::gpu::ast::LaunchArgs;
+use crate::gpu::par;
 use crate::gpu::reduce;
 use crate::utils::ast::*;
 use crate::utils::err::*;
@@ -11,7 +12,7 @@ use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::smap::*;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug)]
 struct CodegenEnv {
@@ -46,14 +47,14 @@ impl CodegenEnv {
 }
 
 fn generate_default_imports() -> Vec<Top> {
-    let mk_import = |package_str: &str| Top::Import {
+    let mk_import = |package_str: &str, as_str: Option<&str>| Top::Import {
         package: package_str.to_string(),
-        as_str: None,
+        as_str: as_str.map(|s| s.to_string()),
         i: Info::default()
     };
     vec![
-        mk_import("triton"),
-        mk_import("triton.language"),
+        mk_import("triton", None),
+        mk_import("triton.language", Some("tl")),
     ]
 }
 
@@ -99,10 +100,17 @@ fn validate_attrs(attrs: Vec<gpu_ast::KernelAttribute>, i: &Info) -> CompileResu
     Ok(())
 }
 
-fn from_gpu_ast_params(params: Vec<gpu_ast::Param>) -> Vec<Name> {
+fn from_gpu_ast_params(params: Vec<gpu_ast::Param>) -> CompileResult<Vec<Param>> {
     params.into_iter()
-        .map(|p| p.id)
-        .collect::<Vec<Name>>()
+        .map(|gpu_ast::Param {id, ty, i}| {
+            Ok(Param {
+                id: id,
+                ty: from_gpu_ast_type(ty, &i)?,
+                annot_ty: AnnotType::Any,
+                i
+            })
+        })
+        .collect::<CompileResult<Vec<Param>>>()
 }
 
 fn from_gpu_ast_type(ty: gpu_ast::Type, i: &Info) -> CompileResult<Type> {
@@ -117,8 +125,23 @@ fn from_gpu_ast_type(ty: gpu_ast::Type, i: &Info) -> CompileResult<Type> {
                         shape: Shape::Num(1)
                     })
                 },
+                Ok(Type::Function {..}) => {
+                    parpy_compile_error!(i, "Function type pointers are not supported in Triton")
+                },
                 Ok(Type::Void) => parpy_compile_error!(i, "Void pointers are not supported in Triton"),
                 Err(_) => parpy_internal_error!(i, "Failed to convert pointer to a valid Triton type")
+            }
+        },
+        gpu_ast::Type::Pointer {ty, mem: gpu_ast::MemSpace::Host} => {
+            match *ty {
+                gpu_ast::Type::Function {result, args} => {
+                    let result = Box::new(from_gpu_ast_type(*result, &i)?);
+                    let args = args.into_iter()
+                        .map(|ty| from_gpu_ast_type(ty, &i))
+                        .collect::<CompileResult<Vec<Type>>>()?;
+                    Ok(Type::Function {result, args})
+                },
+                _ => parpy_internal_error!(i, "Unsupported host pointer type")
             }
         },
         gpu_ast::Type::Pointer {..} => {
@@ -294,16 +317,21 @@ fn extract_loop_bounds(
     cond: gpu_ast::Expr,
     incr: gpu_ast::Expr,
     i: &Info
-) -> CompileResult<(Name, Expr, Expr, i128, Option<Stmt>)> {
+) -> CompileResult<(Name, Expr, Expr, Expr, Option<Stmt>)> {
     let (removed_thread, init) = remove_thread_idx(false, init);
     let lo = from_gpu_ast_kernel_expr(env, init)?;
     let hi = extract_upper_bound(env, &var, cond)?;
-    let step = extract_step(env, &var, incr)?;
+    let step_val = extract_step(env, &var, incr)?;
+    let step = Expr::Int {
+        v: step_val,
+        ty: hi.get_type().clone(),
+        i: i.clone()
+    };
     // NOTE(larshum, 2026-02-11): If we removed the use of a thread index, we know this for-loop
     // runs in parallel over threads, in which case we have to restructure it.
     if removed_thread {
-        let step_size = determine_step_size(&env, step, &lo);
-        let nthreads = env.current_grid.threads.prod() as usize;
+        let step_size = determine_step_size(&env, step_val, &lo);
+        let nthreads = env.current_grid.threads.prod() as i128;
         let new_var = Name::new(format!("{0}_chunk", var.get_str())).with_new_sym();
         let var_assign = Stmt::Definition {
             dst: var,
@@ -316,8 +344,16 @@ fn extract_loop_bounds(
                 op: BinOp::Add,
                 rhs: Box::new(Expr::BinOp {
                     lhs: Box::new(Expr::Arange {
-                        lo: 0,
-                        hi: nthreads,
+                        lo: Box::new(Expr::Int {
+                            v: 0,
+                            ty: var_ty.clone(),
+                            i: i.clone()
+                        }),
+                        hi: Box::new(Expr::Int {
+                            v: nthreads,
+                            ty: var_ty.clone(),
+                            i: i.clone()
+                        }),
                         ty: var_ty.clone(),
                         i: i.clone()
                     }),
@@ -462,7 +498,7 @@ fn from_gpu_ast_kernel_stmt(
             if let Expr::Var {ref id, ..} = l {
                 let ty = Type::Tensor {sz, shape: Shape::Num(1)};
                 let r = from_gpu_ast_kernel_expr(&env, r)?;
-                let reduce_stmt = Stmt::Definition {
+                let reduce_stmt = Stmt::Assign {
                     dst: id.clone(),
                     expr: Expr::BinOp {
                         lhs: Box::new(l),
@@ -556,14 +592,10 @@ fn from_gpu_ast_host_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<E
         gpu_ast::Expr::PyCallback {i, ..} => {
             parpy_internal_error!(i, "Found Python callback in Triton codegen")
         },
-        gpu_ast::Expr::Convert {e, ty: gpu_ast::Type::Scalar {sz: elem_sz}} => {
+        gpu_ast::Expr::Convert {e, ty: _} => {
             let i = e.get_info();
             let value = Box::new(from_gpu_ast_host_expr(env, *e)?);
-            Ok(Expr::Full {shape: 1, value, elem_sz, ty, i})
-        },
-        gpu_ast::Expr::Convert {e, ..} => {
-            let i = e.get_info();
-            parpy_internal_error!(i, "Unsupported conversion in Triton codegen")
+            Ok(Expr::Convert {value, ty, i})
         },
         gpu_ast::Expr::ThreadIdx {i, ..} => {
             parpy_internal_error!(i, "Thread indices are not supported")
@@ -571,27 +603,6 @@ fn from_gpu_ast_host_expr(env: &CodegenEnv, e: gpu_ast::Expr) -> CompileResult<E
         gpu_ast::Expr::BlockIdx {dim, ty: _, i} => {
             Ok(Expr::ProgramId {dim, ty, i})
         },
-    }
-}
-
-fn from_gpu_ast_kernel_arg(
-    env: &CodegenEnv,
-    arg: gpu_ast::Expr
-) -> CompileResult<Expr> {
-    let is_pointer_type = match arg.get_type() {
-        gpu_ast::Type::Pointer {..} => true,
-        _ => false
-    };
-    let arg = from_gpu_ast_host_expr(env, arg)?;
-    if is_pointer_type {
-        let ty = arg.get_type().clone();
-        let i = arg.get_info();
-        Ok(Expr::ExtCall {
-            id: "_parpy_builtin_to_torch".to_string(),
-            args: vec![arg], ty, i
-        })
-    } else {
-        Ok(arg)
     }
 }
 
@@ -679,9 +690,9 @@ fn from_gpu_ast_host_stmt(
                 parpy_compile_error!(i, "Found kernel launch with non-zero shared memory usage in Triton codegen")?
             }
             let args = args.into_iter()
-                .map(|arg| from_gpu_ast_kernel_arg(env, arg))
+                .map(|e| from_gpu_ast_host_expr(&env, e))
                 .collect::<CompileResult<Vec<Expr>>>()?;
-            let nwarps = (grid.threads.prod() / 32) as usize;
+            let nwarps = (grid.threads.prod() / par::WARP_SIZE) as usize;
             acc.push(Stmt::KernelLaunch {
                 id,
                 block_dims: grid.blocks,
@@ -696,6 +707,9 @@ fn from_gpu_ast_host_stmt(
             let elem_sz = match &elem_ty {
                 Type::Pointer {..} => Ok(ElemSize::I64),
                 Type::Tensor {sz, ..} => Ok(sz.clone()),
+                Type::Function {..} => {
+                    parpy_internal_error!(i, "Found allocation of function type in Triton codegen")
+                },
                 Type::Void => {
                     parpy_internal_error!(i, "Found allocation of void type in Triton codegen")
                 }
@@ -725,6 +739,141 @@ fn from_gpu_ast_host_stmts(
         .fold(Ok(vec![]), |acc, s| from_gpu_ast_host_stmt(&env, acc?, s))
 }
 
+fn sub_buffers_expr(
+    callback_params: &BTreeSet<Name>,
+    sub_map: &BTreeMap<Name, Expr>,
+    e: Expr
+) -> Expr {
+    match e {
+        Expr::Var {id, ty, i} => {
+            match sub_map.get(&id) {
+                Some(e) => e.clone(),
+                None => Expr::Var {id, ty, i}
+            }
+        },
+        Expr::Call {ref id, ..} if callback_params.contains(&id) => e,
+        _ => e.smap(|e| sub_buffers_expr(&callback_params, &sub_map, e))
+    }
+}
+
+fn sub_buffers_stmt(
+    callback_params: &BTreeSet<Name>,
+    sub_map: &BTreeMap<Name, Expr>,
+    mut acc: Vec<Stmt>,
+    s: Stmt
+) -> Vec<Stmt> {
+    match s {
+        Stmt::Assign {ref dst, expr: Expr::AllocBuffer {..}, ..} => {
+            // After each allocation of a temporary buffer, we insert a definition of a variable
+            // containing the inner PyTorch tensor.
+            if let Some(Expr::Var {id, ty, i}) = sub_map.get(&dst) {
+                let torch_def = Stmt::Definition {
+                    dst: id.clone(),
+                    expr: Expr::ToTorch {
+                        e: Box::new(Expr::Var {
+                            id: dst.clone(),
+                            ty: ty.clone(),
+                            i: i.clone()
+                        }),
+                        ty: ty.clone(),
+                        i: i.clone()
+                    },
+                    i: i.clone()
+                };
+                acc.push(s);
+                acc.push(torch_def);
+            } else {
+                acc.push(s);
+            }
+            acc
+        }
+        _ => {
+            s.smap(|e| sub_buffers_expr(&callback_params, &sub_map, e))
+                .sflatten(acc, |acc, s| sub_buffers_stmt(&callback_params, &sub_map, acc, s))
+        }
+    }
+}
+
+fn collect_buffer_alloc_subs(
+    mut sub_map: BTreeMap<Name, Expr>,
+    s: &Stmt
+) -> BTreeMap<Name, Expr> {
+    match s {
+        Stmt::Assign {dst, expr: Expr::AllocBuffer {ty, i, ..}, ..} => {
+            let sub_expr = Expr::Var {
+                id: dst.clone().with_new_sym(),
+                ty: ty.clone(),
+                i: i.clone(),
+            };
+            sub_map.insert(dst.clone(), sub_expr);
+            sub_map
+        },
+        _ => s.sfold(sub_map, collect_buffer_alloc_subs)
+    }
+}
+
+fn add_buffer_to_torch_conversion(
+    params: &Vec<Param>,
+    body: Vec<Stmt>
+) -> CompileResult<Vec<Stmt>> {
+    let is_pointer_type = |p: &Param| match &p.ty {
+        Type::Pointer {..} => true,
+        _ => false
+    };
+    let is_function_type = |p: &Param| match &p.ty {
+        Type::Function {..} => true,
+        _ => false
+    };
+    let pointer_params = params.iter()
+        .filter(|p| is_pointer_type(&p))
+        .cloned()
+        .collect::<Vec<Param>>();
+    let callback_params = params.iter()
+        .filter(|p| is_function_type(&p))
+        .map(|Param {id, ..}| id.clone())
+        .collect::<BTreeSet<Name>>();
+    let new_ids = pointer_params.iter()
+        .map(|p| p.id.clone().with_new_sym())
+        .collect::<Vec<Name>>();
+    let sub_map = new_ids.iter()
+        .zip(pointer_params.iter())
+        .map(|(new_id, Param {id, ty, annot_ty: _, i})| {
+            (id.clone(), Expr::Var {
+                id: new_id.clone(),
+                ty: ty.clone(),
+                i: i.clone()
+            })
+        })
+        .collect::<BTreeMap<Name, Expr>>();
+    let sub_map = body.sfold(sub_map, collect_buffer_alloc_subs);
+    // NOTE(larshum, 2026-03-04): Each Triton kernel expects PyTorch tensors as arguments. However,
+    // we use ParPy buffers within the host function. Converting a ParPy buffer to a PyTorch
+    // buffer is fairly cheap, but if we do this a large number of time it has a big performance
+    // impact. To mitigate this, we convert all buffer arguments and allocated intermediate data
+    // once, and store their PyTorch tensors in separate variables, which we use immediately
+    // instead of converting the arguments when calling the Triton kernel.
+    //
+    // However, we still track the ParPy buffers, as they are used when invoking a callback
+    // function.
+    let body = body.sflatten(vec![], |acc, s| {
+        sub_buffers_stmt(&callback_params, &sub_map, acc, s)
+    });
+    let body = new_ids.into_iter()
+        .zip(pointer_params.into_iter())
+        .map(|(new_id, Param {id, ty, annot_ty: _, i})| Stmt::Definition {
+            dst: new_id,
+            expr: Expr::ToTorch {
+                e: Box::new(Expr::Var {id, ty: ty.clone(), i: i.clone()}),
+                ty,
+                i: i.clone()
+            },
+            i
+        })
+        .chain(body.into_iter())
+        .collect::<Vec<Stmt>>();
+    Ok(body)
+}
+
 fn from_gpu_ast_top(
     env: CodegenEnv,
     mut tops: Vec<Top>,
@@ -748,23 +897,24 @@ fn from_gpu_ast_top(
         },
         gpu_ast::Top::KernelFunDef {attrs, id, params, body, i} => {
             validate_attrs(attrs, &i)?;
-            let params = from_gpu_ast_params(params);
+            let params = from_gpu_ast_params(params)?;
             let env = env.set_active_kernel(Some(&id));
             let body = from_gpu_ast_kernel_stmts(&env, body)?;
-            tops.push(Top::FunDef {triton_jit: true, id, params, body, i});
+            tops.push(Top::KernelFunDef {decorators: vec![], id, params, body, i});
             Ok((env, tops))
         },
         gpu_ast::Top::FunDef {ret_ty: _, id, params, body, target: Target::Device, i} => {
-            let params = from_gpu_ast_params(params);
+            let params = from_gpu_ast_params(params)?;
             let env = env.set_active_kernel(None);
             let body = from_gpu_ast_kernel_stmts(&env, body)?;
-            tops.push(Top::FunDef {triton_jit: true, id, params, body, i});
+            tops.push(Top::KernelFunDef {decorators: vec![], id, params, body, i});
             Ok((env, tops))
         },
         gpu_ast::Top::FunDef {ret_ty: _, id, params, body, target: Target::Host, i} => {
-            let params = from_gpu_ast_params(params);
+            let params = from_gpu_ast_params(params)?;
             let body = from_gpu_ast_host_stmts(&env, body)?;
-            tops.push(Top::FunDef {triton_jit: false, id, params, body, i});
+            let body = add_buffer_to_torch_conversion(&params, body)?;
+            tops.push(Top::FunDef {id, params, body, i});
             Ok((env, tops))
         },
     }

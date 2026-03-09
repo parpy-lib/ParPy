@@ -5,7 +5,7 @@ mod constant_fold;
 mod free_vars;
 mod fuse_memory;
 mod global_mem;
-mod par;
+pub mod par;
 mod pprint;
 pub mod reduce;
 mod split_function_targets;
