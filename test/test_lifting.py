@@ -54,7 +54,7 @@ def count_kernels(backend, code):
     elif backend == parpy.CompileBackend.Metal:
         return len(re.findall("parpy_metal::launch_kernel", code))
     elif backend == parpy.CompileBackend.Triton:
-        return len(re.findall(r"\[lambda meta.*: (.*, .*, .*)\]", code))
+        return len(re.findall(r"\[lambda _: (.*, .*, .*)\]", code))
     else:
         raise RuntimeError(f"Unsupported backend {backend}")
 
