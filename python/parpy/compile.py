@@ -34,7 +34,7 @@ def _report_compile_error(r, source, backend_name, temp_file, opts):
     if opts.write_output:
         with open(temp_file, "w+") as f:
             f.write(source)
-        msg += "\nWrote generated code to file {temp_file}."
+        msg += f"\nWrote generated code to file {temp_file}."
     raise RuntimeError(msg)
 
 def _build_cuda_shared_library(key, source, opts):
@@ -56,7 +56,7 @@ def _build_cuda_shared_library(key, source, opts):
         lib_cmd = _flatten([["-L", lib] for lib in opts.libs])
         commands = [
             "-O3", "--shared", "-Xcompiler", "-fPIC", f"-arch={arch}",
-            "-x", "cu", tmp.name, "-o", libpath
+            "-x", "cu", tmp.name, "-o", str(libpath)
         ]
         cmd = _flatten([["nvcc"], opts.extra_flags, include_cmd, lib_cmd, commands])
         r = subprocess.run(cmd, capture_output=True)
