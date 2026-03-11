@@ -49,6 +49,7 @@ impl PrettyPrint for Type {
             Type::Tensor {sz, shape: _} => (env, pprint_elem_size(&sz)),
             Type::Function {..} => (env, format!("<function type>")),
             Type::List => (env, format!("<list type>")),
+            Type::String => (env, format!("<string type>")),
             Type::Void => (env, "void".to_string())
         }
     }
@@ -165,6 +166,7 @@ impl PrettyPrint for Expr {
                     (env, format!("{v:?}"))
                 }
             },
+            Expr::String {v, ty: _, i: _} => (env, format!("\"{v}\"")),
             Expr::UnOp {..} => self.print_parenthesized_unop(env),
             Expr::BinOp {..} => self.print_parenthesized_binop(env),
             Expr::Reduce {op, arg, ty: _, i: _} => {

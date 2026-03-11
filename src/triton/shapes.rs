@@ -22,9 +22,10 @@ fn type_with_shape(
     match ty {
         Type::Pointer {ty, ..} => Ok(Type::Pointer {ty, shape}),
         Type::Tensor {sz, ..} => Ok(Type::Tensor {sz, shape}),
-        Type::Function {..} => parpy_internal_error!(i, "Cannot set shape of function type"),
-        Type::List => parpy_internal_error!(i, "Cannot set shape of list type"),
-        Type::Void => parpy_internal_error!(i, "Cannot set shape of void type")
+        Type::Function {..} |
+        Type::List |
+        Type::String |
+        Type::Void => parpy_internal_error!(i, "Cannot set shape of type {ty:?}")
     }
 }
 
@@ -32,9 +33,10 @@ fn get_type_shape(ty: &Type, i: &Info) -> CompileResult<Shape> {
     match ty {
         Type::Pointer {shape, ..} |
         Type::Tensor {shape, ..} => Ok(shape.clone()),
-        Type::Function {..} => parpy_internal_error!(i, "Cannot get shape of function type"),
-        Type::List => parpy_internal_error!(i, "Cannot get shape of list type"),
-        Type::Void => parpy_internal_error!(i, "Cannot get shape of void type")
+        Type::Function {..} |
+        Type::List |
+        Type::String |
+        Type::Void => parpy_internal_error!(i, "Cannot get shape of type {ty:?}")
     }
 }
 
@@ -134,6 +136,9 @@ fn add_shape_variables_expr(env: ShapeEnv, e: Expr) -> CompileResult<(ShapeEnv, 
         Expr::Float {v, ty, i} => {
             let ty = type_with_shape(ty, Shape::Num(1), &i)?;
             Ok((env, Expr::Float {v, ty, i}))
+        },
+        Expr::String {v, ty, i} => {
+            Ok((env, Expr::String {v, ty, i}))
         },
         Expr::UnOp {op, arg, ty, i} => {
             let (env, arg) = add_shape_variables_expr(env, *arg)?;
@@ -444,6 +449,7 @@ fn determine_type(
         },
         Type::Function {..} |
         Type::List |
+        Type::String |
         Type::Void => ty
     }
 }

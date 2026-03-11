@@ -356,12 +356,12 @@ impl PrettyPrint for Expr {
             Expr::AllocDevice {id, sz, stream, ty: _, i: _} => {
                 let (env, id) = id.pprint(env);
                 let (env, stream) = stream.pprint(env);
-                (env, format!("cuMemAllocAsync((CUdeviceptr)&{id}, {sz}, {stream})"))
+                (env, format!("cuMemAllocAsync((CUdeviceptr*)&{id}, {sz}, {stream})"))
             },
             Expr::FreeDevice {id, stream, ty: _, i: _} => {
                 let (env, id) = id.pprint(env);
                 let (env, stream) = stream.pprint(env);
-                (env, format!("cuMemFreeAsync({id}, {stream})"))
+                (env, format!("cuMemFreeAsync((CUdeviceptr){id}, {stream})"))
             },
         }
     }

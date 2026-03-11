@@ -43,6 +43,7 @@ fn update_block_size_type(ty: Type, block_size: i128) -> Type {
         },
         Type::Function {..} |
         Type::List |
+        Type::String |
         Type::Void => ty
     }
 }

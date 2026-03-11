@@ -24,6 +24,7 @@ pub enum Type {
     Tensor {sz: ElemSize, shape: Shape},
     Function {result: Box<Type>, args: Vec<Type>},
     List,
+    String,
     Void,
 }
 
@@ -34,6 +35,7 @@ impl Type {
             Type::Tensor {sz, ..} => Some(sz),
             Type::Function {..} => None,
             Type::List => None,
+            Type::String => None,
             Type::Void => None,
         }
     }
@@ -44,6 +46,7 @@ impl Type {
             Type::Tensor {shape, ..} => Some(shape),
             Type::Function {..} => None,
             Type::List => None,
+            Type::String => None,
             Type::Void => None,
         }
     }
@@ -68,6 +71,7 @@ pub enum Expr {
     Bool {v: bool, ty: Type, i: Info},
     Int {v: i128, ty: Type, i: Info},
     Float {v: f64, ty: Type, i: Info},
+    String {v: String, ty: Type, i: Info},
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     Reduce {op: ReduceOp, arg: Box<Expr>, ty: Type, i: Info},
@@ -96,6 +100,7 @@ impl Expr {
             Expr::Bool {v, ty: _, i} => Expr::Bool {v, ty, i},
             Expr::Int {v, ty: _, i} => Expr::Int {v, ty, i},
             Expr::Float {v, ty: _, i} => Expr::Float {v, ty, i},
+            Expr::String {v, ty: _, i} => Expr::String {v, ty, i},
             Expr::UnOp {op, arg, ty: _, i} => Expr::UnOp {op, arg, ty, i},
             Expr::BinOp {lhs, op, rhs, ty: _, i} => Expr::BinOp {lhs, op, rhs, ty, i},
             Expr::Reduce {op, arg, ty: _, i} => Expr::Reduce {op, arg, ty, i},
@@ -123,21 +128,22 @@ impl Expr {
             Expr::Bool {..} => 1,
             Expr::Int {..} => 2,
             Expr::Float {..} => 3,
-            Expr::UnOp {..} => 4,
-            Expr::BinOp {..} => 5,
-            Expr::Reduce {..} => 6,
-            Expr::Call {..} => 7,
-            Expr::ExtCall {..} => 8,
-            Expr::List {..} => 9,
-            Expr::ProgramId {..} => 10,
-            Expr::NumPrograms {..} => 11,
-            Expr::Arange {..} => 12,
-            Expr::Load {..} => 13,
-            Expr::Full {..} => 14,
-            Expr::Where {..} => 15,
-            Expr::Convert {..} => 16,
-            Expr::AllocBuffer {..} => 17,
-            Expr::ToTorch {..} => 18,
+            Expr::String {..} => 4,
+            Expr::UnOp {..} => 5,
+            Expr::BinOp {..} => 6,
+            Expr::Reduce {..} => 7,
+            Expr::Call {..} => 8,
+            Expr::ExtCall {..} => 9,
+            Expr::List {..} => 10,
+            Expr::ProgramId {..} => 11,
+            Expr::NumPrograms {..} => 12,
+            Expr::Arange {..} => 13,
+            Expr::Load {..} => 14,
+            Expr::Full {..} => 15,
+            Expr::Where {..} => 16,
+            Expr::Convert {..} => 17,
+            Expr::AllocBuffer {..} => 18,
+            Expr::ToTorch {..} => 19,
         }
     }
 }
@@ -149,6 +155,7 @@ impl InfoNode for Expr {
             Expr::Bool {i, ..} |
             Expr::Int {i, ..} |
             Expr::Float {i, ..} |
+            Expr::String {i, ..} |
             Expr::UnOp {i, ..} |
             Expr::BinOp {i, ..} |
             Expr::Reduce {i, ..} |
@@ -175,6 +182,7 @@ impl ExprType<Type> for Expr {
             Expr::Bool {ty, ..} |
             Expr::Int {ty, ..} |
             Expr::Float {ty, ..} |
+            Expr::String {ty, ..} |
             Expr::UnOp {ty, ..} |
             Expr::BinOp {ty, ..} |
             Expr::Reduce {ty, ..} |
@@ -199,6 +207,7 @@ impl ExprType<Type> for Expr {
             Expr::Bool {..} |
             Expr::Int {..} |
             Expr::Float {..} |
+            Expr::String {..} |
             Expr::ProgramId {..} |
             Expr::NumPrograms {..} |
             Expr::Arange {..} |
@@ -241,6 +250,7 @@ impl SFold<Expr> for Expr {
             Expr::Bool {..} |
             Expr::Int {..} |
             Expr::Float {..} |
+            Expr::String {..} |
             Expr::ProgramId {..} |
             Expr::NumPrograms {..} |
             Expr::AllocBuffer {..} => acc
@@ -327,6 +337,7 @@ impl SMapAccum<Expr> for Expr {
             Expr::Bool {..} |
             Expr::Int {..} |
             Expr::Float {..} |
+            Expr::String {..} |
             Expr::ProgramId {..} |
             Expr::NumPrograms {..} |
             Expr::AllocBuffer {..} => Ok((acc?, self))
@@ -341,6 +352,7 @@ impl Ord for Expr {
             (Expr::Bool {v: lv, ..}, Expr::Bool {v: rv, ..}) => lv.cmp(rv),
             (Expr::Int {v: lv, ..}, Expr::Int {v: rv, ..}) => lv.cmp(rv),
             (Expr::Float {v: lv, ..}, Expr::Float {v: rv, ..}) => f64::total_cmp(lv, rv),
+            (Expr::String {v: lv, ..}, Expr::String {v: rv, ..}) => lv.cmp(rv),
             (Expr::UnOp {op: lop, arg: larg, ..}, Expr::UnOp {op: rop, arg: rarg, ..}) =>
                 lop.cmp(rop).then(larg.cmp(rarg)),
             ( Expr::BinOp {lhs: llhs, op: lop, rhs: lrhs, ..}

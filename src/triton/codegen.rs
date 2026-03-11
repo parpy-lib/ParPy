@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 struct CodegenEnv {
     pub ext_map: BTreeMap<Name, String>,
     pub kernel_dims: BTreeMap<Name, LaunchArgs>,
+    pub kernel_params: Vec<Vec<Param>>,
     pub current_grid: LaunchArgs,
     pub sz: ScalarSizes,
 }
@@ -27,6 +28,7 @@ impl CodegenEnv {
         CodegenEnv {
             ext_map: BTreeMap::new(),
             kernel_dims: BTreeMap::new(),
+            kernel_params: vec![],
             current_grid: LaunchArgs::default(),
             sz: ScalarSizes::from_opts(opts),
         }
@@ -709,6 +711,7 @@ fn from_gpu_ast_host_stmt(
                 Type::Tensor {sz, ..} => Ok(sz.clone()),
                 Type::Function {..} |
                 Type::List |
+                Type::String |
                 Type::Void => {
                     parpy_internal_error!(i, "Found allocation of unsupported type \
                                               {elem_ty:?} in Triton codegen")
@@ -874,10 +877,55 @@ fn add_buffer_to_torch_conversion(
     Ok(body)
 }
 
-fn return_list_of_kernels(
+fn elem_size_to_triton_signature(sz: &ElemSize) -> String {
+    match sz {
+        ElemSize::Bool => "i1",
+        ElemSize::I8 => "i8",
+        ElemSize::I16 => "i16",
+        ElemSize::I32 => "i32",
+        ElemSize::I64 => "i64",
+        ElemSize::U8 => "u8",
+        ElemSize::U16 => "u16",
+        ElemSize::U32 => "u32",
+        ElemSize::U64 => "u64",
+        ElemSize::F16 => "fp16",
+        ElemSize::F32 => "fp32",
+        ElemSize::F64 => "fp64",
+    }.to_string()
+}
+
+fn type_to_triton_signature(ty: &Type, i: &Info) -> CompileResult<String> {
+    match ty {
+        Type::Tensor {sz, ..} => Ok(elem_size_to_triton_signature(sz)),
+        Type::Pointer {ty, ..} => {
+            let ty_str = type_to_triton_signature(ty, i)?;
+            Ok(format!("*{ty_str}"))
+        },
+        Type::Function {..} |
+        Type::List |
+        Type::String |
+        Type::Void => parpy_internal_error!(i, "Failed to generate signature of Triton kernel")
+    }
+}
+
+fn make_signature_list(
+    params: &Vec<Param>,
+    i: &Info
+) -> CompileResult<Expr> {
+    let elems = params.iter()
+        .map(|Param {ty, ..}| Ok(Expr::String {
+            v: type_to_triton_signature(ty, i)?,
+            ty: Type::String,
+            i: Info::default()
+        }))
+        .collect::<CompileResult<Vec<Expr>>>()?;
+    Ok(Expr::List {elems, ty: Type::List, i: i.clone()})
+}
+
+fn return_kernel_information(
     env: &CodegenEnv,
     s: Stmt
-) -> Stmt {
+) -> CompileResult<Stmt> {
     // We make the host entry point function of the generated Python code return a list of the
     // defined Triton kernels, instead of simply returning the integer zero. This is used in the
     // native code generation to retrieve a reference to each of the defined Triton kernels for the
@@ -887,14 +935,20 @@ fn return_list_of_kernels(
             let kernels = env.kernel_dims.keys()
                 .map(|id| Expr::Var {id: id.clone(), ty: Type::Void, i: i.clone()})
                 .collect::<Vec<Expr>>();
-            let kernel_list = Expr::List {
-                elems: kernels,
+            let kernel_signatures = env.kernel_params.iter()
+                .map(|params| make_signature_list(params, &i))
+                .collect::<CompileResult<Vec<Expr>>>()?;
+            let value = Expr::List {
+                elems: vec![
+                    Expr::List {elems: kernels, ty: Type::List, i: i.clone()},
+                    Expr::List {elems: kernel_signatures, ty: Type::List, i: i.clone()},
+                ],
                 ty: Type::List,
                 i: i.clone()
             };
-            Stmt::Return {value: kernel_list, i}
+            Ok(Stmt::Return {value, i})
         },
-        _ => s.smap(|s| return_list_of_kernels(&env, s))
+        _ => s.smap_result(|s| return_kernel_information(&env, s))
     }
 }
 
@@ -922,8 +976,9 @@ fn from_gpu_ast_top(
         gpu_ast::Top::KernelFunDef {attrs, id, params, body, i} => {
             validate_attrs(attrs, &i)?;
             let params = from_gpu_ast_params(params)?;
-            let env = env.set_active_kernel(Some(&id));
+            let mut env = env.set_active_kernel(Some(&id));
             let body = from_gpu_ast_kernel_stmts(&env, body)?;
+            env.kernel_params.push(params.clone());
             tops.push(Top::KernelFunDef {decorators: vec![], id, params, body, i});
             Ok((env, tops))
         },
@@ -938,7 +993,11 @@ fn from_gpu_ast_top(
             let params = from_gpu_ast_params(params)?;
             let body = from_gpu_ast_host_stmts(&env, body)?;
             let body = add_buffer_to_torch_conversion(&params, body)?;
-            let body = body.smap(|s| return_list_of_kernels(&env, s));
+
+            // We replace the final return statement of the entry point with a return consisting of
+            // information on the kernels, including the autotuned kernel function, its signature
+            // and other attributes associated with its parameters.
+            let body = body.smap_result(|s| return_kernel_information(&env, s))?;
             tops.push(Top::FunDef {id, params, body, i});
             Ok((env, tops))
         },
