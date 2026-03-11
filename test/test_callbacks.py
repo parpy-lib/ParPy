@@ -53,6 +53,12 @@ def test_gemm_callback(backend):
         gemm_parpy(alpha, beta, A, B, C, opts=opts)
         expected = alpha * A @ B + beta * torch.ones(R, M, N, dtype=torch.float32)
         assert torch.allclose(C, expected, atol=1e-3)
+
+        # Also test running this for the native Triton backend
+        if backend == parpy.CompileBackend.Triton:
+            opts.triton_native = True
+            gemm_parpy(alpha, beta, A, B, C, opts=opts)
+            assert torch.allclose(C, expected, atol=1e-3)
     run_if_backend_is_enabled(backend, helper)
 
 @parpy.jit
@@ -75,24 +81,32 @@ def test_callback_performs_jit(backend):
     def helper():
         a = torch.randn(20, 10, dtype=torch.float32)
         b = a.detach().clone()
-        first_entry(b, opts=par_opts(backend, {'M': parpy.threads(32)}))
+        opts = par_opts(backend, {'M': parpy.threads(32)})
+        first_entry(b, opts=opts)
         assert torch.allclose(a + 1.0, b)
+
+        # Also test running this for the native Triton backend
+        if backend == parpy.CompileBackend.Triton:
+            b = a.detach().clone()
+            opts.triton_native = True
+            first_entry(b, opts=opts)
+            assert torch.allclose(a + 1.0, b)
     run_if_backend_is_enabled(backend, helper)
 
 @parpy.callback
 def odd_callback(a, x):
     a_t = a.torch()
     a_t[1,:] += x
-    # We don't need to copy if we run this on CUDA
-    if a.backend != parpy.CompileBackend.Cuda:
+    # We need to copy if we run this on Metal
+    if a.backend == parpy.CompileBackend.Metal:
         a.copy_from(a_t)
 
 @parpy.callback
 def even_callback(a, x):
     a_t = a.torch()
     a_t[0,:] += x
-    # We don't need to copy if we run this on CUDA
-    if a.backend != parpy.CompileBackend.Cuda:
+    # We need to copy if we run this on Metal
+    if a.backend == parpy.CompileBackend.Metal:
         a.copy_from(a_t)
 
 @parpy.jit
@@ -108,6 +122,13 @@ def cond_write(a, x):
 def test_conditional_callback(backend):
     def helper():
         a = torch.zeros(2, 10, dtype=torch.float32)
-        cond_write(a, 0, opts=par_opts(backend, {}))
-        cond_write(a, 1, opts=par_opts(backend, {}))
+        opts = par_opts(backend, {})
+        cond_write(a, 0, opts=opts)
+        cond_write(a, 1, opts=opts)
+
+        # Also test running this for the native Triton backend
+        if backend == parpy.CompileBackend.Triton:
+            opts.triton_native = True
+            cond_write(a, 0, opts=opts)
+            cond_write(a, 1, opts=opts)
     run_if_backend_is_enabled(backend, helper)
