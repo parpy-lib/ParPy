@@ -238,8 +238,8 @@ def set_cuda_stream(args, opts):
 def get_string_wrapper(name, key, opts):
     import ctypes
     from .parpy import CompileBackend, ScalarSizes
-    from .triton import get_wrapper as get_triton_wrapper
     if opts.backend == CompileBackend.Triton:
+        from .triton import get_wrapper as get_triton_wrapper
         return get_triton_wrapper(name, key, [], {}, [], opts)
     libpath = _get_cache_dir(key) / "main-lib.so"
     lib = ctypes.cdll.LoadLibrary(libpath)
@@ -259,9 +259,9 @@ def get_string_wrapper(name, key, opts):
 
 def get_wrapper(name, key, argtypes, vars, callbacks, opts):
     from .parpy import CompileBackend
-    from .triton import get_wrapper as get_triton_wrapper
     import ctypes
     if opts.backend == CompileBackend.Triton:
+        from .triton import get_wrapper as get_triton_wrapper
         return get_triton_wrapper(name, key, argtypes, vars, callbacks, opts)
     libpath = _get_cache_dir(key) / "main-lib.so"
     lib = ctypes.cdll.LoadLibrary(libpath)
