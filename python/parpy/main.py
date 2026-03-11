@@ -177,7 +177,7 @@ def compile_string(fun_name, code, opts=CompileOptions()):
     import functools
     opts = backend._resolve_backend(opts, True)
     cache_key = "string_" + _generate_function_key(code, opts)
-    build_shared_library(cache_key, code, opts)
+    build_shared_library(cache_key, [code], opts)
     fn = get_string_wrapper(fun_name, cache_key, opts)
     @functools.wraps(fn)
     def inner(*args):
