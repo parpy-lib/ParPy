@@ -23,6 +23,7 @@ fn type_with_shape(
         Type::Pointer {ty, ..} => Ok(Type::Pointer {ty, shape}),
         Type::Tensor {sz, ..} => Ok(Type::Tensor {sz, shape}),
         Type::Function {..} => parpy_internal_error!(i, "Cannot set shape of function type"),
+        Type::List => parpy_internal_error!(i, "Cannot set shape of list type"),
         Type::Void => parpy_internal_error!(i, "Cannot set shape of void type")
     }
 }
@@ -32,6 +33,7 @@ fn get_type_shape(ty: &Type, i: &Info) -> CompileResult<Shape> {
         Type::Pointer {shape, ..} |
         Type::Tensor {shape, ..} => Ok(shape.clone()),
         Type::Function {..} => parpy_internal_error!(i, "Cannot get shape of function type"),
+        Type::List => parpy_internal_error!(i, "Cannot get shape of list type"),
         Type::Void => parpy_internal_error!(i, "Cannot get shape of void type")
     }
 }
@@ -160,6 +162,10 @@ fn add_shape_variables_expr(env: ShapeEnv, e: Expr) -> CompileResult<(ShapeEnv, 
         Expr::ExtCall {id, args, ty, i} => {
             let (env, args) = args.smap_accum_l_result(Ok(env), add_shape_variables_expr)?;
             Ok((env, Expr::ExtCall {id, args, ty, i}))
+        },
+        Expr::List {elems, ty, i} => {
+            let (env, elems) = elems.smap_accum_l_result(Ok(env), add_shape_variables_expr)?;
+            Ok((env, Expr::List {elems, ty, i}))
         },
         Expr::ProgramId {dim, ty, i} => {
             let ty = type_with_shape(ty, Shape::Num(1), &i)?;
@@ -437,6 +443,7 @@ fn determine_type(
             Type::Tensor {sz, shape}
         },
         Type::Function {..} |
+        Type::List |
         Type::Void => ty
     }
 }

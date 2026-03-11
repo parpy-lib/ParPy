@@ -129,7 +129,7 @@ fn from_gpu_ast_type(ty: gpu_ast::Type, i: &Info) -> CompileResult<Type> {
                     parpy_compile_error!(i, "Function type pointers are not supported in Triton")
                 },
                 Ok(Type::Void) => parpy_compile_error!(i, "Void pointers are not supported in Triton"),
-                Err(_) => parpy_internal_error!(i, "Failed to convert pointer to a valid Triton type")
+                _ => parpy_internal_error!(i, "Failed to convert pointer to a valid Triton type")
             }
         },
         gpu_ast::Type::Pointer {ty, mem: gpu_ast::MemSpace::Host} => {
@@ -707,11 +707,11 @@ fn from_gpu_ast_host_stmt(
             let elem_sz = match &elem_ty {
                 Type::Pointer {..} => Ok(ElemSize::I64),
                 Type::Tensor {sz, ..} => Ok(sz.clone()),
-                Type::Function {..} => {
-                    parpy_internal_error!(i, "Found allocation of function type in Triton codegen")
-                },
+                Type::Function {..} |
+                Type::List |
                 Type::Void => {
-                    parpy_internal_error!(i, "Found allocation of void type in Triton codegen")
+                    parpy_internal_error!(i, "Found allocation of unsupported type \
+                                              {elem_ty:?} in Triton codegen")
                 }
             }?;
             acc.push(Stmt::Assign {
@@ -874,6 +874,30 @@ fn add_buffer_to_torch_conversion(
     Ok(body)
 }
 
+fn return_list_of_kernels(
+    env: &CodegenEnv,
+    s: Stmt
+) -> Stmt {
+    // We make the host entry point function of the generated Python code return a list of the
+    // defined Triton kernels, instead of simply returning the integer zero. This is used in the
+    // native code generation to retrieve a reference to each of the defined Triton kernels for the
+    // compilation stage.
+    match s {
+        Stmt::Return {value: _, i} => {
+            let kernels = env.kernel_dims.keys()
+                .map(|id| Expr::Var {id: id.clone(), ty: Type::Void, i: i.clone()})
+                .collect::<Vec<Expr>>();
+            let kernel_list = Expr::List {
+                elems: kernels,
+                ty: Type::List,
+                i: i.clone()
+            };
+            Stmt::Return {value: kernel_list, i}
+        },
+        _ => s.smap(|s| return_list_of_kernels(&env, s))
+    }
+}
+
 fn from_gpu_ast_top(
     env: CodegenEnv,
     mut tops: Vec<Top>,
@@ -914,6 +938,7 @@ fn from_gpu_ast_top(
             let params = from_gpu_ast_params(params)?;
             let body = from_gpu_ast_host_stmts(&env, body)?;
             let body = add_buffer_to_torch_conversion(&params, body)?;
+            let body = body.smap(|s| return_list_of_kernels(&env, s));
             tops.push(Top::FunDef {id, params, body, i});
             Ok((env, tops))
         },

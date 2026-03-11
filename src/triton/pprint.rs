@@ -48,6 +48,7 @@ impl PrettyPrint for Type {
             },
             Type::Tensor {sz, shape: _} => (env, pprint_elem_size(&sz)),
             Type::Function {..} => (env, format!("<function type>")),
+            Type::List => (env, format!("<list type>")),
             Type::Void => (env, "void".to_string())
         }
     }
@@ -179,6 +180,10 @@ impl PrettyPrint for Expr {
             Expr::ExtCall {id, args, ty: _, i: _} => {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{id}({args})"))
+            },
+            Expr::List {elems, ty: _, i: _} => {
+                let (env, elems) = pprint_iter(elems.iter(), env, ", ");
+                (env, format!("[{elems}]"))
             },
             Expr::ProgramId {dim: Dim::X, ty: _, i: _} => (env, format!("tl.program_id(0)")),
             Expr::ProgramId {dim: Dim::Y, ty: _, i: _} => (env, format!("tl.program_id(1)")),

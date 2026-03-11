@@ -23,6 +23,7 @@ pub enum Type {
     Pointer {ty: Box<Type>, shape: Shape},
     Tensor {sz: ElemSize, shape: Shape},
     Function {result: Box<Type>, args: Vec<Type>},
+    List,
     Void,
 }
 
@@ -32,6 +33,7 @@ impl Type {
             Type::Pointer {ty, ..} => ty.get_elem_size(),
             Type::Tensor {sz, ..} => Some(sz),
             Type::Function {..} => None,
+            Type::List => None,
             Type::Void => None,
         }
     }
@@ -41,6 +43,7 @@ impl Type {
             Type::Pointer {shape, ..} => Some(shape),
             Type::Tensor {shape, ..} => Some(shape),
             Type::Function {..} => None,
+            Type::List => None,
             Type::Void => None,
         }
     }
@@ -70,6 +73,7 @@ pub enum Expr {
     Reduce {op: ReduceOp, arg: Box<Expr>, ty: Type, i: Info},
     Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
     ExtCall {id: String, args: Vec<Expr>, ty: Type, i: Info},
+    List {elems: Vec<Expr>, ty: Type, i: Info},
 
     // Triton-specific nodes
     ProgramId {dim: Dim, ty: Type, i: Info},
@@ -97,6 +101,7 @@ impl Expr {
             Expr::Reduce {op, arg, ty: _, i} => Expr::Reduce {op, arg, ty, i},
             Expr::Call {id, args, ty: _, i} => Expr::Call {id, args, ty, i},
             Expr::ExtCall {id, args, ty: _, i} => Expr::ExtCall {id, args, ty, i},
+            Expr::List {elems, ty: _, i} => Expr::List {elems, ty, i},
             Expr::ProgramId {dim, ty: _, i} => Expr::ProgramId {dim, ty, i},
             Expr::NumPrograms {dim, ty: _, i} => Expr::NumPrograms {dim, ty, i},
             Expr::Arange {lo, hi, ty: _, i} => Expr::Arange {lo, hi, ty, i},
@@ -123,15 +128,16 @@ impl Expr {
             Expr::Reduce {..} => 6,
             Expr::Call {..} => 7,
             Expr::ExtCall {..} => 8,
-            Expr::ProgramId {..} => 9,
-            Expr::NumPrograms {..} => 10,
-            Expr::Arange {..} => 11,
-            Expr::Load {..} => 12,
-            Expr::Full {..} => 13,
-            Expr::Where {..} => 14,
-            Expr::Convert {..} => 15,
-            Expr::AllocBuffer {..} => 16,
-            Expr::ToTorch {..} => 17,
+            Expr::List {..} => 9,
+            Expr::ProgramId {..} => 10,
+            Expr::NumPrograms {..} => 11,
+            Expr::Arange {..} => 12,
+            Expr::Load {..} => 13,
+            Expr::Full {..} => 14,
+            Expr::Where {..} => 15,
+            Expr::Convert {..} => 16,
+            Expr::AllocBuffer {..} => 17,
+            Expr::ToTorch {..} => 18,
         }
     }
 }
@@ -148,6 +154,7 @@ impl InfoNode for Expr {
             Expr::Reduce {i, ..} |
             Expr::Call {i, ..} |
             Expr::ExtCall {i, ..} |
+            Expr::List {i, ..} |
             Expr::ProgramId {i, ..} |
             Expr::NumPrograms {i, ..} |
             Expr::Arange {i, ..} |
@@ -173,6 +180,7 @@ impl ExprType<Type> for Expr {
             Expr::Reduce {ty, ..} |
             Expr::Call {ty, ..} |
             Expr::ExtCall {ty, ..} |
+            Expr::List {ty, ..} |
             Expr::ProgramId {ty, ..} |
             Expr::NumPrograms {ty, ..} |
             Expr::Arange {ty, ..} |
@@ -200,6 +208,7 @@ impl ExprType<Type> for Expr {
             Expr::Reduce {..} |
             Expr::Call {..} |
             Expr::ExtCall {..} |
+            Expr::List {..} |
             Expr::Load {..} |
             Expr::Full {..} |
             Expr::Where {..} |
@@ -221,6 +230,7 @@ impl SFold<Expr> for Expr {
             Expr::Reduce {arg, ..} => f(acc?, arg),
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::ExtCall {args, ..} => args.sfold_result(acc, &f),
+            Expr::List {elems, ..} => elems.sfold_result(acc, &f),
             Expr::Arange {lo, hi, ..} => f(f(acc?, lo)?, hi),
             Expr::Load {ptr, mask, ..} => mask.sfold_result(f(acc?, ptr), &f),
             Expr::Full {shape, value, ..} => f(f(acc?, shape)?, value),
@@ -265,6 +275,10 @@ impl SMapAccum<Expr> for Expr {
             Expr::ExtCall {id, args, ty, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Expr::ExtCall {id, args, ty, i}))
+            },
+            Expr::List {elems, ty, i} => {
+                let (acc, elems) = elems.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::List {elems, ty, i}))
             },
             Expr::Arange {lo, hi, ty, i} => {
                 let (acc, lo) = f(acc?, *lo)?;
@@ -341,6 +355,8 @@ impl Ord for Expr {
             ( Expr::ExtCall {id: lid, args: largs, ..}
             , Expr::ExtCall {id: rid, args: rargs, ..} ) =>
                 lid.cmp(rid).then(largs.cmp(rargs)),
+            (Expr::List {elems: lelems, ..}, Expr::List {elems: relems, ..}) =>
+                lelems.cmp(relems),
             (Expr::ProgramId {dim: ldim, ..}, Expr::ProgramId {dim: rdim, ..}) =>
                 ldim.cmp(rdim),
             (Expr::NumPrograms {dim: ldim, ..}, Expr::NumPrograms {dim: rdim, ..}) =>

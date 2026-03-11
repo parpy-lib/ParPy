@@ -42,6 +42,7 @@ fn update_block_size_type(ty: Type, block_size: i128) -> Type {
             Type::Tensor {sz, shape}
         },
         Type::Function {..} |
+        Type::List |
         Type::Void => ty
     }
 }
