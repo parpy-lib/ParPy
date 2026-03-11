@@ -139,16 +139,18 @@ def build_shared_library(key, source, opts):
     is assumed to be unique.
     """
     from .parpy import CompileBackend
-    if not _is_cached(key):
+    if not _is_cached(key, opts):
         if opts.backend == CompileBackend.Cuda:
             _build_cuda_shared_library(key, source[0], opts)
         elif opts.backend == CompileBackend.Metal:
             _build_metal_shared_library(key, source[0], opts)
         elif opts.backend == CompileBackend.Triton:
             _build_triton_python_module(key, source[0], opts)
-        elif opts.backend == CompileBackend.TritonCuda:
-            _build_triton_python_module(key, source[0], opts)
-            _build_cuda_shared_library(key, source[1], opts)
+            if opts.triton_native:
+                # We link with the cuda library for correctness.
+                opts.extra_flags = opts.extra_flags + ["-lcuda"]
+                _build_cuda_shared_library(key, source[1], opts)
+                opts.extra_flags.pop()
         else:
             raise RuntimeError(f"Cannot build for unsupported backend {opts.backend}")
 
@@ -221,42 +223,10 @@ def set_cuda_stream(args, opts):
         return args + [stream.cuda_stream]
     return args
 
-def _load_python_module(key, opts):
-    import importlib.util
-    import sys
-    module_path = _get_cache_dir(key) / "main.py"
-    spec = importlib.util.spec_from_file_location(key, module_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[key] = module
-    spec.loader.exec_module(module)
-    return module
-
-def _make_python_callback(callback_str, vars):
-    globs, _ = vars
-    d = globs
-    code = compile(callback_str, "<callback>", "exec")
-    exec(code, d)
-    fn = d.popitem()[1]
-    def cb_wrapper(*args):
-        fn(*[_value_or_ptr(arg) for arg in args])
-    return cb_wrapper
-
-def get_triton_wrapper(name, key, argtypes, vars, callbacks, opts):
-    module = _load_python_module(key, opts)
-    if len(callbacks) == 0:
-        def wrapper(*args):
-            args = _expand_args(args)
-            getattr(module, name)(*args)
-    else:
-        callback_funs = [_make_python_callback(cb, vars) for cb in callbacks]
-        def wrapper(*args):
-            args = list(_expand_args(args)) + callback_funs
-            getattr(module, name)(*args)
-    return wrapper
-
 def get_string_wrapper(name, key, opts):
     import ctypes
     from .parpy import CompileBackend, ScalarSizes
+    from .triton import get_wrapper as get_triton_wrapper
     if opts.backend == CompileBackend.Triton:
         return get_triton_wrapper(name, key, [], {}, [], opts)
     libpath = _get_cache_dir(key) / "main-lib.so"
@@ -277,6 +247,7 @@ def get_string_wrapper(name, key, opts):
 
 def get_wrapper(name, key, argtypes, vars, callbacks, opts):
     from .parpy import CompileBackend
+    from .triton import get_wrapper as get_triton_wrapper
     import ctypes
     if opts.backend == CompileBackend.Triton:
         return get_triton_wrapper(name, key, argtypes, vars, callbacks, opts)
