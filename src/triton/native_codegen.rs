@@ -260,8 +260,17 @@ fn generate_kernel_launch(
             }
         }]
     };
-    let smem = Expr::Var {
-        id: env.smem_id.clone(),
+    let smem = Expr::ArrayAccess {
+        target: Box::new(Expr::Var {
+            id: env.smem_id.clone(),
+            ty: Type::Pointer {ty: Box::new(Type::Scalar {sz: ElemSize::I32})},
+            i: i.clone()
+        }),
+        idx: Box::new(Expr::Int {
+            v: env.kernel_count as i128,
+            ty: Type::Scalar {sz: ElemSize::I32},
+            i: i.clone()
+        }),
         ty: Type::Scalar {sz: ElemSize::I32},
         i: i.clone()
     };
