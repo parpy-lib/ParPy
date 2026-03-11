@@ -141,11 +141,14 @@ def build_shared_library(key, source, opts):
     from .parpy import CompileBackend
     if not _is_cached(key):
         if opts.backend == CompileBackend.Cuda:
-            _build_cuda_shared_library(key, source, opts)
+            _build_cuda_shared_library(key, source[0], opts)
         elif opts.backend == CompileBackend.Metal:
-            _build_metal_shared_library(key, source, opts)
+            _build_metal_shared_library(key, source[0], opts)
         elif opts.backend == CompileBackend.Triton:
-            _build_triton_python_module(key, source, opts)
+            _build_triton_python_module(key, source[0], opts)
+        elif opts.backend == CompileBackend.TritonCuda:
+            _build_triton_python_module(key, source[0], opts)
+            _build_cuda_shared_library(key, source[1], opts)
         else:
             raise RuntimeError(f"Cannot build for unsupported backend {opts.backend}")
 

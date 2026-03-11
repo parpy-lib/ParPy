@@ -5,6 +5,8 @@ mod constant_fold;
 mod eliminate_thread_for_loops;
 mod fuse_memory;
 mod inline;
+pub mod native_ast;
+mod native_codegen;
 mod power;
 mod pprint;
 mod remove_sync;
@@ -86,4 +88,8 @@ pub fn codegen(
     let ast = tuning::apply(ast, &opts);
 
     Ok(ast)
+}
+
+pub fn generate_native_entry_point(ast: &gpu_ast::Ast) -> CompileResult<native_ast::Ast> {
+    native_codegen::from_gpu_ast(ast)
 }

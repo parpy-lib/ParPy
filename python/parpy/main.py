@@ -204,7 +204,7 @@ def print_compiled(fun, args, opts=CompileOptions()):
     args = check_arguments(args, opts, False)
     top_map = _get_tops(opts.backend)
     _, _, code, _ = parpy.compile_ir(ir_ast, args, opts, top_map)
-    return code
+    return code[0]
 
 def callback(fn):
     import inspect
