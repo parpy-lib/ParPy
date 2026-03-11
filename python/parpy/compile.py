@@ -9,18 +9,30 @@ def _get_cache_dir(key):
     Returns the cache directory based on the provided key and creates it if it
     does not already exist.
     """
-    from .parpy import CompileBackend
     dir = cache_path / key
     return dir
 
-def _is_cached(key):
+def _is_cached(key, opts):
     # NOTE(larshum, 2025-12-19): Library files generated from strings should
     # never be considered cached. This resolves an odd bug in the Metal
     # backend, where loading a cached library built from a string causes a
     # segmentation fault, for unknown reason.
+    from .parpy import CompileBackend
     if key.startswith("string_"):
         return False
-    return os.path.isdir(_get_cache_dir(key))
+    path = _get_cache_dir(key)
+    if opts.backend == CompileBackend.Cuda:
+        return os.path.isfile(path / "main-lib.so")
+    elif opts.backend == CompileBackend.Metal:
+        return os.path.isfile(path / "main-lib.so")
+    elif opts.backend == CompileBackend.Triton:
+        if os.path.isfile(path / "main.py"):
+            if opts.triton_native:
+                return os.path.isfile(path / "main-lib.so")
+            else:
+                return True
+        else:
+            return False
 
 def _flatten(xss):
     return [x for xs in xss for x in xs]
