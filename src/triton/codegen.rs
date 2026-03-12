@@ -900,8 +900,16 @@ fn type_to_triton_signature(ty: &Type, i: &Info) -> CompileResult<String> {
     match ty {
         Type::Tensor {sz, ..} => Ok(elem_size_to_triton_signature(sz)),
         Type::Pointer {ty, ..} => {
-            let ty_str = type_to_triton_signature(ty, i)?;
-            Ok(format!("*{ty_str}"))
+            // If we have a nested pointer type, we treat it as a pointer to int64, and cast
+            // elements within the function to the appropriate pointer type. This is because the
+            // Triton codegen does not support nested pointer types.
+            match **ty {
+                Type::Pointer {..} => Ok(format!("*i64")),
+                _ => {
+                    let ty_str = type_to_triton_signature(ty, i)?;
+                    Ok(format!("*{ty_str}"))
+                }
+            }
         },
         Type::Function {..} |
         Type::List |
