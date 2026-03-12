@@ -24,6 +24,7 @@ pub enum Type {
     Tensor {sz: ElemSize, shape: Shape},
     Function {result: Box<Type>, args: Vec<Type>},
     List,
+    Dict,
     String,
     Void,
 }
@@ -35,6 +36,7 @@ impl Type {
             Type::Tensor {sz, ..} => Some(sz),
             Type::Function {..} => None,
             Type::List => None,
+            Type::Dict => None,
             Type::String => None,
             Type::Void => None,
         }
@@ -46,6 +48,7 @@ impl Type {
             Type::Tensor {shape, ..} => Some(shape),
             Type::Function {..} => None,
             Type::List => None,
+            Type::Dict => None,
             Type::String => None,
             Type::Void => None,
         }
@@ -78,6 +81,7 @@ pub enum Expr {
     Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
     ExtCall {id: String, args: Vec<Expr>, ty: Type, i: Info},
     List {elems: Vec<Expr>, ty: Type, i: Info},
+    Dict {entries: Vec<(Expr, Expr)>, ty: Type, i: Info},
 
     // Triton-specific nodes
     ProgramId {dim: Dim, ty: Type, i: Info},
@@ -107,6 +111,7 @@ impl Expr {
             Expr::Call {id, args, ty: _, i} => Expr::Call {id, args, ty, i},
             Expr::ExtCall {id, args, ty: _, i} => Expr::ExtCall {id, args, ty, i},
             Expr::List {elems, ty: _, i} => Expr::List {elems, ty, i},
+            Expr::Dict {entries, ty: _, i} => Expr::Dict {entries, ty, i},
             Expr::ProgramId {dim, ty: _, i} => Expr::ProgramId {dim, ty, i},
             Expr::NumPrograms {dim, ty: _, i} => Expr::NumPrograms {dim, ty, i},
             Expr::Arange {lo, hi, ty: _, i} => Expr::Arange {lo, hi, ty, i},
@@ -135,15 +140,16 @@ impl Expr {
             Expr::Call {..} => 8,
             Expr::ExtCall {..} => 9,
             Expr::List {..} => 10,
-            Expr::ProgramId {..} => 11,
-            Expr::NumPrograms {..} => 12,
-            Expr::Arange {..} => 13,
-            Expr::Load {..} => 14,
-            Expr::Full {..} => 15,
-            Expr::Where {..} => 16,
-            Expr::Convert {..} => 17,
-            Expr::AllocBuffer {..} => 18,
-            Expr::ToTorch {..} => 19,
+            Expr::Dict {..} => 11,
+            Expr::ProgramId {..} => 12,
+            Expr::NumPrograms {..} => 13,
+            Expr::Arange {..} => 14,
+            Expr::Load {..} => 15,
+            Expr::Full {..} => 16,
+            Expr::Where {..} => 17,
+            Expr::Convert {..} => 18,
+            Expr::AllocBuffer {..} => 19,
+            Expr::ToTorch {..} => 20,
         }
     }
 }
@@ -162,6 +168,7 @@ impl InfoNode for Expr {
             Expr::Call {i, ..} |
             Expr::ExtCall {i, ..} |
             Expr::List {i, ..} |
+            Expr::Dict {i, ..} |
             Expr::ProgramId {i, ..} |
             Expr::NumPrograms {i, ..} |
             Expr::Arange {i, ..} |
@@ -189,6 +196,7 @@ impl ExprType<Type> for Expr {
             Expr::Call {ty, ..} |
             Expr::ExtCall {ty, ..} |
             Expr::List {ty, ..} |
+            Expr::Dict {ty, ..} |
             Expr::ProgramId {ty, ..} |
             Expr::NumPrograms {ty, ..} |
             Expr::Arange {ty, ..} |
@@ -218,6 +226,7 @@ impl ExprType<Type> for Expr {
             Expr::Call {..} |
             Expr::ExtCall {..} |
             Expr::List {..} |
+            Expr::Dict {..} |
             Expr::Load {..} |
             Expr::Full {..} |
             Expr::Where {..} |
@@ -240,6 +249,13 @@ impl SFold<Expr> for Expr {
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::ExtCall {args, ..} => args.sfold_result(acc, &f),
             Expr::List {elems, ..} => elems.sfold_result(acc, &f),
+            Expr::Dict {entries, ..} => {
+                entries.iter()
+                    .fold(acc, |acc, (k, v)| {
+                        let acc = f(acc?, k)?;
+                        f(acc, v)
+                    })
+            },
             Expr::Arange {lo, hi, ..} => f(f(acc?, lo)?, hi),
             Expr::Load {ptr, mask, ..} => mask.sfold_result(f(acc?, ptr), &f),
             Expr::Full {shape, value, ..} => f(f(acc?, shape)?, value),
@@ -289,6 +305,17 @@ impl SMapAccum<Expr> for Expr {
             Expr::List {elems, ty, i} => {
                 let (acc, elems) = elems.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Expr::List {elems, ty, i}))
+            },
+            Expr::Dict {entries, ty, i} => {
+                let (acc, entries) = entries.into_iter()
+                    .fold(Ok((acc?, vec![])), |acc, (k, v)| {
+                        let (acc, mut entries) = acc?;
+                        let (acc, k) = f(acc, k)?;
+                        let (acc, v) = f(acc, v)?;
+                        entries.push((k, v));
+                        Ok((acc, entries))
+                    })?;
+                Ok((acc, Expr::Dict {entries, ty, i}))
             },
             Expr::Arange {lo, hi, ty, i} => {
                 let (acc, lo) = f(acc?, *lo)?;
@@ -369,6 +396,8 @@ impl Ord for Expr {
                 lid.cmp(rid).then(largs.cmp(rargs)),
             (Expr::List {elems: lelems, ..}, Expr::List {elems: relems, ..}) =>
                 lelems.cmp(relems),
+            (Expr::Dict {entries: lentries, ..}, Expr::Dict {entries: rentries, ..}) =>
+                lentries.cmp(rentries),
             (Expr::ProgramId {dim: ldim, ..}, Expr::ProgramId {dim: rdim, ..}) =>
                 ldim.cmp(rdim),
             (Expr::NumPrograms {dim: ldim, ..}, Expr::NumPrograms {dim: rdim, ..}) =>
@@ -423,7 +452,7 @@ pub enum Stmt {
     // Triton-specific nodes
     Barrier {i: Info},
     Store {ptr: Expr, value: Expr, mask: Option<Expr>, i: Info},
-    KernelLaunch {id: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info},
+    KernelLaunch {id: Name, attrs: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info},
 }
 
 impl SFold<Expr> for Stmt {
@@ -527,9 +556,9 @@ impl SMapAccum<Expr> for Stmt {
                 }?;
                 Ok((acc, Stmt::Store {ptr, value, mask, i}))
             },
-            Stmt::KernelLaunch {id, block_dims, args, nwarps, i} => {
+            Stmt::KernelLaunch {id, attrs, block_dims, args, nwarps, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Stmt::KernelLaunch {id, block_dims, args, nwarps, i}))
+                Ok((acc, Stmt::KernelLaunch {id, attrs, block_dims, args, nwarps, i}))
             },
         }
     }

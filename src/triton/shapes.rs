@@ -24,6 +24,7 @@ fn type_with_shape(
         Type::Tensor {sz, ..} => Ok(Type::Tensor {sz, shape}),
         Type::Function {..} |
         Type::List |
+        Type::Dict |
         Type::String |
         Type::Void => parpy_internal_error!(i, "Cannot set shape of type {ty:?}")
     }
@@ -35,6 +36,7 @@ fn get_type_shape(ty: &Type, i: &Info) -> CompileResult<Shape> {
         Type::Tensor {shape, ..} => Ok(shape.clone()),
         Type::Function {..} |
         Type::List |
+        Type::Dict |
         Type::String |
         Type::Void => parpy_internal_error!(i, "Cannot get shape of type {ty:?}")
     }
@@ -171,6 +173,10 @@ fn add_shape_variables_expr(env: ShapeEnv, e: Expr) -> CompileResult<(ShapeEnv, 
         Expr::List {elems, ty, i} => {
             let (env, elems) = elems.smap_accum_l_result(Ok(env), add_shape_variables_expr)?;
             Ok((env, Expr::List {elems, ty, i}))
+        },
+        Expr::Dict {entries, ty, i} => {
+            let (env, entries) = entries.smap_accum_l_result(Ok(env), add_shape_variables_expr)?;
+            Ok((env, Expr::Dict {entries, ty, i}))
         },
         Expr::ProgramId {dim, ty, i} => {
             let ty = type_with_shape(ty, Shape::Num(1), &i)?;
@@ -449,6 +455,7 @@ fn determine_type(
         },
         Type::Function {..} |
         Type::List |
+        Type::Dict |
         Type::String |
         Type::Void => ty
     }

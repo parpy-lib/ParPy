@@ -697,6 +697,7 @@ fn from_gpu_ast_host_stmt(
             let nwarps = (grid.threads.prod() / par::WARP_SIZE) as usize;
             acc.push(Stmt::KernelLaunch {
                 id,
+                attrs: Name::new("".to_string()),
                 block_dims: grid.blocks,
                 args,
                 nwarps,
@@ -711,6 +712,7 @@ fn from_gpu_ast_host_stmt(
                 Type::Tensor {sz, ..} => Ok(sz.clone()),
                 Type::Function {..} |
                 Type::List |
+                Type::Dict |
                 Type::String |
                 Type::Void => {
                     parpy_internal_error!(i, "Found allocation of unsupported type \
@@ -903,6 +905,7 @@ fn type_to_triton_signature(ty: &Type, i: &Info) -> CompileResult<String> {
         },
         Type::Function {..} |
         Type::List |
+        Type::Dict |
         Type::String |
         Type::Void => parpy_internal_error!(i, "Failed to generate signature of Triton kernel")
     }
@@ -922,8 +925,9 @@ fn make_signature_list(
     Ok(Expr::List {elems, ty: Type::List, i: i.clone()})
 }
 
-fn return_kernel_information(
+fn insert_return_kernel_information(
     env: &CodegenEnv,
+    attrs_id: &Name,
     s: Stmt
 ) -> CompileResult<Stmt> {
     // We make the host entry point function of the generated Python code return a list of the
@@ -931,6 +935,9 @@ fn return_kernel_information(
     // native code generation to retrieve a reference to each of the defined Triton kernels for the
     // compilation stage.
     match s {
+        Stmt::KernelLaunch {id, attrs: _, block_dims, args, nwarps, i} => {
+            Ok(Stmt::KernelLaunch {id, attrs: attrs_id.clone(), block_dims, args, nwarps, i})
+        },
         Stmt::Return {value: _, i} => {
             let kernels = env.kernel_dims.keys()
                 .map(|id| Expr::Var {id: id.clone(), ty: Type::Void, i: i.clone()})
@@ -942,14 +949,34 @@ fn return_kernel_information(
                 elems: vec![
                     Expr::List {elems: kernels, ty: Type::List, i: i.clone()},
                     Expr::List {elems: kernel_signatures, ty: Type::List, i: i.clone()},
+                    Expr::Var {id: attrs_id.clone(), ty: Type::Dict, i: i.clone()},
                 ],
                 ty: Type::List,
                 i: i.clone()
             };
             Ok(Stmt::Return {value, i})
         },
-        _ => s.smap_result(|s| return_kernel_information(&env, s))
+        _ => s.smap_result(|s| insert_return_kernel_information(env, attrs_id, s))
     }
+}
+
+fn insert_kernel_information_tracking(
+    env: &CodegenEnv,
+    mut body: Vec<Stmt>
+) -> CompileResult<Vec<Stmt>> {
+    // Define a new variable containing a mapping from the name of each kernel to its set of
+    // attributes (as defined via Triton). We update the code such that it calls our runtime
+    // definition of a kernel launch, which collects the attribute information and returns it to
+    // the Python library. By specifying these attributes accurately, we can help Triton generate
+    // more efficent code.
+    let attrs_id = Name::sym_str("attrs");
+    let empty_attrs_def = Stmt::Definition {
+        dst: attrs_id.clone(),
+        expr: Expr::Dict {entries: vec![], ty: Type::Dict, i: Info::default()},
+        i: Info::default()
+    };
+    body.insert(0, empty_attrs_def);
+    body.smap_result(|s| insert_return_kernel_information(&env, &attrs_id, s))
 }
 
 fn from_gpu_ast_top(
@@ -993,11 +1020,7 @@ fn from_gpu_ast_top(
             let params = from_gpu_ast_params(params)?;
             let body = from_gpu_ast_host_stmts(&env, body)?;
             let body = add_buffer_to_torch_conversion(&params, body)?;
-
-            // We replace the final return statement of the entry point with a return consisting of
-            // information on the kernels, including the autotuned kernel function, its signature
-            // and other attributes associated with its parameters.
-            let body = body.smap_result(|s| return_kernel_information(&env, s))?;
+            let body = insert_kernel_information_tracking(&env, body)?;
             tops.push(Top::FunDef {id, params, body, i});
             Ok((env, tops))
         },

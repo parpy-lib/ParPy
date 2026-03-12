@@ -42,7 +42,7 @@ def _compile_function(kernel, signature, attrs):
         fn=kernel.fn,
         signature=signature,
         constexprs=cfg.kwargs,
-        attrs=attrs
+        attrs=attrs[kernel.fn.__name__]
     )
     options = {
         "num_warps": cfg.num_warps,
@@ -125,9 +125,9 @@ def get_wrapper(name, key, argtypes, vars, callbacks, opts):
                 if len(callbacks) > 0:
                     callback_funs = [_make_python_callback(cb, vars) for cb in callbacks]
                     args = list(_expand_args(args)) + callback_funs
-                res = getattr(module, name)(*args)
-                if len(res[0]) > 0:
-                    smem, argc = zip(*[_compile_function(k, s, {}) for k, s in zip(*res)])
+                kernels, signatures, attrs = getattr(module, name)(*args)
+                if len(kernels) > 0:
+                    smem, argc = zip(*[_compile_function(k, s, attrs) for k, s in zip(kernels, signatures)])
                     smem = torch.tensor(smem, dtype=torch.int32)
                     argc = torch.tensor(argc, dtype=torch.int32)
                 _, argtypes = _insert_triton_args(args, argtypes, smem, argc, cache_dir)
