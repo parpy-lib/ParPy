@@ -48,6 +48,9 @@ impl PrettyPrint for Type {
             },
             Type::Tensor {sz, shape: _} => (env, pprint_elem_size(&sz)),
             Type::Function {..} => (env, format!("<function type>")),
+            Type::List => (env, format!("<list type>")),
+            Type::Dict => (env, format!("<dict type>")),
+            Type::String => (env, format!("<string type>")),
             Type::Void => (env, "void".to_string())
         }
     }
@@ -164,6 +167,7 @@ impl PrettyPrint for Expr {
                     (env, format!("{v:?}"))
                 }
             },
+            Expr::String {v, ty: _, i: _} => (env, format!("\"{v}\"")),
             Expr::UnOp {..} => self.print_parenthesized_unop(env),
             Expr::BinOp {..} => self.print_parenthesized_binop(env),
             Expr::Reduce {op, arg, ty: _, i: _} => {
@@ -179,6 +183,23 @@ impl PrettyPrint for Expr {
             Expr::ExtCall {id, args, ty: _, i: _} => {
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
                 (env, format!("{id}({args})"))
+            },
+            Expr::List {elems, ty: _, i: _} => {
+                let (env, elems) = pprint_iter(elems.iter(), env, ", ");
+                (env, format!("[{elems}]"))
+            },
+            Expr::Dict {entries, ty: _, i: _} => {
+                let (env, entries_str) = entries.iter()
+                    .fold((env, "".to_string()), |(env, acc), (k, v)| {
+                        let (env, k) = k.pprint(env);
+                        let (env, v) = v.pprint(env);
+                        if acc.is_empty() {
+                            (env, format!("{k}: {v}"))
+                        } else {
+                            (env, format!("{acc}, {k}: {v}"))
+                        }
+                    });
+                (env, format!("{{{entries_str}}}"))
             },
             Expr::ProgramId {dim: Dim::X, ty: _, i: _} => (env, format!("tl.program_id(0)")),
             Expr::ProgramId {dim: Dim::Y, ty: _, i: _} => (env, format!("tl.program_id(1)")),
@@ -302,11 +323,12 @@ impl PrettyPrint for Stmt {
                 };
                 (env, format!("{0}tl.store({ptr}, {value}{mask})", indent))
             },
-            Stmt::KernelLaunch {id, block_dims, args, nwarps: _, i: _} => {
+            Stmt::KernelLaunch {id, attrs, block_dims, args, nwarps: _, i: _} => {
                 let (env, id) = id.pprint(env);
+                let (env, attrs) = attrs.pprint(env);
                 let (env, block_dims) = block_dims.pprint(env);
                 let (env, args) = pprint_iter(args.iter(), env, ", ");
-                (env, format!("{0}{id}[lambda _: ({block_dims})]({args})", indent))
+                (env, format!("{indent}{0} = _parpy_builtin_launch_kernel({0}, {id}, {block_dims}, {args})", attrs))
             },
         }
     }
@@ -544,12 +566,17 @@ mod test {
         let block_dims = Dim3 {x: 10, y: 5, z: 1024};
         let s = Stmt::KernelLaunch {
             id: Name::sym_str("f"),
+            attrs: Name::sym_str("attrs"),
             block_dims,
-            args: vec![],
+            args: vec![Expr::Var {
+                id: Name::sym_str("x"),
+                ty: Type::Void,
+                i: i()
+            }],
             nwarps: 2,
             i: i()
         };
-        assert_eq!(s.pprint_default(), "f[lambda _: (10, 5, 1024)]()");
+        assert_eq!(s.pprint_default(), "attrs = _parpy_builtin_launch_kernel(attrs, f, 10, 5, 1024, x)");
     }
 
     #[test]

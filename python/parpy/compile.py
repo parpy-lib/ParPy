@@ -4,22 +4,35 @@ from pathlib import Path
 cache_path = Path(f"{os.path.expanduser('~')}/.cache/parpy")
 cache_path.mkdir(parents=True, exist_ok=True)
 
-def _get_native_path(key, opts):
-    from .parpy import CompileBackend
-    if opts.backend == CompileBackend.Triton:
-        return cache_path / f"{key}.py"
-    else:
-        return cache_path / f"{key}-lib.so"
+def _get_cache_dir(key):
+    """
+    Returns the cache directory based on the provided key and creates it if it
+    does not already exist.
+    """
+    dir = cache_path / key
+    return dir
 
 def _is_cached(key, opts):
     # NOTE(larshum, 2025-12-19): Library files generated from strings should
     # never be considered cached. This resolves an odd bug in the Metal
     # backend, where loading a cached library built from a string causes a
     # segmentation fault, for unknown reason.
+    from .parpy import CompileBackend
     if key.startswith("string_"):
         return False
-    path = _get_native_path(key, opts)
-    return os.path.isfile(path)
+    path = _get_cache_dir(key)
+    if opts.backend == CompileBackend.Cuda:
+        return os.path.isfile(path / "main-lib.so")
+    elif opts.backend == CompileBackend.Metal:
+        return os.path.isfile(path / "main-lib.so")
+    elif opts.backend == CompileBackend.Triton:
+        if os.path.isfile(path / "main.py"):
+            if opts.triton_native:
+                return os.path.isfile(path / "main-lib.so")
+            else:
+                return True
+        else:
+            return False
 
 def _flatten(xss):
     return [x for xs in xss for x in xs]
@@ -33,7 +46,7 @@ def _report_compile_error(r, source, backend_name, temp_file, opts):
     if opts.write_output:
         with open(temp_file, "w+") as f:
             f.write(source)
-        msg += "\nWrote generated code to file {temp_file}."
+        msg += f"\nWrote generated code to file {temp_file}."
     raise RuntimeError(msg)
 
 def _build_cuda_shared_library(key, source, opts):
@@ -41,7 +54,8 @@ def _build_cuda_shared_library(key, source, opts):
     import subprocess
     import tempfile
     import torch
-    libpath = _get_native_path(key, opts)
+    libpath = _get_cache_dir(key) / "main-lib.so"
+    libpath.parent.mkdir(parents=True, exist_ok=True)
 
     # Get the version of the current GPU and generate specialized code for it.
     major, minor = torch.cuda.get_device_capability()
@@ -54,7 +68,7 @@ def _build_cuda_shared_library(key, source, opts):
         lib_cmd = _flatten([["-L", lib] for lib in opts.libs])
         commands = [
             "-O3", "--shared", "-Xcompiler", "-fPIC", f"-arch={arch}",
-            "-x", "cu", tmp.name, "-o", libpath
+            "-x", "cu", tmp.name, "-o", str(libpath)
         ]
         cmd = _flatten([["nvcc"], opts.extra_flags, include_cmd, lib_cmd, commands])
         r = subprocess.run(cmd, capture_output=True)
@@ -69,7 +83,8 @@ def _build_metal_shared_library(key, source, opts):
     from .runtime import PARPY_NATIVE_PATH, PARPY_METAL_BASE_LIB_PATH
     import subprocess
     import tempfile
-    libpath = _get_native_path(key, opts)
+    libpath = _get_cache_dir(key) / "main-lib.so"
+    libpath.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile() as tmp:
         with open(tmp.name, "w") as f:
             f.write(source)
@@ -110,7 +125,8 @@ def _torch_to_ctype(dtype):
 def _build_triton_python_module(key, source, opts):
     from .parpy import CompileBackend
     from .runtime import PARPY_NATIVE_PATH
-    module_path = _get_native_path(key, opts)
+    module_path = _get_cache_dir(key) / "main.py"
+    module_path.parent.mkdir(parents=True, exist_ok=True)
     # Loads a pre-defined Triton file containing simple definitions we may use
     # in the generated Triton code.
     with open(PARPY_NATIVE_PATH / "parpy_triton.py", "r") as f:
@@ -137,11 +153,16 @@ def build_shared_library(key, source, opts):
     from .parpy import CompileBackend
     if not _is_cached(key, opts):
         if opts.backend == CompileBackend.Cuda:
-            _build_cuda_shared_library(key, source, opts)
+            _build_cuda_shared_library(key, source[0], opts)
         elif opts.backend == CompileBackend.Metal:
-            _build_metal_shared_library(key, source, opts)
+            _build_metal_shared_library(key, source[0], opts)
         elif opts.backend == CompileBackend.Triton:
-            _build_triton_python_module(key, source, opts)
+            _build_triton_python_module(key, source[0], opts)
+            if opts.triton_native:
+                # We link with the cuda library for correctness.
+                opts.extra_flags = opts.extra_flags + ["-lcuda"]
+                _build_cuda_shared_library(key, source[1], opts)
+                opts.extra_flags.pop()
         else:
             raise RuntimeError(f"Cannot build for unsupported backend {opts.backend}")
 
@@ -214,45 +235,13 @@ def set_cuda_stream(args, opts):
         return args + [stream.cuda_stream]
     return args
 
-def _load_python_module(key, opts):
-    import importlib.util
-    import sys
-    module_path = _get_native_path(key, opts)
-    spec = importlib.util.spec_from_file_location(key, module_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[key] = module
-    spec.loader.exec_module(module)
-    return module
-
-def _make_python_callback(callback_str, vars):
-    globs, _ = vars
-    d = globs
-    code = compile(callback_str, "<callback>", "exec")
-    exec(code, d)
-    fn = d.popitem()[1]
-    def cb_wrapper(*args):
-        fn(*[_value_or_ptr(arg) for arg in args])
-    return cb_wrapper
-
-def get_triton_wrapper(name, key, argtypes, vars, callbacks, opts):
-    module = _load_python_module(key, opts)
-    if len(callbacks) == 0:
-        def wrapper(*args):
-            args = _expand_args(args)
-            getattr(module, name)(*args)
-    else:
-        callback_funs = [_make_python_callback(cb, vars) for cb in callbacks]
-        def wrapper(*args):
-            args = list(_expand_args(args)) + callback_funs
-            getattr(module, name)(*args)
-    return wrapper
-
 def get_string_wrapper(name, key, opts):
     import ctypes
     from .parpy import CompileBackend, ScalarSizes
     if opts.backend == CompileBackend.Triton:
+        from .triton import get_wrapper as get_triton_wrapper
         return get_triton_wrapper(name, key, [], {}, [], opts)
-    libpath = _get_native_path(key, opts)
+    libpath = _get_cache_dir(key) / "main-lib.so"
     lib = ctypes.cdll.LoadLibrary(libpath)
     getattr(lib, name).restype = ctypes.c_int32
     sizes = ScalarSizes(opts)
@@ -272,8 +261,9 @@ def get_wrapper(name, key, argtypes, vars, callbacks, opts):
     from .parpy import CompileBackend
     import ctypes
     if opts.backend == CompileBackend.Triton:
+        from .triton import get_wrapper as get_triton_wrapper
         return get_triton_wrapper(name, key, argtypes, vars, callbacks, opts)
-    libpath = _get_native_path(key, opts)
+    libpath = _get_cache_dir(key) / "main-lib.so"
     lib = ctypes.cdll.LoadLibrary(libpath)
     getattr(lib, name).restype = ctypes.c_int32
     if opts.backend == CompileBackend.Cuda:

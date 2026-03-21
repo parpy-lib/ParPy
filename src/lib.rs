@@ -82,7 +82,7 @@ fn compile_ir<'py>(
     opts: option::CompileOptions,
     ir_asts: BTreeMap<String, Bound<'py, PyCapsule>>,
     py: Python<'py>
-) -> PyResult<(Vec<Bound<'py, PyAny>>, Vec<String>, String, String)> {
+) -> PyResult<(Vec<Bound<'py, PyAny>>, Vec<String>, Vec<String>, String)> {
     // Extract a reference to the untyped AST parsed earlier.
     let t: &py::ast::Top = unsafe { cap.reference() };
 
@@ -132,7 +132,7 @@ fn compile_ir<'py>(
             Ok((
                 argtypes,
                 callback_asts,
-                ast.pprint_default(),
+                vec![ast.pprint_default()],
                 ast.pprint_ignore_symbols()
             ))
         },
@@ -143,19 +143,24 @@ fn compile_ir<'py>(
             Ok((
                 argtypes,
                 callback_asts,
-                ast.pprint_default(),
+                vec![ast.pprint_default()],
                 ast.pprint_ignore_symbols()
             ))
         },
         option::CompileBackend::Triton => {
-            let ast = triton::codegen(gpu_ast, &opts, &debug_env)?;
-            debug_env.print("Triton AST", &ast);
-            Ok((
-                argtypes,
-                callback_asts,
-                ast.pprint_default(),
-                ast.pprint_ignore_symbols()
-            ))
+            let (asts, unsymb_ast) = if opts.triton_native {
+                let entry = triton::generate_native_entry_point(&gpu_ast)?;
+                let ast = triton::codegen(gpu_ast, &opts, &debug_env)?;
+                debug_env.print("Triton AST", &ast);
+                debug_env.print("Native entry point AST", &entry);
+                ( vec![ast.pprint_default(), entry.pprint_default()]
+                , ast.pprint_ignore_symbols() )
+            } else {
+                let ast = triton::codegen(gpu_ast, &opts, &debug_env)?;
+                debug_env.print("Triton AST", &ast);
+                (vec![ast.pprint_default()], ast.pprint_ignore_symbols())
+            };
+            Ok((argtypes, callback_asts, asts, unsymb_ast))
         },
         option::CompileBackend::Auto => {
             Err(PyRuntimeError::new_err("Internal error: Auto backend should \

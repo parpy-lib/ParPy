@@ -91,6 +91,14 @@ pub struct CompileOptions {
     #[pyo3(get, set)]
     pub triton_autotune: bool,
 
+    // When enabled and using the Triton backend, the compiler will generate native code that
+    // invokes the Triton kernels, rather than doing so from Python, which can significantly
+    // improve the performance for functions that produce many small GPU kernels. This is only
+    // supported for devices that also support the CUDA backend. For this reason, it is disabled by
+    // default.
+    #[pyo3(get, set)]
+    pub triton_native: bool,
+
     /////////////////
     // BUILD FLAGS //
     /////////////////
@@ -126,6 +134,7 @@ impl Default for CompileOptions {
             force_float_size: None,
             implicit_shape_labels: true,
             triton_autotune: true,
+            triton_native: false,
             includes: vec![],
             libs: vec![],
             extra_flags: vec![],

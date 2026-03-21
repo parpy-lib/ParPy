@@ -3,6 +3,22 @@ import triton
 import triton.language as tl
 from triton.language.extra import libdevice as libdevice
 
+def _merge_attrs(lattrs, rattrs):
+    common_keys = lattrs.keys() & rattrs.keys()
+    return {k: lattrs[k] for k in common_keys}
+
+def _parpy_builtin_launch_kernel(attrs, kernel, bx, by, bz, *args):
+    compiled_fn = kernel[lambda _: (bx, by, bz)](*args)
+
+    # Track the attributes associated with each function, to be used when we
+    # compile it.
+    name = compiled_fn.name
+    if not name in attrs:
+        attrs[name] = compiled_fn.src.attrs
+    else:
+        attrs[name] = _merge_attrs(attrs[name], compiled_fn.src.attrs)
+    return attrs
+
 def _parpy_builtin_to_torch(t):
     return t.torch()
 

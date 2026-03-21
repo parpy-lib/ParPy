@@ -23,6 +23,9 @@ pub enum Type {
     Pointer {ty: Box<Type>, shape: Shape},
     Tensor {sz: ElemSize, shape: Shape},
     Function {result: Box<Type>, args: Vec<Type>},
+    List,
+    Dict,
+    String,
     Void,
 }
 
@@ -32,6 +35,9 @@ impl Type {
             Type::Pointer {ty, ..} => ty.get_elem_size(),
             Type::Tensor {sz, ..} => Some(sz),
             Type::Function {..} => None,
+            Type::List => None,
+            Type::Dict => None,
+            Type::String => None,
             Type::Void => None,
         }
     }
@@ -41,6 +47,9 @@ impl Type {
             Type::Pointer {shape, ..} => Some(shape),
             Type::Tensor {shape, ..} => Some(shape),
             Type::Function {..} => None,
+            Type::List => None,
+            Type::Dict => None,
+            Type::String => None,
             Type::Void => None,
         }
     }
@@ -65,11 +74,14 @@ pub enum Expr {
     Bool {v: bool, ty: Type, i: Info},
     Int {v: i128, ty: Type, i: Info},
     Float {v: f64, ty: Type, i: Info},
+    String {v: String, ty: Type, i: Info},
     UnOp {op: UnOp, arg: Box<Expr>, ty: Type, i: Info},
     BinOp {lhs: Box<Expr>, op: BinOp, rhs: Box<Expr>, ty: Type, i: Info},
     Reduce {op: ReduceOp, arg: Box<Expr>, ty: Type, i: Info},
     Call {id: Name, args: Vec<Expr>, ty: Type, i: Info},
     ExtCall {id: String, args: Vec<Expr>, ty: Type, i: Info},
+    List {elems: Vec<Expr>, ty: Type, i: Info},
+    Dict {entries: Vec<(Expr, Expr)>, ty: Type, i: Info},
 
     // Triton-specific nodes
     ProgramId {dim: Dim, ty: Type, i: Info},
@@ -92,11 +104,14 @@ impl Expr {
             Expr::Bool {v, ty: _, i} => Expr::Bool {v, ty, i},
             Expr::Int {v, ty: _, i} => Expr::Int {v, ty, i},
             Expr::Float {v, ty: _, i} => Expr::Float {v, ty, i},
+            Expr::String {v, ty: _, i} => Expr::String {v, ty, i},
             Expr::UnOp {op, arg, ty: _, i} => Expr::UnOp {op, arg, ty, i},
             Expr::BinOp {lhs, op, rhs, ty: _, i} => Expr::BinOp {lhs, op, rhs, ty, i},
             Expr::Reduce {op, arg, ty: _, i} => Expr::Reduce {op, arg, ty, i},
             Expr::Call {id, args, ty: _, i} => Expr::Call {id, args, ty, i},
             Expr::ExtCall {id, args, ty: _, i} => Expr::ExtCall {id, args, ty, i},
+            Expr::List {elems, ty: _, i} => Expr::List {elems, ty, i},
+            Expr::Dict {entries, ty: _, i} => Expr::Dict {entries, ty, i},
             Expr::ProgramId {dim, ty: _, i} => Expr::ProgramId {dim, ty, i},
             Expr::NumPrograms {dim, ty: _, i} => Expr::NumPrograms {dim, ty, i},
             Expr::Arange {lo, hi, ty: _, i} => Expr::Arange {lo, hi, ty, i},
@@ -118,20 +133,23 @@ impl Expr {
             Expr::Bool {..} => 1,
             Expr::Int {..} => 2,
             Expr::Float {..} => 3,
-            Expr::UnOp {..} => 4,
-            Expr::BinOp {..} => 5,
-            Expr::Reduce {..} => 6,
-            Expr::Call {..} => 7,
-            Expr::ExtCall {..} => 8,
-            Expr::ProgramId {..} => 9,
-            Expr::NumPrograms {..} => 10,
-            Expr::Arange {..} => 11,
-            Expr::Load {..} => 12,
-            Expr::Full {..} => 13,
-            Expr::Where {..} => 14,
-            Expr::Convert {..} => 15,
-            Expr::AllocBuffer {..} => 16,
-            Expr::ToTorch {..} => 17,
+            Expr::String {..} => 4,
+            Expr::UnOp {..} => 5,
+            Expr::BinOp {..} => 6,
+            Expr::Reduce {..} => 7,
+            Expr::Call {..} => 8,
+            Expr::ExtCall {..} => 9,
+            Expr::List {..} => 10,
+            Expr::Dict {..} => 11,
+            Expr::ProgramId {..} => 12,
+            Expr::NumPrograms {..} => 13,
+            Expr::Arange {..} => 14,
+            Expr::Load {..} => 15,
+            Expr::Full {..} => 16,
+            Expr::Where {..} => 17,
+            Expr::Convert {..} => 18,
+            Expr::AllocBuffer {..} => 19,
+            Expr::ToTorch {..} => 20,
         }
     }
 }
@@ -143,11 +161,14 @@ impl InfoNode for Expr {
             Expr::Bool {i, ..} |
             Expr::Int {i, ..} |
             Expr::Float {i, ..} |
+            Expr::String {i, ..} |
             Expr::UnOp {i, ..} |
             Expr::BinOp {i, ..} |
             Expr::Reduce {i, ..} |
             Expr::Call {i, ..} |
             Expr::ExtCall {i, ..} |
+            Expr::List {i, ..} |
+            Expr::Dict {i, ..} |
             Expr::ProgramId {i, ..} |
             Expr::NumPrograms {i, ..} |
             Expr::Arange {i, ..} |
@@ -168,11 +189,14 @@ impl ExprType<Type> for Expr {
             Expr::Bool {ty, ..} |
             Expr::Int {ty, ..} |
             Expr::Float {ty, ..} |
+            Expr::String {ty, ..} |
             Expr::UnOp {ty, ..} |
             Expr::BinOp {ty, ..} |
             Expr::Reduce {ty, ..} |
             Expr::Call {ty, ..} |
             Expr::ExtCall {ty, ..} |
+            Expr::List {ty, ..} |
+            Expr::Dict {ty, ..} |
             Expr::ProgramId {ty, ..} |
             Expr::NumPrograms {ty, ..} |
             Expr::Arange {ty, ..} |
@@ -191,6 +215,7 @@ impl ExprType<Type> for Expr {
             Expr::Bool {..} |
             Expr::Int {..} |
             Expr::Float {..} |
+            Expr::String {..} |
             Expr::ProgramId {..} |
             Expr::NumPrograms {..} |
             Expr::Arange {..} |
@@ -200,6 +225,8 @@ impl ExprType<Type> for Expr {
             Expr::Reduce {..} |
             Expr::Call {..} |
             Expr::ExtCall {..} |
+            Expr::List {..} |
+            Expr::Dict {..} |
             Expr::Load {..} |
             Expr::Full {..} |
             Expr::Where {..} |
@@ -221,6 +248,14 @@ impl SFold<Expr> for Expr {
             Expr::Reduce {arg, ..} => f(acc?, arg),
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::ExtCall {args, ..} => args.sfold_result(acc, &f),
+            Expr::List {elems, ..} => elems.sfold_result(acc, &f),
+            Expr::Dict {entries, ..} => {
+                entries.iter()
+                    .fold(acc, |acc, (k, v)| {
+                        let acc = f(acc?, k)?;
+                        f(acc, v)
+                    })
+            },
             Expr::Arange {lo, hi, ..} => f(f(acc?, lo)?, hi),
             Expr::Load {ptr, mask, ..} => mask.sfold_result(f(acc?, ptr), &f),
             Expr::Full {shape, value, ..} => f(f(acc?, shape)?, value),
@@ -231,6 +266,7 @@ impl SFold<Expr> for Expr {
             Expr::Bool {..} |
             Expr::Int {..} |
             Expr::Float {..} |
+            Expr::String {..} |
             Expr::ProgramId {..} |
             Expr::NumPrograms {..} |
             Expr::AllocBuffer {..} => acc
@@ -265,6 +301,21 @@ impl SMapAccum<Expr> for Expr {
             Expr::ExtCall {id, args, ty, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
                 Ok((acc, Expr::ExtCall {id, args, ty, i}))
+            },
+            Expr::List {elems, ty, i} => {
+                let (acc, elems) = elems.smap_accum_l_result(acc, &f)?;
+                Ok((acc, Expr::List {elems, ty, i}))
+            },
+            Expr::Dict {entries, ty, i} => {
+                let (acc, entries) = entries.into_iter()
+                    .fold(Ok((acc?, vec![])), |acc, (k, v)| {
+                        let (acc, mut entries) = acc?;
+                        let (acc, k) = f(acc, k)?;
+                        let (acc, v) = f(acc, v)?;
+                        entries.push((k, v));
+                        Ok((acc, entries))
+                    })?;
+                Ok((acc, Expr::Dict {entries, ty, i}))
             },
             Expr::Arange {lo, hi, ty, i} => {
                 let (acc, lo) = f(acc?, *lo)?;
@@ -313,6 +364,7 @@ impl SMapAccum<Expr> for Expr {
             Expr::Bool {..} |
             Expr::Int {..} |
             Expr::Float {..} |
+            Expr::String {..} |
             Expr::ProgramId {..} |
             Expr::NumPrograms {..} |
             Expr::AllocBuffer {..} => Ok((acc?, self))
@@ -327,6 +379,7 @@ impl Ord for Expr {
             (Expr::Bool {v: lv, ..}, Expr::Bool {v: rv, ..}) => lv.cmp(rv),
             (Expr::Int {v: lv, ..}, Expr::Int {v: rv, ..}) => lv.cmp(rv),
             (Expr::Float {v: lv, ..}, Expr::Float {v: rv, ..}) => f64::total_cmp(lv, rv),
+            (Expr::String {v: lv, ..}, Expr::String {v: rv, ..}) => lv.cmp(rv),
             (Expr::UnOp {op: lop, arg: larg, ..}, Expr::UnOp {op: rop, arg: rarg, ..}) =>
                 lop.cmp(rop).then(larg.cmp(rarg)),
             ( Expr::BinOp {lhs: llhs, op: lop, rhs: lrhs, ..}
@@ -341,6 +394,10 @@ impl Ord for Expr {
             ( Expr::ExtCall {id: lid, args: largs, ..}
             , Expr::ExtCall {id: rid, args: rargs, ..} ) =>
                 lid.cmp(rid).then(largs.cmp(rargs)),
+            (Expr::List {elems: lelems, ..}, Expr::List {elems: relems, ..}) =>
+                lelems.cmp(relems),
+            (Expr::Dict {entries: lentries, ..}, Expr::Dict {entries: rentries, ..}) =>
+                lentries.cmp(rentries),
             (Expr::ProgramId {dim: ldim, ..}, Expr::ProgramId {dim: rdim, ..}) =>
                 ldim.cmp(rdim),
             (Expr::NumPrograms {dim: ldim, ..}, Expr::NumPrograms {dim: rdim, ..}) =>
@@ -395,7 +452,7 @@ pub enum Stmt {
     // Triton-specific nodes
     Barrier {i: Info},
     Store {ptr: Expr, value: Expr, mask: Option<Expr>, i: Info},
-    KernelLaunch {id: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info},
+    KernelLaunch {id: Name, attrs: Name, block_dims: Dim3, args: Vec<Expr>, nwarps: usize, i: Info},
 }
 
 impl SFold<Expr> for Stmt {
@@ -499,9 +556,9 @@ impl SMapAccum<Expr> for Stmt {
                 }?;
                 Ok((acc, Stmt::Store {ptr, value, mask, i}))
             },
-            Stmt::KernelLaunch {id, block_dims, args, nwarps, i} => {
+            Stmt::KernelLaunch {id, attrs, block_dims, args, nwarps, i} => {
                 let (acc, args) = args.smap_accum_l_result(acc, &f)?;
-                Ok((acc, Stmt::KernelLaunch {id, block_dims, args, nwarps, i}))
+                Ok((acc, Stmt::KernelLaunch {id, attrs, block_dims, args, nwarps, i}))
             },
         }
     }

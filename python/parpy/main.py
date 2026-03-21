@@ -177,7 +177,7 @@ def compile_string(fun_name, code, opts=CompileOptions()):
     import functools
     opts = backend._resolve_backend(opts, True)
     cache_key = "string_" + _generate_function_key(code, opts)
-    build_shared_library(cache_key, code, opts)
+    build_shared_library(cache_key, [code], opts)
     fn = get_string_wrapper(fun_name, cache_key, opts)
     @functools.wraps(fn)
     def inner(*args):
@@ -204,7 +204,7 @@ def print_compiled(fun, args, opts=CompileOptions()):
     args = check_arguments(args, opts, False)
     top_map = _get_tops(opts.backend)
     _, _, code, _ = parpy.compile_ir(ir_ast, args, opts, top_map)
-    return code
+    return code[0]
 
 def callback(fn):
     import inspect

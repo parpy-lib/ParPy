@@ -18,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 struct CodegenEnv {
     pub ext_map: BTreeMap<Name, String>,
     pub kernel_dims: BTreeMap<Name, LaunchArgs>,
+    pub kernel_params: Vec<Vec<Param>>,
     pub current_grid: LaunchArgs,
     pub sz: ScalarSizes,
 }
@@ -27,6 +28,7 @@ impl CodegenEnv {
         CodegenEnv {
             ext_map: BTreeMap::new(),
             kernel_dims: BTreeMap::new(),
+            kernel_params: vec![],
             current_grid: LaunchArgs::default(),
             sz: ScalarSizes::from_opts(opts),
         }
@@ -129,7 +131,7 @@ fn from_gpu_ast_type(ty: gpu_ast::Type, i: &Info) -> CompileResult<Type> {
                     parpy_compile_error!(i, "Function type pointers are not supported in Triton")
                 },
                 Ok(Type::Void) => parpy_compile_error!(i, "Void pointers are not supported in Triton"),
-                Err(_) => parpy_internal_error!(i, "Failed to convert pointer to a valid Triton type")
+                _ => parpy_internal_error!(i, "Failed to convert pointer to a valid Triton type")
             }
         },
         gpu_ast::Type::Pointer {ty, mem: gpu_ast::MemSpace::Host} => {
@@ -695,6 +697,7 @@ fn from_gpu_ast_host_stmt(
             let nwarps = (grid.threads.prod() / par::WARP_SIZE) as usize;
             acc.push(Stmt::KernelLaunch {
                 id,
+                attrs: Name::new("".to_string()),
                 block_dims: grid.blocks,
                 args,
                 nwarps,
@@ -707,11 +710,13 @@ fn from_gpu_ast_host_stmt(
             let elem_sz = match &elem_ty {
                 Type::Pointer {..} => Ok(ElemSize::I64),
                 Type::Tensor {sz, ..} => Ok(sz.clone()),
-                Type::Function {..} => {
-                    parpy_internal_error!(i, "Found allocation of function type in Triton codegen")
-                },
+                Type::Function {..} |
+                Type::List |
+                Type::Dict |
+                Type::String |
                 Type::Void => {
-                    parpy_internal_error!(i, "Found allocation of void type in Triton codegen")
+                    parpy_internal_error!(i, "Found allocation of unsupported type \
+                                              {elem_ty:?} in Triton codegen")
                 }
             }?;
             acc.push(Stmt::Assign {
@@ -874,6 +879,114 @@ fn add_buffer_to_torch_conversion(
     Ok(body)
 }
 
+fn elem_size_to_triton_signature(sz: &ElemSize) -> String {
+    match sz {
+        ElemSize::Bool => "i1",
+        ElemSize::I8 => "i8",
+        ElemSize::I16 => "i16",
+        ElemSize::I32 => "i32",
+        ElemSize::I64 => "i64",
+        ElemSize::U8 => "u8",
+        ElemSize::U16 => "u16",
+        ElemSize::U32 => "u32",
+        ElemSize::U64 => "u64",
+        ElemSize::F16 => "fp16",
+        ElemSize::F32 => "fp32",
+        ElemSize::F64 => "fp64",
+    }.to_string()
+}
+
+fn type_to_triton_signature(ty: &Type, i: &Info) -> CompileResult<String> {
+    match ty {
+        Type::Tensor {sz, ..} => Ok(elem_size_to_triton_signature(sz)),
+        Type::Pointer {ty, ..} => {
+            // If we have a nested pointer type, we treat it as a pointer to int64, and cast
+            // elements within the function to the appropriate pointer type. This is because the
+            // Triton codegen does not support nested pointer types.
+            match **ty {
+                Type::Pointer {..} => Ok(format!("*i64")),
+                _ => {
+                    let ty_str = type_to_triton_signature(ty, i)?;
+                    Ok(format!("*{ty_str}"))
+                }
+            }
+        },
+        Type::Function {..} |
+        Type::List |
+        Type::Dict |
+        Type::String |
+        Type::Void => parpy_internal_error!(i, "Failed to generate signature of Triton kernel")
+    }
+}
+
+fn make_signature_list(
+    params: &Vec<Param>,
+    i: &Info
+) -> CompileResult<Expr> {
+    let elems = params.iter()
+        .map(|Param {ty, ..}| Ok(Expr::String {
+            v: type_to_triton_signature(ty, i)?,
+            ty: Type::String,
+            i: Info::default()
+        }))
+        .collect::<CompileResult<Vec<Expr>>>()?;
+    Ok(Expr::List {elems, ty: Type::List, i: i.clone()})
+}
+
+fn insert_return_kernel_information(
+    env: &CodegenEnv,
+    attrs_id: &Name,
+    s: Stmt
+) -> CompileResult<Stmt> {
+    // We make the host entry point function of the generated Python code return a list of the
+    // defined Triton kernels, instead of simply returning the integer zero. This is used in the
+    // native code generation to retrieve a reference to each of the defined Triton kernels for the
+    // compilation stage.
+    match s {
+        Stmt::KernelLaunch {id, attrs: _, block_dims, args, nwarps, i} => {
+            Ok(Stmt::KernelLaunch {id, attrs: attrs_id.clone(), block_dims, args, nwarps, i})
+        },
+        Stmt::Return {value: _, i} => {
+            let kernels = env.kernel_dims.keys()
+                .map(|id| Expr::Var {id: id.clone(), ty: Type::Void, i: i.clone()})
+                .collect::<Vec<Expr>>();
+            let kernel_signatures = env.kernel_params.iter()
+                .map(|params| make_signature_list(params, &i))
+                .collect::<CompileResult<Vec<Expr>>>()?;
+            let value = Expr::List {
+                elems: vec![
+                    Expr::List {elems: kernels, ty: Type::List, i: i.clone()},
+                    Expr::List {elems: kernel_signatures, ty: Type::List, i: i.clone()},
+                    Expr::Var {id: attrs_id.clone(), ty: Type::Dict, i: i.clone()},
+                ],
+                ty: Type::List,
+                i: i.clone()
+            };
+            Ok(Stmt::Return {value, i})
+        },
+        _ => s.smap_result(|s| insert_return_kernel_information(env, attrs_id, s))
+    }
+}
+
+fn insert_kernel_information_tracking(
+    env: &CodegenEnv,
+    mut body: Vec<Stmt>
+) -> CompileResult<Vec<Stmt>> {
+    // Define a new variable containing a mapping from the name of each kernel to its set of
+    // attributes (as defined via Triton). We update the code such that it calls our runtime
+    // definition of a kernel launch, which collects the attribute information and returns it to
+    // the Python library. By specifying these attributes accurately, we can help Triton generate
+    // more efficent code.
+    let attrs_id = Name::sym_str("attrs");
+    let empty_attrs_def = Stmt::Definition {
+        dst: attrs_id.clone(),
+        expr: Expr::Dict {entries: vec![], ty: Type::Dict, i: Info::default()},
+        i: Info::default()
+    };
+    body.insert(0, empty_attrs_def);
+    body.smap_result(|s| insert_return_kernel_information(&env, &attrs_id, s))
+}
+
 fn from_gpu_ast_top(
     env: CodegenEnv,
     mut tops: Vec<Top>,
@@ -898,8 +1011,9 @@ fn from_gpu_ast_top(
         gpu_ast::Top::KernelFunDef {attrs, id, params, body, i} => {
             validate_attrs(attrs, &i)?;
             let params = from_gpu_ast_params(params)?;
-            let env = env.set_active_kernel(Some(&id));
+            let mut env = env.set_active_kernel(Some(&id));
             let body = from_gpu_ast_kernel_stmts(&env, body)?;
+            env.kernel_params.push(params.clone());
             tops.push(Top::KernelFunDef {decorators: vec![], id, params, body, i});
             Ok((env, tops))
         },
@@ -914,6 +1028,7 @@ fn from_gpu_ast_top(
             let params = from_gpu_ast_params(params)?;
             let body = from_gpu_ast_host_stmts(&env, body)?;
             let body = add_buffer_to_torch_conversion(&params, body)?;
+            let body = insert_kernel_information_tracking(&env, body)?;
             tops.push(Top::FunDef {id, params, body, i});
             Ok((env, tops))
         },
