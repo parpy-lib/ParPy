@@ -334,20 +334,25 @@ fn generate_reduction_loop(
     // Extract the relevant values from the left- and right-hand side arguments of the reduction
     // operation. The exact form of a reduction is checked before this function is called, so we
     // report an internal error if these assumptions do not hold.
-    let lhs_expr = lhs.get_expr();
     let ty = lhs.get_expr().get_type().clone();
     let (op, rhs) = extract_reduction(rhs, &i)?;
 
+    // Assign the intermediate results to a temporary variable, which we eventually assign to the
+    // original left-hand side value. This ensures all operations are performed in registers,
+    // rather than operating on data stored in global memory.
+    let temp_id = Name::sym_str("t");
+    let temp_var = Expr::Var {id: temp_id.clone(), ty: ty.clone(), i: i.clone()};
     let ne = find_neutral_element(&op, &ty, &i)?;
     let rhs = Expr::BinOp {
-        lhs: Box::new(lhs_expr.clone()),
+        lhs: Box::new(temp_var.clone()),
         op,
         rhs: Box::new(rhs),
         ty: ty.clone(),
         i: i.clone()
     };
     let inner_stmt = Stmt::Assign {
-        dst: lhs_expr.clone(), expr: rhs, labels: vec![], i: i.clone()
+        dst: temp_var.clone(),
+        expr: rhs, labels: vec![], i: i.clone()
     };
     let niters = dims.into_iter().map(|(n, _)| n as i128).product();
     let stmt = Stmt::For {
@@ -359,16 +364,19 @@ fn generate_reduction_loop(
         labels: l,
         i: i.clone()
     };
-    let pre_stmt = match lhs {
+    let pre_stmt = Stmt::Definition {
+        ty: ty.clone(), id: temp_id, expr: ne, labels: vec![], i: i.clone()
+    };
+    let post_stmt = match lhs {
         ReduceTargetType::Definition {e: Expr::Var {id, ty, ..}} => {
-            Ok(Stmt::Definition {ty, id, expr: ne, labels: vec![], i: i.clone()})
+            Ok(Stmt::Definition {ty, id, expr: temp_var, labels: vec![], i: i.clone()})
         },
         ReduceTargetType::Assign {e} => {
-            Ok(Stmt::Assign {dst: e, expr: ne, labels: vec![], i: i.clone()})
+            Ok(Stmt::Assign {dst: e, expr: temp_var, labels: vec![], i: i.clone()})
         },
         _ => py_internal_error!(i, "Invalid form of reduce target type")
     }?;
-    Ok(Stmt::WithGpuContext {body: vec![pre_stmt, stmt], i: i.clone()})
+    Ok(Stmt::WithGpuContext {body: vec![pre_stmt, stmt, post_stmt], i: i.clone()})
 }
 
 fn generate_mapping_loops(
