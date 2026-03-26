@@ -14,6 +14,7 @@ mod rewrite_reductions;
 mod shapes;
 mod tuning;
 mod utils;
+mod validate_shapes;
 
 #[cfg(test)]
 mod ast_builder;
@@ -58,6 +59,14 @@ pub fn codegen(
     // supported by Triton.
     let ast = blocking::transform(ast)?;
     debug_env.print("Triton AST after inserting blocking", &ast);
+
+    // The shape analysis propagates types, to find which variables should be treated as blocked.
+    // However, it does not validate the shapes of arguments to load and store operations. For
+    // instance, the pointer and value of a store operation must have equal shape (i.e., either
+    // both are scalar or both are blocked), or it will be rejected by the Triton runtime. We do
+    // this outside of the SAT solver to ensure good error messages.
+    let ast = validate_shapes::apply(ast)?;
+    debug_env.print("Triton AST after shape validation", &ast);
 
     // Simplifies uses of the power operator where the exponent is a known value by rewriting it to
     // use multiplications and square root.
