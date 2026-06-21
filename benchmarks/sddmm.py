@@ -20,50 +20,6 @@ def torch_sddmm(A, B, C):
     return torch.sparse.sampled_addmm(C, A, B, alpha=alpha, beta=beta)
 
 @parpy.jit
-def parpy_sddmm_decompress_csr(C_crows, C_rows, N):
-    parpy.label('N')
-    for row in range(N):
-        parpy.label('M')
-        for i in range(C_crows[row], C_crows[row+1]):
-            C_rows[i] = row
-
-@parpy.jit
-def parpy_sddmm_csr_kernel(A, B, C, D, N, alpha, beta):
-    # Convert CSR to a COO representation by decompressing the rows. This
-    # allows us to naively parallelize across all non-zero values without the
-    # need to do load-balancing, as we would need to using CSR (or binary
-    # search, which is costly).
-    parpy.builtin.inline(parpy_sddmm_decompress_csr(C["crows"], C["rows"], N))
-    parpy.label('nnz')
-    for i in range(C["nnz"]):
-        row = C["rows"][i]
-        col = C["cols"][i]
-        t = parpy.reduce.sum(A[row, :] * B[:, col])
-        D[i] = convert(alpha, F32) * t + convert(beta, F32) * C["values"][i]
-
-def parpy_sddmm_csr(A, B, C):
-    D = torch.empty_like(C)
-    N, K = A.shape
-    nnz = C._nnz()
-    C_dict = {
-        "crows": C.crow_indices(),
-        "rows": torch.empty_like(C.col_indices()),
-        "cols": C.col_indices(),
-        "values": C.values(),
-        "nnz": nnz
-    }
-    p = {
-        "N": parpy.threads(N),
-        "M": parpy.threads(32),
-        "nnz": parpy.threads(nnz),
-    }
-    opts = parpy.par(p)
-    opts.force_int_size = I64
-    opts.max_unroll_count = 0
-    parpy_sddmm_csr_kernel(A, B, C_dict, D.values(), N, alpha, beta, opts=opts)
-    return D
-
-@parpy.jit
 def parpy_sddmm_coo_kernel(A, B, C, D, alpha, beta):
     parpy.label('nnz')
     for i in range(C["nnz"]):
@@ -138,10 +94,8 @@ def run_sddmm(framework, matrix_id, k):
         torch_d = torch_sddmm(dense_a, dense_b, sparse_c)
         # Use the cuSPARSE result as a baseline, and compare the output if using a
         # ParPy framework.
-        if framework == "cuSPARSE":
+        if framework == "cuSPARSE-CSR":
             sparse_d = None
-        elif framework == "ParPy-CSR":
-            sparse_d = parpy_sddmm_csr(dense_a, dense_b, sparse_c)
         elif framework == "ParPy-COO":
             # Convert from CSR to COO on the CPU to reduce peak memory usage on
             # the GPU, which is typically the limiting factor.
@@ -170,8 +124,6 @@ def run_sddmm(framework, matrix_id, k):
     try:
         if framework == "cuSPARSE":
             fn = lambda: torch_sddmm(dense_a, dense_b, sparse_c)
-        elif framework == "ParPy-CSR":
-            fn = lambda: parpy_sddmm_csr(dense_a, dense_b, sparse_c)
         elif framework == "ParPy-COO":
             sparse_c_rows = csr_rows(sparse_c)
             fn = lambda: parpy_sddmm_coo(dense_a, dense_b, sparse_c, sparse_c_rows)
