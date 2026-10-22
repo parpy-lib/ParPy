@@ -15,10 +15,18 @@ mod shared_memory;
 #[cfg(test)]
 mod ast_builder;
 
+use lazy_static::lazy_static;
+
 use ast::*;
 use crate::gpu::ast as gpu_ast;
 use crate::option;
 use crate::utils::err::*;
+use crate::utils::name::Name;
+
+lazy_static! {
+    pub static ref SHFL_XOR_SYNC: Name = Name::new("__shfl_xor_sync".to_string());
+    pub static ref CLUSTER_MAP_SHARED_RANK: Name = Name::new("this_cluster().map_shared_rank".to_string());
+}
 
 pub fn codegen(
     gpu_ast: gpu_ast::Ast,

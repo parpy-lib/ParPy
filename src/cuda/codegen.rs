@@ -59,7 +59,34 @@ fn construct_shfl_xor_sync(
             ty, i
         })
     } else {
-        parpy_internal_error!(i, "Expected 3 arguments to __shfl_xor_sync, found {n}")
+        parpy_internal_error!(
+            i,
+            "Expected 3 arguments to {}, found {n}",
+            *super::SHFL_XOR_SYNC
+        )
+    }
+}
+
+fn construct_cluster_map_shared_rank(
+    mut args: Vec<Expr>,
+    ty: Type,
+    i: Info
+) -> CompileResult<Expr> {
+    let n = args.len();
+    if n == 2 {
+        let other_block_idx = args.pop().unwrap();
+        let smem = args.pop().unwrap();
+        Ok(Expr::ClusterMapSharedRank {
+            smem: Box::new(smem),
+            other_block_idx: Box::new(other_block_idx),
+            ty, i
+        })
+    } else {
+        parpy_internal_error!(
+            i,
+            "Expected 2 arguments to {}, found {n}",
+            *super::CLUSTER_MAP_SHARED_RANK
+        )
     }
 }
 
@@ -102,8 +129,10 @@ fn from_gpu_ir_expr(e: gpu_ast::Expr) -> CompileResult<Expr> {
             let args = args.into_iter()
                 .map(from_gpu_ir_expr)
                 .collect::<CompileResult<Vec<Expr>>>()?;
-            if id == Name::new("__shfl_xor_sync".to_string()) {
-                    construct_shfl_xor_sync(args, ty, i)
+            if id == *super::SHFL_XOR_SYNC {
+                construct_shfl_xor_sync(args, ty, i)
+            } else if id == *super::CLUSTER_MAP_SHARED_RANK {
+                construct_cluster_map_shared_rank(args, ty, i)
             } else {
                 Ok(Expr::Call {id, args, ty, i})
             }
