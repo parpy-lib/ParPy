@@ -267,6 +267,11 @@ impl PrettyPrint for Expr {
                 let (env, offset) = offset.pprint(env);
                 (env, format!("__shfl_xor_sync({mask}, {value}, {offset})"))
             },
+            Expr::ClusterMapSharedRank {smem, other_block_idx, ..} => {
+                let (env, smem) = smem.pprint(env);
+                let (env, other_block_idx) = other_block_idx.pprint(env);
+                (env, format!("this_cluster().map_shared_rank({smem}, {other_block_idx})"))
+            },
             Expr::MallocAsync {id, elem_ty, sz, stream, ..} => {
                 let (env, id) = id.pprint(env);
                 let (env, elem_ty) = elem_ty.pprint(env);

@@ -71,6 +71,7 @@ pub enum Expr {
     ShflXorSync {
         mask: Box<Expr>, value: Box<Expr>, offset: Box<Expr>, ty: Type, i: Info
     },
+    ClusterMapSharedRank {smem: Box<Expr>, other_block_idx: Box<Expr>, ty: Type, i: Info},
     MallocAsync {
         id: Name, elem_ty: Type, sz: usize, stream: Stream, ty: Type, i: Info
     },
@@ -107,6 +108,7 @@ impl ExprType<Type> for Expr {
             Expr::FuncSetAttribute {ty, ..} => ty,
             Expr::ValidateSharedMemUsage {ty, ..} => ty,
             Expr::ShflXorSync {ty, ..} => ty,
+            Expr::ClusterMapSharedRank {ty, ..} => ty,
             Expr::MallocAsync {ty, ..} => ty,
             Expr::FreeAsync {ty, ..} => ty,
             Expr::StreamCreate {ty, ..} => ty,
@@ -153,6 +155,7 @@ impl InfoNode for Expr {
             Expr::FuncSetAttribute {i, ..} => i.clone(),
             Expr::ValidateSharedMemUsage {i, ..} => i.clone(),
             Expr::ShflXorSync {i, ..} => i.clone(),
+            Expr::ClusterMapSharedRank {i, ..} => i.clone(),
             Expr::MallocAsync {i, ..} => i.clone(),
             Expr::FreeAsync {i, ..} => i.clone(),
             Expr::StreamCreate {i, ..} => i.clone(),
@@ -214,6 +217,13 @@ impl SMapAccum<Expr> for Expr {
                 let (acc, e) = f(acc?, *e)?;
                 Ok((acc, Expr::Convert {e: Box::new(e), ty}))
             },
+            Expr::ClusterMapSharedRank {smem, other_block_idx, ty, i} => {
+                let (acc, smem) = f(acc?, *smem)?;
+                let (acc, other_block_idx) = f(acc, *other_block_idx)?;
+                Ok((acc, Expr::ClusterMapSharedRank {
+                    smem: Box::new(smem), other_block_idx: Box::new(other_block_idx), ty, i
+                }))
+            },
             Expr::FuncSetAttribute {func, attr, value, ty, i} => {
                 let (acc, value) = f(acc?, *value)?;
                 Ok((acc, Expr::FuncSetAttribute {func, attr, value: Box::new(value), ty, i}))
@@ -248,6 +258,9 @@ impl SFold<Expr> for Expr {
             Expr::ArrayAccess {target, idx, ..} => f(f(acc?, target)?, idx),
             Expr::Call {args, ..} => args.sfold_result(acc, &f),
             Expr::Convert {e, ..} => f(acc?, e),
+            Expr::ClusterMapSharedRank {smem, other_block_idx, ..} => {
+                f(f(acc?, smem)?, other_block_idx)
+            },
             Expr::FuncSetAttribute {value, ..} => f(acc?, value),
             Expr::ValidateSharedMemUsage {nbytes, ..} => f(acc?, nbytes),
             Expr::Var {..} | Expr::Bool {..} | Expr::Int {..} | Expr::Float {..} |
