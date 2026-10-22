@@ -296,7 +296,7 @@ def test_clustered_reduction_compiles_in_cuda(fn):
         }
         opts = par_opts(parpy.CompileBackend.Cuda, p)
         opts.use_cuda_thread_block_clusters = True
-        fn(x, out, N, opts=opts)
+        parpy.jit(fn)(x, out, N, opts=opts)
     run_if_clusters_are_enabled(parpy.CompileBackend.Cuda, helper)
 
 # Tests using a custom step size.
