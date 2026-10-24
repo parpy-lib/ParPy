@@ -4,8 +4,10 @@ use super::target_constraints::TargetConstraint;
 use crate::option;
 use crate::parpy_compile_error;
 use crate::parpy_internal_error;
+use crate::ir::constant_fold;
 use crate::option::CompileOptions;
 use crate::utils::ast::ScalarSizes;
+use crate::utils::constant_fold::CFExpr;
 use crate::utils::err::*;
 use crate::utils::info::*;
 use crate::utils::name::Name;
@@ -27,6 +29,29 @@ fn collect_host_functions(
         })
         .map(|(id, _)| id.clone())
         .collect::<BTreeSet<Name>>()
+}
+
+fn count_iterations(lo: &Expr, hi: &Expr, step: i64) -> Option<i64> {
+    let lo_value = constant_fold::fold_expr(lo.clone()).get_int_value()?;
+    let hi_value = constant_fold::fold_expr(hi.clone()).get_int_value()?;
+    let step = step as i128;
+    Some(((hi_value - lo_value + (step - 1)) / step) as i64)
+}
+
+fn count_device_loop_iterations_stmt(acc: BTreeMap<Name, i64>, s: &Stmt) -> BTreeMap<Name, i64> {
+    match s {
+        Stmt::For {var, lo, hi, step, body, ..} => {
+            let mut acc = body.sfold(acc, count_device_loop_iterations_stmt);
+            let niters = count_iterations(lo, hi, *step).unwrap_or(-1);
+            acc.insert(var.clone(), niters as i64);
+            acc
+        },
+        _ => s.sfold(acc, count_device_loop_iterations_stmt)
+    }
+}
+
+fn count_device_loop_iterations(body: &Vec<Stmt>) -> BTreeMap<Name, i64> {
+    body.sfold(BTreeMap::new(), count_device_loop_iterations_stmt)
 }
 
 fn insert_synchronization_points_stmt(
@@ -895,7 +920,7 @@ struct TempData {
 struct TempDataEnv {
     temp_vars: BTreeSet<Name>,
     data: BTreeMap<Name, TempData>,
-    par_structure: Vec<(Name, i64)>
+    par_structure: Vec<(Name, Option<i64>)>
 }
 
 impl TempDataEnv {
@@ -906,6 +931,7 @@ impl TempDataEnv {
 
 fn collect_variable_temp_data(
     ss: &ScalarSizes,
+    iter_count: &BTreeMap<Name, i64>,
     mut env: TempDataEnv,
     s: &Stmt
 ) -> CompileResult<TempDataEnv> {
@@ -915,8 +941,15 @@ fn collect_variable_temp_data(
             let init_expr = Expr::Int {v: 0, ty: idx_ty.clone(), i: i.clone()};
             let (idx_expr, size) = env.par_structure.iter()
                 .rev()
-                .fold((init_expr, 1), |acc, (id, dim)| {
-                    let (idx_expr, acc_size) = acc;
+                .fold(Ok((init_expr, 1)), |acc, (id, dim)| {
+                    let Some(dim) = dim else {
+                        return parpy_compile_error!(
+                            i,
+                            "Loop {id} with unknown iteration count prevents temporary \
+                             variable allocation, required by the inter-block transformation."
+                        );
+                    };
+                    let (idx_expr, acc_size) = acc?;
                     let e = Expr::BinOp {
                         lhs: Box::new(idx_expr),
                         op: BinOp::Add,
@@ -934,8 +967,8 @@ fn collect_variable_temp_data(
                         ty: idx_ty.clone(),
                         i: i.clone()
                     };
-                    (e, acc_size * *dim as i128)
-                });
+                    Ok((e, acc_size * *dim as i128))
+                })?;
             let (ty, res_ty) = match ty {
                 Type::Tensor {..} => {
                     let ptr_ty = Type::Pointer {ty: Box::new(ty.clone())};
@@ -959,16 +992,20 @@ fn collect_variable_temp_data(
             env.data.insert(id.clone(), temp_data);
             Ok(env)
         },
-        Stmt::For {var, body, par, ..} if par.is_parallel() => {
-            env.par_structure.push((var.clone(), par.nthreads));
+        Stmt::For {var, lo, hi, step, body, par, ..} if par.is_parallel() => {
+            // We need the iteration count to be able to determine how much temporary memory to
+            // allocate. However, loops with unknown iteration count can be useful, so we delay
+            // errors until the loop's iteration count is accessed.
+            let niters = iter_count.get(var).cloned().or_else(|| count_iterations(lo, hi, *step));
+            env.par_structure.push((var.clone(), niters));
             let mut env = body.sfold_result(Ok(env), |acc, var| {
-                collect_variable_temp_data(ss, acc, var)
+                collect_variable_temp_data(ss, iter_count, acc, var)
             })?;
             env.par_structure.pop();
             Ok(env)
         },
         _ => s.sfold_result(Ok(env), |acc, var| {
-            collect_variable_temp_data(ss, acc, var)
+            collect_variable_temp_data(ss, iter_count, acc, var)
         })
     }
 }
@@ -1019,6 +1056,7 @@ fn generate_dealloc_stmt(id: &Name) -> Stmt {
 fn allocate_temporary_data(
     opts: &CompileOptions,
     params: &Vec<Param>,
+    iter_count: &BTreeMap<Name, i64>,
     body: Vec<Stmt>
 ) -> CompileResult<Vec<Stmt>> {
     // Collect the names of all parameters - we use these as a starting point for keeping track of
@@ -1052,7 +1090,7 @@ fn allocate_temporary_data(
     // with each of the variables identified in the previous step.
     let ss = ScalarSizes::from_opts(opts);
     let env = body.sfold_result(Ok(TempDataEnv::new(temp_vars)), |acc, var| {
-        collect_variable_temp_data(&ss, acc, var)
+        collect_variable_temp_data(&ss, &iter_count, acc, var)
     })?;
 
     // Update all uses of a variable, including its definition, to appropriately access the
@@ -1191,6 +1229,9 @@ pub fn restructure_inter_block_synchronization(
     // Host functions are those where the target constraints were identified as 'HostOnly'.
     let host_functions = collect_host_functions(&mapping);
 
+    // Determine the iteration count of all bounded loops in the main function body.
+    let iter_count = count_device_loop_iterations(&body);
+
     // Insert a synchronization point at the end of each parallel for-loop, and determine for each
     // of them whether they require inter-block synchronization.
     let body = insert_synchronization_points(body, &host_functions);
@@ -1221,7 +1262,7 @@ pub fn restructure_inter_block_synchronization(
     // definitions, to properly handle repeated assignments to a local variable ending up in
     // separate kernels. Second, we allocate temporary data for storing local variables, when
     // these are defined and used in separate kernels.
-    let body = allocate_temporary_data(&opts, &params, body)?;
+    let body = allocate_temporary_data(&opts, &params, &iter_count, body)?;
 
     // After the above transformations, we may end up with repeated use of a parallel for-loop. To
     // make sure later transformations work as expected, we need to re-symbolize loop variables.

@@ -385,3 +385,25 @@ def test_reduce_varied_input_size(backend, ty):
         fn(x, out, N, opts=par_opts(backend, {'N': parpy.threads(10).par_reduction()}))
         assert np.allclose(out, np.sum(x), atol=1e-3)
     run_if_backend_is_enabled(backend, helper)
+
+@pytest.mark.parametrize('backend', compiler_backends)
+def test_partial_inter_block_reduce(backend):
+    def helper():
+        @parpy.jit
+        def row_sum(A, b, N, M):
+            parpy.label('N')
+            for row in range(N):
+                parpy.label('M')
+                b[row] = parpy.reduce.sum(A[row, 0:M])
+        N = 221
+        M = 64
+        A = np.random.randn(N, M).astype(np.float32)
+        b = np.zeros(N, dtype=np.float32)
+        opts = parpy.par({
+            'N': parpy.threads(4),
+            'M': parpy.threads(64).tpb(32),
+        })
+        opts.debug_print = True
+        row_sum(A, b, N, M, opts=opts)
+        assert np.allclose(b, np.sum(A, axis=1), atol=1e-3)
+    run_if_backend_is_enabled(backend, helper)
