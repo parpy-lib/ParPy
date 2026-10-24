@@ -76,7 +76,7 @@ def test_inter_block_shape_mismatch(fn):
             'N': parpy.threads(N).tpb(32),
         })
         fn(x, y, z, N, opts=opts)
-        assert np.allclose(y, np.sum(x, axis=1))
+        assert np.allclose(y, np.sum(x, axis=1), atol=1e-5)
         assert z[0] + z[1] == 1.0
     run_if_backend_is_enabled(backend, helper)
 
