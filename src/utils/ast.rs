@@ -6,7 +6,7 @@ use strum_macros::EnumIter;
 use std::cmp::Ordering;
 use std::fmt;
 
-#[pyclass(eq, eq_int, hash, frozen)]
+#[pyclass(eq, eq_int, hash, frozen, from_py_object)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter)]
 pub enum ElemSize {
     #[default] Bool, I8, I16, I32, I64, U8, U16, U32, U64, F16, F32, F64
@@ -65,7 +65,7 @@ impl fmt::Display for ElemSize {
     }
 }
 
-#[pyclass(eq, frozen)]
+#[pyclass(eq, frozen, from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScalarSizes {
     #[pyo3(get)]
@@ -144,7 +144,7 @@ impl BinOp {
     }
 }
 
-#[pyclass(eq, frozen)]
+#[pyclass(eq, frozen, from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Target {
     Host, Device

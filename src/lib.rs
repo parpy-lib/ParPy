@@ -15,7 +15,12 @@ use crate::utils::pprint::PrettyPrint;
 use std::collections::BTreeMap;
 use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::types::{PyCapsule, PyDict};
+use pyo3::types::{PyCapsule, PyDict, PyCapsuleMethods};
+
+pub fn top_capsule_value<'py>(cap: &Bound<'py, PyCapsule>) -> PyResult<py::ast::Top> {
+    let ptr = cap.pointer_checked(Some(c"top"))?;
+    Ok(unsafe { ptr.cast::<py::ast::Top>().as_ref() }.clone())
+}
 
 #[pyfunction]
 fn python_to_ir<'py>(
@@ -34,7 +39,7 @@ fn python_to_ir<'py>(
 
     // Wrap the intermediate AST in a capsule that we return to Python.
     let t = py::ast::Top::FunDef {v: def};
-    Ok(PyCapsule::new::<py::ast::Top>(py, t, None)?)
+    Ok(PyCapsule::new_with_value::<py::ast::Top>(py, t, c"top")?)
 }
 
 #[pyfunction]
@@ -45,7 +50,7 @@ fn declare_callback<'py>(
     py: Python<'py>
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let t = py::convert_callback(py_ast, info, vars)?;
-    Ok(PyCapsule::new::<py::ast::Top>(py, t, None)?)
+    Ok(PyCapsule::new_with_value::<py::ast::Top>(py, t, c"top")?)
 }
 
 #[pyfunction]
@@ -60,14 +65,12 @@ fn declare_external<'py>(
     py: Python<'py>
 ) -> PyResult<Bound<'py, PyCapsule>> {
     let t = py::convert_external(py_ast, info, ext_id, target, header, par, vars)?;
-    Ok(PyCapsule::new::<py::ast::Top>(py, t, None)?)
+    Ok(PyCapsule::new_with_value::<py::ast::Top>(py, t, c"top")?)
 }
 
 #[pyfunction]
 fn get_function_name<'py>(cap: Bound<'py, PyCapsule>) -> String {
-    let untyped_def: &py::ast::Top = unsafe {
-        cap.reference()
-    };
+    let untyped_def = top_capsule_value(&cap).unwrap();
     match untyped_def {
         py::ast::Top::CallbackDecl {id, ..} |
         py::ast::Top::ExtDecl {id, ..} |
@@ -84,10 +87,10 @@ fn compile_ir<'py>(
     py: Python<'py>
 ) -> PyResult<(Vec<Bound<'py, PyAny>>, Vec<String>, Vec<String>, String)> {
     // Extract a reference to the untyped AST parsed earlier.
-    let t: &py::ast::Top = unsafe { cap.reference() };
+    let t = top_capsule_value(&cap).unwrap();
 
     let debug_env = utils::debug::DebugEnv::new(&opts);
-    debug_env.print("Untyped Python-like AST", t);
+    debug_env.print("Untyped Python-like AST", &t);
 
     // Specialize the Python-like AST based on the provided arguments, inferring the types of all
     // expressions and inlining scalar argument values directly into the AST.
@@ -209,8 +212,8 @@ mod test {
     }
 
     pub fn assert_py_error_matches<T: fmt::Debug>(r: PyResult<T>, pat: &str) {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let err_msg = r.unwrap_err().value(py).to_string();
             assert_error_msg_matches(err_msg, pat)
         })

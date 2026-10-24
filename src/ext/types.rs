@@ -3,13 +3,13 @@ use crate::utils::name::Name;
 
 use pyo3::prelude::*;
 
-#[pyclass(eq, frozen)]
+#[pyclass(eq, frozen, from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShapeVar {
     pub id: Name
 }
 
-#[pyclass(eq, frozen)]
+#[pyclass(eq, frozen, from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Var(ShapeVar),
@@ -29,7 +29,7 @@ impl Shape {
     }
 }
 
-#[pyclass(eq, frozen)]
+#[pyclass(eq, frozen, from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypeVar {
     pub id: Name
@@ -43,7 +43,7 @@ impl TypeVar {
     }
 }
 
-#[pyclass(eq, frozen)]
+#[pyclass(eq, frozen, from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExtType {
     Buffer(ElemSize, Vec<Shape>),

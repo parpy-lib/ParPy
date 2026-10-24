@@ -437,7 +437,7 @@ impl<'py> TypeCheckEnv<'py> {
 
     fn lookup_top(&self, id: &Name) -> Option<Top> {
         self.tops.get(id.get_str())
-            .map(|cap| unsafe { cap.reference::<Top>() }.clone())
+            .map(|cap| crate::top_capsule_value(cap).unwrap())
     }
 
     fn lookup_var(&self, id: &Name) -> PyResult<Option<Type>> {
@@ -489,7 +489,7 @@ fn extract_type<'py>(
     } else if arg.is_instance(&PyFloat::type_object(py))? {
         Ok(Type::fixed_scalar(scalar_sizes.float.clone()))
     } else if arg.is_instance(&PyDict::type_object(py))? {
-        let fields = arg.downcast::<PyDict>()?
+        let fields = arg.cast::<PyDict>()?
             .items()
             .into_iter()
             .map(|kv| {
@@ -1537,8 +1537,8 @@ mod test {
 
     fn try_extract_type(s: &str, scalar_sizes: &ScalarSizes, i: &Info, expected: Type) {
         let s = CString::new(s).unwrap();
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let arg = py.eval(&s, None, None).unwrap();
             let ty = extract_type(&arg, scalar_sizes, i).unwrap();
             assert_eq!(ty, expected);
