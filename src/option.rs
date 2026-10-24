@@ -5,13 +5,13 @@ use std::collections::BTreeMap;
 use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 
-#[pyclass(eq, eq_int, hash, frozen)]
+#[pyclass(eq, eq_int, hash, frozen, from_py_object)]
 #[derive(Clone, Debug, Default, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum CompileBackend {
     #[default] Auto, Cuda, Metal, Triton
 }
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug)]
 pub struct CompileOptions {
     /////////////////////

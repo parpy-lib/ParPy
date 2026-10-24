@@ -121,7 +121,7 @@ impl ElemSize {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug, PartialEq, EnumIter)]
 pub enum ByteOrder {
     LittleEndian,
@@ -151,7 +151,7 @@ impl ByteOrder {
     }
 }
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct DataType {
     pub byteorder: ByteOrder,

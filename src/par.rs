@@ -6,7 +6,7 @@ use pyo3::exceptions::PyRuntimeError;
 pub const REDUCE_PAR_LABEL: &'static str = "_reduce";
 pub const DEFAULT_TPB: i64 = 1024;
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct LoopPar {
     pub nthreads: i64,

@@ -899,8 +899,8 @@ mod test {
             Some(g) => g,
             None => {
                 let parpy = py.import("parpy")?;
-                let ops = parpy.getattr("builtin")?.downcast_into::<PyModule>()?;
-                let types = parpy.getattr("types")?.downcast_into::<PyModule>()?;
+                let ops = parpy.getattr("builtin")?.cast_into::<PyModule>()?;
+                let types = parpy.getattr("types")?.cast_into::<PyModule>()?;
                 vec![
                     ("parpy", parpy),
                     ("parpy.builtin", ops),
@@ -985,8 +985,8 @@ mod test {
         s: &str,
         expected: Expr
     ) -> PyResult<()> {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let e = lookup_builtin(py, s, None)?;
             assert_eq!(e, expected);
             Ok(())
@@ -994,8 +994,8 @@ mod test {
     }
 
     fn lookup_builtin_fail(s: &str) -> PyResult<()> {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             assert!(lookup_builtin(py, s, None).is_err());
             Ok(())
         })
@@ -1075,11 +1075,11 @@ mod test {
 
     #[test]
     fn lookup_sum_reduce_custom_globals() -> PyResult<()> {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let parpy = py.import("parpy")?;
             let globals = vec![
-                ("parpy_reduce", parpy.getattr("reduce")?.downcast_into::<PyModule>()?)
+                ("parpy_reduce", parpy.getattr("reduce")?.cast_into::<PyModule>()?)
             ].into_py_dict(py)?;
             let e = lookup_builtin(py, "parpy_reduce.sum(x)", Some(globals))?;
             assert!(matches!(e, Expr::ReduceOp {op: ReduceOp::Sum, ..}));
@@ -1088,11 +1088,11 @@ mod test {
     }
 
     fn convert_expr_wrap_helper(s: &str, ir_ast_def: Vec<String>) -> PyResult<Expr> {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let expr = parse_str_expr(py, s)?;
             let tops = ir_ast_def.into_iter()
-                .map(|id| (id, PyCapsule::new(py, 0, None).unwrap()))
+                .map(|id| (id, PyCapsule::new_with_value(py, 0, c"test_data").unwrap()))
                 .collect::<BTreeMap<String, Bound<_>>>();
             let env = make_env(py, &tops, None)?;
             convert_expr(expr, &env)
@@ -1546,8 +1546,8 @@ mod test {
     }
 
     fn convert_stmt_wrap(s: &str) -> PyResult<Stmt> {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let stmt = parse_str_stmt(py, s)?;
             let tops = BTreeMap::new();
             let env = make_env(py, &tops, None)?;
@@ -1842,8 +1842,8 @@ mod test {
     }
 
     fn convert_stmts_wrap(s: &str) -> PyResult<Vec<Stmt>> {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let stmt = parse_str_stmts(py, s)?;
             let tops = BTreeMap::new();
             let env = make_env(py, &tops, None)?;
@@ -1859,8 +1859,8 @@ mod test {
 
     fn convert_param_type_annot(annot: &str) -> PyResult<Type> {
         let s = format!("def f(x: {annot}):\n  return x");
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let stmts = parse_str_fun_def(py, &s)?;
             let tops = BTreeMap::new();
             let env = make_env(py, &tops, None)?;

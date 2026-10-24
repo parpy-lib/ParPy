@@ -44,7 +44,7 @@ fn inline_function_calls_stmt<'py>(
             match *e {
                 Expr::Call {id, args, ..} => {
                     if let Some(ast_ref) = tops.get(id.get_str()) {
-                        let t: Top = unsafe { ast_ref.reference::<Top>() }.clone();
+                        let t = crate::top_capsule_value(ast_ref)?;
                         match t {
                             Top::FunDef {v: fun} => {
                                 let sub_map = construct_sub_map(fun.params, args, &fun.id, &fun.i)?;

@@ -93,7 +93,7 @@ fn add_scalar_constant_py<'py>(
         acc.insert(target, Expr::Float {v: arg.extract::<f64>()?, ty, i});
         Ok(acc)
     } else if arg.is_instance(&PyDict::type_object(py))? {
-        arg.downcast::<PyDict>()?
+        arg.cast::<PyDict>()?
             .items()
             .into_iter()
             .fold(Ok(acc), |acc, kv| {
@@ -195,8 +195,8 @@ mod test {
     }
 
     fn extract_literals(s: &str, target: Expr) -> BTreeMap<Expr, Expr> {
-        pyo3::prepare_freethreaded_python();
-        Python::with_gil(|py| {
+        Python::initialize();
+        Python::attach(|py| {
             let arg = eval_str(py, s).unwrap();
             add_scalar_constant_py(BTreeMap::new(), target.clone(), &arg).unwrap()
         })
