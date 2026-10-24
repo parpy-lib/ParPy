@@ -203,6 +203,76 @@ fn classify_synchronization_points(
     body.smap(|s| classify_synchronization_points_stmt(par, opts, s))
 }
 
+fn is_parallel_reduce_array_assign(outer_var: &Name, body: &[Stmt]) -> bool {
+    // If we have the following structure, we want to swap the position of the inter-block
+    // synchronization statement and the subsequent array assignment:
+    //
+    // for (outer_var = ...) {
+    //   ...
+    //   for (...) {
+    //     t = ...; <inner_body>
+    //   }
+    //   sync(inter_block);
+    //   x[outer_var] = t;
+    //   ...
+    // }
+    if let [
+        Stmt::For {body: inner_body, ..},
+        Stmt::SyncPoint {kind: SyncPointKind::InterBlock, ..},
+        Stmt::Assign {dst: Expr::TensorAccess {idx, ..}, expr: Expr::Var {id, ..}, ..}
+    ] = body {
+        let [Stmt::Assign {dst: Expr::Var {id: ref t, ..}, ..}] = inner_body[..] else {
+            return false;
+        };
+        if let Expr::Var {id: idx_id, ..} = idx.as_ref() {
+            *idx_id == *outer_var && *t == *id
+        } else {
+            false
+        }
+    } else {
+        false
+    }
+}
+
+fn move_inter_block_array_assign_body(
+    outer_var: &Name,
+    body: &mut [Stmt],
+) {
+    if body.is_empty() {
+        return;
+    }
+    if is_parallel_reduce_array_assign(outer_var, body) {
+        body.swap(1, 2);
+        move_inter_block_array_assign_body(outer_var, &mut body[3..])
+    } else {
+        move_inter_block_array_assign_body(outer_var, &mut body[1..])
+    }
+}
+
+
+fn move_inter_block_sync_points_after_array_assign_stmt(
+    t: &par_tree::ParTree,
+    s: Stmt
+) -> Stmt {
+    match s {
+        Stmt::For {var, lo, hi, step, mut body, par, i} => {
+            if t.roots.get(&var).is_some() {
+                move_inter_block_array_assign_body(&var, &mut body);
+            }
+            let body = body.smap(|s| move_inter_block_sync_points_after_array_assign_stmt(t, s));
+            Stmt::For {var, lo, hi, step, body, par, i}
+        },
+        _ => s.smap(|s| move_inter_block_sync_points_after_array_assign_stmt(t, s))
+    }
+}
+
+fn move_inter_block_sync_points_after_array_assign(
+    t: &par_tree::ParTree,
+    body: Vec<Stmt>
+) -> Vec<Stmt> {
+    body.smap(|s| move_inter_block_sync_points_after_array_assign_stmt(t, s))
+}
+
 fn extract_neutral_element(
     op: &BinOp, sz: &ElemSize, i: &Info
 ) -> CompileResult<Expr> {
@@ -1237,6 +1307,14 @@ pub fn restructure_inter_block_synchronization(
     let body = insert_synchronization_points(body, &host_functions);
     let par = par_tree::build_tree(&body);
     let body = classify_synchronization_points(&par, opts, body);
+
+    // For efficiency reasons, we write to temporary variables in parallel reductions, even when
+    // the target is an array assignment (e.g., "x[i] = sum(...)"). However, for an inter-block
+    // reduction, the for-loop is suceeded by an inter-block synchronization point. Therefore, the
+    // array assignment ends up in a separate kernel, which is wasteful and also results in extra
+    // temporary memory allocations. This pass identifies these cases and moves the array
+    // assignment to before the inter-block synchronization point.
+    let body = move_inter_block_sync_points_after_array_assign(&par, body);
 
     // Split up inter-block parallel reductions in two parts. In the first part, the full reduction
     // is split across the blocks, such that each block writes to its own temporary memory
