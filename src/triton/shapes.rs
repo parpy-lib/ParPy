@@ -47,7 +47,7 @@ enum Constraint {
 #[derive(Clone, Debug)]
 struct ShapeEnv {
     nvars: usize,
-    vars: BTreeMap<Name, usize>,
+    vars: BTreeMap<Name, Shape>,
     constraints: Vec<Constraint>,
     cf_conds: Vec<Shape>,
 }
@@ -65,16 +65,14 @@ impl Default for ShapeEnv {
 
 impl ShapeEnv {
     fn lookup_shape(mut self, id: &Name) -> (Self, Shape) {
-        match self.vars.get(&id) {
-            Some(sz) => {
-                let n = *sz;
-                (self, Shape::Var(n))
-            },
+        match self.vars.get(&id).cloned() {
+            Some(var) => (self, var),
             None => {
                 let n = self.nvars;
-                self.vars.insert(id.clone(), n);
+                let var = Shape::Var(n);
+                self.vars.insert(id.clone(), var.clone());
                 self.nvars += 1;
-                (self, Shape::Var(n))
+                (self, var)
             }
         }
     }
@@ -536,11 +534,25 @@ fn rewrite_blocked_for_loops_stmt(
     }
 }
 
+fn lookup_var(var_mapping: &[i128], shape: Shape) -> i128 {
+    match shape {
+        Shape::Var(n) => var_mapping[n],
+        Shape::Num(n) => n,
+    }
+}
+
+fn set_parameters_to_scalar(env: ShapeEnv, params: &[Param]) -> ShapeEnv {
+    params.iter().fold(env, |mut env, p| {
+        env.vars.insert(p.id.clone(), Shape::Num(1));
+        env
+    })
+}
+
 fn unify_top(t: Top) -> CompileResult<Top> {
     match t {
         Top::KernelFunDef {decorators, id, params, body, i} => {
-            let env = Ok(ShapeEnv::default());
-            let (env, body) = body.smap_accum_l_result(env, add_shape_variables_stmt)?;
+            let env = set_parameters_to_scalar(ShapeEnv::default(), &params);
+            let (env, body) = body.smap_accum_l_result(Ok(env), add_shape_variables_stmt)?;
             let vars = env.vars.clone();
             let var_mapping = match validate_constraints(&env)? {
                 Some(n) => solve_constraints(env, n),
@@ -554,7 +566,7 @@ fn unify_top(t: Top) -> CompileResult<Top> {
             }?;
             let body = body.smap(|s| replace_vars_stmt(&var_mapping, s));
             let vars = vars.into_iter()
-                .map(|(k, v)| (k, var_mapping[v]))
+                .map(|(k, v)| (k, lookup_var(&var_mapping, v)))
                 .collect::<BTreeMap<Name, i128>>();
             let body = body.sflatten_result(vec![], |acc, s| {
                 rewrite_blocked_for_loops_stmt(&vars, acc, s)
