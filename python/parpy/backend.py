@@ -26,6 +26,8 @@ def _assert_metal_is_enabled():
                            "environment variable.")
 
 def _assert_triton_is_enabled():
+    if not torch.cuda.is_available():
+        raise RuntimeError(f"Torch was not built with CUDA support")
     try:
         import triton
     except:
