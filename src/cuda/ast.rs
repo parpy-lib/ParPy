@@ -455,12 +455,6 @@ pub enum Attribute {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Field {
-    pub ty: Type,
-    pub id: String
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct Param {
     pub id: Name,
     pub ty: Type
