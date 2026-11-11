@@ -348,13 +348,6 @@ impl SFlatten<Stmt> for Stmt {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Field {
-    pub id: String,
-    pub ty: Type,
-    pub i: Info
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct Param {
     pub id: Name,
     pub ty: Type,

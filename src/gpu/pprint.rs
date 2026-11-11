@@ -415,15 +415,6 @@ impl PrettyPrint for Param {
     }
 }
 
-impl PrettyPrint for Field {
-    fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
-        let Field {id, ty, ..} = self;
-        let (env, ty) = ty.pprint(env);
-        let indent = env.print_indent();
-        (env, format!("{indent}{ty} {id};"))
-    }
-}
-
 impl PrettyPrint for KernelAttribute {
     fn pprint(&self, env: PrettyPrintEnv) -> (PrettyPrintEnv, String) {
         match self {
