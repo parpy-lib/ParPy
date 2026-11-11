@@ -6,13 +6,9 @@ use crate::utils::info::*;
 use crate::utils::name::Name;
 use crate::utils::smap::*;
 
-use rustsat::instances::SatInstance;
-use rustsat::types::*;
-use rustsat::solvers::{Solve, SolverResult};
-use rustsat::solvers::external;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::File;
-use std::process::Command;
+use z3::Optimize;
+use z3::ast::{Bool, Int};
 
 fn type_with_shape(
     ty: Type,
@@ -349,83 +345,45 @@ fn validate_constraints(env: &ShapeEnv) -> CompileResult<Option<i128>> {
 }
 
 fn solve_constraints(env: ShapeEnv, n: i128) -> CompileResult<Vec<i128>> {
-    let mut instance: SatInstance = SatInstance::new();
-    let false_lit = instance.new_lit();
-    instance.add_unit(!false_lit);
-    let true_lit = instance.new_lit();
-    instance.add_unit(true_lit);
+    let opt = Optimize::new();
     let vars = (0..env.nvars)
-        .map(|_| instance.new_var())
-        .collect::<Vec<Var>>();
+        .map(|i| Bool::new_const(format!("x{i}")))
+        .collect::<Vec<Bool>>();
     let get_lit = |shape: &Shape| match shape {
-        Shape::Var(n) => vars[*n].pos_lit(),
-        Shape::Num(n) => if *n == 1 { false_lit } else { true_lit },
+        Shape::Var(n) => vars[*n].clone(),
+        Shape::Num(n) => Bool::from_bool(*n > 1),
     };
     env.constraints.iter()
         .for_each(|c| match c {
             Constraint::Geq {l, r} => {
                 let lv = get_lit(l);
                 let rv = get_lit(r);
-                instance.add_binary(!rv, lv);
+                opt.assert(&Bool::or(&[rv.not(), lv]));
             },
             Constraint::Max {var, l, r} => {
-                let v = vars[*var].pos_lit();
+                let v = &vars[*var];
                 let lv = get_lit(l);
                 let rv = get_lit(r);
-                instance.add_ternary(!v, lv, rv);
-                instance.add_binary(v, !lv);
-                instance.add_binary(v, !rv);
+                opt.assert(&Bool::or(&[&v.not(), &lv, &rv]));
+                opt.assert(&Bool::or(&[&v, &lv.not()]));
+                opt.assert(&Bool::or(&[&v, &rv.not()]));
             },
         });
-    // NOTE(larshum, 2026-03-02): The rustsat library uses the DIMACS format when communicating
-    // with extenal solvers. To make the Z3 solver use this format, we have to provide the input in
-    // a file using the extension ".dimacs".
-    let (_dir, tempfile) = if let Ok(td) = tempfile::tempdir() {
-        let fp = td.path().join("temp.dimacs");
-        if let Ok(_) = File::create(&fp) {
-            Ok((td, fp))
-        } else {
-            parpy_internal_error!(Info::default(), "Failed to create temporary file for solver")
-        }
+    let zero = Int::from_i64(0);
+    let one = Int::from_i64(1);
+    let cost = vars
+        .iter()
+        .map(|bv| bv.ite(&one, &zero))
+        .reduce(|a, b| a + b)
+        .unwrap();
+    opt.minimize(&cost);
+    let mut solutions = opt.solutions(&vars, true);
+    if let Some(solution) = solutions.next() {
+        Ok(solution.into_iter()
+            .map(|v| if v.as_bool().unwrap() { n } else { 1 })
+            .collect::<Vec<i128>>())
     } else {
-        parpy_internal_error!(Info::default(), "Failed to allocate temporary directory")
-    }?;
-    // NOTE(larshum, 2026-03-02): We use the Z3 solver binary as an external solver to determine
-    // which shape variables should be blocked. This binary should be available after installing
-    // the package "z3-solver" which is one of our dependencies.
-    which::which("z3")
-        .map_err(|_| CompileError::internal_err(
-            "Could not find the z3 binary, which is required by the Triton backend.\n\
-             This should be installed via the \"z3-solver\" package, which is \
-             a dependency of ParPy.".to_string()
-        ))?;
-    let mut solver = external::Solver::new(
-        Command::new("z3"),
-        external::InputVia::file_last(tempfile),
-        external::OutputVia::pipe(),
-        "z3-solver"
-    );
-    solver.add_cnf(instance.into_cnf().0).unwrap();
-    match solver.solve() {
-        Ok(SolverResult::Sat) => {
-            vars.into_iter()
-                .map(|v| solver.lit_val(v.pos_lit()))
-                .collect::<Result<Vec<TernaryVal>, _>>()
-                .map(|vals| {
-                    vals.into_iter()
-                        .map(|v| if v == TernaryVal::True { n } else { 1 })
-                        .collect::<Vec<i128>>()
-                })
-                .map_err(|_| {
-                    CompileError::internal_err(
-                        "Solver failed to determine block shapes of variables".to_string()
-                    )
-                })
-        },
-        Ok(_) => {
-            parpy_internal_error!(Info::default(), "Failed to determine blocking of variables")
-        }
-        Err(e) => parpy_internal_error!(Info::default(), "Solver failed: {e}")
+        parpy_internal_error!(Info::default(), "Failed to determine blocking of variables")
     }
 }
 
